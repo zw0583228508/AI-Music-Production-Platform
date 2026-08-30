@@ -7,9 +7,11 @@
  */
 import type { Arrangement } from './arrangement';
 import type { Candidate } from './candidate';
+import type { MusicProvider } from './musicProvider';
 
 export interface GenerationResult {
   arrangement: Arrangement;
   candidates: Candidate[];
   selectedCandidate: string;
+  provider: MusicProvider;
 }

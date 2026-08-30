@@ -6,10 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface Candidate {
-  id: string;
-  label: string;
-  score: number;
-  summary: string;
-  provider: string;
+export interface BarEvent {
+  bar: number;
+  start: number;
+  end: number;
+  beats: number;
+  confidence: number;
 }

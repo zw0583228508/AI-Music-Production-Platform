@@ -230,6 +230,15 @@ export const GetProjectResponse = zod.object({
   "density": zod.number(),
   "tracks": zod.array(zod.string())
 })),
+  "generationProvider": zod.string().nullable(),
+  "candidates": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "score": zod.number(),
+  "summary": zod.string(),
+  "provider": zod.string()
+})),
+  "selectedCandidateId": zod.string().nullable(),
   "createdAt": zod.string()
 })),
   "tracks": zod.array(zod.object({
@@ -255,34 +264,6 @@ export const GetProjectResponse = zod.object({
   "createdAt": zod.string(),
   "url": zod.string().nullish()
 }))
-})
-
-
-/**
- * @summary Analyze a source recording
- */
-export const AnalyzeProjectParams = zod.object({
-  "projectId": zod.coerce.string()
-})
-
-export const AnalyzeProjectBody = zod.object({
-  "provider": zod.enum(['BS_ROFORMER_SW', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'FUSION']).optional(),
-  "refresh": zod.boolean().optional()
-})
-
-export const AnalyzeProjectResponse = zod.object({
-  "bpm": zod.number(),
-  "meter": zod.string(),
-  "key": zod.string(),
-  "confidence": zod.number(),
-  "sections": zod.array(zod.object({
-  "name": zod.string(),
-  "startBar": zod.number(),
-  "endBar": zod.number(),
-  "energy": zod.number()
-})),
-  "energy": zod.array(zod.number()),
-  "providers": zod.array(zod.string())
 })
 
 
@@ -396,6 +377,19 @@ export const GetProjectSongModelResponse = zod.object({
   "key": zod.string(),
   "confidence": zod.number()
 })),
+  "beats": zod.array(zod.object({
+  "time": zod.number(),
+  "beat": zod.number(),
+  "bar": zod.number(),
+  "confidence": zod.number()
+})),
+  "bars": zod.array(zod.object({
+  "bar": zod.number(),
+  "start": zod.number(),
+  "end": zod.number(),
+  "beats": zod.number(),
+  "confidence": zod.number()
+})),
   "melody": zod.array(zod.object({
   "start": zod.number(),
   "end": zod.number(),
@@ -418,10 +412,97 @@ export const GetProjectSongModelResponse = zod.object({
   "energy": zod.number()
 })),
   "energy": zod.array(zod.number()),
+  "dynamics": zod.array(zod.number()),
+  "sourceStems": zod.array(zod.object({
+  "role": zod.string(),
+  "objectPath": zod.string(),
+  "provider": zod.string(),
+  "confidence": zod.number()
+})),
+  "lyrics": zod.array(zod.object({
+  "start": zod.number(),
+  "end": zod.number(),
+  "text": zod.string(),
+  "confidence": zod.number()
+})),
+  "confidenceByField": zod.record(zod.string(), zod.number()),
+  "provenance": zod.array(zod.object({
+  "capability": zod.string(),
+  "provider": zod.string(),
+  "version": zod.string(),
+  "status": zod.enum(['ready', 'fallback', 'unavailable'])
+})),
   "providers": zod.array(zod.string()),
   "confidence": zod.number(),
   "createdAt": zod.string()
 })
+
+
+/**
+ * @summary List durable analysis attempts for a project
+ */
+export const ListAnalysisJobsParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+export const ListAnalysisJobsResponseItem = zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "sourceId": zod.string(),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed']),
+  "stage": zod.string(),
+  "progress": zod.number(),
+  "attempt": zod.number(),
+  "error": zod.string().nullable(),
+  "startedAt": zod.string().nullable(),
+  "finishedAt": zod.string().nullable(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+export const ListAnalysisJobsResponse = zod.array(ListAnalysisJobsResponseItem)
+
+
+/**
+ * @summary Retry a failed or interrupted source analysis
+ */
+export const RetrySourceAnalysisParams = zod.object({
+  "projectId": zod.coerce.string(),
+  "sourceId": zod.coerce.string()
+})
+
+export const RetrySourceAnalysisResponse = zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "sourceId": zod.string(),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed']),
+  "stage": zod.string(),
+  "progress": zod.number(),
+  "attempt": zod.number(),
+  "error": zod.string().nullable(),
+  "startedAt": zod.string().nullable(),
+  "finishedAt": zod.string().nullable(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary List registered music providers and availability
+ */
+export const ListMusicProvidersResponseItem = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "provider": zod.string(),
+  "version": zod.string(),
+  "capabilities": zod.array(zod.string()),
+  "inputTypes": zod.array(zod.string()),
+  "execution": zod.enum(['local', 'remote']),
+  "status": zod.enum(['ready', 'configured', 'unavailable']),
+  "license": zod.string().nullable(),
+  "priority": zod.number(),
+  "notes": zod.string()
+})
+export const ListMusicProvidersResponse = zod.array(ListMusicProvidersResponseItem)
 
 
 /**
@@ -450,6 +531,15 @@ export const ListArrangementsResponseItem = zod.object({
   "density": zod.number(),
   "tracks": zod.array(zod.string())
 })),
+  "generationProvider": zod.string().nullable(),
+  "candidates": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "score": zod.number(),
+  "summary": zod.string(),
+  "provider": zod.string()
+})),
+  "selectedCandidateId": zod.string().nullable(),
   "createdAt": zod.string()
 })
 export const ListArrangementsResponse = zod.array(ListArrangementsResponseItem)
@@ -493,6 +583,15 @@ export const CreateArrangementResponse = zod.object({
   "density": zod.number(),
   "tracks": zod.array(zod.string())
 })),
+  "generationProvider": zod.string().nullable(),
+  "candidates": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "score": zod.number(),
+  "summary": zod.string(),
+  "provider": zod.string()
+})),
+  "selectedCandidateId": zod.string().nullable(),
   "createdAt": zod.string()
 })
 
@@ -526,7 +625,8 @@ export const UpdateArrangementBody = zod.object({
   "energy": zod.number().min(updateArrangementBodyEnergyMin).max(updateArrangementBodyEnergyMax).optional(),
   "density": zod.number().min(updateArrangementBodyDensityMin).max(updateArrangementBodyDensityMax).optional(),
   "orchestraSize": zod.number().min(updateArrangementBodyOrchestraSizeMin).max(updateArrangementBodyOrchestraSizeMax).optional(),
-  "rhythmIntensity": zod.number().min(updateArrangementBodyRhythmIntensityMin).max(updateArrangementBodyRhythmIntensityMax).optional()
+  "rhythmIntensity": zod.number().min(updateArrangementBodyRhythmIntensityMin).max(updateArrangementBodyRhythmIntensityMax).optional(),
+  "selectedCandidateId": zod.string().nullish()
 })
 
 export const UpdateArrangementResponse = zod.object({
@@ -548,6 +648,15 @@ export const UpdateArrangementResponse = zod.object({
   "density": zod.number(),
   "tracks": zod.array(zod.string())
 })),
+  "generationProvider": zod.string().nullable(),
+  "candidates": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "score": zod.number(),
+  "summary": zod.string(),
+  "provider": zod.string()
+})),
+  "selectedCandidateId": zod.string().nullable(),
   "createdAt": zod.string()
 })
 
@@ -565,7 +674,7 @@ export const generateArrangementBodyCandidatesMax = 3;
 
 export const GenerateArrangementBody = zod.object({
   "candidates": zod.number().min(1).max(generateArrangementBodyCandidatesMax).optional(),
-  "provider": zod.enum(['ACE_STEP_BASE', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR', 'CUSTOM']).optional(),
+  "provider": zod.enum(['LOCAL_SYMBOLIC_DIRECTOR_V1', 'ACE_STEP_BASE', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR', 'CUSTOM']).optional(),
   "seed": zod.number().optional()
 })
 
@@ -589,15 +698,38 @@ export const GenerateArrangementResponse = zod.object({
   "density": zod.number(),
   "tracks": zod.array(zod.string())
 })),
+  "generationProvider": zod.string().nullable(),
+  "candidates": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "score": zod.number(),
+  "summary": zod.string(),
+  "provider": zod.string()
+})),
+  "selectedCandidateId": zod.string().nullable(),
   "createdAt": zod.string()
 }),
   "candidates": zod.array(zod.object({
   "id": zod.string(),
   "label": zod.string(),
   "score": zod.number(),
-  "summary": zod.string()
+  "summary": zod.string(),
+  "provider": zod.string()
 })),
-  "selectedCandidate": zod.string()
+  "selectedCandidate": zod.string(),
+  "provider": zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "provider": zod.string(),
+  "version": zod.string(),
+  "capabilities": zod.array(zod.string()),
+  "inputTypes": zod.array(zod.string()),
+  "execution": zod.enum(['local', 'remote']),
+  "status": zod.enum(['ready', 'configured', 'unavailable']),
+  "license": zod.string().nullable(),
+  "priority": zod.number(),
+  "notes": zod.string()
+})
 })
 
 

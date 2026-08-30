@@ -33,4 +33,6 @@ export interface ArrangementUpdate {
      * @maximum 1
      */
   rhythmIntensity?: number;
+  /** @nullable */
+  selectedCandidateId?: string | null;
 }

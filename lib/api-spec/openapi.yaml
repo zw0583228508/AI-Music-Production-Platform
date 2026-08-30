@@ -22,6 +22,8 @@ tags:
     description: Browser authentication
   - name: sources
     description: Source upload, preprocessing, and Song Model generation
+  - name: providers
+    description: Music model registry and provider capability routing
 paths:
   /healthz:
     get:
@@ -188,28 +190,6 @@ paths:
                 $ref: "#/components/schemas/ProjectWorkspace"
         "404":
           $ref: "#/components/responses/NotFound"
-  /projects/{projectId}/analyze:
-    post:
-      operationId: analyzeProject
-      tags: [projects]
-      summary: Analyze a source recording
-      parameters:
-        - $ref: "#/components/parameters/ProjectId"
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AnalysisInput"
-      responses:
-        "200":
-          description: Updated analysis
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Analysis"
-        "404":
-          $ref: "#/components/responses/NotFound"
   /projects/{projectId}/sources:
     get:
       operationId: listProjectSources
@@ -265,6 +245,55 @@ paths:
                 $ref: "#/components/schemas/SongModel"
         "404":
           $ref: "#/components/responses/NotFound"
+  /projects/{projectId}/analysis-jobs:
+    get:
+      operationId: listAnalysisJobs
+      tags: [sources]
+      summary: List durable analysis attempts for a project
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Analysis job attempts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AnalysisJob"
+  /projects/{projectId}/sources/{sourceId}/retry:
+    post:
+      operationId: retrySourceAnalysis
+      tags: [sources]
+      summary: Retry a failed or interrupted source analysis
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/SourceId"
+      responses:
+        "202":
+          description: Analysis retry queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisJob"
+        "401":
+          description: Login required
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /providers:
+    get:
+      operationId: listMusicProviders
+      tags: [providers]
+      summary: List registered music providers and availability
+      responses:
+        "200":
+          description: Model registry
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MusicProvider"
   /projects/{projectId}/arrangements:
     get:
       operationId: listArrangements
@@ -432,6 +461,12 @@ components:
       required: true
       schema:
         type: string
+    SourceId:
+      name: sourceId
+      in: path
+      required: true
+      schema:
+        type: string
   responses:
     NotFound:
       description: Resource not found
@@ -525,7 +560,7 @@ components:
         createdAt: { type: string }
     SongModel:
       type: object
-      required: [id, projectId, sourceId, version, status, audio, tempoMap, meterMap, keyMap, melody, chords, sections, energy, providers, confidence, createdAt]
+      required: [id, projectId, sourceId, version, status, audio, tempoMap, meterMap, keyMap, beats, bars, melody, chords, sections, energy, dynamics, sourceStems, lyrics, confidenceByField, provenance, providers, confidence, createdAt]
       properties:
         id: { type: string }
         projectId: { type: string }
@@ -548,6 +583,14 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/KeyEvent"
+        beats:
+          type: array
+          items:
+            $ref: "#/components/schemas/BeatEvent"
+        bars:
+          type: array
+          items:
+            $ref: "#/components/schemas/BarEvent"
         melody:
           type: array
           items:
@@ -563,6 +606,24 @@ components:
         energy:
           type: array
           items: { type: number }
+        dynamics:
+          type: array
+          items: { type: number }
+        sourceStems:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceStem"
+        lyrics:
+          type: array
+          items:
+            $ref: "#/components/schemas/LyricEvent"
+        confidenceByField:
+          type: object
+          additionalProperties: { type: number }
+        provenance:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProviderProvenance"
         providers:
           type: array
           items: { type: string }
@@ -599,6 +660,90 @@ components:
         time: { type: number }
         key: { type: string }
         confidence: { type: number }
+    BeatEvent:
+      type: object
+      required: [time, beat, bar, confidence]
+      properties:
+        time: { type: number }
+        beat: { type: number }
+        bar: { type: number }
+        confidence: { type: number }
+    BarEvent:
+      type: object
+      required: [bar, start, end, beats, confidence]
+      properties:
+        bar: { type: number }
+        start: { type: number }
+        end: { type: number }
+        beats: { type: number }
+        confidence: { type: number }
+    SourceStem:
+      type: object
+      required: [role, objectPath, provider, confidence]
+      properties:
+        role: { type: string }
+        objectPath: { type: string }
+        provider: { type: string }
+        confidence: { type: number }
+    LyricEvent:
+      type: object
+      required: [start, end, text, confidence]
+      properties:
+        start: { type: number }
+        end: { type: number }
+        text: { type: string }
+        confidence: { type: number }
+    ProviderProvenance:
+      type: object
+      required: [capability, provider, version, status]
+      properties:
+        capability: { type: string }
+        provider: { type: string }
+        version: { type: string }
+        status:
+          type: string
+          enum: [ready, fallback, unavailable]
+    AnalysisJob:
+      type: object
+      required: [id, projectId, sourceId, status, stage, progress, attempt, error, startedAt, finishedAt, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        projectId: { type: string }
+        sourceId: { type: string }
+        status:
+          type: string
+          enum: [queued, running, completed, failed]
+        stage: { type: string }
+        progress: { type: number }
+        attempt: { type: number }
+        error: { type: ["string", "null"] }
+        startedAt: { type: ["string", "null"] }
+        finishedAt: { type: ["string", "null"] }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+    MusicProvider:
+      type: object
+      required: [id, name, provider, version, capabilities, inputTypes, execution, status, license, priority, notes]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        provider: { type: string }
+        version: { type: string }
+        capabilities:
+          type: array
+          items: { type: string }
+        inputTypes:
+          type: array
+          items: { type: string }
+        execution:
+          type: string
+          enum: [local, remote]
+        status:
+          type: string
+          enum: [ready, configured, unavailable]
+        license: { type: ["string", "null"] }
+        priority: { type: number }
+        notes: { type: string }
     NoteEvent:
       type: object
       required: [start, end, pitch, velocity, confidence, source]
@@ -755,9 +900,10 @@ components:
         density: { type: number, minimum: 0, maximum: 1 }
         orchestraSize: { type: number, minimum: 0, maximum: 1 }
         rhythmIntensity: { type: number, minimum: 0, maximum: 1 }
+        selectedCandidateId: { type: ["string", "null"] }
     Arrangement:
       type: object
-      required: [id, projectId, name, style, mode, version, status, harmonyComplexity, energy, density, orchestraSize, rhythmIntensity, sections, createdAt]
+      required: [id, projectId, name, style, mode, version, status, harmonyComplexity, energy, density, orchestraSize, rhythmIntensity, sections, generationProvider, candidates, selectedCandidateId, createdAt]
       properties:
         id: { type: string }
         projectId: { type: string }
@@ -779,6 +925,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ArrangementSection"
+        generationProvider: { type: ["string", "null"] }
+        candidates:
+          type: array
+          items:
+            $ref: "#/components/schemas/Candidate"
+        selectedCandidateId: { type: ["string", "null"] }
         createdAt: { type: string }
     ArrangementSection:
       type: object
@@ -796,11 +948,11 @@ components:
         candidates: { type: number, minimum: 1, maximum: 3 }
         provider:
           type: string
-          enum: [ACE_STEP_BASE, ANYACCOMP, SYMPHONYGEN, METEOR, CUSTOM]
+          enum: [LOCAL_SYMBOLIC_DIRECTOR_V1, ACE_STEP_BASE, ANYACCOMP, SYMPHONYGEN, METEOR, CUSTOM]
         seed: { type: number }
     GenerationResult:
       type: object
-      required: [arrangement, candidates, selectedCandidate]
+      required: [arrangement, candidates, selectedCandidate, provider]
       properties:
         arrangement:
           $ref: "#/components/schemas/Arrangement"
@@ -809,14 +961,17 @@ components:
           items:
             $ref: "#/components/schemas/Candidate"
         selectedCandidate: { type: string }
+        provider:
+          $ref: "#/components/schemas/MusicProvider"
     Candidate:
       type: object
-      required: [id, label, score, summary]
+      required: [id, label, score, summary, provider]
       properties:
         id: { type: string }
         label: { type: string }
         score: { type: number }
         summary: { type: string }
+        provider: { type: string }
     ExportInput:
       type: object
       properties:

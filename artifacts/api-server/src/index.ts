@@ -1,5 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { resumePendingSourceJobs } from "./lib/sourceAnalyzer";
+import { syncModelRegistry } from "./lib/musicProviders";
 
 const rawPort = process.env["PORT"];
 
@@ -22,4 +24,17 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+  void syncModelRegistry()
+    .then(() => {
+      void resumePendingSourceJobs();
+      const recoveryTimer = setInterval(() => {
+        void resumePendingSourceJobs().catch((error: unknown) => {
+          logger.error({ err: error }, "Failed to recover pending music analysis jobs");
+        });
+      }, 60_000);
+      recoveryTimer.unref();
+    })
+    .catch((error: unknown) => {
+      logger.error({ err: error }, "Failed to initialize music model registry and job recovery");
+    });
 });

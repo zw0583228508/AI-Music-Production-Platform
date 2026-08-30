@@ -6,10 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface Candidate {
-  id: string;
-  label: string;
-  score: number;
-  summary: string;
-  provider: string;
+export interface LyricEvent {
+  start: number;
+  end: number;
+  text: string;
+  confidence: number;
 }

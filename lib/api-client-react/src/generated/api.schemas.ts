@@ -140,6 +140,8 @@ export const SongModelStatus = {
   ready: 'ready',
 } as const;
 
+export type SongModelConfidenceByField = {[key: string]: number};
+
 export interface SongModelAudio {
   name: string;
   contentType: string;
@@ -167,6 +169,21 @@ export interface KeyEvent {
   confidence: number;
 }
 
+export interface BeatEvent {
+  time: number;
+  beat: number;
+  bar: number;
+  confidence: number;
+}
+
+export interface BarEvent {
+  bar: number;
+  start: number;
+  end: number;
+  beats: number;
+  confidence: number;
+}
+
 export interface NoteEvent {
   start: number;
   end: number;
@@ -191,6 +208,36 @@ export interface Section {
   energy: number;
 }
 
+export interface SourceStem {
+  role: string;
+  objectPath: string;
+  provider: string;
+  confidence: number;
+}
+
+export interface LyricEvent {
+  start: number;
+  end: number;
+  text: string;
+  confidence: number;
+}
+
+export type ProviderProvenanceStatus = typeof ProviderProvenanceStatus[keyof typeof ProviderProvenanceStatus];
+
+
+export const ProviderProvenanceStatus = {
+  ready: 'ready',
+  fallback: 'fallback',
+  unavailable: 'unavailable',
+} as const;
+
+export interface ProviderProvenance {
+  capability: string;
+  provider: string;
+  version: string;
+  status: ProviderProvenanceStatus;
+}
+
 export interface SongModel {
   id: string;
   projectId: string;
@@ -201,13 +248,80 @@ export interface SongModel {
   tempoMap: TempoEvent[];
   meterMap: MeterEvent[];
   keyMap: KeyEvent[];
+  beats: BeatEvent[];
+  bars: BarEvent[];
   melody: NoteEvent[];
   chords: ChordEvent[];
   sections: Section[];
   energy: number[];
+  dynamics: number[];
+  sourceStems: SourceStem[];
+  lyrics: LyricEvent[];
+  confidenceByField: SongModelConfidenceByField;
+  provenance: ProviderProvenance[];
   providers: string[];
   confidence: number;
   createdAt: string;
+}
+
+export type AnalysisJobStatus = typeof AnalysisJobStatus[keyof typeof AnalysisJobStatus];
+
+
+export const AnalysisJobStatus = {
+  queued: 'queued',
+  running: 'running',
+  completed: 'completed',
+  failed: 'failed',
+} as const;
+
+export interface AnalysisJob {
+  id: string;
+  projectId: string;
+  sourceId: string;
+  status: AnalysisJobStatus;
+  stage: string;
+  progress: number;
+  attempt: number;
+  /** @nullable */
+  error: string | null;
+  /** @nullable */
+  startedAt: string | null;
+  /** @nullable */
+  finishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type MusicProviderExecution = typeof MusicProviderExecution[keyof typeof MusicProviderExecution];
+
+
+export const MusicProviderExecution = {
+  local: 'local',
+  remote: 'remote',
+} as const;
+
+export type MusicProviderStatus = typeof MusicProviderStatus[keyof typeof MusicProviderStatus];
+
+
+export const MusicProviderStatus = {
+  ready: 'ready',
+  configured: 'configured',
+  unavailable: 'unavailable',
+} as const;
+
+export interface MusicProvider {
+  id: string;
+  name: string;
+  provider: string;
+  version: string;
+  capabilities: string[];
+  inputTypes: string[];
+  execution: MusicProviderExecution;
+  status: MusicProviderStatus;
+  /** @nullable */
+  license: string | null;
+  priority: number;
+  notes: string;
 }
 
 export interface HealthStatus {
@@ -332,6 +446,14 @@ export interface ArrangementSection {
   tracks: string[];
 }
 
+export interface Candidate {
+  id: string;
+  label: string;
+  score: number;
+  summary: string;
+  provider: string;
+}
+
 export interface Arrangement {
   id: string;
   projectId: string;
@@ -346,6 +468,11 @@ export interface Arrangement {
   orchestraSize: number;
   rhythmIntensity: number;
   sections: ArrangementSection[];
+  /** @nullable */
+  generationProvider: string | null;
+  candidates: Candidate[];
+  /** @nullable */
+  selectedCandidateId: string | null;
   createdAt: string;
 }
 
@@ -481,12 +608,15 @@ export interface ArrangementUpdate {
      * @maximum 1
      */
   rhythmIntensity?: number;
+  /** @nullable */
+  selectedCandidateId?: string | null;
 }
 
 export type GenerationInputProvider = typeof GenerationInputProvider[keyof typeof GenerationInputProvider];
 
 
 export const GenerationInputProvider = {
+  LOCAL_SYMBOLIC_DIRECTOR_V1: 'LOCAL_SYMBOLIC_DIRECTOR_V1',
   ACE_STEP_BASE: 'ACE_STEP_BASE',
   ANYACCOMP: 'ANYACCOMP',
   SYMPHONYGEN: 'SYMPHONYGEN',
@@ -504,17 +634,11 @@ export interface GenerationInput {
   seed?: number;
 }
 
-export interface Candidate {
-  id: string;
-  label: string;
-  score: number;
-  summary: string;
-}
-
 export interface GenerationResult {
   arrangement: Arrangement;
   candidates: Candidate[];
   selectedCandidate: string;
+  provider: MusicProvider;
 }
 
 export type ExportInputMasterProfile = typeof ExportInputMasterProfile[keyof typeof ExportInputMasterProfile];

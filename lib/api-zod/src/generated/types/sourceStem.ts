@@ -6,10 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface Candidate {
-  id: string;
-  label: string;
-  score: number;
-  summary: string;
+export interface SourceStem {
+  role: string;
+  objectPath: string;
   provider: string;
+  confidence: number;
 }

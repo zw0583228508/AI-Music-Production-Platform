@@ -1,10 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import {
-  AnalyzeProjectBody,
-  AnalyzeProjectParams,
-  AnalyzeProjectResponse,
   CreateArrangementBody,
   CreateArrangementParams,
   CreateArrangementResponse,
@@ -25,6 +22,9 @@ import {
   ListArrangementsResponse,
   ListArtifactsParams,
   ListArtifactsResponse,
+  ListAnalysisJobsParams,
+  ListAnalysisJobsResponse,
+  ListMusicProvidersResponse,
   ListProjectsResponse,
   ListProjectSourcesParams,
   ListProjectSourcesResponse,
@@ -36,11 +36,14 @@ import {
   RegisterProjectSourceBody,
   RegisterProjectSourceParams,
   RegisterProjectSourceResponse,
+  RetrySourceAnalysisParams,
+  RetrySourceAnalysisResponse,
   UpdateArrangementBody,
   UpdateArrangementParams,
   UpdateArrangementResponse,
 } from "@workspace/api-zod";
 import {
+  analysisJobsTable,
   arrangementsTable,
   db,
   musicArtifactsTable,
@@ -58,6 +61,13 @@ import {
 } from "../lib/exportEngine";
 import { deleteExportObject, saveExportObject } from "../lib/objectStorage";
 import { analyzeProjectSource } from "../lib/sourceAnalyzer";
+import {
+  MUSIC_PROVIDERS,
+  ProviderUnavailableError,
+  runArrangementProvider,
+  selectArrangementProvider,
+  validateArrangementProviderOutput,
+} from "../lib/musicProviders";
 
 const router: IRouter = Router();
 
@@ -131,6 +141,17 @@ const songModelResponse = (
   createdAt: iso(row.createdAt),
 });
 
+const analysisJobResponse = (
+  job: typeof analysisJobsTable.$inferSelect,
+) => ({
+  ...job,
+  error: job.error ?? null,
+  startedAt: job.startedAt ? iso(job.startedAt) : null,
+  finishedAt: job.finishedAt ? iso(job.finishedAt) : null,
+  createdAt: iso(job.createdAt),
+  updatedAt: iso(job.updatedAt),
+});
+
 async function ensureSeeded(): Promise<void> {
   const existing = await db.select({ id: musicProjectsTable.id }).from(musicProjectsTable).limit(1);
   if (existing.length > 0) return;
@@ -162,7 +183,7 @@ async function ensureSeeded(): Promise<void> {
       coverColor: "#8b5cf6",
       sections,
       energy: [0.2, 0.28, 0.4, 0.78, 0.85, 0.5, 0.36, 0.92, 0.3],
-      providers: ["BS_ROFORMER_SW", "ALL_IN_ONE", "BASIC_PITCH", "FUSION"],
+      providers: ["DEMO_REFERENCE_DATA"],
     },
     {
       id: secondProjectId,
@@ -181,7 +202,7 @@ async function ensureSeeded(): Promise<void> {
         { name: "Chorus", startBar: 17, endBar: 32, energy: 0.71 },
       ],
       energy: [0.31, 0.41, 0.55, 0.73, 0.48],
-      providers: ["BASIC_PITCH"],
+      providers: ["DEMO_REFERENCE_DATA"],
     },
   ]);
 
@@ -312,47 +333,6 @@ router.get("/projects/:projectId", async (req, res): Promise<void> => {
   }));
 });
 
-router.post("/projects/:projectId/analyze", async (req, res): Promise<void> => {
-  const params = AnalyzeProjectParams.safeParse(req.params);
-  const body = AnalyzeProjectBody.safeParse(req.body ?? {});
-  if (!params.success || !body.success) {
-    res.status(400).json({ error: "Invalid analysis request" });
-    return;
-  }
-  const sections = [
-    { name: "Intro", startBar: 1, endBar: 8, energy: 0.22 },
-    { name: "Verse", startBar: 9, endBar: 24, energy: 0.44 },
-    { name: "Chorus", startBar: 25, endBar: 40, energy: 0.82 },
-    { name: "Bridge", startBar: 41, endBar: 48, energy: 0.34 },
-    { name: "Final Chorus", startBar: 49, endBar: 64, energy: 0.94 },
-  ];
-  const [project] = await db.update(musicProjectsTable).set({
-    status: "ready",
-    duration: "3:16",
-    key: "A minor",
-    bpm: 98,
-    meter: "4/4",
-    confidence: 0.91,
-    sections,
-    energy: [0.2, 0.36, 0.48, 0.8, 0.55, 0.32, 0.94],
-    providers: ["BS_ROFORMER_SW", "ALL_IN_ONE", "MT3", "BASIC_PITCH", "FUSION"],
-  }).where(eq(musicProjectsTable.id, params.data.projectId)).returning();
-  if (!project) {
-    res.status(404).json({ error: "Project not found" });
-    return;
-  }
-  await db.insert(musicArtifactsTable).values({
-    id: randomUUID(),
-    projectId: project.id,
-    type: "SONG_MODEL",
-    label: "Unified Song Model",
-    version: 1,
-    size: "124 KB",
-    format: "JSON",
-  });
-  res.json(AnalyzeProjectResponse.parse(analysisResponse(project)));
-});
-
 router.get("/projects/:projectId/sources", async (req, res): Promise<void> => {
   const params = ListProjectSourcesParams.safeParse(req.params);
   if (!params.success) {
@@ -415,6 +395,14 @@ router.post("/projects/:projectId/sources", async (req, res): Promise<void> => {
     status: "queued",
     progress: 4,
   }).returning();
+  await db.insert(analysisJobsTable).values({
+    id: randomUUID(),
+    projectId: project.id,
+    sourceId: source.id,
+    status: "queued",
+    stage: "queued",
+    progress: 4,
+  });
   await db.update(musicProjectsTable)
     .set({
       ownerId: project.ownerId ?? req.user.id,
@@ -447,6 +435,85 @@ router.get("/projects/:projectId/song-model", async (req, res): Promise<void> =>
     return;
   }
   res.json(GetProjectSongModelResponse.parse(songModelResponse(songModel)));
+});
+
+router.get("/projects/:projectId/analysis-jobs", async (req, res): Promise<void> => {
+  const params = ListAnalysisJobsParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const jobs = await db
+    .select()
+    .from(analysisJobsTable)
+    .where(eq(analysisJobsTable.projectId, params.data.projectId))
+    .orderBy(desc(analysisJobsTable.createdAt));
+  res.json(ListAnalysisJobsResponse.parse(jobs.map(analysisJobResponse)));
+});
+
+router.post("/projects/:projectId/sources/:sourceId/retry", async (req, res): Promise<void> => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const params = RetrySourceAnalysisParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [source] = await db
+    .select()
+    .from(projectSourcesTable)
+    .where(and(
+      eq(projectSourcesTable.id, params.data.sourceId),
+      eq(projectSourcesTable.projectId, params.data.projectId),
+    ))
+    .limit(1);
+  if (!source) {
+    res.status(404).json({ error: "Source not found" });
+    return;
+  }
+  if (source.ownerId !== req.user.id) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+  const [latest] = await db
+    .select()
+    .from(analysisJobsTable)
+    .where(eq(analysisJobsTable.sourceId, source.id))
+    .orderBy(desc(analysisJobsTable.createdAt))
+    .limit(1);
+  if (latest?.status === "queued" || latest?.status === "running") {
+    res.status(409).json({ error: "Analysis is already running" });
+    return;
+  }
+  const [job] = await db.insert(analysisJobsTable).values({
+    id: randomUUID(),
+    projectId: source.projectId,
+    sourceId: source.id,
+    status: "queued",
+    stage: "queued",
+    progress: 4,
+    attempt: (latest?.attempt ?? 0) + 1,
+  }).onConflictDoNothing().returning();
+  if (!job) {
+    res.status(409).json({ error: "A retry was already queued for this source" });
+    return;
+  }
+  await db.update(projectSourcesTable)
+    .set({ status: "queued", progress: 4, error: null })
+    .where(eq(projectSourcesTable.id, source.id));
+  await db.update(musicProjectsTable)
+    .set({ status: "analyzing", updatedAt: new Date() })
+    .where(eq(musicProjectsTable.id, source.projectId));
+  setImmediate(() => {
+    void analyzeProjectSource(source.id);
+  });
+  res.status(202).json(RetrySourceAnalysisResponse.parse(analysisJobResponse(job)));
+});
+
+router.get("/providers", (_req, res): void => {
+  res.json(ListMusicProvidersResponse.parse(MUSIC_PROVIDERS));
 });
 
 router.get("/projects/:projectId/arrangements", async (req, res): Promise<void> => {
@@ -487,6 +554,21 @@ router.patch("/arrangements/:arrangementId", async (req, res): Promise<void> => 
     res.status(400).json({ error: "Invalid arrangement update" });
     return;
   }
+  if (body.data.selectedCandidateId) {
+    const [existing] = await db
+      .select({ candidates: arrangementsTable.candidates })
+      .from(arrangementsTable)
+      .where(eq(arrangementsTable.id, params.data.arrangementId))
+      .limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "Arrangement not found" });
+      return;
+    }
+    if (!existing.candidates.some((candidate) => candidate.id === body.data.selectedCandidateId)) {
+      res.status(400).json({ error: "Selected candidate does not belong to this arrangement" });
+      return;
+    }
+  }
   const [arrangement] = await db.update(arrangementsTable).set(body.data).where(eq(arrangementsTable.id, params.data.arrangementId)).returning();
   if (!arrangement) {
     res.status(404).json({ error: "Arrangement not found" });
@@ -502,41 +584,97 @@ router.post("/arrangements/:arrangementId/generate", async (req, res): Promise<v
     res.status(400).json({ error: "Invalid generation request" });
     return;
   }
-  const [arrangement] = await db.update(arrangementsTable).set({
-    status: "ready",
-    sections: [
-      { name: "Intro", energy: 0.25, density: 0.3, tracks: ["Piano", "Pad"] },
-      { name: "Verse", energy: 0.42, density: 0.48, tracks: ["Piano", "Bass", "Strings"] },
-      { name: "Chorus", energy: 0.88, density: 0.91, tracks: ["Drums", "Bass", "Piano", "Strings", "Brass"] },
-      { name: "Bridge", energy: 0.34, density: 0.38, tracks: ["Cello", "Piano"] },
-      { name: "Final Chorus", energy: 0.98, density: 0.96, tracks: ["Drums", "Bass", "Piano", "Strings", "Brass", "Percussion"] },
-    ],
-  }).where(eq(arrangementsTable.id, params.data.arrangementId)).returning();
-  if (!arrangement) {
+  const [existingArrangement] = await db
+    .select()
+    .from(arrangementsTable)
+    .where(eq(arrangementsTable.id, params.data.arrangementId));
+  if (!existingArrangement) {
     res.status(404).json({ error: "Arrangement not found" });
     return;
   }
+  const [songModel] = await db
+    .select()
+    .from(songModelsTable)
+    .where(eq(songModelsTable.projectId, existingArrangement.projectId))
+    .orderBy(desc(songModelsTable.version))
+    .limit(1);
+  if (!songModel) {
+    res.status(409).json({ error: "Analyze a source and review its Song Model before generating" });
+    return;
+  }
+  const [source] = await db
+    .select({ sourceType: projectSourcesTable.sourceType })
+    .from(projectSourcesTable)
+    .where(eq(projectSourcesTable.id, songModel.sourceId))
+    .limit(1);
+  const sourceType = source?.sourceType ?? "FULL_SONG";
   const count = Math.max(1, Math.min(3, Math.round(body.data.candidates ?? 3)));
-  const candidates = Array.from({ length: count }, (_, index) => ({
-    id: `${arrangement.id}-candidate-${index + 1}`,
-    label: `Candidate ${String.fromCharCode(65 + index)}`,
-    score: Number((0.94 - index * 0.035).toFixed(3)),
-    summary: index === 0 ? "Best melodic fidelity and dynamic arc" : index === 1 ? "Richer orchestration with wider texture" : "Tighter rhythm and more intimate verses",
-  }));
-  await db.insert(musicArtifactsTable).values({
-    id: randomUUID(),
-    projectId: arrangement.projectId,
-    type: "ARRANGEMENT_PLAN",
-    label: `${arrangement.name} · v${arrangement.version}`,
-    version: arrangement.version,
-    size: "46 KB",
-    format: "JSON",
-  });
-  res.json(GenerateArrangementResponse.parse({
-    arrangement: arrangementResponse(arrangement),
-    candidates,
-    selectedCandidate: candidates[0].id,
-  }));
+  let provider;
+  try {
+    provider = selectArrangementProvider(body.data.provider, sourceType);
+    await db.update(arrangementsTable)
+      .set({ status: "generating" })
+      .where(eq(arrangementsTable.id, existingArrangement.id));
+    const output = await runArrangementProvider(provider, {
+      projectId: existingArrangement.projectId,
+      arrangementId: existingArrangement.id,
+      style: existingArrangement.style,
+      mode: existingArrangement.mode,
+      sourceType,
+      harmonyComplexity: existingArrangement.harmonyComplexity,
+      energy: existingArrangement.energy,
+      density: existingArrangement.density,
+      candidateCount: count,
+      seed: body.data.seed,
+      songModel: songModel.model,
+    });
+    const validationErrors = validateArrangementProviderOutput(output, count);
+    if (validationErrors.length) {
+      await db.update(arrangementsTable)
+        .set({ status: "draft" })
+        .where(eq(arrangementsTable.id, existingArrangement.id));
+      res.status(422).json({
+        error: "Provider output failed validation",
+        details: validationErrors,
+      });
+      return;
+    }
+    const [arrangement] = await db.update(arrangementsTable).set({
+      status: "ready",
+      sections: output.sections,
+      generationProvider: provider.id,
+      candidates: output.candidates,
+      selectedCandidateId: output.candidates[0].id,
+    }).where(eq(arrangementsTable.id, existingArrangement.id)).returning();
+    await db.insert(musicArtifactsTable).values({
+      id: randomUUID(),
+      projectId: arrangement.projectId,
+      type: "ARRANGEMENT_PLAN",
+      label: `${arrangement.name} · v${arrangement.version} · ${provider.id}`,
+      version: arrangement.version,
+      size: `${Math.max(1, Math.round(JSON.stringify(output).length / 1024))} KB`,
+      format: "JSON",
+    });
+    res.json(GenerateArrangementResponse.parse({
+      arrangement: arrangementResponse(arrangement),
+      candidates: output.candidates,
+      selectedCandidate: output.candidates[0].id,
+      provider,
+    }));
+  } catch (error) {
+    await db.update(arrangementsTable)
+      .set({ status: "draft" })
+      .where(eq(arrangementsTable.id, existingArrangement.id));
+    if (error instanceof ProviderUnavailableError) {
+      res.status(503).json({
+        error: error.message,
+        provider: error.providerId,
+      });
+      return;
+    }
+    req.log.error({ err: error, provider: provider?.id }, "Arrangement provider failed");
+    res.status(502).json({ error: "Arrangement provider failed" });
+  }
 });
 
 router.post("/arrangements/:arrangementId/export", async (req, res): Promise<void> => {

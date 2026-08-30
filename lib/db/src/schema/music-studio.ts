@@ -6,6 +6,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 export type AnalysisSection = {
@@ -20,6 +21,14 @@ export type ArrangementSection = {
   energy: number;
   density: number;
   tracks: string[];
+};
+
+export type ArrangementCandidateData = {
+  id: string;
+  label: string;
+  score: number;
+  summary: string;
+  provider: string;
 };
 
 export type ExportFileRecord = {
@@ -42,6 +51,19 @@ export type SongModelData = {
   tempoMap: Array<{ time: number; bpm: number; confidence: number }>;
   meterMap: Array<{ bar: number; meter: string; confidence: number }>;
   keyMap: Array<{ time: number; key: string; confidence: number }>;
+  beats: Array<{
+    time: number;
+    beat: number;
+    bar: number;
+    confidence: number;
+  }>;
+  bars: Array<{
+    bar: number;
+    start: number;
+    end: number;
+    beats: number;
+    confidence: number;
+  }>;
   melody: Array<{
     start: number;
     end: number;
@@ -59,7 +81,36 @@ export type SongModelData = {
   }>;
   sections: AnalysisSection[];
   energy: number[];
+  dynamics: number[];
+  sourceStems: Array<{
+    role: string;
+    objectPath: string;
+    provider: string;
+    confidence: number;
+  }>;
+  lyrics: Array<{
+    start: number;
+    end: number;
+    text: string;
+    confidence: number;
+  }>;
+  confidenceByField: Record<string, number>;
+  provenance: Array<{
+    capability: string;
+    provider: string;
+    version: string;
+    status: "ready" | "fallback" | "unavailable";
+  }>;
 };
+
+export type ModelCapability =
+  | "separation"
+  | "structure"
+  | "transcription"
+  | "harmony"
+  | "arrangement"
+  | "orchestration"
+  | "audio_generation";
 
 export const musicProjectsTable = pgTable("music_projects", {
   id: text("id").primaryKey(),
@@ -118,11 +169,60 @@ export const songModelsTable = pgTable("music_song_models", {
     .references(() => projectSourcesTable.id, { onDelete: "cascade" }),
   version: integer("version").notNull().default(1),
   status: text("status").notNull().default("ready"),
+  analysisJobId: text("analysis_job_id"),
   model: jsonb("model").$type<SongModelData>().notNull(),
   providers: jsonb("providers").$type<string[]>().notNull().default([]),
   confidence: doublePrecision("confidence").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("music_song_models_analysis_job_idx").on(table.analysisJobId),
+]);
+
+export const modelRegistryTable = pgTable("music_model_registry", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  provider: text("provider").notNull(),
+  version: text("version").notNull(),
+  capabilities: jsonb("capabilities").$type<ModelCapability[]>().notNull().default([]),
+  inputTypes: jsonb("input_types").$type<string[]>().notNull().default([]),
+  execution: text("execution").notNull(),
+  status: text("status").notNull().default("unavailable"),
+  license: text("license"),
+  priority: integer("priority").notNull().default(100),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
 });
+
+export const analysisJobsTable = pgTable("music_analysis_jobs", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id")
+    .notNull()
+    .references(() => musicProjectsTable.id, { onDelete: "cascade" }),
+  sourceId: text("source_id")
+    .notNull()
+    .references(() => projectSourcesTable.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("queued"),
+  stage: text("stage").notNull().default("queued"),
+  progress: integer("progress").notNull().default(0),
+  attempt: integer("attempt").notNull().default(1),
+  error: text("error"),
+  workerId: text("worker_id"),
+  leaseVersion: integer("lease_version").notNull().default(0),
+  leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+}, (table) => [
+  uniqueIndex("music_analysis_jobs_source_attempt_idx").on(table.sourceId, table.attempt),
+]);
 
 export const arrangementsTable = pgTable("music_arrangements", {
   id: text("id").primaryKey(),
@@ -140,6 +240,9 @@ export const arrangementsTable = pgTable("music_arrangements", {
   orchestraSize: doublePrecision("orchestra_size").notNull().default(0.5),
   rhythmIntensity: doublePrecision("rhythm_intensity").notNull().default(0.6),
   sections: jsonb("sections").$type<ArrangementSection[]>().notNull().default([]),
+  generationProvider: text("generation_provider"),
+  candidates: jsonb("candidates").$type<ArrangementCandidateData[]>().notNull().default([]),
+  selectedCandidateId: text("selected_candidate_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

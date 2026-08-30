@@ -20,8 +20,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
-  Analysis,
-  AnalysisInput,
+  AnalysisJob,
   Arrangement,
   ArrangementInput,
   ArrangementUpdate,
@@ -40,6 +39,7 @@ import type {
   LogoutSuccess,
   MobileTokenExchangeRequest,
   MobileTokenExchangeSuccess,
+  MusicProvider,
   NotFoundResponse,
   Project,
   ProjectInput,
@@ -994,78 +994,6 @@ export function useGetProject<TData = Awaited<ReturnType<typeof getProject>>, TE
 
 
 
-export const getAnalyzeProjectUrl = (projectId: string,) => {
-
-
-
-
-  return `/api/projects/${projectId}/analyze`
-}
-
-/**
- * @summary Analyze a source recording
- */
-export const analyzeProject = async (projectId: string,
-    analysisInput?: AnalysisInput, options?: Parameters<typeof customFetch>[1]): Promise<Analysis> => {
-
-  return customFetch<Analysis>(getAnalyzeProjectUrl(projectId),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(analysisInput)
-  }
-);}
-
-
-
-
-
-export const getAnalyzeProjectMutationOptions = <TError = ErrorType<NotFoundResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof analyzeProject>>, TError,{projectId: string;data?: BodyType<AnalysisInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof analyzeProject>>, TError,{projectId: string;data?: BodyType<AnalysisInput>}, TContext> => {
-
-const mutationKey = ['analyzeProject'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof analyzeProject>>, {projectId: string;data?: BodyType<AnalysisInput>}> = (props) => {
-          const {projectId,data} = props ?? {};
-
-          return  analyzeProject(projectId,data,requestOptions)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AnalyzeProjectMutationResult = NonNullable<Awaited<ReturnType<typeof analyzeProject>>>
-    export type AnalyzeProjectMutationBody = BodyType<AnalysisInput> | undefined
-    export type AnalyzeProjectMutationError = ErrorType<NotFoundResponse>
-
-    /**
- * @summary Analyze a source recording
- */
-export const useAnalyzeProject = <TError = ErrorType<NotFoundResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof analyzeProject>>, TError,{projectId: string;data?: BodyType<AnalysisInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
- ): UseMutationResult<
-        Awaited<ReturnType<typeof analyzeProject>>,
-        TError,
-        {projectId: string;data?: BodyType<AnalysisInput>},
-        TContext
-      > => {
-      return useMutation(getAnalyzeProjectMutationOptions(options));
-    }
-
 export const getListProjectSourcesUrl = (projectId: string,) => {
 
 
@@ -1280,6 +1208,233 @@ export function useGetProjectSongModel<TData = Awaited<ReturnType<typeof getProj
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetProjectSongModelQueryOptions(projectId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListAnalysisJobsUrl = (projectId: string,) => {
+
+
+
+
+  return `/api/projects/${projectId}/analysis-jobs`
+}
+
+/**
+ * @summary List durable analysis attempts for a project
+ */
+export const listAnalysisJobs = async (projectId: string, options?: Parameters<typeof customFetch>[1]): Promise<AnalysisJob[]> => {
+
+  return customFetch<AnalysisJob[]>(getListAnalysisJobsUrl(projectId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAnalysisJobsQueryKey = (projectId: string,) => {
+    return [
+    `/api/projects/${projectId}/analysis-jobs`
+    ] as const;
+    }
+
+
+export const getListAnalysisJobsQueryOptions = <TData = Awaited<ReturnType<typeof listAnalysisJobs>>, TError = ErrorType<unknown>>(projectId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAnalysisJobs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAnalysisJobsQueryKey(projectId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAnalysisJobs>>> = ({ signal }) => listAnalysisJobs(projectId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: projectId !== null && projectId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAnalysisJobs>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAnalysisJobsQueryResult = NonNullable<Awaited<ReturnType<typeof listAnalysisJobs>>>
+export type ListAnalysisJobsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List durable analysis attempts for a project
+ */
+
+export function useListAnalysisJobs<TData = Awaited<ReturnType<typeof listAnalysisJobs>>, TError = ErrorType<unknown>>(
+ projectId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAnalysisJobs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAnalysisJobsQueryOptions(projectId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRetrySourceAnalysisUrl = (projectId: string,
+    sourceId: string,) => {
+
+
+
+
+  return `/api/projects/${projectId}/sources/${sourceId}/retry`
+}
+
+/**
+ * @summary Retry a failed or interrupted source analysis
+ */
+export const retrySourceAnalysis = async (projectId: string,
+    sourceId: string, options?: Parameters<typeof customFetch>[1]): Promise<AnalysisJob> => {
+
+  return customFetch<AnalysisJob>(getRetrySourceAnalysisUrl(projectId,sourceId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRetrySourceAnalysisMutationOptions = <TError = ErrorType<void | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retrySourceAnalysis>>, TError,{projectId: string;sourceId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof retrySourceAnalysis>>, TError,{projectId: string;sourceId: string}, TContext> => {
+
+const mutationKey = ['retrySourceAnalysis'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof retrySourceAnalysis>>, {projectId: string;sourceId: string}> = (props) => {
+          const {projectId,sourceId} = props ?? {};
+
+          return  retrySourceAnalysis(projectId,sourceId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RetrySourceAnalysisMutationResult = NonNullable<Awaited<ReturnType<typeof retrySourceAnalysis>>>
+
+    export type RetrySourceAnalysisMutationError = ErrorType<void | NotFoundResponse>
+
+    /**
+ * @summary Retry a failed or interrupted source analysis
+ */
+export const useRetrySourceAnalysis = <TError = ErrorType<void | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retrySourceAnalysis>>, TError,{projectId: string;sourceId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof retrySourceAnalysis>>,
+        TError,
+        {projectId: string;sourceId: string},
+        TContext
+      > => {
+      return useMutation(getRetrySourceAnalysisMutationOptions(options));
+    }
+
+export const getListMusicProvidersUrl = () => {
+
+
+
+
+  return `/api/providers`
+}
+
+/**
+ * @summary List registered music providers and availability
+ */
+export const listMusicProviders = async ( options?: Parameters<typeof customFetch>[1]): Promise<MusicProvider[]> => {
+
+  return customFetch<MusicProvider[]>(getListMusicProvidersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListMusicProvidersQueryKey = () => {
+    return [
+    `/api/providers`
+    ] as const;
+    }
+
+
+export const getListMusicProvidersQueryOptions = <TData = Awaited<ReturnType<typeof listMusicProviders>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMusicProviders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListMusicProvidersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMusicProviders>>> = ({ signal }) => listMusicProviders({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listMusicProviders>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListMusicProvidersQueryResult = NonNullable<Awaited<ReturnType<typeof listMusicProviders>>>
+export type ListMusicProvidersQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List registered music providers and availability
+ */
+
+export function useListMusicProviders<TData = Awaited<ReturnType<typeof listMusicProviders>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMusicProviders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListMusicProvidersQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

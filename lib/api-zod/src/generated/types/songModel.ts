@@ -5,13 +5,19 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { BarEvent } from './barEvent';
+import type { BeatEvent } from './beatEvent';
 import type { ChordEvent } from './chordEvent';
 import type { KeyEvent } from './keyEvent';
+import type { LyricEvent } from './lyricEvent';
 import type { MeterEvent } from './meterEvent';
 import type { NoteEvent } from './noteEvent';
+import type { ProviderProvenance } from './providerProvenance';
 import type { Section } from './section';
 import type { SongModelAudio } from './songModelAudio';
+import type { SongModelConfidenceByField } from './songModelConfidenceByField';
 import type { SongModelStatus } from './songModelStatus';
+import type { SourceStem } from './sourceStem';
 import type { TempoEvent } from './tempoEvent';
 
 export interface SongModel {
@@ -24,10 +30,17 @@ export interface SongModel {
   tempoMap: TempoEvent[];
   meterMap: MeterEvent[];
   keyMap: KeyEvent[];
+  beats: BeatEvent[];
+  bars: BarEvent[];
   melody: NoteEvent[];
   chords: ChordEvent[];
   sections: Section[];
   energy: number[];
+  dynamics: number[];
+  sourceStems: SourceStem[];
+  lyrics: LyricEvent[];
+  confidenceByField: SongModelConfidenceByField;
+  provenance: ProviderProvenance[];
   providers: string[];
   confidence: number;
   createdAt: string;

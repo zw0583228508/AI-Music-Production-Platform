@@ -10,6 +10,7 @@ export type GenerationInputProvider = typeof GenerationInputProvider[keyof typeo
 
 
 export const GenerationInputProvider = {
+  LOCAL_SYMBOLIC_DIRECTOR_V1: 'LOCAL_SYMBOLIC_DIRECTOR_V1',
   ACE_STEP_BASE: 'ACE_STEP_BASE',
   ANYACCOMP: 'ANYACCOMP',
   SYMPHONYGEN: 'SYMPHONYGEN',

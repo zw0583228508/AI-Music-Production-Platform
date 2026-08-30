@@ -8,6 +8,7 @@
 import type { ArrangementMode } from './arrangementMode';
 import type { ArrangementSection } from './arrangementSection';
 import type { ArrangementStatus } from './arrangementStatus';
+import type { Candidate } from './candidate';
 
 export interface Arrangement {
   id: string;
@@ -23,5 +24,10 @@ export interface Arrangement {
   orchestraSize: number;
   rhythmIntensity: number;
   sections: ArrangementSection[];
+  /** @nullable */
+  generationProvider: string | null;
+  candidates: Candidate[];
+  /** @nullable */
+  selectedCandidateId: string | null;
   createdAt: string;
 }
