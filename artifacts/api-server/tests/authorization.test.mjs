@@ -173,6 +173,36 @@ test("project and export endpoints enforce owner authorization", async () => {
   assert.equal((await request(`/api/projects/${projectId}`, ownerSession)).status, 200);
   assert.equal((await request(`/api/projects/${projectId}`, otherSession)).status, 404);
 
+  const [beforeCrossOwnerEdit] = await db
+    .select({ sections: arrangementsTable.sections })
+    .from(arrangementsTable)
+    .where(eq(arrangementsTable.id, arrangementId));
+  const crossOwnerEdit = await request(
+    `/api/arrangements/${arrangementId}`,
+    otherSession,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        expectedVersion: 1,
+        sections: [{
+          name: "Unauthorized edit",
+          energy: 0.5,
+          density: 0.5,
+          tracks: [],
+          startBar: 1,
+          endBar: 1,
+        }],
+      }),
+    },
+  );
+  assert.equal(crossOwnerEdit.status, 404);
+  const [afterCrossOwnerEdit] = await db
+    .select({ sections: arrangementsTable.sections })
+    .from(arrangementsTable)
+    .where(eq(arrangementsTable.id, arrangementId));
+  assert.deepEqual(afterCrossOwnerEdit.sections, beforeCrossOwnerEdit.sections);
+
   const crossUserExport = await request(`/api/projects/${projectId}/export`, otherSession, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

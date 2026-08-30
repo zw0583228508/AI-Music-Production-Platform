@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { SFZ_SAMPLE_LIBRARY } from "./sfz-sample-library";
+import type { GeneratedExportFile } from "./exportEngine";
 
 type Project = {
   id: string;
@@ -101,6 +102,10 @@ export type ExportFile = {
   url: string;
 };
 
+export type ExportArtifactGraphEntry = {
+  artifactId: string;
+  parentIds: string[];
+};
 export type ExportPackage = {
   id: string;
   projectId: string;
@@ -792,6 +797,8 @@ export function createExportBundle(
   version: number,
   baseUrl: string,
   exportId?: string,
+  renderedFiles?: GeneratedExportFile[],
+  artifactGraph?: Record<string, ExportArtifactGraphEntry>,
 ): ExportBundle {
   const id = exportId ?? `export-${project.id}-${version}-${randomUUID().slice(0, 8)}`;
   const filename = `${safeName(project.name)}-v${version}-export.zip`;
@@ -799,33 +806,47 @@ export function createExportBundle(
   const seconds = timelineSeconds > 0
     ? timelineSeconds
     : durationSeconds(project.duration);
-  const rendered = tracks.map((track) => ({ track, samples: renderTrack(track, seconds) }));
+  const rendered = renderedFiles
+    ? []
+    : tracks.map((track) => ({ track, samples: renderTrack(track, seconds) }));
   const audioTracks = rendered.filter(({ track }) => !track.muted);
   const instrumentalTracks = audioTracks.filter(({ track }) => !/vocal|voice|lead/i.test(track.name));
   const entries: Array<{ name: string; data: Buffer }> = [];
   const fileRecords: Array<{ name: string; type: ExportFile["type"]; data: Buffer }> = [];
 
-  if (input.includeStems !== false) {
+  if (renderedFiles) {
+    for (const file of renderedFiles) {
+      fileRecords.push({
+        name: file.name,
+        type: file.type === "PREMASTER"
+          ? "MIX"
+          : file.type === "METADATA"
+            ? "ARRANGEMENT_PLAN"
+            : file.type,
+        data: file.data,
+      });
+    }
+  } else if (input.includeStems !== false) {
     for (const { track, samples } of rendered) {
       const name = `stems/${safeName(track.name)}.wav`;
       fileRecords.push({ name, type: "STEM", data: writeWav(samples) });
     }
   }
 
-  const premaster = writeWav(mixSamples(audioTracks.map(({ samples }) => samples)));
-  const instrumental = writeWav(mixSamples(instrumentalTracks.map(({ samples }) => samples)));
-  const mastered = writeWav(mixSamples(
-    audioTracks.map(({ samples }) => samples),
-    true,
-    input.masterProfile,
-  ));
-  if (input.includeMix !== false) {
+  if (!renderedFiles && input.includeMix !== false) {
+    const premaster = writeWav(mixSamples(audioTracks.map(({ samples }) => samples)));
+    const instrumental = writeWav(mixSamples(instrumentalTracks.map(({ samples }) => samples)));
+    const mastered = writeWav(mixSamples(
+      audioTracks.map(({ samples }) => samples),
+      true,
+      input.masterProfile,
+    ));
     fileRecords.push({ name: "mix/premaster.wav", type: "MIX", data: premaster });
     fileRecords.push({ name: "mix/instrumental.wav", type: "MIX", data: instrumental });
     fileRecords.push({ name: "mix/mastered.wav", type: "MASTER", data: mastered });
   }
 
-  if (input.includeMidi !== false) {
+  if (!renderedFiles && input.includeMidi !== false) {
     fileRecords.push({
       name: `midi/${safeName(project.name)}-arrangement.mid`,
       type: "MIDI",
@@ -866,7 +887,7 @@ export function createExportBundle(
       })),
     },
   };
-  if (input.includeMetadata !== false) {
+  if (!renderedFiles && input.includeMetadata !== false) {
     fileRecords.push({ name: "metadata/song-model.json", type: "SONG_MODEL", data: Buffer.from(JSON.stringify(songModel, null, 2)) });
     fileRecords.push({ name: "metadata/arrangement.json", type: "ARRANGEMENT_PLAN", data: Buffer.from(JSON.stringify(arrangementMetadata, null, 2)) });
   }
@@ -886,6 +907,11 @@ export function createExportBundle(
     arrangementId: arrangement.id,
     arrangementVersion: arrangement.version,
     files: packageFileRecords,
+    artifactGraph: packageFileRecords.map((file) => ({
+      file: file.name,
+      artifactId: artifactGraph?.[file.name]?.artifactId ?? null,
+      parentIds: artifactGraph?.[file.name]?.parentIds ?? [],
+    })),
     notes: "WAV files are linear PCM and MIDI includes tempo, meter, expression CC11, modulation CC74, and articulation events.",
   };
   const manifestData = Buffer.from(JSON.stringify(manifest, null, 2));

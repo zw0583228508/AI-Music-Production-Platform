@@ -380,6 +380,17 @@ export const arrangementsTable = pgTable(
     sourceCandidateId: text("source_candidate_id"),
     generationProvenance: jsonb("generation_provenance")
       .$type<ArrangementGenerationProvenance>(),
+    styleSpec: jsonb("style_spec").$type<StyleSpec | null>(),
+    plan: jsonb("plan").$type<ArrangementPlan | null>(),
+    trackModels: jsonb("track_models").$type<TrackModel[]>().notNull().default([]),
+    songModelVersion: integer("song_model_version"),
+    parentArrangementId: text("parent_arrangement_id"),
+    parameters: jsonb("parameters").$type<Record<string, number | string | boolean>>()
+      .notNull()
+      .default({}),
+    seed: integer("seed"),
+    modelVersion: text("model_version"),
+    provenance: jsonb("provenance").$type<ArtifactProvenance | null>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -463,6 +474,9 @@ export const tracksTable = pgTable("music_tracks", {
     .$type<TrackPerformance>()
     .notNull()
     .default(emptyTrackPerformance),
+  instrumentDefinition: jsonb("instrument_definition").$type<InstrumentDefinition | null>(),
+  trackModel: jsonb("track_model").$type<TrackModel | null>(),
+  provenance: jsonb("provenance").$type<ArtifactProvenance | null>(),
 });
 
 export const musicArtifactsTable = pgTable("music_artifacts", {
@@ -477,6 +491,14 @@ export const musicArtifactsTable = pgTable("music_artifacts", {
   format: text("format").notNull(),
   url: text("url"),
   state: text("state").notNull().default("ready"),
+  hash: text("hash"),
+  parentIds: jsonb("parent_ids").$type<string[]>().notNull().default([]),
+  createdBy: text("created_by"),
+  modelVersion: text("model_version"),
+  parameters: jsonb("parameters").$type<Record<string, number | string | boolean>>()
+    .notNull()
+    .default({}),
+  storageUri: text("storage_uri"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -522,6 +544,7 @@ export type GenerationInputSnapshot = {
     rhythmIntensity: number;
   };
   songModel: unknown;
+  tracks: Array<{ id: string; name: string; role: string; instrument: string }>;
 };
 export type ProviderFusionDecision = {
   provider: string;
@@ -562,6 +585,13 @@ export type SongModelCore = {
   energy: number[];
 };
 
+export type ArtifactProvenance = {
+  model: string;
+  version: string;
+  parameters: Record<string, number | string | boolean>;
+  parentIds: string[];
+  createdBy: string;
+};
 export type SongModelFieldStatus = {
   status: "detected" | "low_confidence" | "failed" | "not_available";
   confidence: number | null;
@@ -585,6 +615,7 @@ export type ArrangementGenerationProvenance = {
 export type CandidatePlan = {
   sections: ArrangementSection[];
   tracks?: Array<{
+    id: string;
     name: string;
     role: string;
     kind: string;
@@ -625,8 +656,68 @@ export const musicGenerationCandidatesTable = pgTable(
       .notNull()
       .default([]),
     plan: jsonb("plan").$type<CandidatePlan>().notNull(),
+    trackModels: jsonb("track_models").$type<TrackModel[] | null>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
 );
 
 export type GenerationParameters = Record<string, unknown>;
+
+export type StyleSpec = {
+  genre: string; subgenre: string; era: string;
+  tempoCharacter: "laid_back" | "steady" | "driving" | "rubato";
+  rhythm: { swing: number; syncopation: number; subdivision: string };
+  harmony: { complexity: number; tension: number; voicing: string };
+  instrumentation: { preferredFamilies: string[]; avoid: string[] };
+  orchestration: { density: number; registerSpread: number; dynamics: string };
+  production: { stereoWidth: number; room: string; mixProfile: string };
+  dynamics: { range: number; accentStrength: number };
+};
+
+export type TrackModel = {
+  id: string; instrument: string; instrumentDefinition: InstrumentDefinition; role: string;
+  notes: MusicalNote[]; cc: ControlEvent[]; articulations: ArticulationEvent[];
+  automation: AutomationPoint[]; source: string; version: number; provenance: ArtifactProvenance;
+};
+
+export type ControlEvent = {
+  controller: number; time: number; value: number; channel?: number;
+};
+
+export type InstrumentDefinition = {
+  id: string;
+  family: "keys" | "strings" | "brass" | "drums" | "guitar" | "voice" | "synth";
+  playableRange: { min: number; max: number };
+  comfortableRange: { min: number; max: number };
+  registers: Array<{ name: string; min: number; max: number; character: string }>;
+  polyphonic: boolean;
+  maxVoices: number;
+  articulations: string[];
+  constraints: {
+    maxLeap: number; minNoteDuration: number; maxSimultaneousNotes: number;
+    breathSeconds?: number; strings?: number; frets?: number; hands?: number; feet?: number;
+  };
+  controls: { dynamics: number[]; expression: number[]; sustain?: number; pitchBend: boolean; aftertouch: boolean };
+};
+
+export type AutomationPoint = { parameter: string; time: number; value: number };
+
+export type ArrangementPlanSection = {
+  section: string; startBar: number; endBar: number; energy: number; density: number;
+  tracks: Record<string, string>; operations: string[];
+};
+
+export type ArrangementPlan = {
+  id: string; version: number; sections: ArrangementPlanSection[]; style: StyleSpec;
+  songModelVersion: number; parameters: Record<string, number | string | boolean>;
+  provenance: ArtifactProvenance;
+};
+
+export type MusicalNote = {
+  id: string; start: number; duration: number; pitch: number; velocity: number;
+  channel?: number; voice?: string;
+};
+
+export type ArticulationEvent = {
+  time: number; name: string; keyswitch?: number; intensity?: number;
+};

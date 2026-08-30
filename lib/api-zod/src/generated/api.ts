@@ -79,10 +79,6 @@ export const LogoutBrowserSessionResponse = zod.void()
  */
 
 
-
-
-
-
 export const ExchangeMobileAuthorizationCodeBody = zod.object({
   "code": zod.string().min(1),
   "code_verifier": zod.string().min(1),
@@ -111,8 +107,6 @@ export const LogoutMobileSessionResponse = zod.object({
 export const requestSourceUploadUrlBodySizeMax = 524288000;
 
 
-
-
 export const RequestSourceUploadUrlBody = zod.object({
   "name": zod.string().min(1),
   "size": zod.number().min(1).max(requestSourceUploadUrlBodySizeMax),
@@ -121,8 +115,6 @@ export const RequestSourceUploadUrlBody = zod.object({
 
 
 export const requestSourceUploadUrlResponseMetadataSizeMax = 524288000;
-
-
 
 
 export const RequestSourceUploadUrlResponse = zod.object({
@@ -156,7 +148,6 @@ export const ListProjectsResponse = zod.array(ListProjectsResponseItem)
 /**
  * @summary Create a music project
  */
-
 
 
 export const CreateProjectBody = zod.object({
@@ -217,7 +208,6 @@ export const getProjectResponseArrangementsItemSectionsItemMidiTracksCcItemMax =
 
 export const getProjectResponseArrangementsItemSectionsItemTransposeSemitonesMin = -24;
 export const getProjectResponseArrangementsItemSectionsItemTransposeSemitonesMax = 24;
-
 
 
 export const GetProjectResponse = zod.object({
@@ -428,7 +418,6 @@ export const listProjectSourcesResponseAttemptsItemProgressMin = 0;
 export const listProjectSourcesResponseAttemptsItemProgressMax = 100;
 
 
-
 export const ListProjectSourcesResponseItem = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -468,10 +457,7 @@ export const RegisterProjectSourceParams = zod.object({
 })
 
 
-
 export const registerProjectSourceBodySizeMax = 524288000;
-
-
 
 
 export const RegisterProjectSourceBody = zod.object({
@@ -487,7 +473,6 @@ export const registerProjectSourceResponseProgressMax = 100;
 
 export const registerProjectSourceResponseAttemptsItemProgressMin = 0;
 export const registerProjectSourceResponseAttemptsItemProgressMax = 100;
-
 
 
 export const RegisterProjectSourceResponse = zod.object({
@@ -533,7 +518,6 @@ export const retryProjectSourceAnalysisResponseProgressMax = 100;
 
 export const retryProjectSourceAnalysisResponseAttemptsItemProgressMin = 0;
 export const retryProjectSourceAnalysisResponseAttemptsItemProgressMax = 100;
-
 
 
 export const RetryProjectSourceAnalysisResponse = zod.object({
@@ -583,9 +567,7 @@ export const getProjectSongModelResponseFusionDecisionsItemCompatibilityMin = 0;
 export const getProjectSongModelResponseFusionDecisionsItemCompatibilityMax = 1;
 
 
-
 export const getProjectSongModelResponseAudioDurationSecondsExclusiveMin = 0;
-
 
 
 export const getProjectSongModelResponseAnalysisStartSecondsMin = 0;
@@ -616,7 +598,6 @@ export const getProjectSongModelResponseProviderProvenanceItemAttemptsMin = 0;
 
 export const getProjectSongModelResponseConfidenceMin = 0;
 export const getProjectSongModelResponseConfidenceMax = 1;
-
 
 
 export const GetProjectSongModelResponse = zod.object({
@@ -840,10 +821,6 @@ export const correctProjectSongModelBodyMeterRegExp = new RegExp('^[1-9][0-9]*/[
 export const correctProjectSongModelBodySectionsItemNameMax = 120;
 
 
-
-
-
-
 export const CorrectProjectSongModelBody = zod.object({
   "baseVersion": zod.number().min(1),
   "bpm": zod.number().min(correctProjectSongModelBodyBpmMin).max(correctProjectSongModelBodyBpmMax).optional(),
@@ -866,9 +843,7 @@ export const correctProjectSongModelResponseFusionDecisionsItemCompatibilityMin 
 export const correctProjectSongModelResponseFusionDecisionsItemCompatibilityMax = 1;
 
 
-
 export const correctProjectSongModelResponseAudioDurationSecondsExclusiveMin = 0;
-
 
 
 export const correctProjectSongModelResponseAnalysisStartSecondsMin = 0;
@@ -899,7 +874,6 @@ export const correctProjectSongModelResponseProviderProvenanceItemAttemptsMin = 
 
 export const correctProjectSongModelResponseConfidenceMin = 0;
 export const correctProjectSongModelResponseConfidenceMax = 1;
-
 
 
 export const CorrectProjectSongModelResponse = zod.object({
@@ -1189,7 +1163,6 @@ export const listArrangementsResponseSectionsItemTransposeSemitonesMin = -24;
 export const listArrangementsResponseSectionsItemTransposeSemitonesMax = 24;
 
 
-
 export const ListArrangementsResponseItem = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -1290,7 +1263,6 @@ export const CreateArrangementParams = zod.object({
 export const createArrangementBodyHarmonyComplexityMax = 10;
 
 
-
 export const CreateArrangementBody = zod.object({
   "name": zod.string().min(1),
   "style": zod.string(),
@@ -1330,7 +1302,6 @@ export const createArrangementResponseSectionsItemMidiTracksCcItemMax = 127;
 
 export const createArrangementResponseSectionsItemTransposeSemitonesMin = -24;
 export const createArrangementResponseSectionsItemTransposeSemitonesMax = 24;
-
 
 
 export const CreateArrangementResponse = zod.object({
@@ -1477,7 +1448,6 @@ export const updateArrangementBodySectionsItemTransposeSemitonesMin = -24;
 export const updateArrangementBodySectionsItemTransposeSemitonesMax = 24;
 
 
-
 export const UpdateArrangementBody = zod.object({
   "name": zod.string().optional(),
   "harmonyComplexity": zod.number().min(1).max(updateArrangementBodyHarmonyComplexityMax).optional(),
@@ -1569,7 +1539,6 @@ export const updateArrangementResponseSectionsItemMidiTracksCcItemMax = 127;
 
 export const updateArrangementResponseSectionsItemTransposeSemitonesMin = -24;
 export const updateArrangementResponseSectionsItemTransposeSemitonesMax = 24;
-
 
 
 export const UpdateArrangementResponse = zod.object({
@@ -1670,7 +1639,6 @@ export const GenerateArrangementParams = zod.object({
 export const generateArrangementBodyCandidatesMax = 3;
 
 
-
 export const GenerateArrangementBody = zod.object({
   "candidates": zod.number().min(1).max(generateArrangementBodyCandidatesMax).optional(),
   "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR']).optional(),
@@ -1683,7 +1651,6 @@ export const GenerateArrangementBody = zod.object({
 
 export const generateArrangementResponseProgressMin = 0;
 export const generateArrangementResponseProgressMax = 100;
-
 
 
 export const GenerateArrangementResponse = zod.object({
@@ -1719,7 +1686,6 @@ export const GetGenerationJobParams = zod.object({
 
 export const getGenerationJobResponseProgressMin = 0;
 export const getGenerationJobResponseProgressMax = 100;
-
 
 
 export const GetGenerationJobResponse = zod.object({
@@ -1785,7 +1751,6 @@ export const listGenerationCandidatesResponsePlanSectionsItemMidiTracksCcItemMax
 
 export const listGenerationCandidatesResponsePlanSectionsItemTransposeSemitonesMin = -24;
 export const listGenerationCandidatesResponsePlanSectionsItemTransposeSemitonesMax = 24;
-
 
 
 export const ListGenerationCandidatesResponseItem = zod.object({
@@ -1854,11 +1819,89 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "transposeSemitones": zod.number().min(listGenerationCandidatesResponsePlanSectionsItemTransposeSemitonesMin).max(listGenerationCandidatesResponsePlanSectionsItemTransposeSemitonesMax).optional()
 })),
   "tracks": zod.array(zod.object({
+  "id": zod.string(),
   "name": zod.string(),
   "role": zod.string(),
   "kind": zod.string()
 })).optional()
 }),
+  "trackModels": zod.array(zod.object({
+  "id": zod.string(),
+  "instrument": zod.string(),
+  "instrumentDefinition": zod.object({
+  "id": zod.string(),
+  "family": zod.enum(['keys', 'strings', 'brass', 'drums', 'guitar', 'voice', 'synth']),
+  "playableRange": zod.object({
+  "min": zod.number(),
+  "max": zod.number()
+}),
+  "comfortableRange": zod.object({
+  "min": zod.number(),
+  "max": zod.number()
+}),
+  "registers": zod.array(zod.object({
+  "name": zod.string(),
+  "min": zod.number(),
+  "max": zod.number(),
+  "character": zod.string()
+})),
+  "polyphonic": zod.boolean(),
+  "maxVoices": zod.number(),
+  "articulations": zod.array(zod.string()),
+  "constraints": zod.object({
+  "maxLeap": zod.number(),
+  "minNoteDuration": zod.number(),
+  "maxSimultaneousNotes": zod.number(),
+  "breathSeconds": zod.number().optional(),
+  "strings": zod.number().optional(),
+  "frets": zod.number().optional(),
+  "hands": zod.number().optional(),
+  "feet": zod.number().optional()
+}),
+  "controls": zod.object({
+  "dynamics": zod.array(zod.number()),
+  "expression": zod.array(zod.number()),
+  "sustain": zod.number().optional(),
+  "pitchBend": zod.boolean(),
+  "aftertouch": zod.boolean()
+})
+}),
+  "role": zod.string(),
+  "notes": zod.array(zod.object({
+  "id": zod.string(),
+  "start": zod.number(),
+  "duration": zod.number(),
+  "pitch": zod.number(),
+  "velocity": zod.number(),
+  "channel": zod.number().optional(),
+  "voice": zod.string().optional()
+})),
+  "cc": zod.array(zod.object({
+  "controller": zod.number(),
+  "time": zod.number(),
+  "value": zod.number(),
+  "channel": zod.number().optional()
+})),
+  "articulations": zod.array(zod.object({
+  "tick": zod.number(),
+  "type": zod.string(),
+  "keyswitch": zod.number()
+})),
+  "automation": zod.array(zod.object({
+  "parameter": zod.string(),
+  "time": zod.number(),
+  "value": zod.number()
+})),
+  "source": zod.string(),
+  "version": zod.number(),
+  "provenance": zod.object({
+  "model": zod.string(),
+  "version": zod.string(),
+  "parameters": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()])),
+  "parentIds": zod.array(zod.string()),
+  "createdBy": zod.string()
+})
+})).nullable(),
   "createdAt": zod.string()
 })
 export const ListGenerationCandidatesResponse = zod.array(ListGenerationCandidatesResponseItem)
@@ -1903,7 +1946,6 @@ export const selectGenerationCandidateResponseSectionsItemMidiTracksCcItemMax = 
 
 export const selectGenerationCandidateResponseSectionsItemTransposeSemitonesMin = -24;
 export const selectGenerationCandidateResponseSectionsItemTransposeSemitonesMax = 24;
-
 
 
 export const SelectGenerationCandidateResponse = zod.object({
@@ -2168,10 +2210,6 @@ export const RunCopilotParams = zod.object({
 })
 
 
-
-
-
-
 export const RunCopilotBody = zod.object({
   "command": zod.string().min(1),
   "arrangementId": zod.string().optional(),
@@ -2180,9 +2218,6 @@ export const RunCopilotBody = zod.object({
   "startBar": zod.number().min(1).optional(),
   "endBar": zod.number().min(1).optional()
 })
-
-
-
 
 
 export const RunCopilotResponse = zod.object({

@@ -9,6 +9,7 @@ import type { GenerationCandidateParameters } from './generationCandidateParamet
 import type { GenerationCandidatePlan } from './generationCandidatePlan';
 import type { GenerationCandidateProvider } from './generationCandidateProvider';
 import type { GenerationCandidateStatus } from './generationCandidateStatus';
+import type { TrackModel } from './trackModel';
 
 export interface GenerationCandidate {
   id: string;
@@ -29,5 +30,7 @@ export interface GenerationCandidate {
   parameters: GenerationCandidateParameters;
   parentArtifactIds: string[];
   plan: GenerationCandidatePlan;
+  /** @nullable */
+  trackModels: TrackModel[] | null;
   createdAt: string;
 }

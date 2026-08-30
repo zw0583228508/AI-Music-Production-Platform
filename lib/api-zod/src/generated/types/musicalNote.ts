@@ -6,9 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type GenerationCandidatePlanTracksItem = {
+export interface MusicalNote {
   id: string;
-  name: string;
-  role: string;
-  kind: string;
-};
+  start: number;
+  duration: number;
+  pitch: number;
+  velocity: number;
+  channel?: number;
+  voice?: string;
+}

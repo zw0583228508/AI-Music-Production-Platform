@@ -6,6 +6,7 @@ import type {
   MusicGenerationTask,
   ModelCapability,
   SongModelData,
+  TrackModel,
 } from "@workspace/db";
 import { db, modelRegistryTable } from "@workspace/db";
 export type ProviderStatus = "ready" | "configured" | "unavailable";
@@ -36,6 +37,7 @@ export type ArrangementProviderInput = {
   candidateCount: number;
   seed?: number;
   songModel: SongModelData;
+  tracks: Array<{ id: string; name: string; role: string; instrument: string }>;
 };
 
 export type ArrangementCandidateOutput = {
@@ -55,6 +57,7 @@ export type ArrangementProviderOutput = {
     tracks: string[];
   }>;
   candidates: ArrangementCandidateOutput[];
+  trackModels?: TrackModel[];
   contractErrors: string[];
 };
 
@@ -108,6 +111,32 @@ export const MUSIC_PROVIDERS: MusicProviderDescriptor[] = [
     notes: "Requires ACE_STEP_API_URL.",
   },
   {
+    id: "ACE_STEP_COMPLETE",
+    name: "ACE-Step Complete",
+    provider: "ACE-Step",
+    version: "configured-endpoint",
+    capabilities: ["arrangement", "audio_generation"],
+    inputTypes: ["FULL_SONG", "VOCAL_ONLY", "SOLO_INSTRUMENT", "INSTRUMENTAL"],
+    execution: "remote",
+    status: remoteConfigured("ACE_STEP_COMPLETE") ? "configured" : "unavailable",
+    license: "Provider terms",
+    priority: 31,
+    notes: "Requires ACE_STEP_COMPLETE_API_URL.",
+  },
+  {
+    id: "ACE_STEP_LEGO",
+    name: "ACE-Step Lego",
+    provider: "ACE-Step",
+    version: "configured-endpoint",
+    capabilities: ["audio_generation"],
+    inputTypes: ["FULL_SONG", "VOCAL_ONLY", "SOLO_INSTRUMENT", "INSTRUMENTAL", "MIDI"],
+    execution: "remote",
+    status: remoteConfigured("ACE_STEP_LEGO") ? "configured" : "unavailable",
+    license: "Provider terms",
+    priority: 32,
+    notes: "Requires ACE_STEP_LEGO_API_URL; adds a focused audio part.",
+  },
+  {
     id: "ANYACCOMP",
     name: "AnyAccomp",
     provider: "AnyAccomp",
@@ -145,6 +174,60 @@ export const MUSIC_PROVIDERS: MusicProviderDescriptor[] = [
     license: "Provider terms",
     priority: 60,
     notes: "Requires METEOR_API_URL.",
+  },
+  {
+    id: "MIDI_SAG",
+    name: "MIDI-SAG",
+    provider: "MIDI-SAG",
+    version: "configured-endpoint",
+    capabilities: ["arrangement", "orchestration"],
+    inputTypes: ["VOCAL_ONLY", "SOLO_INSTRUMENT", "MIDI"],
+    execution: "remote",
+    status: remoteConfigured("MIDI_SAG") ? "configured" : "unavailable",
+    license: "Provider terms",
+    priority: 65,
+    notes: "Requires MIDI_SAG_API_URL.",
+  },
+  {
+    id: "LOCAL_EXPRESSIVE_SYNTH",
+    name: "Local Expressive Synth",
+    provider: "Replit Workspace",
+    version: "1.0.0",
+    capabilities: ["audio_generation"],
+    inputTypes: ["MIDI"],
+    execution: "local",
+    status: "ready",
+    license: "Internal",
+    priority: 65,
+    notes: "Deterministic expressive preview renderer; not sfizz, VSCO, Pedalboard, or a VST.",
+  },
+  {
+    id: "SFIZZ_VSCO2_CE",
+    name: "sfizz + VSCO 2 CE",
+    provider: "Versilian Studios / sfizz",
+    version: "1.0.0",
+    capabilities: ["audio_generation"],
+    inputTypes: ["MIDI"],
+    execution: "remote",
+    status: remoteConfigured("SFIZZ_RENDER") && Boolean(process.env.VSCO2_LIBRARY_PATH)
+      ? "configured"
+      : "unavailable",
+    license: "VSCO 2 CE / sfizz terms",
+    priority: 66,
+    notes: "Requires SFIZZ_RENDER_API_URL and VSCO2_LIBRARY_PATH.",
+  },
+  {
+    id: "PEDALBOARD_VST3",
+    name: "Spotify Pedalboard VST3 Renderer",
+    provider: "Spotify Pedalboard",
+    version: "configured-endpoint",
+    capabilities: ["audio_generation"],
+    inputTypes: ["MIDI"],
+    execution: "remote",
+    status: remoteConfigured("PEDALBOARD_VST3") ? "configured" : "unavailable",
+    license: "Provider and plugin terms",
+    priority: 67,
+    notes: "Requires PEDALBOARD_VST3_API_URL and licensed VST3 instruments.",
   },
   {
     id: "BASIC_PITCH",
@@ -243,25 +326,47 @@ export const MUSIC_PROVIDERS: MusicProviderDescriptor[] = [
   },
 ];
 
+export class ModelRouter {
+  select(
+    requested: string | undefined,
+    sourceType: string,
+    context?: { style?: string; mode?: string; hasExistingArrangement?: boolean },
+  ): MusicProviderDescriptor {
+    if (requested && requested !== "CUSTOM") {
+      const exact = MUSIC_PROVIDERS.find((provider) => provider.id === requested);
+      if (!exact || exact.status === "unavailable") {
+        throw new ProviderUnavailableError(requested);
+      }
+      return exact;
+    }
+
+    const style = context?.style?.toLowerCase() ?? "";
+    const preferredIds = context?.hasExistingArrangement
+      ? ["METEOR", "SYMPHONYGEN"]
+      : sourceType === "VOCAL_ONLY"
+        ? ["ACE_STEP_COMPLETE", "ANYACCOMP", "MIDI_SAG"]
+        : style.includes("cinematic") || style.includes("orchestra")
+          ? ["SYMPHONYGEN", "METEOR"]
+          : sourceType === "MIDI"
+            ? ["MIDI_SAG", "SYMPHONYGEN", "METEOR"]
+            : ["ACE_STEP_BASE", "SYMPHONYGEN", "ANYACCOMP"];
+    for (const id of preferredIds) {
+      const provider = MUSIC_PROVIDERS.find((candidate) =>
+        candidate.id === id &&
+        candidate.status !== "unavailable" &&
+        candidate.capabilities.includes("arrangement") &&
+        candidate.inputTypes.includes(sourceType));
+      if (provider) return provider;
+    }
+    return MUSIC_PROVIDERS.find((provider) => provider.id === "LOCAL_SYMBOLIC_DIRECTOR_V1")!;
+  }
+}
 export function selectArrangementProvider(
   requested: string | undefined,
   sourceType: string,
+  context?: { style?: string; mode?: string; hasExistingArrangement?: boolean },
 ): MusicProviderDescriptor {
-  if (requested && requested !== "CUSTOM") {
-    const exact = MUSIC_PROVIDERS.find((provider) => provider.id === requested);
-    if (!exact || exact.status === "unavailable") {
-      throw new ProviderUnavailableError(requested);
-    }
-    return exact;
-  }
-
-  return MUSIC_PROVIDERS
-    .filter((provider) =>
-      provider.capabilities.includes("arrangement") &&
-      provider.inputTypes.includes(sourceType) &&
-      provider.status !== "unavailable")
-    .sort((left, right) => left.priority - right.priority)[0]
-    ?? MUSIC_PROVIDERS.find((provider) => provider.id === "LOCAL_SYMBOLIC_DIRECTOR_V1")!;
+  return new ModelRouter().select(requested, sourceType, context);
 }
 
 function trackPalette(
@@ -280,6 +385,7 @@ function trackPalette(
 export function validateArrangementProviderOutput(
   output: ArrangementProviderOutput,
   expectedCandidateCount: number,
+  expectedTrackIds: string[] = [],
 ): string[] {
   const errors: string[] = [...output.contractErrors];
   if (!output.provider.capabilities.includes("arrangement")) {
@@ -294,6 +400,68 @@ export function validateArrangementProviderOutput(
     if (section.energy < 0 || section.energy > 1) errors.push(`${section.name} has invalid energy`);
     if (section.density < 0 || section.density > 1) errors.push(`${section.name} has invalid density`);
     if (!section.tracks.length) errors.push(`${section.name} has no active tracks`);
+  }
+  if (output.provider.execution === "remote" && !output.trackModels?.length) {
+    errors.push("Remote arrangement provider returned no canonical playable TrackModels");
+  }
+  if (output.provider.execution === "remote") {
+    const returnedTrackIds = (output.trackModels ?? []).map((track) => track.id);
+    if (new Set(returnedTrackIds).size !== returnedTrackIds.length) {
+      errors.push("Remote arrangement provider returned duplicate TrackModel ids");
+    }
+    const expected = [...expectedTrackIds].sort();
+    const returned = [...returnedTrackIds].sort();
+    if (
+      expected.length !== returned.length ||
+      expected.some((id, index) => id !== returned[index])
+    ) {
+      errors.push("Remote TrackModels must map one-to-one to the requested project track ids");
+    }
+  }
+  for (const track of output.trackModels ?? []) {
+    if (!track.id || !track.instrument || !track.role) errors.push("A TrackModel is missing identity fields");
+    if (!track.instrumentDefinition) errors.push(`${track.id || "TrackModel"} is missing an InstrumentDefinition`);
+    for (const note of track.notes ?? []) {
+      if (
+        note.pitch < track.instrumentDefinition.playableRange.min ||
+        note.pitch > track.instrumentDefinition.playableRange.max
+      ) {
+        errors.push(`${track.id} contains a note outside the instrument playable range`);
+        break;
+      }
+    }
+    const sortedNotes = [...track.notes].sort((left, right) => left.start - right.start);
+    let maximumConcurrent = 0;
+    for (const note of sortedNotes) {
+      maximumConcurrent = Math.max(
+        maximumConcurrent,
+        sortedNotes.filter((other) =>
+          other.start < note.start + note.duration &&
+          other.start + other.duration > note.start).length,
+      );
+    }
+    const allowedVoices = Math.min(
+      track.instrumentDefinition.maxVoices,
+      track.instrumentDefinition.constraints.maxSimultaneousNotes,
+    );
+    if (maximumConcurrent > allowedVoices || (!track.instrumentDefinition.polyphonic && maximumConcurrent > 1)) {
+      errors.push(`${track.id} exceeds the instrument polyphony limit`);
+    }
+    if (sortedNotes.some((note) => note.duration < track.instrumentDefinition.constraints.minNoteDuration)) {
+      errors.push(`${track.id} contains notes shorter than the instrument can perform`);
+    }
+    if (sortedNotes.some((note, index) => {
+      const previous = sortedNotes[index - 1];
+      return previous && Math.abs(note.pitch - previous.pitch) > track.instrumentDefinition.constraints.maxLeap;
+    })) {
+      errors.push(`${track.id} contains an unplayable melodic leap`);
+    }
+    if (
+      track.instrumentDefinition.constraints.breathSeconds &&
+      sortedNotes.some((note) => note.duration > track.instrumentDefinition.constraints.breathSeconds!)
+    ) {
+      errors.push(`${track.id} contains a phrase longer than the instrument breath limit`);
+    }
   }
   for (const candidate of output.candidates) {
     if (!candidate.id.trim()) errors.push("A candidate is missing its id");
@@ -346,7 +514,7 @@ export function generateLocalArrangement(
         : "Lean rhythm-focused variation with reduced density",
     provider: provider.id,
   }));
-  return { provider, sections, candidates, contractErrors: [] };
+  return { provider, sections, candidates, trackModels: undefined, contractErrors: [] };
 }
 
 function remoteEnvironmentPrefix(providerId: string): string {
@@ -431,14 +599,61 @@ export async function runArrangementProvider(
       })
     : [];
   if (!Array.isArray(record["candidates"])) contractErrors.push("Provider response is missing candidates");
+  const trackModels = Array.isArray(record["trackModels"])
+    ? record["trackModels"].flatMap((value, index) => {
+        if (!isCanonicalTrackModel(value)) {
+          contractErrors.push(`TrackModel ${index + 1} does not match the canonical contract`);
+          return [];
+        }
+        return [value];
+      })
+    : undefined;
   return {
     provider,
     sections,
     candidates,
+    trackModels,
     contractErrors,
   };
 }
 
+function isCanonicalTrackModel(value: unknown): value is TrackModel {
+  if (!isRecord(value) || typeof value["id"] !== "string" || typeof value["instrument"] !== "string" || typeof value["role"] !== "string") return false;
+  if (!Array.isArray(value["notes"]) || !Array.isArray(value["cc"]) || !Array.isArray(value["articulations"]) || !Array.isArray(value["automation"])) return false;
+  const definition = value["instrumentDefinition"];
+  const source = value["source"];
+  const version = value["version"];
+  const trackProvenance = value["provenance"];
+  if (!isCanonicalInstrumentDefinition(definition) || typeof source !== "string" || typeof version !== "number" || !Number.isInteger(version) || version < 1 || !isCanonicalProvenance(trackProvenance)) return false;
+  const min = definition["playableRange"]["min"];
+  const max = definition["playableRange"]["max"];
+  return value["notes"].every((note) =>
+    isRecord(note) &&
+    typeof note["id"] === "string" &&
+    finite(note["start"], 0) &&
+    finite(note["duration"], Number.EPSILON) &&
+    integer(note["pitch"], Math.max(0, min), Math.min(127, max)) &&
+    integer(note["velocity"], 0, 127) &&
+    (note["channel"] === undefined || integer(note["channel"], 0, 15))) &&
+  value["cc"].every((event) =>
+    isRecord(event) &&
+    integer(event["controller"], 0, 127) &&
+    finite(event["time"], 0) &&
+    finite(event["value"], 0, 127) &&
+    (event["channel"] === undefined || integer(event["channel"], 0, 15))) &&
+  value["articulations"].every((event) =>
+    isRecord(event) &&
+    finite(event["time"], 0) &&
+    typeof event["name"] === "string" &&
+    definition.articulations.includes(event["name"]) &&
+    (event["keyswitch"] === undefined || integer(event["keyswitch"], 0, 127)) &&
+    (event["intensity"] === undefined || finite(event["intensity"], 0, 1))) &&
+  value["automation"].every((event) =>
+    isRecord(event) &&
+    typeof event["parameter"] === "string" &&
+    finite(event["time"], 0) &&
+    finite(event["value"], -1, 1));
+}
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -479,6 +694,7 @@ export const musicProviderIds = [
   "ANYACCOMP",
   "SYMPHONYGEN",
   "METEOR",
+  "MIDI_SAG",
 ] as const;
 
 class HttpMusicGenerationProvider implements MusicGenerationProvider {
@@ -506,9 +722,11 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
     if (!isRecord(payload) || !Array.isArray(payload["candidates"])) {
       throw new Error(`${this.definition.displayName} worker response is invalid`);
     }
+    const sharedTrackModels = payload["trackModels"];
     const candidates = payload["candidates"]
       .slice(0, input.candidates)
-      .map((candidate, index) => normalizeCandidate(candidate, index, input));
+      .map((candidate, index) =>
+        normalizeCandidate(candidate, index, input, sharedTrackModels));
     if (candidates.length === 0) {
       throw new Error(`${this.definition.displayName} worker returned no candidates`);
     }
@@ -742,6 +960,15 @@ export const providerDefinitions: ProviderDefinition[] = [
     speeds: ["FAST", "BALANCED", "QUALITY"],
     styles: ["orchestral", "re-orchestration", "score"],
   },
+  {
+    id: "MIDI_SAG",
+    displayName: "MIDI-SAG",
+    modelVersion: "configured-endpoint",
+    tasks: ["ACCOMPANIMENT", "ORCHESTRATION", "ARRANGEMENT"],
+    hardware: ["CPU", "GPU"],
+    speeds: ["FAST", "BALANCED", "QUALITY"],
+    styles: ["pop", "jazz", "classical", "cinematic", "orchestral"],
+  },
 ];
 
 export function createProviderRegistry(): MusicGenerationProvider[] {
@@ -783,6 +1010,7 @@ export type ProviderGenerationInput = {
   parameters: GenerationParameters;
   parentArtifactIds: string[];
   songModel: unknown;
+  tracks: Array<{ id: string; name: string; role: string; instrument: string }>;
   arrangement: {
     version: number;
     harmonyComplexity: number;
@@ -848,6 +1076,7 @@ function normalizeCandidate(
   value: unknown,
   index: number,
   input: ProviderGenerationInput,
+  sharedTrackModels?: unknown,
 ): ProviderCandidate {
   if (!isRecord(value)) throw new Error(`Provider candidate ${index + 1} is invalid`);
   const plan = value["plan"];
@@ -858,6 +1087,23 @@ function normalizeCandidate(
   const parents = Array.isArray(value["parentArtifactIds"])
     ? value["parentArtifactIds"].filter((item): item is string => typeof item === "string")
     : input.parentArtifactIds;
+  const rawTrackModels = value["trackModels"] ?? sharedTrackModels;
+  let trackModels: TrackModel[] | undefined;
+  if (rawTrackModels !== undefined && rawTrackModels !== null) {
+    if (!Array.isArray(rawTrackModels)) {
+      throw new Error(`Provider candidate ${index + 1} trackModels must be an array`);
+    }
+    const errors = validateCanonicalTrackModels(
+      rawTrackModels,
+      input.tracks.map((track) => track.id),
+    );
+    if (errors.length) {
+      throw new Error(
+        `Provider candidate ${index + 1} returned invalid TrackModels: ${errors.join("; ")}`,
+      );
+    }
+    trackModels = rawTrackModels as TrackModel[];
+  }
   return {
     providerRequestId:
       typeof value["providerRequestId"] === "string" ? value["providerRequestId"] : null,
@@ -872,6 +1118,7 @@ function normalizeCandidate(
       sections: normalizeSections(plan["sections"]),
       tracks: Array.isArray(plan["tracks"])
         ? plan["tracks"].filter(isRecord).map((track) => ({
+            id: stringValue(track["id"], "track.id"),
             name: stringValue(track["name"], "track.name"),
             role: stringValue(track["role"], "track.role"),
             kind: stringValue(track["kind"], "track.kind"),
@@ -880,6 +1127,7 @@ function normalizeCandidate(
     },
     parameters,
     parentArtifactIds: parents,
+    trackModels,
   };
 }
 
@@ -892,6 +1140,7 @@ export type ProviderCandidate = {
   plan: CandidatePlan;
   parameters: GenerationParameters;
   parentArtifactIds: string[];
+  trackModels?: TrackModel[];
 };
 
 function providerEnvKey(id: MusicProviderId): string {
@@ -903,4 +1152,133 @@ function stringValue(value: unknown, field: string): string {
     throw new Error(`Provider candidate field "${field}" must be a non-empty string`);
   }
   return value.trim();
+}
+
+function isCanonicalProvenance(value: unknown): boolean {
+  return isRecord(value) &&
+    typeof value["model"] === "string" &&
+    typeof value["version"] === "string" &&
+    typeof value["createdBy"] === "string" &&
+    isRecord(value["parameters"]) &&
+    Array.isArray(value["parentIds"]) &&
+    value["parentIds"].every((item) => typeof item === "string");
+}
+
+export function validateCanonicalTrackModels(
+  values: unknown[],
+  expectedTrackIds: string[],
+): string[] {
+  const errors: string[] = [];
+  const tracks: TrackModel[] = [];
+  values.forEach((value, index) => {
+    if (!isCanonicalTrackModel(value)) {
+      errors.push(`TrackModel ${index + 1} does not match the canonical contract`);
+    } else {
+      tracks.push(value);
+    }
+  });
+  if (errors.length) return errors;
+  const returnedIds = tracks.map((track) => track.id);
+  if (new Set(returnedIds).size !== returnedIds.length) {
+    errors.push("Provider returned duplicate TrackModel ids");
+  }
+  const expected = [...expectedTrackIds].sort();
+  const returned = [...returnedIds].sort();
+  if (
+    expected.length !== returned.length ||
+    expected.some((id, index) => id !== returned[index])
+  ) {
+    errors.push("TrackModels must map one-to-one to the requested project track ids");
+  }
+  for (const track of tracks) {
+    const sortedNotes = [...track.notes].sort((left, right) => left.start - right.start);
+    const allowedVoices = Math.min(
+      track.instrumentDefinition.maxVoices,
+      track.instrumentDefinition.constraints.maxSimultaneousNotes,
+    );
+    for (const note of sortedNotes) {
+      const concurrent = sortedNotes.filter((other) =>
+        other.start < note.start + note.duration &&
+        other.start + other.duration > note.start).length;
+      if (
+        concurrent > allowedVoices ||
+        (!track.instrumentDefinition.polyphonic && concurrent > 1)
+      ) {
+        errors.push(`${track.id} exceeds the instrument polyphony limit`);
+        break;
+      }
+    }
+    if (sortedNotes.some((note) =>
+      note.duration < track.instrumentDefinition.constraints.minNoteDuration)) {
+      errors.push(`${track.id} contains notes shorter than the instrument can perform`);
+    }
+    if (sortedNotes.some((note, noteIndex) => {
+      const previous = sortedNotes[noteIndex - 1];
+      return previous &&
+        Math.abs(note.pitch - previous.pitch) >
+          track.instrumentDefinition.constraints.maxLeap;
+    })) {
+      errors.push(`${track.id} contains an unplayable melodic leap`);
+    }
+    const breathSeconds = track.instrumentDefinition.constraints.breathSeconds;
+    if (breathSeconds &&
+      sortedNotes.some((note) => note.duration > breathSeconds)) {
+      errors.push(`${track.id} contains a phrase longer than the instrument breath limit`);
+    }
+  }
+  return errors;
+}
+
+function isCanonicalInstrumentDefinition(value: unknown): value is TrackModel["instrumentDefinition"] {
+  if (!isRecord(value)) return false;
+  const family = value["family"];
+  const playable = value["playableRange"];
+  const comfortable = value["comfortableRange"];
+  const constraints = value["constraints"];
+  const controls = value["controls"];
+  if (
+    typeof value["id"] !== "string" ||
+    !["keys", "strings", "brass", "drums", "guitar", "voice", "synth"].includes(String(family)) ||
+    !isRecord(playable) ||
+    !isRecord(comfortable) ||
+    !integer(playable["min"], 0, 127) ||
+    !integer(playable["max"], playable["min"] as number, 127) ||
+    !integer(comfortable["min"], playable["min"] as number, playable["max"] as number) ||
+    !integer(comfortable["max"], comfortable["min"] as number, playable["max"] as number) ||
+    typeof value["polyphonic"] !== "boolean" ||
+    !integer(value["maxVoices"], 1, 128) ||
+    !Array.isArray(value["registers"]) ||
+    !value["registers"].every((register) =>
+      isRecord(register) &&
+      typeof register["name"] === "string" &&
+      typeof register["character"] === "string" &&
+      integer(register["min"], playable["min"] as number, playable["max"] as number) &&
+      integer(register["max"], register["min"] as number, playable["max"] as number)) ||
+    !Array.isArray(value["articulations"]) ||
+    !value["articulations"].every((item) => typeof item === "string") ||
+    !isRecord(constraints) ||
+    !integer(constraints["maxLeap"], 1, 127) ||
+    !finite(constraints["minNoteDuration"], Number.EPSILON) ||
+    !integer(constraints["maxSimultaneousNotes"], 1, 128) ||
+    !isRecord(controls) ||
+    !Array.isArray(controls["dynamics"]) ||
+    !controls["dynamics"].every((item) => integer(item, 0, 127)) ||
+    !Array.isArray(controls["expression"]) ||
+    !controls["expression"].every((item) => integer(item, 0, 127)) ||
+    typeof controls["pitchBend"] !== "boolean" ||
+    typeof controls["aftertouch"] !== "boolean"
+  ) return false;
+  for (const optional of ["breathSeconds", "strings", "frets", "hands", "feet"]) {
+    if (constraints[optional] !== undefined && !finite(constraints[optional], Number.EPSILON)) return false;
+  }
+  if (controls["sustain"] !== undefined && !integer(controls["sustain"], 0, 127)) return false;
+  return true;
+}
+
+function finite(value: unknown, min: number, max = Number.POSITIVE_INFINITY): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= min && value <= max;
+}
+
+function integer(value: unknown, min: number, max: number): value is number {
+  return Number.isInteger(value) && (value as number) >= min && (value as number) <= max;
 }

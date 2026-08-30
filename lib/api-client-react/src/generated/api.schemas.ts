@@ -1264,6 +1264,7 @@ export const GenerationCandidateStatus = {
 export type GenerationCandidateParameters = { [key: string]: unknown };
 
 export type GenerationCandidatePlanTracksItem = {
+  id: string;
   name: string;
   role: string;
   kind: string;
@@ -1293,6 +1294,8 @@ export interface GenerationCandidate {
   parameters: GenerationCandidateParameters;
   parentArtifactIds: string[];
   plan: GenerationCandidatePlan;
+  /** @nullable */
+  trackModels: TrackModel[] | null;
   createdAt: string;
 }
 
@@ -1462,6 +1465,174 @@ export interface CopilotResult {
   reply: string;
   operations: CopilotOperation[];
   affectedSections: string[];
+}
+
+export type ArtifactProvenanceParameters = {[key: string]: string | number | boolean};
+
+export interface ArtifactProvenance {
+  model: string;
+  version: string;
+  parameters: ArtifactProvenanceParameters;
+  parentIds: string[];
+  createdBy: string;
+}
+
+export interface MusicalNote {
+  id: string;
+  start: number;
+  duration: number;
+  pitch: number;
+  velocity: number;
+  channel?: number;
+  voice?: string;
+}
+
+export interface ControlEvent {
+  controller: number;
+  time: number;
+  value: number;
+  channel?: number;
+}
+
+export interface TrackAutomationPoint {
+  parameter: string;
+  time: number;
+  value: number;
+}
+
+export type InstrumentDefinitionFamily = typeof InstrumentDefinitionFamily[keyof typeof InstrumentDefinitionFamily];
+
+
+export const InstrumentDefinitionFamily = {
+  keys: 'keys',
+  strings: 'strings',
+  brass: 'brass',
+  drums: 'drums',
+  guitar: 'guitar',
+  voice: 'voice',
+  synth: 'synth',
+} as const;
+
+export type InstrumentDefinitionPlayableRange = {
+  min: number;
+  max: number;
+};
+
+export type InstrumentDefinitionComfortableRange = {
+  min: number;
+  max: number;
+};
+
+export type InstrumentDefinitionRegistersItem = {
+  name: string;
+  min: number;
+  max: number;
+  character: string;
+};
+
+export type InstrumentDefinitionConstraints = {
+  maxLeap: number;
+  minNoteDuration: number;
+  maxSimultaneousNotes: number;
+  breathSeconds?: number;
+  strings?: number;
+  frets?: number;
+  hands?: number;
+  feet?: number;
+};
+
+export type InstrumentDefinitionControls = {
+  dynamics: number[];
+  expression: number[];
+  sustain?: number;
+  pitchBend: boolean;
+  aftertouch: boolean;
+};
+
+export interface InstrumentDefinition {
+  id: string;
+  family: InstrumentDefinitionFamily;
+  playableRange: InstrumentDefinitionPlayableRange;
+  comfortableRange: InstrumentDefinitionComfortableRange;
+  registers: InstrumentDefinitionRegistersItem[];
+  polyphonic: boolean;
+  maxVoices: number;
+  articulations: string[];
+  constraints: InstrumentDefinitionConstraints;
+  controls: InstrumentDefinitionControls;
+}
+
+export interface TrackModel {
+  id: string;
+  instrument: string;
+  instrumentDefinition: InstrumentDefinition;
+  role: string;
+  notes: MusicalNote[];
+  cc: ControlEvent[];
+  articulations: ArticulationEvent[];
+  automation: TrackAutomationPoint[];
+  source: string;
+  version: number;
+  provenance: ArtifactProvenance;
+}
+
+export type StyleSpecTempoCharacter = typeof StyleSpecTempoCharacter[keyof typeof StyleSpecTempoCharacter];
+
+
+export const StyleSpecTempoCharacter = {
+  laid_back: 'laid_back',
+  steady: 'steady',
+  driving: 'driving',
+  rubato: 'rubato',
+} as const;
+
+export type StyleSpecRhythm = { [key: string]: unknown };
+
+export type StyleSpecHarmony = { [key: string]: unknown };
+
+export type StyleSpecInstrumentation = { [key: string]: unknown };
+
+export type StyleSpecOrchestration = { [key: string]: unknown };
+
+export type StyleSpecProduction = { [key: string]: unknown };
+
+export type StyleSpecDynamics = { [key: string]: unknown };
+
+export interface StyleSpec {
+  genre: string;
+  subgenre: string;
+  era: string;
+  tempoCharacter: StyleSpecTempoCharacter;
+  rhythm: StyleSpecRhythm;
+  harmony: StyleSpecHarmony;
+  instrumentation: StyleSpecInstrumentation;
+  orchestration: StyleSpecOrchestration;
+  production: StyleSpecProduction;
+  dynamics: StyleSpecDynamics;
+}
+
+export type ArrangementPlanSectionTracks = {[key: string]: string};
+
+export interface ArrangementPlanSection {
+  section: string;
+  startBar: number;
+  endBar: number;
+  energy: number;
+  density: number;
+  tracks: ArrangementPlanSectionTracks;
+  operations: string[];
+}
+
+export type ArrangementPlanParameters = { [key: string]: unknown };
+
+export interface ArrangementPlan {
+  id: string;
+  version: number;
+  sections: ArrangementPlanSection[];
+  style: StyleSpec;
+  songModelVersion: number;
+  parameters: ArrangementPlanParameters;
+  provenance: ArtifactProvenance;
 }
 
 /**

@@ -6,9 +6,4 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type GenerationCandidatePlanTracksItem = {
-  id: string;
-  name: string;
-  role: string;
-  kind: string;
-};
+export type ArtifactProvenanceParameters = {[key: string]: string | number | boolean};

@@ -6,9 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type GenerationCandidatePlanTracksItem = {
-  id: string;
+export type InstrumentDefinitionRegistersItem = {
   name: string;
-  role: string;
-  kind: string;
+  min: number;
+  max: number;
+  character: string;
 };

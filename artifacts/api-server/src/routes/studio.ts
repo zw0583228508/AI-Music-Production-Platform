@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   Router,
   type IRouter,
@@ -87,14 +87,21 @@ import { queueProjectSourceAnalysis } from "../lib/sourceAnalyzer";
 import { validateSourceFileMetadata } from "../lib/sourceFormats";
 import {
   MUSIC_PROVIDERS,
+  validateCanonicalTrackModels,
 } from "../lib/musicProviders";
 import {
   createExportBundle,
-  createTrackPerformance,
   loadExportZip,
   persistExportBundle,
   type ExportBundle,
 } from "../lib/export-pipeline";
+import {
+  applyArrangementEditorChanges,
+  applyPlanModulations,
+  buildTrackModels,
+  createArrangementPlan,
+  createStyleSpec,
+} from "../lib/musicEngines";
 import {
   evaluateArrangementEligibility,
   fuseProviderSongModels,
@@ -190,6 +197,8 @@ router.param("exportId", async (req, res, next, exportId): Promise<void> => {
 
 const iso = (value: Date) => value.toISOString();
 const nullableIso = (value: Date | null) => value ? iso(value) : null;
+const sha256 = (value: Buffer | string): string =>
+  createHash("sha256").update(value).digest("hex");
 
 const projectResponse = (project: typeof musicProjectsTable.$inferSelect) => ({
   id: project.id,
@@ -1362,11 +1371,30 @@ router.patch("/arrangements/:arrangementId", async (req, res): Promise<void> => 
     res.status(400).json({ error: "Invalid arrangement update" });
     return;
   }
+  const [ownedArrangement] = await db
+    .select({ projectId: arrangementsTable.projectId })
+    .from(arrangementsTable)
+    .innerJoin(
+      musicProjectsTable,
+      eq(musicProjectsTable.id, arrangementsTable.projectId),
+    )
+    .where(and(
+      eq(arrangementsTable.id, params.data.arrangementId),
+      eq(musicProjectsTable.ownerId, req.user!.id),
+    ))
+    .limit(1);
+  if (!ownedArrangement) {
+    res.status(404).json({ error: "Arrangement not found" });
+    return;
+  }
   if (body.data.selectedCandidateId) {
     const [existing] = await db
       .select({ candidates: arrangementsTable.candidates })
       .from(arrangementsTable)
-      .where(eq(arrangementsTable.id, params.data.arrangementId))
+      .where(and(
+        eq(arrangementsTable.id, params.data.arrangementId),
+        eq(arrangementsTable.projectId, ownedArrangement.projectId),
+      ))
       .limit(1);
     if (!existing) {
       res.status(404).json({ error: "Arrangement not found" });
@@ -1448,15 +1476,22 @@ router.patch("/arrangements/:arrangementId", async (req, res): Promise<void> => 
   const where = updateData.sections
     ? and(
         eq(arrangementsTable.id, params.data.arrangementId),
+        eq(arrangementsTable.projectId, ownedArrangement.projectId),
         eq(arrangementsTable.version, expectedVersion!),
       )
-    : eq(arrangementsTable.id, params.data.arrangementId);
+    : and(
+        eq(arrangementsTable.id, params.data.arrangementId),
+        eq(arrangementsTable.projectId, ownedArrangement.projectId),
+      );
   const [arrangement] = await db.update(arrangementsTable).set(updates).where(where).returning();
   if (!arrangement) {
     const [existing] = await db
       .select({ id: arrangementsTable.id })
       .from(arrangementsTable)
-      .where(eq(arrangementsTable.id, params.data.arrangementId))
+      .where(and(
+        eq(arrangementsTable.id, params.data.arrangementId),
+        eq(arrangementsTable.projectId, ownedArrangement.projectId),
+      ))
       .limit(1);
     res.status(existing ? 409 : 404).json({
       error: existing
@@ -1837,13 +1872,22 @@ router.post("/projects/:projectId/export", async (req, res): Promise<void> => {
     return;
   }
 
-  const [arrangements, tracks] = await Promise.all([
+  const [arrangements, tracks, songModels, artifacts] = await Promise.all([
     db
       .select()
       .from(arrangementsTable)
       .where(eq(arrangementsTable.projectId, project.id))
       .orderBy(desc(arrangementsTable.version)),
     db.select().from(tracksTable).where(eq(tracksTable.projectId, project.id)),
+    db
+      .select()
+      .from(songModelsTable)
+      .where(eq(songModelsTable.projectId, project.id))
+      .orderBy(desc(songModelsTable.version)),
+    db
+      .select()
+      .from(musicArtifactsTable)
+      .where(eq(musicArtifactsTable.projectId, project.id)),
   ]);
   const arrangementId = body.data.arrangementId
     ?? (typeof req.query.arrangementId === "string" ? req.query.arrangementId : null);
@@ -1854,24 +1898,58 @@ router.post("/projects/:projectId/export", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Arrangement not found" });
     return;
   }
-
-  const hasSoloTrack = tracks.some((track) => track.solo);
-  const performanceTracks = tracks.map((track, index) => ({
-    ...track,
-    performance: createTrackPerformance(
-      track,
-      project,
-      arrangement,
-      index,
-      hasSoloTrack,
-    ),
-  }));
-  await Promise.all(
-    performanceTracks.map((track) => db
-      .update(tracksTable)
-      .set({ performance: track.performance })
-      .where(eq(tracksTable.id, track.id))),
+  const songModel = songModels.find((model) =>
+    model.version === arrangement.songModelVersion) ?? songModels[0];
+  if (!songModel || !arrangement.plan || !arrangement.styleSpec ||
+      arrangement.trackModels.length === 0) {
+    res.status(409).json({
+      error: "The selected arrangement has no persisted Song Model, plan, style, or TrackModels",
+    });
+    return;
+  }
+  const planArtifact = artifacts.find((artifact) =>
+    artifact.type === "ARRANGEMENT_PLAN" &&
+    (artifact.storageUri === `db://music_arrangements/${arrangement.id}` ||
+      artifact.id === arrangement.sourceCandidateId));
+  if (!planArtifact) {
+    res.status(409).json({ error: "The selected arrangement plan artifact is unavailable" });
+    return;
+  }
+  const trackModelArtifactIds = Object.fromEntries(
+    artifacts
+      .filter((artifact) =>
+        artifact.type === "TRACK_MODEL" &&
+        artifact.storageUri?.startsWith(`db://music_arrangements/${arrangement.id}/tracks/`))
+      .map((artifact) => [
+        String(artifact.parameters.trackId ??
+          artifact.storageUri?.split("/").at(-1)),
+        artifact.id,
+      ]),
   );
+  const expectedTrackIds = new Set(arrangement.trackModels.map((model) => model.id));
+  if ([...expectedTrackIds].some((id) => !trackModelArtifactIds[id])) {
+    res.status(409).json({ error: "One or more selected TrackModel artifacts are unavailable" });
+    return;
+  }
+  const exportTrackModels = applyArrangementEditorChanges({
+    trackModels: arrangement.trackModels,
+    sections: arrangement.sections,
+    tracks,
+    bpm: project.bpm,
+    meter: project.meter,
+  });
+  const playabilityErrors = validateCanonicalTrackModels(
+    exportTrackModels,
+    [...expectedTrackIds],
+  );
+  if (playabilityErrors.length) {
+    res.status(409).json({
+      error: "Arrangement editor changes are not playable",
+      issues: playabilityErrors,
+    });
+    return;
+  }
+  const renderParents = Object.values(trackModelArtifactIds);
 
   const allocation = await db.transaction(async (transaction) => {
     await transaction.execute(
@@ -1893,26 +1971,74 @@ router.post("/projects/:projectId/export", async (req, res): Promise<void> => {
       format: "ZIP",
       url: `/api/exports/${exportId}/download`,
       state: "rendering",
+      parentIds: [planArtifact.id],
+      createdBy: "export-pipeline",
+      modelVersion: "EXPORT_PIPELINE@1.0.0",
+      parameters: {
+        arrangementId: arrangement.id,
+        includeStems: body.data.includeStems ?? true,
+        includeMidi: body.data.includeMidi ?? true,
+      },
+      storageUri: `db://music_exports/${exportId}`,
     });
     return { exportId, version };
   });
 
   try {
+    const renderedFiles = (await renderArrangementExport({
+      projectName: project.name,
+      bpm: project.bpm,
+      key: project.key,
+      meter: project.meter,
+      arrangementName: arrangement.name,
+      arrangementVersion: arrangement.version,
+      masterProfile: body.data.masterProfile ?? "STREAMING",
+      energy: arrangement.energy,
+      density: arrangement.density,
+      harmonyComplexity: arrangement.harmonyComplexity,
+      sections: arrangement.sections,
+      tracks,
+      songModel: songModel.model,
+      plan: arrangement.plan,
+      trackModels: exportTrackModels,
+      styleSpec: arrangement.styleSpec,
+      seed: arrangement.seed ?? undefined,
+      generationProvider: arrangement.generationProvenance?.provider ??
+        arrangement.generationProvider ?? "ARRANGEMENT_ENGINE",
+      parentIds: renderParents.length ? renderParents : [planArtifact.id],
+      planArtifactId: planArtifact.id,
+      planParentIds: planArtifact.parentIds,
+      trackModelArtifactIds,
+      includeStems: body.data.includeStems ?? true,
+      includeMidi: body.data.includeMidi ?? true,
+    })).filter((file) =>
+      (body.data.includeMix !== false ||
+        !["MIX", "PREMASTER", "MASTER"].includes(file.type)) &&
+      (body.data.includeMetadata !== false || file.type !== "METADATA"));
+    const fileAllocations = new Map(renderedFiles.map((file) => [
+      file.name,
+      {
+        artifactId: randomUUID(),
+        parentIds: file.provenance.parentIds,
+      },
+    ]));
     const bundle = createExportBundle(
       project,
       arrangement,
-      performanceTracks,
+      tracks,
       body.data,
       allocation.version,
       "",
       allocation.exportId,
+      renderedFiles,
+      Object.fromEntries(fileAllocations),
     );
     await persistExportBundle(bundle);
     exportBundles.set(bundle.package.id, bundle);
 
     const artifactRows: Array<typeof musicArtifactsTable.$inferInsert> =
       bundle.package.files.map((file) => ({
-        id: randomUUID(),
+        id: fileAllocations.get(file.name)!.artifactId,
         projectId: project.id,
         type: file.type,
         label: file.name,
@@ -1920,6 +2046,12 @@ router.post("/projects/:projectId/export", async (req, res): Promise<void> => {
         size: file.size,
         format: file.format,
         url: bundle.package.url,
+        hash: sha256(bundle.files.get(file.name) ?? file.name),
+        parentIds: fileAllocations.get(file.name)!.parentIds,
+        createdBy: "export-engine",
+        modelVersion: "EXPORT_ENGINE@2.0.0",
+        parameters: { arrangementId: arrangement.id, exportId: allocation.exportId },
+        storageUri: bundle.package.url,
       }));
     await Promise.all([
       db.insert(musicArtifactsTable).values(artifactRows),
@@ -1930,6 +2062,9 @@ router.post("/projects/:projectId/export", async (req, res): Promise<void> => {
           size: bundle.package.size,
           url: bundle.package.url,
           state: "ready",
+          hash: sha256(bundle.zip),
+          storageUri: bundle.package.url,
+          parentIds: [...fileAllocations.values()].map((file) => file.artifactId),
         })
         .where(eq(musicArtifactsTable.id, allocation.exportId)),
       db
@@ -1977,6 +2112,18 @@ router.get("/exports/:exportId/download", async (req, res): Promise<void> => {
     .from(musicArtifactsTable)
     .where(eq(musicArtifactsTable.id, params.data.exportId));
   if (!artifact || artifact.type !== "EXPORT") {
+    res.status(404).json({ error: "Export package not found or expired" });
+    return;
+  }
+  const [ownedProject] = await db
+    .select({ id: musicProjectsTable.id })
+    .from(musicProjectsTable)
+    .where(and(
+      eq(musicProjectsTable.id, artifact.projectId),
+      eq(musicProjectsTable.ownerId, req.user!.id),
+    ))
+    .limit(1);
+  if (!ownedProject) {
     res.status(404).json({ error: "Export package not found or expired" });
     return;
   }

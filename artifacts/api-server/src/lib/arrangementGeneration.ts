@@ -1,4 +1,4 @@
-import { randomInt, randomUUID } from "node:crypto";
+import { createHash, randomInt, randomUUID } from "node:crypto";
 import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
 import {
   arrangementsTable,
@@ -9,6 +9,7 @@ import {
   musicProjectsTable,
   songModelsTable,
   studioActivitiesTable,
+  tracksTable,
   type GenerationParameters,
   type MusicGenerationTask,
 } from "@workspace/db";
@@ -16,10 +17,20 @@ import {
   createProviderRegistry,
   providerCatalog,
   selectMusicProvider,
+  validateCanonicalTrackModels,
   type GenerationHardware,
   type GenerationSpeed,
   type MusicProviderId,
 } from "./musicProviders";
+import {
+  applyPlanModulations,
+  buildTrackModels,
+  createArrangementPlan,
+  createStyleSpec,
+} from "./musicEngines";
+
+const sha256 = (value: string): string =>
+  createHash("sha256").update(value).digest("hex");
 
 export type QueueGenerationInput = {
   candidates?: number;
@@ -75,6 +86,7 @@ export const generationCandidateResponse = (
   parameters: row.parameters,
   parentArtifactIds: row.parentArtifactIds,
   plan: row.plan,
+  trackModels: row.trackModels,
   createdAt: row.createdAt.toISOString(),
 });
 
@@ -94,7 +106,7 @@ export async function queueArrangementGeneration(
     .limit(1);
   if (!arrangement) return null;
 
-  const [project, songModels, artifacts] = await Promise.all([
+  const [project, songModels, artifacts, projectTracks] = await Promise.all([
     db
       .select()
       .from(musicProjectsTable)
@@ -111,6 +123,10 @@ export async function queueArrangementGeneration(
       .from(musicArtifactsTable)
       .where(eq(musicArtifactsTable.projectId, arrangement.projectId))
       .orderBy(desc(musicArtifactsTable.createdAt)),
+    db
+      .select()
+      .from(tracksTable)
+      .where(eq(tracksTable.projectId, arrangement.projectId)),
   ]);
   const projectRow = project[0];
   if (!projectRow || projectRow.ownerId !== ownerId) return null;
@@ -192,6 +208,12 @@ export async function queueArrangementGeneration(
           rhythmIntensity: arrangement.rhythmIntensity,
         },
         songModel: songModelSnapshot,
+        tracks: projectTracks.map((track) => ({
+          id: track.id,
+          name: track.name,
+          role: track.role,
+          instrument: track.name,
+        })),
       },
     })
     .returning();
@@ -279,6 +301,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
         parameters: job.parameters,
         parentArtifactIds: job.parentArtifactIds,
         songModel: snapshot.songModel,
+        tracks: snapshot.tracks,
         arrangement: {
           version: snapshot.arrangement.version,
           harmonyComplexity: snapshot.arrangement.harmonyComplexity,
@@ -357,6 +380,9 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           version: snapshot.arrangement.version,
           size: `${Buffer.byteLength(JSON.stringify(candidate.plan))} B`,
           format: "JSON",
+           parentIds: job.parentArtifactIds,
+           createdBy: "arrangement-provider",
+           modelVersion: `${provider.definition.id}@${result.modelVersion}`,
         });
         await tx.insert(musicGenerationCandidatesTable).values({
           id: candidateId,
@@ -378,6 +404,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           parameters: job.parameters,
           parentArtifactIds: job.parentArtifactIds,
           plan: candidate.plan,
+           trackModels: candidate.trackModels ?? null,
         });
       }
       await tx
@@ -561,7 +588,7 @@ export async function selectGenerationCandidate(
         .limit(1);
       return existing ?? null;
     }
-    const [job, existingArrangements] = await Promise.all([
+    const [job, existingArrangements, songModels, projectTracks] = await Promise.all([
       tx
         .select()
         .from(musicGenerationJobsTable)
@@ -571,9 +598,131 @@ export async function selectGenerationCandidate(
         .select({ version: arrangementsTable.version })
         .from(arrangementsTable)
         .where(eq(arrangementsTable.projectId, candidate.projectId)),
+      tx
+        .select()
+        .from(songModelsTable)
+        .where(eq(songModelsTable.projectId, candidate.projectId))
+        .orderBy(desc(songModelsTable.version))
+        .limit(1),
+      tx
+        .select()
+        .from(tracksTable)
+        .where(eq(tracksTable.projectId, candidate.projectId)),
     ]);
+    const songModel = songModels[0];
+    if (!songModel || projectTracks.length === 0) {
+      throw new Error("Selected arrangement candidate needs a Song Model and at least one project track");
+    }
     const nextVersion =
       Math.max(0, ...existingArrangements.map((item) => item.version)) + 1;
+    const trackDescriptors = projectTracks.map((track) => ({
+      id: track.id,
+      name: track.name,
+      role: track.role,
+      instrument: track.name,
+    }));
+    const engineParameters = {
+      seed: candidate.seed,
+      harmonyComplexity: source.harmonyComplexity,
+      energy: source.energy,
+      density: source.density,
+      orchestraSize: source.orchestraSize,
+      rhythmIntensity: source.rhythmIntensity,
+      songModelVersion: songModel.version,
+      provider: candidate.provider,
+      modulationSemitones: source.harmonyComplexity >= 8 ? 2 : 0,
+    };
+    const styleSpec = createStyleSpec(source.style, {
+      density: source.density,
+      harmonyComplexity: source.harmonyComplexity,
+      energy: source.energy,
+    });
+    const generatedPlan = createArrangementPlan({
+      arrangementId: candidate.id,
+      version: nextVersion,
+      songModel: songModel.model,
+      style: styleSpec,
+      tracks: trackDescriptors,
+      parameters: { ...engineParameters, arrangementId: candidate.id },
+      parentIds: candidate.parentArtifactIds,
+    });
+    const providerSections = new Map(
+      candidate.plan.sections.map((section) => [section.name.toLowerCase(), section]),
+    );
+    const descriptorByToken = new Map<string, Set<string>>();
+    const registerTrackToken = (token: string, trackName: string) => {
+      const normalized = token.toLowerCase();
+      const matches = descriptorByToken.get(normalized) ?? new Set<string>();
+      matches.add(trackName);
+      descriptorByToken.set(normalized, matches);
+    };
+    for (const track of projectTracks) {
+      registerTrackToken(track.id, track.name);
+      registerTrackToken(track.name, track.name);
+      registerTrackToken(track.role, track.name);
+    }
+    for (const descriptor of candidate.plan.tracks ?? []) {
+      const projectTrack = projectTracks.find((track) => track.id === descriptor.id);
+      if (!projectTrack) continue;
+      registerTrackToken(descriptor.id, projectTrack.name);
+      registerTrackToken(descriptor.name, projectTrack.name);
+      registerTrackToken(descriptor.role, projectTrack.name);
+    }
+    const plan = {
+      ...generatedPlan,
+      sections: generatedPlan.sections.map((section) => {
+        const providerSection = providerSections.get(section.section.replaceAll("_", " ").toLowerCase());
+        if (!providerSection) return section;
+        const enabled = new Set(providerSection.tracks.flatMap((track) => {
+          return [...(descriptorByToken.get(track.toLowerCase()) ?? [])];
+        }));
+        return {
+          ...section,
+          energy: providerSection.energy,
+          density: providerSection.density,
+          tracks: Object.fromEntries(
+            Object.entries(section.tracks).map(([trackName, operation]) => [
+              trackName,
+              enabled.has(trackName) ? operation : "none",
+            ]),
+          ),
+        };
+      }),
+    };
+    const generatedTrackModels = candidate.trackModels === null
+      ? buildTrackModels({
+          songModel: songModel.model,
+          plan,
+          tracks: trackDescriptors,
+          style: styleSpec,
+          seed: candidate.seed,
+        })
+      : applyPlanModulations(
+          candidate.trackModels,
+          plan,
+          songModel.model.tempoMap[0]?.bpm ?? 92,
+        );
+    const playabilityErrors = validateCanonicalTrackModels(
+      generatedTrackModels,
+      trackDescriptors.map((track) => track.id),
+    );
+    if (playabilityErrors.length) {
+      throw new Error(`Generated TrackModels are not playable: ${playabilityErrors.join("; ")}`);
+    }
+    const trackModelParents = candidate.artifactId
+      ? [candidate.artifactId]
+      : candidate.parentArtifactIds;
+    const trackModels = generatedTrackModels.map((trackModel) => ({
+      ...trackModel,
+      provenance: {
+        ...trackModel.provenance,
+        parameters: {
+          ...trackModel.provenance.parameters,
+          upstreamModel: trackModel.provenance.model,
+        },
+        parentIds: trackModelParents,
+      },
+    }));
     const [arrangement] = await tx
       .insert(arrangementsTable)
       .values({
@@ -592,6 +741,21 @@ export async function selectGenerationCandidate(
         sections: candidate.plan.sections,
         sourceGenerationJobId: candidate.jobId,
         sourceCandidateId: candidate.id,
+        styleSpec,
+        plan,
+        trackModels,
+        songModelVersion: songModel.version,
+        parentArrangementId: source.id,
+        parameters: engineParameters,
+        seed: candidate.seed,
+        modelVersion: candidate.modelVersion,
+        provenance: {
+          model: candidate.provider,
+          version: candidate.modelVersion,
+          parameters: engineParameters,
+          parentIds: candidate.artifactId ? [candidate.artifactId] : candidate.parentArtifactIds,
+          createdBy: "arrangement-provider",
+        },
         generationProvenance: {
           jobId: candidate.jobId,
           candidateId: candidate.id,
@@ -606,6 +770,52 @@ export async function selectGenerationCandidate(
         },
       })
       .returning();
+    await Promise.all(projectTracks.map((track) => {
+      const trackModel = trackModels.find((model) => model.id === track.id);
+      return trackModel
+        ? tx.update(tracksTable).set({
+            instrumentDefinition: trackModel.instrumentDefinition,
+            trackModel,
+            provenance: trackModel.provenance,
+            status: "rendered",
+          }).where(eq(tracksTable.id, track.id))
+        : Promise.resolve();
+    }));
+    if (candidate.artifactId) {
+      const serializedPlan = JSON.stringify(plan);
+      await tx.update(musicArtifactsTable).set({
+        label: `${arrangement.name} · ${candidate.provider}`,
+        size: `${Buffer.byteLength(serializedPlan)} B`,
+        hash: sha256(serializedPlan),
+        parentIds: job[0]?.parentArtifactIds ?? [],
+        createdBy: "arrangement-provider",
+        modelVersion: `${candidate.provider}@${candidate.modelVersion}`,
+        parameters: engineParameters,
+        storageUri: `db://music_arrangements/${arrangement.id}`,
+      }).where(eq(musicArtifactsTable.id, candidate.artifactId));
+      await tx.insert(musicArtifactsTable).values(trackModels.map((trackModel) => {
+        const serialized = JSON.stringify(trackModel);
+        return {
+          id: randomUUID(),
+          projectId: arrangement.projectId,
+          type: "TRACK_MODEL",
+          label: `${arrangement.name} · ${trackModel.instrument}`,
+          version: arrangement.version,
+          size: `${Buffer.byteLength(serialized)} B`,
+          format: "JSON",
+          hash: sha256(serialized),
+          parentIds: [candidate.artifactId!],
+          createdBy: "performance-engine",
+          modelVersion: `${trackModel.provenance.model}@${trackModel.provenance.version}`,
+          parameters: {
+            ...trackModel.provenance.parameters,
+            trackId: trackModel.id,
+            arrangementId: arrangement.id,
+          },
+          storageUri: `db://music_arrangements/${arrangement.id}/tracks/${trackModel.id}`,
+        };
+      }));
+    }
     await tx.insert(studioActivitiesTable).values({
       id: randomUUID(),
       projectId: source.projectId,

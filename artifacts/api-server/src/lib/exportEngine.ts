@@ -1,4 +1,20 @@
 import { deflateRawSync } from "node:zlib";
+import type {
+  ArrangementPlan,
+  ArtifactProvenance,
+  SongModelData,
+  StyleSpec,
+  TrackModel,
+} from "@workspace/db";
+import {
+  MasterEngine,
+  MixGraph,
+  PedalboardRenderer,
+  QualityEngine,
+  SfzRenderer,
+  renderMusicPipeline,
+  type RenderedTrack,
+} from "./musicEngines";
 
 export type ExportTrack = {
   id: string;
@@ -6,6 +22,7 @@ export type ExportTrack = {
   role: string;
   volume: number;
   muted: boolean;
+  solo?: boolean;
 };
 
 export type GeneratedExportFile = {
@@ -14,6 +31,7 @@ export type GeneratedExportFile = {
   format: string;
   contentType: string;
   data: Buffer;
+  provenance: ArtifactProvenance;
 };
 
 const SAMPLE_RATE = 44_100;
@@ -279,6 +297,91 @@ function createMidi(
   return Buffer.concat([header, ...chunks]);
 }
 
+function createPerformanceMidi(
+  trackModels: TrackModel[],
+  bpm: number,
+  meter: string,
+  durationSeconds: number,
+): Buffer {
+  const ticks = 480;
+  const micros = Math.round(60_000_000 / Math.max(40, bpm || 92));
+  const [rawNumerator, rawDenominator] = meter.split("/").map(Number);
+  const numerator = Number.isFinite(rawNumerator) ? rawNumerator : 4;
+  const denominator = Number.isFinite(rawDenominator) ? rawDenominator : 4;
+  const denominatorPower = Math.max(0, Math.round(Math.log2(denominator)));
+  const tempoTrack = [
+    0x00, 0xff, 0x51, 0x03,
+    (micros >> 16) & 0xff, (micros >> 8) & 0xff, micros & 0xff,
+    0x00, 0xff, 0x58, 0x04, numerator, denominatorPower, 0x18, 0x08,
+    0x00, 0xff, 0x2f, 0x00,
+  ];
+  const chunks = [midiChunk("MTrk", tempoTrack)];
+  const ticksPerSecond = ticks * Math.max(40, bpm || 92) / 60;
+  const endTick = Math.max(1, Math.ceil(durationSeconds * ticksPerSecond));
+  tempoTrack.splice(
+    tempoTrack.length - 4,
+    4,
+    ...vlq(endTick),
+    0xff,
+    0x2f,
+    0x00,
+  );
+
+  trackModels.forEach((track, trackIndex) => {
+    const channel = track.instrumentDefinition.family === "drums" ? 9 : trackIndex % 16;
+    const events: Array<{ tick: number; order: number; bytes: number[] }> = [];
+    track.cc.forEach((event) => {
+      events.push({
+        tick: Math.max(0, Math.round(event.time * ticksPerSecond)),
+        order: 0,
+        bytes: [0xb0 | channel, midiByte(event.controller), midiByte(event.value)],
+      });
+    });
+    track.articulations.forEach((event) => {
+      if (event.keyswitch === undefined) return;
+      const tick = Math.max(0, Math.round(event.time * ticksPerSecond));
+      events.push({ tick, order: 0, bytes: [0x90 | channel, midiByte(event.keyswitch), 64] });
+      events.push({ tick: tick + 12, order: 1, bytes: [0x80 | channel, midiByte(event.keyswitch), 32] });
+    });
+    track.automation.forEach((event) => {
+      const tick = Math.max(0, Math.round(event.time * ticksPerSecond));
+      if (event.parameter === "pitch_bend") {
+        const bend = Math.max(0, Math.min(16_383, Math.round(8_192 + event.value * 8_191)));
+        events.push({ tick, order: 0, bytes: [0xe0 | channel, bend & 0x7f, (bend >> 7) & 0x7f] });
+      } else if (event.parameter === "aftertouch") {
+        events.push({ tick, order: 0, bytes: [0xd0 | channel, midiByte(event.value * 127)] });
+      }
+    });
+    track.notes.forEach((note) => {
+      const start = Math.max(0, Math.round(note.start * ticksPerSecond));
+      const end = Math.max(start + 1, Math.round((note.start + note.duration) * ticksPerSecond));
+      events.push({ tick: start, order: 2, bytes: [0x90 | channel, midiByte(note.pitch), midiByte(note.velocity)] });
+      events.push({ tick: end, order: 1, bytes: [0x80 | channel, midiByte(note.pitch), 48] });
+    });
+    events.sort((left, right) => left.tick - right.tick || left.order - right.order);
+    const bytes: number[] = [0x00, 0xc0 | channel, midiByte(trackIndex === 0 ? 0 : (trackIndex * 8) % 96)];
+    let previousTick = 0;
+    for (const event of events) {
+      bytes.push(...vlq(Math.max(0, event.tick - previousTick)), ...event.bytes);
+      previousTick = event.tick;
+    }
+    bytes.push(...vlq(Math.max(0, endTick - previousTick)), 0xff, 0x2f, 0x00);
+    chunks.push(midiChunk("MTrk", bytes));
+  });
+
+  const header = Buffer.alloc(14);
+  header.write("MThd", 0);
+  header.writeUInt32BE(6, 4);
+  header.writeUInt16BE(1, 8);
+  header.writeUInt16BE(chunks.length, 10);
+  header.writeUInt16BE(ticks, 12);
+  return Buffer.concat([header, ...chunks]);
+}
+
+function midiByte(value: number): number {
+  return Math.max(0, Math.min(127, Math.round(value)));
+}
+
 let crcTable: Uint32Array | undefined;
 function crc32(buffer: Buffer): number {
   if (!crcTable) {
@@ -346,7 +449,7 @@ export function formatBytes(bytes: number): string {
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
-export function renderArrangementExport(input: {
+export async function renderArrangementExport(input: {
   projectName: string;
   bpm: number;
   key: string;
@@ -359,32 +462,151 @@ export function renderArrangementExport(input: {
   harmonyComplexity: number;
   sections: Array<{ name: string; energy: number; density: number; tracks: string[] }>;
   tracks: ExportTrack[];
+  songModel: SongModelData;
+  plan: ArrangementPlan;
+  trackModels?: TrackModel[];
+  styleSpec: StyleSpec;
+  seed?: number;
+  generationProvider: string;
+  parentIds: string[];
+  planArtifactId?: string;
+  planParentIds?: string[];
+  trackModelArtifactIds?: Record<string, string>;
+  durationSeconds?: number;
   includeStems: boolean;
   includeMidi: boolean;
-}): GeneratedExportFile[] {
-  const activeTracks = input.tracks.filter((track) => !track.muted);
-  const stems = activeTracks.map((track, index) => ({
-    track,
-    audio: createStem(track, index, input.bpm, {
-      energy: input.energy,
-      density: input.density,
-      harmonyComplexity: input.harmonyComplexity,
-      sections: input.sections,
-    }),
-  }));
-  const mixed = mixStems(stems.map((stem) => stem.audio));
-  const premaster = masterAudio(mixed, "DYNAMIC");
-  const master = masterAudio(mixed, input.masterProfile);
+}): Promise<GeneratedExportFile[]> {
+  const [meterNumerator, meterDenominator] = input.meter.split("/").map(Number);
+  const beatsPerBar = Number.isFinite(meterNumerator) && meterNumerator > 0
+    ? meterNumerator
+    : 4;
+  const beatUnit = Number.isFinite(meterDenominator) && meterDenominator > 0
+    ? meterDenominator
+    : 4;
+  const planEndSeconds = Math.max(
+    0,
+    ...input.plan.sections.map((section) =>
+      section.endBar * beatsPerBar * (4 / beatUnit) * 60 / Math.max(40, input.bpm || 92)),
+  );
+  const authoritativeDuration = Math.max(
+    input.durationSeconds ?? 0,
+    input.songModel.audio.durationSeconds,
+    planEndSeconds,
+  );
+  const hasSolo = input.tracks.some((track) => track.solo && !track.muted);
+  const activeTracks = input.tracks.filter((track) =>
+    !track.muted && (!hasSolo || track.solo));
+  const activeTrackIds = new Set(activeTracks.map((track) => track.id));
+  const selectedTrackModels = input.trackModels?.filter((track) => activeTrackIds.has(track.id));
+  if (input.trackModels !== undefined && activeTracks.length > 0 && !selectedTrackModels?.length) {
+    throw new Error("Saved TrackModels do not match the active project tracks");
+  }
+  let pipeline = renderMusicPipeline({
+    songModel: input.songModel,
+    plan: input.plan,
+    style: input.styleSpec,
+    tracks: activeTracks.map((track) => ({
+      id: track.id,
+      name: track.name,
+      role: track.role,
+      instrument: track.name,
+      volume: track.volume,
+    })),
+    trackModels: selectedTrackModels,
+    seed: input.seed,
+    masterProfile: input.masterProfile,
+    durationSeconds: authoritativeDuration,
+    sampleRate: SAMPLE_RATE,
+  });
+  const sfizzRenderer = new SfzRenderer();
+  const pedalboardRenderer = new PedalboardRenderer();
+  if (sfizzRenderer.isConfigured() || pedalboardRenderer.isConfigured()) {
+    const remoteTracks: RenderedTrack[] = await Promise.all(pipeline.tracks.map(async (rendered): Promise<RenderedTrack> => {
+      const usePedalboard = pedalboardRenderer.isConfigured();
+      const useSfizz = !usePedalboard &&
+        sfizzRenderer.isConfigured() &&
+        ["strings", "brass"].includes(rendered.trackModel.instrumentDefinition.family);
+      if (!usePedalboard && !useSfizz) return rendered;
+      const renderer = usePedalboard ? pedalboardRenderer : sfizzRenderer;
+      const samples = await renderer.render(rendered.trackModel, SAMPLE_RATE, pipeline.durationSeconds);
+      const expectedLength = Math.ceil(SAMPLE_RATE * pipeline.durationSeconds) * CHANNELS;
+      if (samples.length !== expectedLength) {
+        throw new Error(`${renderer.providerId} returned ${samples.length} samples; expected ${expectedLength}`);
+      }
+      const volume = activeTracks.find((track) => track.id === rendered.trackModel.id)?.volume ?? 0;
+      const gain = 10 ** (volume / 20);
+      if (gain !== 1) {
+        for (let index = 0; index < samples.length; index += 1) samples[index] *= gain;
+      }
+      return {
+        ...rendered,
+        samples,
+        renderer: renderer.providerId,
+      };
+    }));
+    const mix = new MixGraph().mix(remoteTracks, input.styleSpec, Math.ceil(SAMPLE_RATE * pipeline.durationSeconds));
+    const mastered = new MasterEngine().process(mix, input.masterProfile);
+    const quality = new QualityEngine().assess(remoteTracks.map((track) => track.trackModel), mix, input.plan);
+    pipeline = {
+      ...pipeline,
+      tracks: remoteTracks,
+      mix,
+      premaster: mastered.premaster,
+      master: mastered.master,
+      quality,
+      provenance: [
+        ...pipeline.provenance.filter((item) => item.model !== "LOCAL_EXPRESSIVE_SYNTH"),
+        ...remoteTracks.map((track) => ({
+          model: track.renderer,
+          version: "configured-endpoint",
+          parameters: { sampleRate: SAMPLE_RATE, durationSeconds: pipeline.durationSeconds },
+          parentIds: input.trackModelArtifactIds?.[track.trackModel.id]
+            ? [input.trackModelArtifactIds[track.trackModel.id]]
+            : input.parentIds,
+          createdBy: "renderer-adapter",
+        })),
+      ],
+    };
+  }
+  const fileProvenance = (
+    model: string,
+    version: string,
+    parameters: Record<string, number | string | boolean>,
+    parentIds = input.parentIds,
+  ): ArtifactProvenance => ({
+    model,
+    version,
+    parameters,
+    parentIds,
+    createdBy: "export-engine",
+  });
+  const trackArtifactParents = Object.values(input.trackModelArtifactIds ?? {});
+  const planParents = input.planParentIds ?? input.plan.provenance.parentIds;
+  const trackModelParents = input.planArtifactId ? [input.planArtifactId] : planParents;
+  const musicalModelStages = new Set([
+    "HARMONY_ENGINE",
+    "COMPOSITION_ENGINE",
+    "MODULATION_ENGINE",
+    "VOICE_LEADING_ENGINE",
+    "PERFORMANCE_ENGINE",
+  ]);
   const files: GeneratedExportFile[] = [];
 
   if (input.includeStems) {
-    for (const [index, stem] of stems.entries()) {
+    for (const [index, stem] of pipeline.tracks.entries()) {
       files.push({
-        name: `stems/${String(index + 1).padStart(2, "0")}_${safeName(stem.track.name)}.wav`,
+        name: `stems/${String(index + 1).padStart(2, "0")}_${safeName(activeTracks[index]?.name || stem.trackModel.instrument)}.wav`,
         type: "STEM",
         format: "WAV",
         contentType: "audio/wav",
-        data: encodeWav(stem.audio),
+        data: encodeWav(stem.samples),
+        provenance: fileProvenance(stem.renderer, "1.0.0", {
+          instrument: stem.trackModel.instrument,
+          trackModelVersion: stem.trackModel.version,
+          sampleRate: SAMPLE_RATE,
+        }, input.trackModelArtifactIds?.[stem.trackModel.id]
+          ? [input.trackModelArtifactIds[stem.trackModel.id]]
+          : input.parentIds),
       });
     }
   }
@@ -394,21 +616,33 @@ export function renderArrangementExport(input: {
       type: "MIX",
       format: "WAV",
       contentType: "audio/wav",
-      data: encodeWav(mixed),
+      data: encodeWav(pipeline.mix),
+      provenance: fileProvenance("MIX_GRAPH", "1.0.0", {
+        trackCount: pipeline.tracks.length,
+        arrangementAware: true,
+      }),
     },
     {
       name: "mix/premaster.wav",
       type: "PREMASTER",
       format: "WAV",
       contentType: "audio/wav",
-      data: encodeWav(premaster),
+      data: encodeWav(pipeline.premaster),
+      provenance: fileProvenance("MASTER_ENGINE", "1.0.0", {
+        stage: "premaster",
+        profile: "DYNAMIC",
+      }),
     },
     {
       name: "mix/master.wav",
       type: "MASTER",
       format: "WAV",
       contentType: "audio/wav",
-      data: encodeWav(master),
+      data: encodeWav(pipeline.master),
+      provenance: fileProvenance("MASTER_ENGINE", "1.0.0", {
+        stage: "master",
+        profile: input.masterProfile,
+      }),
     },
   );
   if (input.includeMidi) {
@@ -417,7 +651,19 @@ export function renderArrangementExport(input: {
       type: "MIDI",
       format: "MIDI",
       contentType: "audio/midi",
-      data: createMidi(activeTracks, input.bpm, input.meter, input.sections),
+      data: createPerformanceMidi(
+        pipeline.tracks.map((stem) => stem.trackModel),
+        input.bpm,
+        input.meter,
+        pipeline.durationSeconds,
+      ),
+      provenance: fileProvenance("PERFORMANCE_ENGINE", "1.0.0", {
+        expressiveControls: true,
+        humanized: true,
+        seed: input.seed ?? 0,
+      }, Object.values(input.trackModelArtifactIds ?? {}).length
+        ? Object.values(input.trackModelArtifactIds ?? {})
+        : input.parentIds),
     });
   }
   const metadata = {
@@ -429,7 +675,7 @@ export function renderArrangementExport(input: {
     keyMap: [{ bar: 1, key: input.key }],
     sampleRate: SAMPLE_RATE,
     bitDepth: 16,
-    durationSeconds: DURATION_SECONDS,
+    durationSeconds: pipeline.durationSeconds,
     masterProfile: input.masterProfile,
     creativeControls: {
       energy: input.energy,
@@ -438,6 +684,41 @@ export function renderArrangementExport(input: {
     },
     sections: input.sections,
     tracks: activeTracks.map(({ id, name, role }) => ({ id, name, role })),
+    trackModels: pipeline.tracks.map(({ trackModel, renderer }) => ({
+      ...trackModel,
+      provenance: {
+        ...trackModel.provenance,
+        parentIds: trackModelParents,
+      },
+      renderer,
+    })),
+    styleSpec: input.styleSpec,
+    arrangementPlan: {
+      ...input.plan,
+      provenance: {
+        ...input.plan.provenance,
+        parentIds: planParents,
+      },
+    },
+    quality: pipeline.quality,
+    provenance: pipeline.provenance.map((item) => {
+      const parentIds = item.model === "ARRANGEMENT_DIRECTOR"
+        ? planParents
+        : musicalModelStages.has(item.model)
+          ? trackModelParents
+          : trackArtifactParents.length
+            ? trackArtifactParents
+            : input.parentIds;
+      return {
+        ...item,
+        parameters: {
+          ...item.parameters,
+          upstreamParentRefs: item.parentIds.join(","),
+        },
+        parentIds,
+      };
+    }),
+    generationProvider: input.generationProvider,
   };
   files.push({
     name: "project/manifest.json",
@@ -445,6 +726,10 @@ export function renderArrangementExport(input: {
     format: "JSON",
     contentType: "application/json",
     data: Buffer.from(JSON.stringify(metadata, null, 2)),
+    provenance: fileProvenance("EXPORT_ENGINE", "2.0.0", {
+      qualityScore: pipeline.quality.score,
+      arrangementVersion: input.arrangementVersion,
+    }),
   });
   return files;
 }
