@@ -85,6 +85,7 @@ import {
 import { deleteExportObject, saveExportObject } from "../lib/objectStorage";
 import { queueProjectSourceAnalysis } from "../lib/sourceAnalyzer";
 import { validateSourceFileMetadata } from "../lib/sourceFormats";
+import { interpretCopilotCommand } from "../lib/copilotInterpreter";
 import {
   MUSIC_PROVIDERS,
   validateCanonicalTrackModels,
@@ -2231,48 +2232,23 @@ router.post("/projects/:projectId/copilot", async (req, res): Promise<void> => {
       return;
     }
   }
-  const command = body.data.command.toLowerCase();
-  const operationScope = {
-    ...(body.data.targetSection ? { targetSection: body.data.targetSection } : {}),
-    ...(body.data.targetTrack ? { targetTrack: body.data.targetTrack } : {}),
-    ...(body.data.startBar !== undefined ? { startBar: body.data.startBar } : {}),
-    ...(body.data.endBar !== undefined ? { endBar: body.data.endBar } : {}),
-  };
-  const operations: Array<{
-    type: string;
-    label: string;
-    targetSection?: string;
-    targetTrack?: string;
-    startBar?: number;
-    endBar?: number;
-  }> = [];
-  const affectedSections: string[] = [];
-  if (command.includes("energy") || command.includes("bigger") || command.includes("lift")) {
-    operations.push({ type: "SET_SECTION_ENERGY", label: "Raise section energy", ...operationScope });
-  }
-  if (command.includes("sparse") || command.includes("simpler") || command.includes("less busy")) {
-    operations.push({ type: "SET_SECTION_DENSITY", label: "Reduce arrangement density", ...operationScope });
-  }
-  if (command.includes("reharmon") || command.includes("chord")) {
-    operations.push({ type: "REHARMONIZE_CHORDS", label: "Reharmonize local chord region", ...operationScope });
-  }
-  if (command.includes("drum")) operations.push({ type: "UPDATE_TRACK", label: "Update drums", ...operationScope });
-  if (command.includes("piano") || command.includes("guitar")) operations.push({ type: "UPDATE_TRACK", label: "Update selected instrument", ...operationScope });
-  if (command.includes("cello") || command.includes("counter")) operations.push({ type: "ADD_COUNTERMELODY", label: "Add cello countermelody", ...operationScope });
-  if (command.includes("modulat") || command.includes("tone") || command.includes("טון")) operations.push({ type: "MODULATE", label: "Modulate local section", ...operationScope });
-  if (body.data.targetSection) {
-    affectedSections.push(body.data.targetSection);
-  } else {
-    if (command.includes("bridge") || command.includes("גשר")) affectedSections.push("Bridge");
-    if (command.includes("chorus") || command.includes("פזמון")) affectedSections.push("Final Chorus");
-    if (command.includes("verse") || command.includes("בית")) affectedSections.push("Verse 1");
-  }
-  if (operations.length === 0) operations.push({ type: "REFINE_ARRANGEMENT", label: "Refine arrangement direction", ...operationScope });
-  if (affectedSections.length === 0) affectedSections.push("Full arrangement");
+  const interpretation = await interpretCopilotCommand(body.data.command, {
+    targetSection: body.data.targetSection,
+    targetTrack: body.data.targetTrack,
+    startBar: body.data.startBar,
+    endBar: body.data.endBar,
+    sectionNames: scopedArrangement?.sections.map((section) => section.name) ?? [],
+    trackNames: (await db
+      .select({ name: tracksTable.name })
+      .from(tracksTable)
+      .where(eq(tracksTable.projectId, params.data.projectId))).map((track) => track.name),
+  });
   res.json(RunCopilotResponse.parse({
-    reply: `Prepared ${operations.length} focused arrangement ${operations.length === 1 ? "change" : "changes"} without regenerating the full song.`,
-    operations,
-    affectedSections,
+    reply: interpretation.interpreter === "openai"
+      ? `${interpretation.reply} (Copilot interpretation)`
+      : interpretation.reply,
+    operations: interpretation.operations,
+    affectedSections: interpretation.affectedSections,
   }));
 });
 

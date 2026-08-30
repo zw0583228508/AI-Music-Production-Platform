@@ -18,4 +18,5 @@ export const GenerationCandidateProvider = {
   ANYACCOMP: 'ANYACCOMP',
   SYMPHONYGEN: 'SYMPHONYGEN',
   METEOR: 'METEOR',
+  MIDI_SAG: 'MIDI_SAG',
 } as const;

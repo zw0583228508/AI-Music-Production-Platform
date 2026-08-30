@@ -856,6 +856,7 @@ export const GenerationProvenanceProvider = {
   ANYACCOMP: 'ANYACCOMP',
   SYMPHONYGEN: 'SYMPHONYGEN',
   METEOR: 'METEOR',
+  MIDI_SAG: 'MIDI_SAG',
 } as const;
 
 export type GenerationProvenanceParameters = { [key: string]: unknown };
@@ -1106,6 +1107,7 @@ export const GenerationInputProvider = {
   ANYACCOMP: 'ANYACCOMP',
   SYMPHONYGEN: 'SYMPHONYGEN',
   METEOR: 'METEOR',
+  MIDI_SAG: 'MIDI_SAG',
 } as const;
 
 export type GenerationInputTask = typeof GenerationInputTask[keyof typeof GenerationInputTask];
@@ -1186,6 +1188,7 @@ export const GenerationJobProvider = {
   ANYACCOMP: 'ANYACCOMP',
   SYMPHONYGEN: 'SYMPHONYGEN',
   METEOR: 'METEOR',
+  MIDI_SAG: 'MIDI_SAG',
 } as const;
 
 export type GenerationJobHardware = typeof GenerationJobHardware[keyof typeof GenerationJobHardware];
@@ -1250,6 +1253,7 @@ export const GenerationCandidateProvider = {
   ANYACCOMP: 'ANYACCOMP',
   SYMPHONYGEN: 'SYMPHONYGEN',
   METEOR: 'METEOR',
+  MIDI_SAG: 'MIDI_SAG',
 } as const;
 
 export type GenerationCandidateStatus = typeof GenerationCandidateStatus[keyof typeof GenerationCandidateStatus];
@@ -1274,6 +1278,115 @@ export type GenerationCandidatePlan = {
   sections: ArrangementSection[];
   tracks?: GenerationCandidatePlanTracksItem[];
 };
+
+export type InstrumentDefinitionFamily = typeof InstrumentDefinitionFamily[keyof typeof InstrumentDefinitionFamily];
+
+
+export const InstrumentDefinitionFamily = {
+  keys: 'keys',
+  strings: 'strings',
+  brass: 'brass',
+  drums: 'drums',
+  guitar: 'guitar',
+  voice: 'voice',
+  synth: 'synth',
+} as const;
+
+export type InstrumentDefinitionPlayableRange = {
+  min: number;
+  max: number;
+};
+
+export type InstrumentDefinitionComfortableRange = {
+  min: number;
+  max: number;
+};
+
+export type InstrumentDefinitionRegistersItem = {
+  name: string;
+  min: number;
+  max: number;
+  character: string;
+};
+
+export type InstrumentDefinitionConstraints = {
+  maxLeap: number;
+  minNoteDuration: number;
+  maxSimultaneousNotes: number;
+  breathSeconds?: number;
+  strings?: number;
+  frets?: number;
+  hands?: number;
+  feet?: number;
+};
+
+export type InstrumentDefinitionControls = {
+  dynamics: number[];
+  expression: number[];
+  sustain?: number;
+  pitchBend: boolean;
+  aftertouch: boolean;
+};
+
+export interface InstrumentDefinition {
+  id: string;
+  family: InstrumentDefinitionFamily;
+  playableRange: InstrumentDefinitionPlayableRange;
+  comfortableRange: InstrumentDefinitionComfortableRange;
+  registers: InstrumentDefinitionRegistersItem[];
+  polyphonic: boolean;
+  maxVoices: number;
+  articulations: string[];
+  constraints: InstrumentDefinitionConstraints;
+  controls: InstrumentDefinitionControls;
+}
+
+export interface MusicalNote {
+  id: string;
+  start: number;
+  duration: number;
+  pitch: number;
+  velocity: number;
+  channel?: number;
+  voice?: string;
+}
+
+export interface ControlEvent {
+  controller: number;
+  time: number;
+  value: number;
+  channel?: number;
+}
+
+export interface TrackAutomationPoint {
+  parameter: string;
+  time: number;
+  value: number;
+}
+
+export type ArtifactProvenanceParameters = {[key: string]: string | number | boolean};
+
+export interface ArtifactProvenance {
+  model: string;
+  version: string;
+  parameters: ArtifactProvenanceParameters;
+  parentIds: string[];
+  createdBy: string;
+}
+
+export interface TrackModel {
+  id: string;
+  instrument: string;
+  instrumentDefinition: InstrumentDefinition;
+  role: string;
+  notes: MusicalNote[];
+  cc: ControlEvent[];
+  articulations: ArticulationEvent[];
+  automation: TrackAutomationPoint[];
+  source: string;
+  version: number;
+  provenance: ArtifactProvenance;
+}
 
 export interface GenerationCandidate {
   id: string;
@@ -1311,6 +1424,7 @@ export const GenerationProviderId = {
   ANYACCOMP: 'ANYACCOMP',
   SYMPHONYGEN: 'SYMPHONYGEN',
   METEOR: 'METEOR',
+  MIDI_SAG: 'MIDI_SAG',
 } as const;
 
 export type GenerationProviderTasksItem = typeof GenerationProviderTasksItem[keyof typeof GenerationProviderTasksItem];
@@ -1465,115 +1579,6 @@ export interface CopilotResult {
   reply: string;
   operations: CopilotOperation[];
   affectedSections: string[];
-}
-
-export type ArtifactProvenanceParameters = {[key: string]: string | number | boolean};
-
-export interface ArtifactProvenance {
-  model: string;
-  version: string;
-  parameters: ArtifactProvenanceParameters;
-  parentIds: string[];
-  createdBy: string;
-}
-
-export interface MusicalNote {
-  id: string;
-  start: number;
-  duration: number;
-  pitch: number;
-  velocity: number;
-  channel?: number;
-  voice?: string;
-}
-
-export interface ControlEvent {
-  controller: number;
-  time: number;
-  value: number;
-  channel?: number;
-}
-
-export interface TrackAutomationPoint {
-  parameter: string;
-  time: number;
-  value: number;
-}
-
-export type InstrumentDefinitionFamily = typeof InstrumentDefinitionFamily[keyof typeof InstrumentDefinitionFamily];
-
-
-export const InstrumentDefinitionFamily = {
-  keys: 'keys',
-  strings: 'strings',
-  brass: 'brass',
-  drums: 'drums',
-  guitar: 'guitar',
-  voice: 'voice',
-  synth: 'synth',
-} as const;
-
-export type InstrumentDefinitionPlayableRange = {
-  min: number;
-  max: number;
-};
-
-export type InstrumentDefinitionComfortableRange = {
-  min: number;
-  max: number;
-};
-
-export type InstrumentDefinitionRegistersItem = {
-  name: string;
-  min: number;
-  max: number;
-  character: string;
-};
-
-export type InstrumentDefinitionConstraints = {
-  maxLeap: number;
-  minNoteDuration: number;
-  maxSimultaneousNotes: number;
-  breathSeconds?: number;
-  strings?: number;
-  frets?: number;
-  hands?: number;
-  feet?: number;
-};
-
-export type InstrumentDefinitionControls = {
-  dynamics: number[];
-  expression: number[];
-  sustain?: number;
-  pitchBend: boolean;
-  aftertouch: boolean;
-};
-
-export interface InstrumentDefinition {
-  id: string;
-  family: InstrumentDefinitionFamily;
-  playableRange: InstrumentDefinitionPlayableRange;
-  comfortableRange: InstrumentDefinitionComfortableRange;
-  registers: InstrumentDefinitionRegistersItem[];
-  polyphonic: boolean;
-  maxVoices: number;
-  articulations: string[];
-  constraints: InstrumentDefinitionConstraints;
-  controls: InstrumentDefinitionControls;
-}
-
-export interface TrackModel {
-  id: string;
-  instrument: string;
-  instrumentDefinition: InstrumentDefinition;
-  role: string;
-  notes: MusicalNote[];
-  cc: ControlEvent[];
-  articulations: ArticulationEvent[];
-  automation: TrackAutomationPoint[];
-  source: string;
-  version: number;
-  provenance: ArtifactProvenance;
 }
 
 export type StyleSpecTempoCharacter = typeof StyleSpecTempoCharacter[keyof typeof StyleSpecTempoCharacter];

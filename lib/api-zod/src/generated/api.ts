@@ -79,6 +79,10 @@ export const LogoutBrowserSessionResponse = zod.void()
  */
 
 
+
+
+
+
 export const ExchangeMobileAuthorizationCodeBody = zod.object({
   "code": zod.string().min(1),
   "code_verifier": zod.string().min(1),
@@ -107,6 +111,8 @@ export const LogoutMobileSessionResponse = zod.object({
 export const requestSourceUploadUrlBodySizeMax = 524288000;
 
 
+
+
 export const RequestSourceUploadUrlBody = zod.object({
   "name": zod.string().min(1),
   "size": zod.number().min(1).max(requestSourceUploadUrlBodySizeMax),
@@ -115,6 +121,8 @@ export const RequestSourceUploadUrlBody = zod.object({
 
 
 export const requestSourceUploadUrlResponseMetadataSizeMax = 524288000;
+
+
 
 
 export const RequestSourceUploadUrlResponse = zod.object({
@@ -148,6 +156,7 @@ export const ListProjectsResponse = zod.array(ListProjectsResponseItem)
 /**
  * @summary Create a music project
  */
+
 
 
 export const CreateProjectBody = zod.object({
@@ -208,6 +217,7 @@ export const getProjectResponseArrangementsItemSectionsItemMidiTracksCcItemMax =
 
 export const getProjectResponseArrangementsItemSectionsItemTransposeSemitonesMin = -24;
 export const getProjectResponseArrangementsItemSectionsItemTransposeSemitonesMax = 24;
+
 
 
 export const GetProjectResponse = zod.object({
@@ -311,7 +321,7 @@ export const GetProjectResponse = zod.object({
   "generationProvenance": zod.union([zod.object({
   "jobId": zod.string(),
   "candidateId": zod.string(),
-  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR']),
+  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR', 'MIDI_SAG']),
   "modelVersion": zod.string(),
   "reportedModelVersion": zod.string().nullish(),
   "providerRequestId": zod.string().nullish(),
@@ -418,6 +428,7 @@ export const listProjectSourcesResponseAttemptsItemProgressMin = 0;
 export const listProjectSourcesResponseAttemptsItemProgressMax = 100;
 
 
+
 export const ListProjectSourcesResponseItem = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -457,7 +468,10 @@ export const RegisterProjectSourceParams = zod.object({
 })
 
 
+
 export const registerProjectSourceBodySizeMax = 524288000;
+
+
 
 
 export const RegisterProjectSourceBody = zod.object({
@@ -473,6 +487,7 @@ export const registerProjectSourceResponseProgressMax = 100;
 
 export const registerProjectSourceResponseAttemptsItemProgressMin = 0;
 export const registerProjectSourceResponseAttemptsItemProgressMax = 100;
+
 
 
 export const RegisterProjectSourceResponse = zod.object({
@@ -518,6 +533,7 @@ export const retryProjectSourceAnalysisResponseProgressMax = 100;
 
 export const retryProjectSourceAnalysisResponseAttemptsItemProgressMin = 0;
 export const retryProjectSourceAnalysisResponseAttemptsItemProgressMax = 100;
+
 
 
 export const RetryProjectSourceAnalysisResponse = zod.object({
@@ -567,7 +583,9 @@ export const getProjectSongModelResponseFusionDecisionsItemCompatibilityMin = 0;
 export const getProjectSongModelResponseFusionDecisionsItemCompatibilityMax = 1;
 
 
+
 export const getProjectSongModelResponseAudioDurationSecondsExclusiveMin = 0;
+
 
 
 export const getProjectSongModelResponseAnalysisStartSecondsMin = 0;
@@ -598,6 +616,7 @@ export const getProjectSongModelResponseProviderProvenanceItemAttemptsMin = 0;
 
 export const getProjectSongModelResponseConfidenceMin = 0;
 export const getProjectSongModelResponseConfidenceMax = 1;
+
 
 
 export const GetProjectSongModelResponse = zod.object({
@@ -821,6 +840,10 @@ export const correctProjectSongModelBodyMeterRegExp = new RegExp('^[1-9][0-9]*/[
 export const correctProjectSongModelBodySectionsItemNameMax = 120;
 
 
+
+
+
+
 export const CorrectProjectSongModelBody = zod.object({
   "baseVersion": zod.number().min(1),
   "bpm": zod.number().min(correctProjectSongModelBodyBpmMin).max(correctProjectSongModelBodyBpmMax).optional(),
@@ -843,7 +866,9 @@ export const correctProjectSongModelResponseFusionDecisionsItemCompatibilityMin 
 export const correctProjectSongModelResponseFusionDecisionsItemCompatibilityMax = 1;
 
 
+
 export const correctProjectSongModelResponseAudioDurationSecondsExclusiveMin = 0;
+
 
 
 export const correctProjectSongModelResponseAnalysisStartSecondsMin = 0;
@@ -874,6 +899,7 @@ export const correctProjectSongModelResponseProviderProvenanceItemAttemptsMin = 
 
 export const correctProjectSongModelResponseConfidenceMin = 0;
 export const correctProjectSongModelResponseConfidenceMax = 1;
+
 
 
 export const CorrectProjectSongModelResponse = zod.object({
@@ -1163,6 +1189,7 @@ export const listArrangementsResponseSectionsItemTransposeSemitonesMin = -24;
 export const listArrangementsResponseSectionsItemTransposeSemitonesMax = 24;
 
 
+
 export const ListArrangementsResponseItem = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -1238,7 +1265,7 @@ export const ListArrangementsResponseItem = zod.object({
   "generationProvenance": zod.union([zod.object({
   "jobId": zod.string(),
   "candidateId": zod.string(),
-  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR']),
+  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR', 'MIDI_SAG']),
   "modelVersion": zod.string(),
   "reportedModelVersion": zod.string().nullish(),
   "providerRequestId": zod.string().nullish(),
@@ -1261,6 +1288,7 @@ export const CreateArrangementParams = zod.object({
 
 
 export const createArrangementBodyHarmonyComplexityMax = 10;
+
 
 
 export const CreateArrangementBody = zod.object({
@@ -1302,6 +1330,7 @@ export const createArrangementResponseSectionsItemMidiTracksCcItemMax = 127;
 
 export const createArrangementResponseSectionsItemTransposeSemitonesMin = -24;
 export const createArrangementResponseSectionsItemTransposeSemitonesMax = 24;
+
 
 
 export const CreateArrangementResponse = zod.object({
@@ -1379,7 +1408,7 @@ export const CreateArrangementResponse = zod.object({
   "generationProvenance": zod.union([zod.object({
   "jobId": zod.string(),
   "candidateId": zod.string(),
-  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR']),
+  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR', 'MIDI_SAG']),
   "modelVersion": zod.string(),
   "reportedModelVersion": zod.string().nullish(),
   "providerRequestId": zod.string().nullish(),
@@ -1446,6 +1475,7 @@ export const updateArrangementBodySectionsItemMidiTracksCcItemMax = 127;
 
 export const updateArrangementBodySectionsItemTransposeSemitonesMin = -24;
 export const updateArrangementBodySectionsItemTransposeSemitonesMax = 24;
+
 
 
 export const UpdateArrangementBody = zod.object({
@@ -1541,6 +1571,7 @@ export const updateArrangementResponseSectionsItemTransposeSemitonesMin = -24;
 export const updateArrangementResponseSectionsItemTransposeSemitonesMax = 24;
 
 
+
 export const UpdateArrangementResponse = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -1616,7 +1647,7 @@ export const UpdateArrangementResponse = zod.object({
   "generationProvenance": zod.union([zod.object({
   "jobId": zod.string(),
   "candidateId": zod.string(),
-  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR']),
+  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR', 'MIDI_SAG']),
   "modelVersion": zod.string(),
   "reportedModelVersion": zod.string().nullish(),
   "providerRequestId": zod.string().nullish(),
@@ -1639,9 +1670,10 @@ export const GenerateArrangementParams = zod.object({
 export const generateArrangementBodyCandidatesMax = 3;
 
 
+
 export const GenerateArrangementBody = zod.object({
   "candidates": zod.number().min(1).max(generateArrangementBodyCandidatesMax).optional(),
-  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR']).optional(),
+  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR', 'MIDI_SAG']).optional(),
   "task": zod.enum(['SEPARATION', 'TRANSCRIPTION', 'ACCOMPANIMENT', 'ORCHESTRATION', 'ARRANGEMENT']).optional(),
   "hardware": zod.enum(['AUTO', 'CPU', 'GPU']).optional(),
   "speed": zod.enum(['FAST', 'BALANCED', 'QUALITY']).optional(),
@@ -1653,13 +1685,14 @@ export const generateArrangementResponseProgressMin = 0;
 export const generateArrangementResponseProgressMax = 100;
 
 
+
 export const GenerateArrangementResponse = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
   "arrangementId": zod.string(),
   "task": zod.enum(['SEPARATION', 'TRANSCRIPTION', 'ACCOMPANIMENT', 'ORCHESTRATION', 'ARRANGEMENT']),
   "status": zod.enum(['queued', 'running', 'succeeded', 'failed']),
-  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR']),
+  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR', 'MIDI_SAG']),
   "modelVersion": zod.string(),
   "hardware": zod.enum(['AUTO', 'CPU', 'GPU']),
   "speed": zod.enum(['FAST', 'BALANCED', 'QUALITY']),
@@ -1688,13 +1721,14 @@ export const getGenerationJobResponseProgressMin = 0;
 export const getGenerationJobResponseProgressMax = 100;
 
 
+
 export const GetGenerationJobResponse = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
   "arrangementId": zod.string(),
   "task": zod.enum(['SEPARATION', 'TRANSCRIPTION', 'ACCOMPANIMENT', 'ORCHESTRATION', 'ARRANGEMENT']),
   "status": zod.enum(['queued', 'running', 'succeeded', 'failed']),
-  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR']),
+  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR', 'MIDI_SAG']),
   "modelVersion": zod.string(),
   "hardware": zod.enum(['AUTO', 'CPU', 'GPU']),
   "speed": zod.enum(['FAST', 'BALANCED', 'QUALITY']),
@@ -1753,10 +1787,11 @@ export const listGenerationCandidatesResponsePlanSectionsItemTransposeSemitonesM
 export const listGenerationCandidatesResponsePlanSectionsItemTransposeSemitonesMax = 24;
 
 
+
 export const ListGenerationCandidatesResponseItem = zod.object({
   "id": zod.string(),
   "jobId": zod.string(),
-  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR']),
+  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR', 'MIDI_SAG']),
   "modelVersion": zod.string(),
   "reportedModelVersion": zod.string().nullish(),
   "providerRequestId": zod.string().nullish(),
@@ -1948,6 +1983,7 @@ export const selectGenerationCandidateResponseSectionsItemTransposeSemitonesMin 
 export const selectGenerationCandidateResponseSectionsItemTransposeSemitonesMax = 24;
 
 
+
 export const SelectGenerationCandidateResponse = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -2023,7 +2059,7 @@ export const SelectGenerationCandidateResponse = zod.object({
   "generationProvenance": zod.union([zod.object({
   "jobId": zod.string(),
   "candidateId": zod.string(),
-  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR']),
+  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR', 'MIDI_SAG']),
   "modelVersion": zod.string(),
   "reportedModelVersion": zod.string().nullish(),
   "providerRequestId": zod.string().nullish(),
@@ -2040,7 +2076,7 @@ export const SelectGenerationCandidateResponse = zod.object({
  * @summary List generation provider capabilities and availability
  */
 export const ListGenerationProvidersResponseItem = zod.object({
-  "id": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR']),
+  "id": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR', 'MIDI_SAG']),
   "name": zod.string(),
   "modelVersion": zod.string(),
   "tasks": zod.array(zod.enum(['SEPARATION', 'TRANSCRIPTION', 'ACCOMPANIMENT', 'ORCHESTRATION', 'ARRANGEMENT'])),
@@ -2210,6 +2246,10 @@ export const RunCopilotParams = zod.object({
 })
 
 
+
+
+
+
 export const RunCopilotBody = zod.object({
   "command": zod.string().min(1),
   "arrangementId": zod.string().optional(),
@@ -2218,6 +2258,9 @@ export const RunCopilotBody = zod.object({
   "startBar": zod.number().min(1).optional(),
   "endBar": zod.number().min(1).optional()
 })
+
+
+
 
 
 export const RunCopilotResponse = zod.object({
