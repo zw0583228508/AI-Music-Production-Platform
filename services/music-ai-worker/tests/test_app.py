@@ -133,6 +133,157 @@ Path(a.attestation).write_text(json.dumps({
 
 
 class WorkerTests(unittest.TestCase):
+    def test_asset_upload_uses_its_own_large_request_limit(self):
+        async def run_request(path: str, size: int):
+            request = app.FastAPIRequest(
+                {
+                    "type": "http",
+                    "method": "POST",
+                    "path": path,
+                    "headers": [(b"content-length", str(size).encode())],
+                }
+            )
+
+            async def call_next(_request):
+                return app.JSONResponse({"accepted": True})
+
+            return await app.request_size_limit(request, call_next)
+
+        large_pack = app.MAX_INPUT_BYTES * 2 + 1
+        upload_response = asyncio.run(run_request("/admin/assets/stage", large_pack))
+        json_response = asyncio.run(run_request("/analyze", large_pack))
+        self.assertEqual(upload_response.status_code, 200)
+        self.assertEqual(json_response.status_code, 413)
+
+    def test_asset_admin_authentication_fails_closed_without_worker_token(self):
+        request = app.FastAPIRequest(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/admin/assets",
+                "headers": [],
+            }
+        )
+        with (
+            unittest.mock.patch.dict(app.os.environ, {}, clear=True),
+            self.assertRaises(HTTPException) as error,
+        ):
+            app._require_admin_auth(request)
+        self.assertEqual(error.exception.status_code, 401)
+
+    def test_uploaded_native_host_must_match_approved_registry(self):
+        approved = json.dumps(
+            [{"kind": "sfz", "identity": "Approved Host", "sha256": "a" * 64}]
+        )
+        with unittest.mock.patch.dict(
+            app.os.environ, {"MUSIC_AI_APPROVED_NATIVE_HOSTS": approved}
+        ):
+            app._require_approved_native_host("sfz", "Approved Host", "a" * 64)
+            with self.assertRaises(HTTPException) as error:
+                app._require_approved_native_host("sfz", "Approved Host", "b" * 64)
+        self.assertEqual(error.exception.status_code, 403)
+
+    def test_unapproved_vst3_never_reaches_smoke_renderer(self):
+        plugin_bytes = b"unapproved-native-plugin"
+        host_bytes = b"#!/bin/sh\nexit 0\n"
+        host_checksum = hashlib.sha256(host_bytes).hexdigest()
+        host_registry = json.dumps(
+            [
+                {
+                    "kind": "vst3",
+                    "identity": "Approved MIDI Host",
+                    "sha256": host_checksum,
+                }
+            ]
+        )
+
+        async def stage():
+            return await app._stage_asset_candidate(
+                "vst3",
+                "licensed-piano",
+                "Licensed Piano / 1.0",
+                "Test Studio",
+                "license-vst",
+                "Approved MIDI Host",
+                [app.UploadFile(filename="piano.vst3", file=io.BytesIO(plugin_bytes))],
+                app.UploadFile(filename="host", file=io.BytesIO(host_bytes)),
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with (
+                unittest.mock.patch.object(app, "ASSET_ROOT", Path(tmp)),
+                unittest.mock.patch.dict(
+                    app.os.environ,
+                    {
+                        "MUSIC_AI_APPROVED_NATIVE_HOSTS": host_registry,
+                        "MUSIC_AI_APPROVED_VST3_ASSETS": "[]",
+                    },
+                ),
+                unittest.mock.patch.object(app, "run_renderer_smoke") as smoke,
+                self.assertRaises(HTTPException) as error,
+            ):
+                asyncio.run(stage())
+
+        self.assertEqual(error.exception.status_code, 403)
+        smoke.assert_not_called()
+
+    def test_approved_vst3_can_reach_smoke_verification(self):
+        plugin_bytes = b"approved-native-plugin"
+        host_bytes = b"#!/bin/sh\nexit 0\n"
+        plugin_checksum = hashlib.sha256(plugin_bytes).hexdigest()
+        host_checksum = hashlib.sha256(host_bytes).hexdigest()
+        registries = {
+            "MUSIC_AI_APPROVED_NATIVE_HOSTS": json.dumps(
+                [
+                    {
+                        "kind": "vst3",
+                        "identity": "Approved MIDI Host",
+                        "sha256": host_checksum,
+                    }
+                ]
+            ),
+            "MUSIC_AI_APPROVED_VST3_ASSETS": json.dumps(
+                [
+                    {
+                        "assetId": "licensed-piano",
+                        "identity": "Licensed Piano / 1.0",
+                        "sha256": plugin_checksum,
+                    }
+                ]
+            ),
+        }
+        evidence = {
+            "audible": True,
+            "canonicalSensitivity": True,
+            "nativeHostAttested": True,
+        }
+
+        async def stage():
+            return await app._stage_asset_candidate(
+                "vst3",
+                "licensed-piano",
+                "Licensed Piano / 1.0",
+                "Test Studio",
+                "license-vst",
+                "Approved MIDI Host",
+                [app.UploadFile(filename="piano.vst3", file=io.BytesIO(plugin_bytes))],
+                app.UploadFile(filename="host", file=io.BytesIO(host_bytes)),
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with (
+                unittest.mock.patch.object(app, "ASSET_ROOT", Path(tmp)),
+                unittest.mock.patch.dict(app.os.environ, registries),
+                unittest.mock.patch.object(
+                    app, "run_renderer_smoke", return_value=evidence
+                ) as smoke,
+            ):
+                candidate = asyncio.run(stage())
+
+        self.assertEqual(candidate["status"], "verified")
+        self.assertEqual(candidate["sha256"], plugin_checksum)
+        smoke.assert_called_once()
+
     def test_health_has_pinned_checksum(self):
         response = app.health("BASIC_PITCH")
         self.assertEqual(response["status"], "ok")
@@ -296,6 +447,143 @@ class WorkerTests(unittest.TestCase):
             ):
                 app.run_renderer_smoke("SFIZZ_VSCO2_CE")
             self.assertIn("did not respond to TrackModel", str(error.exception.detail))
+
+    def test_tampered_verified_candidate_does_not_replace_active_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            active_library = root / "active-library"
+            active_library.mkdir()
+            (active_library / "instrument.sfz").write_text("active")
+            active_renderer = root / "active-host"
+            active_renderer.write_text("#!/bin/sh\n")
+            active_renderer.chmod(0o755)
+            active_entry = {
+                "id": "active-pack",
+                "identity": "Active Pack 1.0",
+                "libraryPath": str(active_library),
+                "rendererPath": str(active_renderer),
+                "rendererIdentity": "Approved Host 1.0",
+                "rendererSha256": app._sha256_tree(active_renderer),
+                "sha256": app._sha256_tree(active_library),
+                "licenseOwner": "Test Studio",
+                "licenseReference": "license-active",
+            }
+            manifest_path = root / "licensed_assets.json"
+            manifest_path.write_text(json.dumps({"sfz": active_entry}))
+
+            candidate_library = root / ".staged" / "candidate-safe-id-123456789" / "asset"
+            candidate_library.mkdir(parents=True)
+            (candidate_library / "instrument.sfz").write_text("candidate")
+            candidate_renderer = candidate_library.parent / "renderer" / "native-host"
+            candidate_renderer.parent.mkdir()
+            candidate_renderer.write_text("#!/bin/sh\n")
+            candidate_renderer.chmod(0o755)
+            candidate = {
+                "candidateId": "candidate-safe-id-123456789",
+                "kind": "sfz",
+                "assetId": "candidate-pack",
+                "identity": "Candidate Pack 2.0",
+                "licenseOwner": "Test Studio",
+                "licenseReference": "license-candidate",
+                "rendererIdentity": "Approved Host 2.0",
+                "sha256": app._sha256_tree(candidate_library),
+                "rendererSha256": app._sha256_tree(candidate_renderer),
+                "path": str(candidate_library),
+                "libraryPath": str(candidate_library),
+                "rendererPath": str(candidate_renderer),
+                "status": "verified",
+                "smokeEvidence": {
+                    "assetId": "candidate-pack",
+                    "sha256": app._sha256_tree(candidate_library),
+                    "rendererSha256": app._sha256_tree(candidate_renderer),
+                    "nativeHostAttested": True,
+                    "canonicalSensitivity": True,
+                    "audible": True,
+                },
+            }
+            (root / app.ASSET_STATE_FILENAME).write_text(
+                json.dumps({"candidates": {candidate["candidateId"]: candidate}})
+            )
+            (candidate_library / "instrument.sfz").write_text("tampered")
+
+            with (
+                unittest.mock.patch.object(app, "ASSET_ROOT", root),
+                unittest.mock.patch.object(app, "ASSET_MANIFEST_PATH", manifest_path),
+                self.assertRaises(HTTPException) as error,
+            ):
+                app._activate_asset_candidate(candidate["candidateId"])
+
+            self.assertEqual(error.exception.status_code, 409)
+            self.assertEqual(json.loads(manifest_path.read_text()), {"sfz": active_entry})
+
+    def test_verified_candidate_activation_preserves_other_active_kind(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plugin = root / "existing.vst3"
+            plugin.write_bytes(b"existing-vst")
+            existing_host = root / "existing-host"
+            existing_host.write_text("#!/bin/sh\n")
+            existing_host.chmod(0o755)
+            existing_vst = {
+                "id": "existing-vst",
+                "identity": "Existing VST",
+                "path": str(plugin),
+                "rendererPath": str(existing_host),
+                "rendererIdentity": "Existing Host",
+                "rendererSha256": app._sha256_tree(existing_host),
+                "sha256": app._sha256_tree(plugin),
+                "licenseOwner": "Test Studio",
+                "licenseReference": "license-vst",
+            }
+            manifest_path = root / "licensed_assets.json"
+            manifest_path.write_text(json.dumps({"vst3": existing_vst}))
+
+            library = root / ".staged" / "candidate-safe-id-987654321" / "asset"
+            library.mkdir(parents=True)
+            (library / "instrument.sfz").write_text("candidate")
+            renderer = library.parent / "renderer" / "native-host"
+            renderer.parent.mkdir()
+            renderer.write_text("#!/bin/sh\n")
+            renderer.chmod(0o755)
+            evidence = {
+                "assetId": "new-sfz",
+                "sha256": app._sha256_tree(library),
+                "rendererSha256": app._sha256_tree(renderer),
+                "nativeHostAttested": True,
+                "canonicalSensitivity": True,
+                "audible": True,
+            }
+            candidate = {
+                "candidateId": "candidate-safe-id-987654321",
+                "kind": "sfz",
+                "assetId": "new-sfz",
+                "identity": "New SFZ",
+                "licenseOwner": "Test Studio",
+                "licenseReference": "license-sfz",
+                "rendererIdentity": "New Host",
+                "sha256": app._sha256_tree(library),
+                "rendererSha256": app._sha256_tree(renderer),
+                "path": str(library),
+                "libraryPath": str(library),
+                "rendererPath": str(renderer),
+                "status": "verified",
+                "smokeEvidence": evidence,
+            }
+            (root / app.ASSET_STATE_FILENAME).write_text(
+                json.dumps({"candidates": {candidate["candidateId"]: candidate}})
+            )
+
+            with (
+                unittest.mock.patch.object(app, "ASSET_ROOT", root),
+                unittest.mock.patch.object(app, "ASSET_MANIFEST_PATH", manifest_path),
+            ):
+                activated = app._activate_asset_candidate(candidate["candidateId"])
+
+            manifest = json.loads(manifest_path.read_text())
+            self.assertEqual(activated["status"], "active")
+            self.assertEqual(manifest["vst3"], existing_vst)
+            self.assertEqual(manifest["sfz"]["id"], "new-sfz")
+            self.assertEqual(manifest["sfz"]["smokeEvidence"], evidence)
 
     def test_source_resolution_rejects_private_and_reserved_addresses(self):
         for address in ("10.0.0.1", "127.0.0.1", "192.0.2.1", "169.254.1.1"):

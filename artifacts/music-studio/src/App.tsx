@@ -17,6 +17,7 @@ import { Shell } from '@/components/layout/shell';
 import Dashboard from '@/pages/dashboard';
 import Projects from '@/pages/projects';
 import ProjectWorkspace from '@/pages/project-workspace';
+import InstrumentPacks from '@/pages/instrument-packs';
 
 const queryClient = new QueryClient();
 
@@ -28,6 +29,7 @@ function Router() {
           <Route path="/" component={Dashboard} />
           <Route path="/projects" component={Projects} />
           <Route path="/projects/:projectId" component={ProjectWorkspace} />
+          <Route path="/instrument-packs" component={InstrumentPacks} />
           <Route component={NotFound} />
         </Switch>
       </RoutedErrorBoundary>

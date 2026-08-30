@@ -42,6 +42,8 @@ import type {
   GenerationJob,
   GenerationProvider,
   HealthStatus,
+  LicensedInstrumentPack,
+  LicensedInstrumentPackCatalog,
   LogoutBrowserSessionParams,
   LogoutSuccess,
   MobileTokenExchangeRequest,
@@ -58,6 +60,7 @@ import type {
   RestoreArrangementRevisionInput,
   SongModel,
   SongModelCorrectionInput,
+  StageLicensedInstrumentPackBody,
   Track,
   UploadUrlRequest,
   UploadUrlResponse
@@ -244,6 +247,238 @@ export function useGetDashboard<TData = Awaited<ReturnType<typeof getDashboard>>
 
 
 
+
+export const getListLicensedInstrumentPacksUrl = () => {
+
+
+
+
+  return `/api/instrument-packs`
+}
+
+/**
+ * @summary List active and staged licensed instrument packs
+ */
+export const listLicensedInstrumentPacks = async ( options?: Parameters<typeof customFetch>[1]): Promise<LicensedInstrumentPackCatalog> => {
+
+  return customFetch<LicensedInstrumentPackCatalog>(getListLicensedInstrumentPacksUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListLicensedInstrumentPacksQueryKey = () => {
+    return [
+    `/api/instrument-packs`
+    ] as const;
+    }
+
+
+export const getListLicensedInstrumentPacksQueryOptions = <TData = Awaited<ReturnType<typeof listLicensedInstrumentPacks>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLicensedInstrumentPacks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListLicensedInstrumentPacksQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listLicensedInstrumentPacks>>> = ({ signal }) => listLicensedInstrumentPacks({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listLicensedInstrumentPacks>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListLicensedInstrumentPacksQueryResult = NonNullable<Awaited<ReturnType<typeof listLicensedInstrumentPacks>>>
+export type ListLicensedInstrumentPacksQueryError = ErrorType<void>
+
+
+/**
+ * @summary List active and staged licensed instrument packs
+ */
+
+export function useListLicensedInstrumentPacks<TData = Awaited<ReturnType<typeof listLicensedInstrumentPacks>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLicensedInstrumentPacks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListLicensedInstrumentPacksQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getStageLicensedInstrumentPackUrl = () => {
+
+
+
+
+  return `/api/instrument-packs/stage`
+}
+
+/**
+ * Streams a licensed plugin/library and its preapproved native host to private worker storage, then returns only after canonical smoke verification succeeds.
+ * @summary Upload and verify a licensed instrument pack candidate
+ */
+export const stageLicensedInstrumentPack = async (stageLicensedInstrumentPackBody: StageLicensedInstrumentPackBody, options?: Parameters<typeof customFetch>[1]): Promise<LicensedInstrumentPack> => {
+    const formData = new FormData();
+formData.append(`kind`, stageLicensedInstrumentPackBody.kind);
+formData.append(`assetId`, stageLicensedInstrumentPackBody.assetId);
+formData.append(`identity`, stageLicensedInstrumentPackBody.identity);
+formData.append(`licenseOwner`, stageLicensedInstrumentPackBody.licenseOwner);
+formData.append(`licenseReference`, stageLicensedInstrumentPackBody.licenseReference);
+formData.append(`rendererIdentity`, stageLicensedInstrumentPackBody.rendererIdentity);
+stageLicensedInstrumentPackBody.assetFiles.forEach(value => formData.append(`assetFiles`, value));
+if(stageLicensedInstrumentPackBody.assetRelativePaths !== undefined) {
+ stageLicensedInstrumentPackBody.assetRelativePaths.forEach(value => formData.append(`assetRelativePaths`, value));
+ }
+formData.append(`rendererFile`, stageLicensedInstrumentPackBody.rendererFile);
+
+  return customFetch<LicensedInstrumentPack>(getStageLicensedInstrumentPackUrl(),
+  {
+    ...options,
+    method: 'POST'
+    ,
+    body: formData
+  }
+);}
+
+
+
+
+
+export const getStageLicensedInstrumentPackMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof stageLicensedInstrumentPack>>, TError,{data: BodyType<StageLicensedInstrumentPackBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof stageLicensedInstrumentPack>>, TError,{data: BodyType<StageLicensedInstrumentPackBody>}, TContext> => {
+
+const mutationKey = ['stageLicensedInstrumentPack'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof stageLicensedInstrumentPack>>, {data: BodyType<StageLicensedInstrumentPackBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  stageLicensedInstrumentPack(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StageLicensedInstrumentPackMutationResult = NonNullable<Awaited<ReturnType<typeof stageLicensedInstrumentPack>>>
+    export type StageLicensedInstrumentPackMutationBody = BodyType<StageLicensedInstrumentPackBody>
+    export type StageLicensedInstrumentPackMutationError = ErrorType<void>
+
+    /**
+ * @summary Upload and verify a licensed instrument pack candidate
+ */
+export const useStageLicensedInstrumentPack = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof stageLicensedInstrumentPack>>, TError,{data: BodyType<StageLicensedInstrumentPackBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof stageLicensedInstrumentPack>>,
+        TError,
+        {data: BodyType<StageLicensedInstrumentPackBody>},
+        TContext
+      > => {
+      return useMutation(getStageLicensedInstrumentPackMutationOptions(options));
+    }
+
+export const getActivateLicensedInstrumentPackUrl = (candidateId: string,) => {
+
+
+
+
+  return `/api/instrument-packs/${candidateId}/activate`
+}
+
+/**
+ * @summary Atomically activate a verified licensed instrument pack
+ */
+export const activateLicensedInstrumentPack = async (candidateId: string, options?: Parameters<typeof customFetch>[1]): Promise<LicensedInstrumentPack> => {
+
+  return customFetch<LicensedInstrumentPack>(getActivateLicensedInstrumentPackUrl(candidateId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getActivateLicensedInstrumentPackMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof activateLicensedInstrumentPack>>, TError,{candidateId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof activateLicensedInstrumentPack>>, TError,{candidateId: string}, TContext> => {
+
+const mutationKey = ['activateLicensedInstrumentPack'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof activateLicensedInstrumentPack>>, {candidateId: string}> = (props) => {
+          const {candidateId} = props ?? {};
+
+          return  activateLicensedInstrumentPack(candidateId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ActivateLicensedInstrumentPackMutationResult = NonNullable<Awaited<ReturnType<typeof activateLicensedInstrumentPack>>>
+
+    export type ActivateLicensedInstrumentPackMutationError = ErrorType<void>
+
+    /**
+ * @summary Atomically activate a verified licensed instrument pack
+ */
+export const useActivateLicensedInstrumentPack = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof activateLicensedInstrumentPack>>, TError,{candidateId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof activateLicensedInstrumentPack>>,
+        TError,
+        {candidateId: string},
+        TContext
+      > => {
+      return useMutation(getActivateLicensedInstrumentPackMutationOptions(options));
+    }
 
 export const getGetCurrentAuthUserUrl = () => {
 

@@ -5,7 +5,8 @@ import {
   LayoutDashboard, 
   Library,
   Settings,
-  Menu
+  Menu,
+  Package
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -21,6 +22,7 @@ export function Shell({ children }: ShellProps) {
   const navItems = [
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
     { href: "/projects", label: "Projects", icon: Library },
+    { href: "/instrument-packs", label: "Instrument Packs", icon: Package },
   ];
 
   const NavLinks = ({ className }: { className?: string }) => (

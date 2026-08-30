@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import fcntl
 import hashlib
 import ipaddress
 import json
@@ -14,7 +15,9 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+from contextlib import contextmanager
 from importlib.metadata import PackageNotFoundError, version as installed_version
 from pathlib import Path
 from typing import Literal
@@ -23,7 +26,7 @@ from urllib.parse import urlparse
 
 import numpy as np
 import soundfile as sf
-from fastapi import Depends, FastAPI, HTTPException, Request as FastAPIRequest
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request as FastAPIRequest, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.background import BackgroundTask
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
@@ -49,6 +52,9 @@ ASSET_MANIFEST_PATH = Path(
     os.getenv("MUSIC_AI_ASSET_MANIFEST", str(ASSET_ROOT / "licensed_assets.json"))
 ).resolve()
 MAX_RENDER_SECONDS = float(os.getenv("MUSIC_AI_MAX_RENDER_SECONDS", "300"))
+MAX_ASSET_UPLOAD_BYTES = int(os.getenv("MUSIC_AI_MAX_ASSET_UPLOAD_BYTES", str(2 * 1024 * 1024 * 1024)))
+ASSET_STATE_FILENAME = ".licensed_asset_state.json"
+ASSET_STATE_LOCK = threading.Lock()
 
 app = FastAPI(title="Music AI Worker", version="1.0.0")
 
@@ -57,12 +63,23 @@ app = FastAPI(title="Music AI Worker", version="1.0.0")
 async def request_size_limit(request: FastAPIRequest, call_next):
     """Reject declared oversized JSON before FastAPI buffers and parses it."""
     length = request.headers.get("content-length")
+    is_asset_upload = request.url.path == "/admin/assets/stage"
     if length:
         try:
-            if int(length) > MAX_INPUT_BYTES * 2:
+            maximum = (
+                MAX_ASSET_UPLOAD_BYTES + 1024 * 1024
+                if is_asset_upload
+                else MAX_INPUT_BYTES * 2
+            )
+            if int(length) > maximum:
                 return JSONResponse({"detail": "request exceeds size limit"}, status_code=413)
         except ValueError:
             return JSONResponse({"detail": "invalid content-length"}, status_code=400)
+    elif is_asset_upload:
+        return JSONResponse(
+            {"detail": "content-length is required for licensed asset uploads"},
+            status_code=411,
+        )
     return await call_next(request)
 
 
@@ -70,6 +87,12 @@ def _require_auth(request: FastAPIRequest) -> None:
     token = os.getenv("MUSIC_AI_WORKER_TOKEN")
     if token and request.headers.get("Authorization") != f"Bearer {token}":
         raise HTTPException(401, "invalid bearer token")
+
+
+def _require_admin_auth(request: FastAPIRequest) -> None:
+    token = os.getenv("MUSIC_AI_WORKER_TOKEN")
+    if not token or request.headers.get("Authorization") != f"Bearer {token}":
+        raise HTTPException(401, "licensed asset administration requires worker authentication")
 
 
 def _resolve_public_addresses(host: str, port: int) -> list[tuple[int, tuple]]:
@@ -250,6 +273,133 @@ class RenderRequest(BaseModel):
     audio_base64: str | None = Field(default=None, min_length=4, max_length=MAX_INPUT_BYTES * 2)
 
 
+def _asset_state_path() -> Path:
+    return ASSET_ROOT / ASSET_STATE_FILENAME
+
+
+@contextmanager
+def _asset_file_lock():
+    ASSET_ROOT.mkdir(parents=True, exist_ok=True)
+    with (ASSET_ROOT / ".licensed_asset.lock").open("a+b") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _atomic_write_json(path: Path, value: dict, *, indent: int | None = None) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{secrets.token_hex(8)}.tmp")
+    with temporary.open("w") as handle:
+        json.dump(value, handle, sort_keys=True, separators=None if indent else (",", ":"), indent=indent)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temporary, path)
+    directory_fd = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+
+
+def _read_asset_state() -> dict:
+    try:
+        value = json.loads(_asset_state_path().read_text())
+    except (OSError, json.JSONDecodeError):
+        return {"candidates": {}}
+    return value if isinstance(value, dict) and isinstance(value.get("candidates", {}), dict) else {"candidates": {}}
+
+
+def _write_asset_state(state: dict) -> None:
+    _atomic_write_json(_asset_state_path(), state)
+
+
+def _asset_candidate_response(candidate: dict) -> dict:
+    return {
+        key: value
+        for key, value in candidate.items()
+        if key not in {"path", "libraryPath", "rendererPath", "candidateRoot"}
+    }
+
+
+def _safe_upload_name(value: str, label: str) -> Path:
+    if not value or "\x00" in value:
+        raise HTTPException(400, f"{label} has an invalid filename")
+    path = Path(value.replace("\\", "/"))
+    if path.is_absolute() or ".." in path.parts:
+        raise HTTPException(400, f"{label} has an invalid filename")
+    parts = tuple(part for part in path.parts if part not in {"", "."})
+    if not parts:
+        raise HTTPException(400, f"{label} has an invalid filename")
+    return Path(*parts)
+
+
+async def _write_upload(upload: UploadFile, destination: Path, remaining: list[int]) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with destination.open("wb") as handle:
+        while chunk := await upload.read(1024 * 1024):
+            remaining[0] -= len(chunk)
+            if remaining[0] < 0:
+                raise HTTPException(413, "licensed asset upload exceeds the configured size limit")
+            handle.write(chunk)
+    await upload.close()
+
+
+def _require_approved_native_host(
+    kind: Literal["vst3", "sfz"],
+    identity: str,
+    checksum: str,
+) -> None:
+    raw = os.getenv("MUSIC_AI_APPROVED_NATIVE_HOSTS", "[]")
+    try:
+        approved = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(503, "approved native host registry is invalid") from exc
+    if not isinstance(approved, list):
+        raise HTTPException(503, "approved native host registry is invalid")
+    matched = any(
+        isinstance(item, dict)
+        and item.get("kind") == kind
+        and item.get("identity") == identity
+        and isinstance(item.get("sha256"), str)
+        and secrets.compare_digest(item["sha256"].lower(), checksum.lower())
+        for item in approved
+    )
+    if not matched:
+        raise HTTPException(
+            403,
+            "native host identity and checksum are not in the approved host registry",
+        )
+
+
+def _require_approved_vst3_asset(
+    asset_id: str,
+    identity: str,
+    checksum: str,
+) -> None:
+    raw = os.getenv("MUSIC_AI_APPROVED_VST3_ASSETS", "[]")
+    try:
+        approved = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(503, "approved VST3 asset registry is invalid") from exc
+    if not isinstance(approved, list):
+        raise HTTPException(503, "approved VST3 asset registry is invalid")
+    matched = any(
+        isinstance(item, dict)
+        and item.get("assetId") == asset_id
+        and item.get("identity") == identity
+        and isinstance(item.get("sha256"), str)
+        and secrets.compare_digest(item["sha256"].lower(), checksum.lower())
+        for item in approved
+    )
+    if not matched:
+        raise HTTPException(
+            403,
+            "VST3 identity and checksum are not in the approved asset registry",
+        )
+
+
 def _sha256(path: Path) -> str | None:
     if not path.is_file():
         return None
@@ -286,19 +436,7 @@ def _safe_asset_path(value: object, label: str) -> Path:
     return path
 
 
-def _licensed_asset(kind: Literal["vst3", "sfz"]) -> dict:
-    """Return an attested asset, never a path supplied by a render request."""
-    try:
-        ASSET_MANIFEST_PATH.relative_to(ASSET_ROOT)
-    except ValueError as exc:
-        raise ValueError("licensed asset manifest must be inside MUSIC_AI_ASSET_ROOT") from exc
-    try:
-        manifest = json.loads(ASSET_MANIFEST_PATH.read_text())
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ValueError("licensed asset manifest is missing or invalid") from exc
-    if not isinstance(manifest, dict):
-        raise ValueError("licensed asset manifest must be a JSON object")
-    entry = manifest.get(kind)
+def _asset_from_entry(kind: Literal["vst3", "sfz"], entry: object) -> dict:
     if not isinstance(entry, dict):
         raise ValueError(f"licensed {kind} asset is not selected")
     for required in ("id", "identity", "licenseOwner", "licenseReference", "sha256"):
@@ -332,9 +470,269 @@ def _licensed_asset(kind: Literal["vst3", "sfz"]) -> dict:
     asset["rendererPath"] = renderer
     asset["rendererIdentity"] = entry["rendererIdentity"].strip()
     asset["rendererSha256"] = renderer_checksum
+    if isinstance(entry.get("smokeEvidence"), dict):
+        asset["smokeEvidence"] = entry["smokeEvidence"]
     if kind == "sfz":
         asset["libraryPath"] = path
     return asset
+
+
+def _licensed_asset(kind: Literal["vst3", "sfz"]) -> dict:
+    """Return an attested active asset, never a path supplied by a render request."""
+    try:
+        ASSET_MANIFEST_PATH.relative_to(ASSET_ROOT)
+    except ValueError as exc:
+        raise ValueError("licensed asset manifest must be inside MUSIC_AI_ASSET_ROOT") from exc
+    try:
+        manifest = json.loads(ASSET_MANIFEST_PATH.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("licensed asset manifest is missing or invalid") from exc
+    if not isinstance(manifest, dict):
+        raise ValueError("licensed asset manifest must be a JSON object")
+    return _asset_from_entry(kind, manifest.get(kind))
+
+
+async def _stage_asset_candidate(
+    kind: Literal["vst3", "sfz"],
+    asset_id: str,
+    identity: str,
+    license_owner: str,
+    license_reference: str,
+    renderer_identity: str,
+    asset_files: list[UploadFile],
+    renderer_file: UploadFile,
+    asset_relative_paths: list[str] | None = None,
+) -> dict:
+    fields = {
+        "assetId": asset_id,
+        "identity": identity,
+        "licenseOwner": license_owner,
+        "licenseReference": license_reference,
+        "rendererIdentity": renderer_identity,
+    }
+    for label, value in fields.items():
+        if not isinstance(value, str) or not value.strip() or len(value.strip()) > 500:
+            raise HTTPException(400, f"{label} is required")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{1,127}", asset_id.strip()):
+        raise HTTPException(400, "assetId must contain only letters, numbers, dots, dashes, or underscores")
+    if not asset_files:
+        raise HTTPException(400, "at least one licensed asset file is required")
+    if not renderer_file or not renderer_file.filename:
+        raise HTTPException(400, "an approved native host is required")
+
+    candidate_id = secrets.token_urlsafe(18)
+    candidate_root = ASSET_ROOT / ".staged" / candidate_id
+    asset_root = candidate_root / "asset"
+    renderer_path = candidate_root / "renderer" / "native-host"
+    remaining = [MAX_ASSET_UPLOAD_BYTES]
+    try:
+        normalized_names: list[Path] = []
+        if asset_relative_paths and len(asset_relative_paths) != len(asset_files):
+            raise HTTPException(400, "assetRelativePaths must match assetFiles")
+        for index, upload in enumerate(asset_files):
+            upload_name = (
+                asset_relative_paths[index]
+                if asset_relative_paths
+                else upload.filename or ""
+            )
+            relative_name = _safe_upload_name(upload_name, "asset file")
+            normalized_names.append(relative_name)
+            await _write_upload(upload, asset_root / relative_name, remaining)
+        await _write_upload(renderer_file, renderer_path, remaining)
+        top_levels = {name.parts[0] for name in normalized_names}
+        if kind == "vst3" and len(asset_files) == 1:
+            asset_path = asset_root / normalized_names[0]
+        elif kind == "vst3" and len(top_levels) == 1 and next(iter(top_levels)).lower().endswith(".vst3"):
+            asset_path = asset_root / next(iter(top_levels))
+        else:
+            asset_path = asset_root
+        entry = {
+            "id": asset_id.strip(),
+            "identity": identity.strip(),
+            "licenseOwner": license_owner.strip(),
+            "licenseReference": license_reference.strip(),
+            "rendererIdentity": renderer_identity.strip(),
+            "rendererPath": str(renderer_path),
+            "path" if kind == "vst3" else "libraryPath": str(asset_path),
+        }
+        renderer_checksum = _sha256_tree(renderer_path)
+        if not renderer_checksum:
+            raise HTTPException(400, "approved native host upload is empty")
+        _require_approved_native_host(
+            kind,
+            renderer_identity.strip(),
+            renderer_checksum,
+        )
+        asset_checksum = _sha256_tree(asset_path)
+        if not asset_checksum:
+            raise HTTPException(400, "licensed asset upload is empty")
+        if kind == "vst3":
+            _require_approved_vst3_asset(
+                asset_id.strip(),
+                identity.strip(),
+                asset_checksum,
+            )
+        renderer_path.chmod(0o755)
+        verified_asset = _asset_from_entry(kind, {
+            **entry,
+            "sha256": asset_checksum,
+            "rendererSha256": renderer_checksum,
+        })
+        evidence = run_renderer_smoke(
+            "VST3" if kind == "vst3" else "SFIZZ_VSCO2_CE",
+            asset=verified_asset,
+        )
+        if not evidence.get("audible") or not evidence.get("canonicalSensitivity"):
+            raise HTTPException(503, "licensed asset failed canonical TrackModel smoke evidence")
+        candidate = {
+            "candidateId": candidate_id,
+            "kind": kind,
+            "assetId": verified_asset["id"],
+            "identity": verified_asset["identity"],
+            "licenseOwner": verified_asset["licenseOwner"],
+            "licenseReference": verified_asset["licenseReference"],
+            "rendererIdentity": verified_asset["rendererIdentity"],
+            "sha256": verified_asset["sha256"],
+            "rendererSha256": verified_asset["rendererSha256"],
+            "path": str(asset_path),
+            "libraryPath": str(asset_path),
+            "rendererPath": str(renderer_path),
+            "status": "verified",
+            "smokeEvidence": evidence,
+            "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+        with ASSET_STATE_LOCK, _asset_file_lock():
+            state = _read_asset_state()
+            state["candidates"][candidate_id] = candidate
+            _write_asset_state(state)
+        return _asset_candidate_response(candidate)
+    except Exception:
+        shutil.rmtree(candidate_root, ignore_errors=True)
+        raise
+
+
+def _candidate_entry(candidate: dict) -> dict:
+    entry = {
+        "id": candidate["assetId"],
+        "identity": candidate["identity"],
+        "licenseOwner": candidate["licenseOwner"],
+        "licenseReference": candidate["licenseReference"],
+        "rendererIdentity": candidate["rendererIdentity"],
+        "rendererSha256": candidate["rendererSha256"],
+        "sha256": candidate["sha256"],
+        "rendererPath": candidate["rendererPath"],
+        "smokeEvidence": candidate["smokeEvidence"],
+    }
+    entry["path" if candidate["kind"] == "vst3" else "libraryPath"] = candidate["path"]
+    return entry
+
+
+def _activate_asset_candidate(candidate_id: str) -> dict:
+    with ASSET_STATE_LOCK, _asset_file_lock():
+        try:
+            ASSET_MANIFEST_PATH.relative_to(ASSET_ROOT)
+        except ValueError as exc:
+            raise HTTPException(500, "licensed asset manifest must be inside MUSIC_AI_ASSET_ROOT") from exc
+        state = _read_asset_state()
+        candidate = state["candidates"].get(candidate_id)
+        if not isinstance(candidate, dict) or candidate.get("status") != "verified":
+            raise HTTPException(409, "candidate is not verified and cannot be activated")
+        kind = candidate.get("kind")
+        if kind not in {"vst3", "sfz"}:
+            raise HTTPException(409, "candidate has an invalid asset kind")
+        try:
+            asset = _asset_from_entry(kind, _candidate_entry(candidate))
+        except ValueError as exc:
+            raise HTTPException(409, f"candidate changed after verification: {exc}") from exc
+        evidence = candidate.get("smokeEvidence")
+        if (
+            not isinstance(evidence, dict)
+            or evidence.get("assetId") != asset["id"]
+            or evidence.get("sha256") != asset["sha256"]
+            or evidence.get("rendererSha256") != asset["rendererSha256"]
+            or evidence.get("nativeHostAttested") is not True
+            or evidence.get("canonicalSensitivity") is not True
+            or evidence.get("audible") is not True
+        ):
+            raise HTTPException(409, "candidate no longer matches its canonical TrackModel smoke evidence")
+        try:
+            current = json.loads(ASSET_MANIFEST_PATH.read_text())
+        except (OSError, json.JSONDecodeError):
+            current = {}
+        if not isinstance(current, dict):
+            current = {}
+        current[kind] = _candidate_entry(candidate)
+        _atomic_write_json(ASSET_MANIFEST_PATH, current, indent=2)
+        candidate["status"] = "active"
+        candidate["activatedAt"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        try:
+            _write_asset_state(state)
+        except OSError:
+            # The manifest is the single authoritative commit. A stale
+            # candidate list can be repaired on the next successful write and
+            # must not turn an atomic activation into a reported failure.
+            pass
+        return _asset_candidate_response(candidate)
+
+
+@app.get("/admin/assets", dependencies=[Depends(_require_admin_auth)])
+def list_asset_candidates() -> dict:
+    state = _read_asset_state()
+    active: dict[str, dict] = {}
+    for kind in ("vst3", "sfz"):
+        try:
+            asset = _asset_candidate_response(_licensed_asset(kind))
+            active[kind] = {
+                **asset,
+                "assetId": asset["id"],
+                "kind": kind,
+                "status": "active",
+            }
+        except ValueError:
+            active[kind] = {"status": "unavailable"}
+    candidates = [
+        _asset_candidate_response(candidate)
+        for candidate in state["candidates"].values()
+        if isinstance(candidate, dict)
+    ]
+    return {
+        "active": active,
+        "candidates": sorted(
+            candidates, key=lambda item: item.get("createdAt", ""), reverse=True
+        ),
+    }
+
+
+@app.post("/admin/assets/stage", dependencies=[Depends(_require_admin_auth)])
+async def stage_asset(
+    kind: Literal["vst3", "sfz"] = Form(...),
+    asset_id: str = Form(..., alias="assetId"),
+    identity: str = Form(...),
+    license_owner: str = Form(..., alias="licenseOwner"),
+    license_reference: str = Form(..., alias="licenseReference"),
+    renderer_identity: str = Form(..., alias="rendererIdentity"),
+    asset_files: list[UploadFile] = File(..., alias="assetFiles"),
+    renderer_file: UploadFile = File(..., alias="rendererFile"),
+    asset_relative_paths: list[str] | None = Form(None, alias="assetRelativePaths"),
+) -> dict:
+    return await _stage_asset_candidate(
+        kind,
+        asset_id,
+        identity,
+        license_owner,
+        license_reference,
+        renderer_identity,
+        asset_files,
+        renderer_file,
+        asset_relative_paths,
+    )
+
+
+@app.post("/admin/assets/{candidate_id}/activate", dependencies=[Depends(_require_admin_auth)])
+def activate_asset(candidate_id: str) -> dict:
+    if not re.fullmatch(r"[A-Za-z0-9_-]{20,}", candidate_id):
+        raise HTTPException(404, "candidate not found")
+    return _activate_asset_candidate(candidate_id)
 
 
 def _canonical_track_model(value: object) -> dict:
@@ -375,11 +773,13 @@ def _render_native_track(
     track: dict,
     sample_rate: int,
     duration_seconds: float,
+    asset: dict | None = None,
 ) -> tuple[np.ndarray, dict]:
-    try:
-        asset = _licensed_asset(kind)
-    except ValueError as exc:
-        raise HTTPException(503, str(exc)) from exc
+    if asset is None:
+        try:
+            asset = _licensed_asset(kind)
+        except ValueError as exc:
+            raise HTTPException(503, str(exc)) from exc
     if kind == "vst3":
         try:
             from pedalboard import load_plugin
@@ -467,12 +867,22 @@ def _render_native_track(
     }
 
 
-def _render_vst3_track(track: dict, sample_rate: int, duration_seconds: float) -> tuple[np.ndarray, dict]:
-    return _render_native_track("vst3", track, sample_rate, duration_seconds)
+def _render_vst3_track(
+    track: dict,
+    sample_rate: int,
+    duration_seconds: float,
+    asset: dict | None = None,
+) -> tuple[np.ndarray, dict]:
+    return _render_native_track("vst3", track, sample_rate, duration_seconds, asset)
 
 
-def _render_sfizz_track(track: dict, sample_rate: int, duration_seconds: float) -> tuple[np.ndarray, dict]:
-    return _render_native_track("sfz", track, sample_rate, duration_seconds)
+def _render_sfizz_track(
+    track: dict,
+    sample_rate: int,
+    duration_seconds: float,
+    asset: dict | None = None,
+) -> tuple[np.ndarray, dict]:
+    return _render_native_track("sfz", track, sample_rate, duration_seconds, asset)
 
 
 def renderer_health(provider: str) -> dict:
@@ -489,7 +899,9 @@ def renderer_health(provider: str) -> dict:
             package_version = installed_version("pedalboard")
         else:
             package_version = "native-command"
-        marker = _readiness_marker().get("vst3" if provider == "VST3" else "sfizz")
+        marker = asset.get("smokeEvidence") or _readiness_marker().get(
+            "vst3" if provider == "VST3" else "sfizz"
+        )
         smoke_tested = (
             isinstance(marker, dict)
             and marker.get("assetId") == asset["id"]
@@ -561,22 +973,25 @@ def canonical_render_smoke_track() -> dict:
     }
 
 
-def run_renderer_smoke(provider: Literal["VST3", "SFIZZ_VSCO2_CE"]) -> dict:
+def run_renderer_smoke(
+    provider: Literal["VST3", "SFIZZ_VSCO2_CE"],
+    asset: dict | None = None,
+) -> dict:
     track = _canonical_track_model(canonical_render_smoke_track())
     sample_rate = 22050
     duration_seconds = 1.0
     render = _render_vst3_track if provider == "VST3" else _render_sfizz_track
-    audio, asset = render(track, sample_rate, duration_seconds)
+    audio, rendered_asset = render(track, sample_rate, duration_seconds, asset)
     pitch_variant = copy.deepcopy(track)
     pitch_variant["notes"][0]["pitch"] += 7
-    pitch_audio, pitch_asset = render(pitch_variant, sample_rate, duration_seconds)
+    pitch_audio, pitch_asset = render(pitch_variant, sample_rate, duration_seconds, asset)
     expression_variant = copy.deepcopy(track)
     expression_variant["cc"][0]["value"] = 24
     expression_variant["articulations"][0]["name"] = "staccato"
     expression_audio, expression_asset = render(
-        expression_variant, sample_rate, duration_seconds
+        expression_variant, sample_rate, duration_seconds, asset
     )
-    if asset["id"] != pitch_asset["id"] or asset["id"] != expression_asset["id"]:
+    if rendered_asset["id"] != pitch_asset["id"] or rendered_asset["id"] != expression_asset["id"]:
         raise HTTPException(503, "native renderer changed assets during smoke test")
     audio_hash = hashlib.sha256(audio.tobytes()).hexdigest()
     pitch_hash = hashlib.sha256(pitch_audio.tobytes()).hexdigest()
@@ -589,10 +1004,10 @@ def run_renderer_smoke(provider: Literal["VST3", "SFIZZ_VSCO2_CE"]) -> dict:
         )
     peak = float(np.max(np.abs(audio)))
     return {
-        "assetId": asset["id"],
-        "sha256": asset["sha256"],
-        "rendererIdentity": asset["rendererIdentity"],
-        "rendererSha256": asset["rendererSha256"],
+        "assetId": rendered_asset["id"],
+        "sha256": rendered_asset["sha256"],
+        "rendererIdentity": rendered_asset["rendererIdentity"],
+        "rendererSha256": rendered_asset["rendererSha256"],
         "trackModelRendered": True,
         "audible": peak >= 0.0005,
         "canonicalSensitivity": canonical_sensitivity,
@@ -853,7 +1268,7 @@ def render(payload: RenderRequest) -> dict:
         asset = _licensed_asset("vst3" if payload.provider == "VST3" else "sfz")
     except ValueError as exc:
         raise HTTPException(503, str(exc)) from exc
-    marker = _readiness_marker().get(
+    marker = asset.get("smokeEvidence") or _readiness_marker().get(
         "vst3" if payload.provider == "VST3" else "sfizz"
     )
     if not (

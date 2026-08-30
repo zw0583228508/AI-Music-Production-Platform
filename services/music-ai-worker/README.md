@@ -68,6 +68,48 @@ readiness renders pitch and expression variants and requires three distinct
 output hashes, so a fixed-tone or TrackModel-ignoring host fails closed. The
 worker never accepts an asset path from a render request.
 
+Studio administrators can provision those private files without shell access.
+The API server authorizes administrators with `MUSIC_STUDIO_ADMIN_IDS` and/or
+`MUSIC_STUDIO_ADMIN_EMAILS`, then streams multipart uploads to the worker using
+the existing `MUSIC_AI_WORKER_TOKEN`. Set `MUSIC_AI_WORKER_URL` on the API
+server (the renderer-specific worker URLs remain supported as fallbacks).
+Asset administration fails closed when that token is absent, even if ordinary
+worker inference is intentionally left unauthenticated.
+
+Before a host can be uploaded, add its exact identity and SHA-256 to
+`MUSIC_AI_APPROVED_NATIVE_HOSTS` as a JSON array, for example
+`[{"kind":"sfz","identity":"Approved sfizz Host / Version","sha256":"..."}]`.
+The worker checks the uploaded executable against this registry before granting
+execute permission or starting smoke verification. Studio admin status alone
+does not authorize arbitrary native code.
+
+VST3 plugins are native code as well. Their exact `assetId`, identity, and
+deterministic file-or-bundle checksum must also appear in
+`MUSIC_AI_APPROVED_VST3_ASSETS`, for example
+`[{"assetId":"licensed-piano-v2","identity":"Licensed Piano / 2.0","sha256":"..."}]`.
+The worker rejects an unapproved plugin before `load_plugin` or any native host
+process can receive it.
+
+The admin lifecycle is intentionally two-step:
+
+1. `POST /admin/assets/stage` uploads `assetFiles` and `rendererFile` plus
+   `kind`, `assetId`, exact `identity`, `licenseOwner`, `licenseReference`, and
+   `rendererIdentity`. Files are written below `MUSIC_AI_ASSET_ROOT`, checksums
+   are computed there, and the candidate must pass all three canonical
+   TrackModel renders before it becomes `verified`.
+2. `POST /admin/assets/{candidateId}/activate` rechecks the candidate bytes and
+   smoke evidence, then replaces `MUSIC_AI_ASSET_MANIFEST` with an atomic
+   rename. A changed, missing, or failed candidate returns an error without
+   modifying the current manifest. Smoke evidence is stored in that same
+   manifest entry so readiness and active identity switch together.
+
+`GET /admin/assets` returns active VST3/SFZ identities and verified candidates
+without exposing private filesystem paths. Staged files, license records,
+checksums, state, and the active manifest all remain runtime data outside Git.
+`MUSIC_AI_MAX_ASSET_UPLOAD_BYTES` controls the streamed file limit (2 GiB by
+default); clients must send `Content-Length`, and the normal JSON request limit
+does not apply to this one upload route.
+
 The manifest pins the Basic Pitch and Demucs checkpoint hashes and runtime
 versions. Health also reads the installed distribution metadata and is unhealthy
 when a package version differs from the pinned manifest. Downloaded checkpoints,

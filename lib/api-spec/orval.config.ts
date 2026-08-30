@@ -13,6 +13,17 @@ const titleTransformer: InputTransformerFn = (config) => {
   return config;
 };
 
+const zodTransformer: InputTransformerFn = (config) => {
+  const transformed = titleTransformer(config);
+  const stageOperation = transformed.paths?.["/instrument-packs/stage"]?.post;
+  if (stageOperation) {
+    // Binary multipart types belong in the browser client. Keeping them out of
+    // the Node validator avoids evaluating browser-only File globals at import.
+    delete stageOperation.requestBody;
+  }
+  return transformed;
+};
+
 export default defineConfig({
   "api-client-react": {
     input: {
@@ -44,7 +55,7 @@ export default defineConfig({
     input: {
       target: "./openapi.yaml",
       override: {
-        transformer: titleTransformer,
+        transformer: zodTransformer,
       },
     },
     output: {

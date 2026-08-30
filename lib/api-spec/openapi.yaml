@@ -50,6 +50,106 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Dashboard"
+  /instrument-packs:
+    get:
+      operationId: listLicensedInstrumentPacks
+      tags: [studio]
+      summary: List active and staged licensed instrument packs
+      responses:
+        "200":
+          description: Licensed instrument pack catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LicensedInstrumentPackCatalog"
+        "403":
+          description: Studio administrator access required
+  /instrument-packs/stage:
+    post:
+      operationId: stageLicensedInstrumentPack
+      tags: [studio]
+      summary: Upload and verify a licensed instrument pack candidate
+      description: Streams a licensed plugin/library and its preapproved native host to private worker storage, then returns only after canonical smoke verification succeeds.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - kind
+                - assetId
+                - identity
+                - licenseOwner
+                - licenseReference
+                - rendererIdentity
+                - assetFiles
+                - rendererFile
+              properties:
+                kind:
+                  type: string
+                  enum: [vst3, sfz]
+                assetId:
+                  type: string
+                  minLength: 1
+                identity:
+                  type: string
+                  minLength: 1
+                licenseOwner:
+                  type: string
+                  minLength: 1
+                licenseReference:
+                  type: string
+                  minLength: 1
+                rendererIdentity:
+                  type: string
+                  minLength: 1
+                assetFiles:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                    format: binary
+                assetRelativePaths:
+                  type: array
+                  items:
+                    type: string
+                  description: Optional relative paths paired with assetFiles.
+                rendererFile:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Candidate passed checksum and canonical TrackModel smoke verification
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LicensedInstrumentPack"
+        "403":
+          description: Studio administrator access required
+        "422":
+          description: Candidate could not pass native renderer verification
+  /instrument-packs/{candidateId}/activate:
+    post:
+      operationId: activateLicensedInstrumentPack
+      tags: [studio]
+      summary: Atomically activate a verified licensed instrument pack
+      parameters:
+        - name: candidateId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Verified candidate is now active
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LicensedInstrumentPack"
+        "403":
+          description: Studio administrator access required
+        "409":
+          description: Candidate is not verified or changed after verification
   /auth/user:
     get:
       tags: [Auth]
@@ -895,6 +995,60 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
   schemas:
+    LicensedInstrumentSmokeEvidence:
+      type: object
+      required: [assetId, sha256, rendererIdentity, rendererSha256, trackModelRendered, audible, canonicalSensitivity, nativeHostAttested, outputSha256, pitchVariantSha256, expressionVariantSha256, peak, sampleRate, durationSeconds, format]
+      properties:
+        assetId: { type: string }
+        sha256: { type: string }
+        rendererIdentity: { type: string }
+        rendererSha256: { type: string }
+        trackModelRendered: { type: boolean }
+        audible: { type: boolean }
+        canonicalSensitivity: { type: boolean }
+        nativeHostAttested: { type: boolean }
+        outputSha256: { type: string }
+        pitchVariantSha256: { type: string }
+        expressionVariantSha256: { type: string }
+        peak: { type: number }
+        sampleRate: { type: number }
+        durationSeconds: { type: number }
+        format: { type: string }
+    LicensedInstrumentPack:
+      type: object
+      required: [status]
+      properties:
+        candidateId: { type: string }
+        kind: { type: string, enum: [vst3, sfz] }
+        assetId: { type: string }
+        id: { type: string }
+        identity: { type: string }
+        licenseOwner: { type: string }
+        licenseReference: { type: string }
+        rendererIdentity: { type: string }
+        sha256: { type: string }
+        rendererSha256: { type: string }
+        status: { type: string, enum: [unavailable, verified, active] }
+        smokeEvidence:
+          $ref: "#/components/schemas/LicensedInstrumentSmokeEvidence"
+        createdAt: { type: string }
+        activatedAt: { type: string }
+    LicensedInstrumentPackCatalog:
+      type: object
+      required: [active, candidates]
+      properties:
+        active:
+          type: object
+          required: [vst3, sfz]
+          properties:
+            vst3:
+              $ref: "#/components/schemas/LicensedInstrumentPack"
+            sfz:
+              $ref: "#/components/schemas/LicensedInstrumentPack"
+        candidates:
+          type: array
+          items:
+            $ref: "#/components/schemas/LicensedInstrumentPack"
     AuthUser:
       type: object
       required: [id, email, firstName, lastName, profileImageUrl]

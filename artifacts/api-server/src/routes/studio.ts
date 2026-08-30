@@ -31,8 +31,12 @@ import {
   ListGenerationCandidatesParams,
   ListGenerationCandidatesResponse,
   ListGenerationProvidersResponse,
+  ListLicensedInstrumentPacksResponse,
   SelectGenerationCandidateParams,
   SelectGenerationCandidateResponse,
+  StageLicensedInstrumentPackResponse,
+  ActivateLicensedInstrumentPackParams,
+  ActivateLicensedInstrumentPackResponse,
   GetDashboardResponse,
   GetProjectDeletionParams,
   GetProjectDeletionResponse,
@@ -136,11 +140,14 @@ import {
   type ExportBundle,
 } from "../lib/export-pipeline";
 import {
+  activateLicensedInstrumentPack as activateLicensedInstrumentPackOnWorker,
   applyArrangementEditorChanges,
   applyPlanModulations,
   buildTrackModels,
   createArrangementPlan,
   createStyleSpec,
+  licensedInstrumentWorkerConfig,
+  listLicensedInstrumentPacks,
 } from "../lib/musicEngines";
 import {
   evaluateArrangementEligibility,
@@ -173,6 +180,29 @@ function requireStudioAuth(req: Request, res: Response, next: NextFunction): voi
   next();
 }
 
+function requireStudioAdmin(req: Request, res: Response, next: NextFunction): void {
+  const userIds = new Set(
+    (process.env.MUSIC_STUDIO_ADMIN_IDS ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+  const emails = new Set(
+    (process.env.MUSIC_STUDIO_ADMIN_EMAILS ?? "")
+      .split(",")
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  if (
+    !req.user ||
+    (!userIds.has(req.user.id) && !emails.has(req.user.email?.toLowerCase() ?? ""))
+  ) {
+    res.status(403).json({ error: "Studio administrator access required" });
+    return;
+  }
+  next();
+}
+
 router.use(requireStudioAuth);
 router.use((req, res, next): void => {
   const requestId = String(req.id ?? randomUUID());
@@ -194,6 +224,73 @@ router.use((req, res, next): void => {
   });
   next();
 });
+
+router.get("/instrument-packs", requireStudioAdmin, async (_req, res): Promise<void> => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json(
+    ListLicensedInstrumentPacksResponse.parse(
+      await listLicensedInstrumentPacks(),
+    ),
+  );
+});
+
+router.post(
+  "/instrument-packs/stage",
+  requireStudioAdmin,
+  async (req, res): Promise<void> => {
+    const contentType = req.headers["content-type"];
+    if (!contentType?.startsWith("multipart/form-data")) {
+      res.status(415).json({ error: "multipart/form-data is required" });
+      return;
+    }
+    const contentLength = req.headers["content-length"];
+    if (!contentLength || !/^\d+$/.test(contentLength)) {
+      res.status(411).json({ error: "Content-Length is required" });
+      return;
+    }
+    const worker = licensedInstrumentWorkerConfig();
+    const response = await fetch(new URL("/admin/assets/stage", worker.endpoint), {
+      method: "POST",
+      headers: {
+        ...worker.headers,
+        "Content-Type": contentType,
+        "Content-Length": contentLength,
+      },
+      body: req as never,
+      duplex: "half",
+      signal: AbortSignal.timeout(30 * 60_000),
+    } as RequestInit & { duplex: "half" });
+    const responseText = await response.text();
+    let payload: unknown;
+    try {
+      payload = JSON.parse(responseText);
+    } catch {
+      payload = { detail: responseText.slice(0, 500) };
+    }
+    if (!response.ok) {
+      res.status(response.status).json(payload);
+      return;
+    }
+    res.status(201).json(StageLicensedInstrumentPackResponse.parse(payload));
+  },
+);
+
+router.post(
+  "/instrument-packs/:candidateId/activate",
+  requireStudioAdmin,
+  async (req, res): Promise<void> => {
+    const params = ActivateLicensedInstrumentPackParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    res.json(
+      ActivateLicensedInstrumentPackResponse.parse(
+        await activateLicensedInstrumentPackOnWorker(params.data.candidateId),
+      ),
+    );
+  },
+);
 
 router.param("projectId", async (req, res, next, projectId): Promise<void> => {
   try {

@@ -5,6 +5,68 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+export interface LicensedInstrumentSmokeEvidence {
+  assetId: string;
+  sha256: string;
+  rendererIdentity: string;
+  rendererSha256: string;
+  trackModelRendered: boolean;
+  audible: boolean;
+  canonicalSensitivity: boolean;
+  nativeHostAttested: boolean;
+  outputSha256: string;
+  pitchVariantSha256: string;
+  expressionVariantSha256: string;
+  peak: number;
+  sampleRate: number;
+  durationSeconds: number;
+  format: string;
+}
+
+export type LicensedInstrumentPackKind = typeof LicensedInstrumentPackKind[keyof typeof LicensedInstrumentPackKind];
+
+
+export const LicensedInstrumentPackKind = {
+  vst3: 'vst3',
+  sfz: 'sfz',
+} as const;
+
+export type LicensedInstrumentPackStatus = typeof LicensedInstrumentPackStatus[keyof typeof LicensedInstrumentPackStatus];
+
+
+export const LicensedInstrumentPackStatus = {
+  unavailable: 'unavailable',
+  verified: 'verified',
+  active: 'active',
+} as const;
+
+export interface LicensedInstrumentPack {
+  candidateId?: string;
+  kind?: LicensedInstrumentPackKind;
+  assetId?: string;
+  id?: string;
+  identity?: string;
+  licenseOwner?: string;
+  licenseReference?: string;
+  rendererIdentity?: string;
+  sha256?: string;
+  rendererSha256?: string;
+  status: LicensedInstrumentPackStatus;
+  smokeEvidence?: LicensedInstrumentSmokeEvidence;
+  createdAt?: string;
+  activatedAt?: string;
+}
+
+export type LicensedInstrumentPackCatalogActive = {
+  vst3: LicensedInstrumentPack;
+  sfz: LicensedInstrumentPack;
+};
+
+export interface LicensedInstrumentPackCatalog {
+  active: LicensedInstrumentPackCatalogActive;
+  candidates: LicensedInstrumentPack[];
+}
+
 export interface AuthUser {
   id: string;
   /** @nullable */
@@ -1986,6 +2048,33 @@ export interface ArrangementPlan {
  * Resource not found
  */
 export type NotFoundResponse = Error;
+
+export type StageLicensedInstrumentPackBodyKind = typeof StageLicensedInstrumentPackBodyKind[keyof typeof StageLicensedInstrumentPackBodyKind];
+
+
+export const StageLicensedInstrumentPackBodyKind = {
+  vst3: 'vst3',
+  sfz: 'sfz',
+} as const;
+
+export type StageLicensedInstrumentPackBody = {
+  kind: StageLicensedInstrumentPackBodyKind;
+  /** @minLength 1 */
+  assetId: string;
+  /** @minLength 1 */
+  identity: string;
+  /** @minLength 1 */
+  licenseOwner: string;
+  /** @minLength 1 */
+  licenseReference: string;
+  /** @minLength 1 */
+  rendererIdentity: string;
+  /** @minItems 1 */
+  assetFiles: Blob[];
+  /** Optional relative paths paired with assetFiles. */
+  assetRelativePaths?: string[];
+  rendererFile: Blob;
+};
 
 export type BeginBrowserLoginParams = {
 returnTo?: string;

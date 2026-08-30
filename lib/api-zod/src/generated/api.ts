@@ -42,6 +42,190 @@ export const GetDashboardResponse = zod.object({
 
 
 /**
+ * @summary List active and staged licensed instrument packs
+ */
+export const ListLicensedInstrumentPacksResponse = zod.object({
+  "active": zod.object({
+  "vst3": zod.object({
+  "candidateId": zod.string().optional(),
+  "kind": zod.enum(['vst3', 'sfz']).optional(),
+  "assetId": zod.string().optional(),
+  "id": zod.string().optional(),
+  "identity": zod.string().optional(),
+  "licenseOwner": zod.string().optional(),
+  "licenseReference": zod.string().optional(),
+  "rendererIdentity": zod.string().optional(),
+  "sha256": zod.string().optional(),
+  "rendererSha256": zod.string().optional(),
+  "status": zod.enum(['unavailable', 'verified', 'active']),
+  "smokeEvidence": zod.object({
+  "assetId": zod.string(),
+  "sha256": zod.string(),
+  "rendererIdentity": zod.string(),
+  "rendererSha256": zod.string(),
+  "trackModelRendered": zod.boolean(),
+  "audible": zod.boolean(),
+  "canonicalSensitivity": zod.boolean(),
+  "nativeHostAttested": zod.boolean(),
+  "outputSha256": zod.string(),
+  "pitchVariantSha256": zod.string(),
+  "expressionVariantSha256": zod.string(),
+  "peak": zod.number(),
+  "sampleRate": zod.number(),
+  "durationSeconds": zod.number(),
+  "format": zod.string()
+}).optional(),
+  "createdAt": zod.string().optional(),
+  "activatedAt": zod.string().optional()
+}),
+  "sfz": zod.object({
+  "candidateId": zod.string().optional(),
+  "kind": zod.enum(['vst3', 'sfz']).optional(),
+  "assetId": zod.string().optional(),
+  "id": zod.string().optional(),
+  "identity": zod.string().optional(),
+  "licenseOwner": zod.string().optional(),
+  "licenseReference": zod.string().optional(),
+  "rendererIdentity": zod.string().optional(),
+  "sha256": zod.string().optional(),
+  "rendererSha256": zod.string().optional(),
+  "status": zod.enum(['unavailable', 'verified', 'active']),
+  "smokeEvidence": zod.object({
+  "assetId": zod.string(),
+  "sha256": zod.string(),
+  "rendererIdentity": zod.string(),
+  "rendererSha256": zod.string(),
+  "trackModelRendered": zod.boolean(),
+  "audible": zod.boolean(),
+  "canonicalSensitivity": zod.boolean(),
+  "nativeHostAttested": zod.boolean(),
+  "outputSha256": zod.string(),
+  "pitchVariantSha256": zod.string(),
+  "expressionVariantSha256": zod.string(),
+  "peak": zod.number(),
+  "sampleRate": zod.number(),
+  "durationSeconds": zod.number(),
+  "format": zod.string()
+}).optional(),
+  "createdAt": zod.string().optional(),
+  "activatedAt": zod.string().optional()
+})
+}),
+  "candidates": zod.array(zod.object({
+  "candidateId": zod.string().optional(),
+  "kind": zod.enum(['vst3', 'sfz']).optional(),
+  "assetId": zod.string().optional(),
+  "id": zod.string().optional(),
+  "identity": zod.string().optional(),
+  "licenseOwner": zod.string().optional(),
+  "licenseReference": zod.string().optional(),
+  "rendererIdentity": zod.string().optional(),
+  "sha256": zod.string().optional(),
+  "rendererSha256": zod.string().optional(),
+  "status": zod.enum(['unavailable', 'verified', 'active']),
+  "smokeEvidence": zod.object({
+  "assetId": zod.string(),
+  "sha256": zod.string(),
+  "rendererIdentity": zod.string(),
+  "rendererSha256": zod.string(),
+  "trackModelRendered": zod.boolean(),
+  "audible": zod.boolean(),
+  "canonicalSensitivity": zod.boolean(),
+  "nativeHostAttested": zod.boolean(),
+  "outputSha256": zod.string(),
+  "pitchVariantSha256": zod.string(),
+  "expressionVariantSha256": zod.string(),
+  "peak": zod.number(),
+  "sampleRate": zod.number(),
+  "durationSeconds": zod.number(),
+  "format": zod.string()
+}).optional(),
+  "createdAt": zod.string().optional(),
+  "activatedAt": zod.string().optional()
+}))
+})
+
+
+/**
+ * Streams a licensed plugin/library and its preapproved native host to private worker storage, then returns only after canonical smoke verification succeeds.
+ * @summary Upload and verify a licensed instrument pack candidate
+ */
+export const StageLicensedInstrumentPackResponse = zod.object({
+  "candidateId": zod.string().optional(),
+  "kind": zod.enum(['vst3', 'sfz']).optional(),
+  "assetId": zod.string().optional(),
+  "id": zod.string().optional(),
+  "identity": zod.string().optional(),
+  "licenseOwner": zod.string().optional(),
+  "licenseReference": zod.string().optional(),
+  "rendererIdentity": zod.string().optional(),
+  "sha256": zod.string().optional(),
+  "rendererSha256": zod.string().optional(),
+  "status": zod.enum(['unavailable', 'verified', 'active']),
+  "smokeEvidence": zod.object({
+  "assetId": zod.string(),
+  "sha256": zod.string(),
+  "rendererIdentity": zod.string(),
+  "rendererSha256": zod.string(),
+  "trackModelRendered": zod.boolean(),
+  "audible": zod.boolean(),
+  "canonicalSensitivity": zod.boolean(),
+  "nativeHostAttested": zod.boolean(),
+  "outputSha256": zod.string(),
+  "pitchVariantSha256": zod.string(),
+  "expressionVariantSha256": zod.string(),
+  "peak": zod.number(),
+  "sampleRate": zod.number(),
+  "durationSeconds": zod.number(),
+  "format": zod.string()
+}).optional(),
+  "createdAt": zod.string().optional(),
+  "activatedAt": zod.string().optional()
+})
+
+
+/**
+ * @summary Atomically activate a verified licensed instrument pack
+ */
+export const ActivateLicensedInstrumentPackParams = zod.object({
+  "candidateId": zod.coerce.string()
+})
+
+export const ActivateLicensedInstrumentPackResponse = zod.object({
+  "candidateId": zod.string().optional(),
+  "kind": zod.enum(['vst3', 'sfz']).optional(),
+  "assetId": zod.string().optional(),
+  "id": zod.string().optional(),
+  "identity": zod.string().optional(),
+  "licenseOwner": zod.string().optional(),
+  "licenseReference": zod.string().optional(),
+  "rendererIdentity": zod.string().optional(),
+  "sha256": zod.string().optional(),
+  "rendererSha256": zod.string().optional(),
+  "status": zod.enum(['unavailable', 'verified', 'active']),
+  "smokeEvidence": zod.object({
+  "assetId": zod.string(),
+  "sha256": zod.string(),
+  "rendererIdentity": zod.string(),
+  "rendererSha256": zod.string(),
+  "trackModelRendered": zod.boolean(),
+  "audible": zod.boolean(),
+  "canonicalSensitivity": zod.boolean(),
+  "nativeHostAttested": zod.boolean(),
+  "outputSha256": zod.string(),
+  "pitchVariantSha256": zod.string(),
+  "expressionVariantSha256": zod.string(),
+  "peak": zod.number(),
+  "sampleRate": zod.number(),
+  "durationSeconds": zod.number(),
+  "format": zod.string()
+}).optional(),
+  "createdAt": zod.string().optional(),
+  "activatedAt": zod.string().optional()
+})
+
+
+/**
  * @summary Get the current authentication state
  */
 export const GetCurrentAuthUserResponse = zod.object({

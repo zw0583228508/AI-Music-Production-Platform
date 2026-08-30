@@ -47,10 +47,112 @@ export type NativeRendererAttestation = {
   smokeOutputSha256: string;
 };
 
+export type LicensedInstrumentSmokeEvidence = {
+  assetId: string;
+  sha256: string;
+  rendererIdentity: string;
+  rendererSha256: string;
+  trackModelRendered: boolean;
+  audible: boolean;
+  canonicalSensitivity: boolean;
+  nativeHostAttested: boolean;
+  outputSha256: string;
+  pitchVariantSha256: string;
+  expressionVariantSha256: string;
+  peak: number;
+  sampleRate: number;
+  durationSeconds: number;
+  format: string;
+};
+
+export type LicensedInstrumentPack = {
+  candidateId?: string;
+  kind?: "vst3" | "sfz";
+  assetId?: string;
+  id?: string;
+  identity?: string;
+  licenseOwner?: string;
+  licenseReference?: string;
+  rendererIdentity?: string;
+  sha256?: string;
+  rendererSha256?: string;
+  status: "unavailable" | "verified" | "active";
+  smokeEvidence?: LicensedInstrumentSmokeEvidence;
+  createdAt?: string;
+  activatedAt?: string;
+};
+
+export type LicensedInstrumentPackCatalog = {
+  active: {
+    vst3: LicensedInstrumentPack;
+    sfz: LicensedInstrumentPack;
+  };
+  candidates: LicensedInstrumentPack[];
+};
+
 type NativeRenderResult = {
   samples: Float32Array;
   attestation: NativeRendererAttestation;
 };
+
+export function licensedInstrumentWorkerConfig(): {
+  endpoint: string;
+  headers: Record<string, string>;
+} {
+  const endpoint = [
+    process.env.MUSIC_AI_WORKER_URL,
+    process.env.SFIZZ_RENDER_API_URL,
+    process.env.PEDALBOARD_VST3_API_URL,
+  ].find((value): value is string => Boolean(value?.trim()));
+  if (!endpoint) {
+    throw new Error("Licensed instrument worker is not configured");
+  }
+  const token =
+    process.env.MUSIC_AI_WORKER_TOKEN ??
+    process.env.SFIZZ_RENDER_API_TOKEN ??
+    process.env.PEDALBOARD_VST3_API_TOKEN;
+  return {
+    endpoint,
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  };
+}
+
+async function licensedInstrumentWorkerJson<T>(
+  path: string,
+  init: RequestInit = {},
+): Promise<T> {
+  const worker = licensedInstrumentWorkerConfig();
+  const response = await fetch(new URL(path, worker.endpoint), {
+    ...init,
+    headers: {
+      ...worker.headers,
+      ...init.headers,
+    },
+    signal: init.signal ?? AbortSignal.timeout(10 * 60_000),
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(
+      `Licensed instrument worker returned HTTP ${response.status}: ${message.slice(0, 500)}`,
+    );
+  }
+  return response.json() as Promise<T>;
+}
+
+export async function listLicensedInstrumentPacks(): Promise<LicensedInstrumentPackCatalog> {
+  return licensedInstrumentWorkerJson<LicensedInstrumentPackCatalog>("/admin/assets", {
+    cache: "no-store",
+  });
+}
+
+export async function activateLicensedInstrumentPack(
+  candidateId: string,
+): Promise<LicensedInstrumentPack> {
+  return licensedInstrumentWorkerJson<LicensedInstrumentPack>(
+    `/admin/assets/${encodeURIComponent(candidateId)}/activate`,
+    { method: "POST" },
+  );
+}
 
 export type QualityReport = {
   score: number;
