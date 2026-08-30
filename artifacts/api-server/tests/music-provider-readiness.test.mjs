@@ -54,6 +54,8 @@ const promotionPublicKey = promotionKeys.publicKey.export({
   type: "spki",
   format: "pem",
 });
+delete process.env.MUSIC_PROVIDER_ACE_STEP_PROMOTION_BUNDLE;
+delete process.env.MUSIC_PROVIDER_ACE_STEP_PROMOTION_PUBLIC_KEY;
 const aceRuntimePins = {
   python: "3.11.11",
   cudaImage: "nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04",
@@ -73,6 +75,7 @@ after(async () => {
   delete process.env.MUSIC_PROVIDER_METEOR_MODAL_IMAGE_ID;
   delete process.env.MUSIC_PROVIDER_METEOR_HEALTH_URL;
   delete process.env.MUSIC_PROVIDER_HEALTH_TIMEOUT_MS;
+  delete process.env.MUSIC_PROVIDER_METEOR_HEALTH_TIMEOUT_MS;
   delete process.env.MUSIC_PROVIDER_ACE_STEP_PROMOTION_BUNDLE;
   delete process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY;
   delete process.env.DEMUCS_API_URL;
@@ -407,7 +410,8 @@ test("keeps a configured worker unavailable when its checkpoint is missing", asy
 });
 
 test("records health timeouts as explicit configured-but-unhealthy state", async () => {
-  process.env.MUSIC_PROVIDER_HEALTH_TIMEOUT_MS = "50";
+  process.env.MUSIC_PROVIDER_HEALTH_TIMEOUT_MS = "300000";
+  process.env.MUSIC_PROVIDER_METEOR_HEALTH_TIMEOUT_MS = "50";
   await withHealthServer(() => undefined, async () => {
     const registry = await verifyProviderRegistry([meteorProvider()], true);
     const [catalogEntry] = providerCatalog(registry);
@@ -419,6 +423,7 @@ test("records health timeouts as explicit configured-but-unhealthy state", async
     assert.match(catalogEntry.lastHealth.message, /health check failed/i);
   });
   delete process.env.MUSIC_PROVIDER_HEALTH_TIMEOUT_MS;
+  delete process.env.MUSIC_PROVIDER_METEOR_HEALTH_TIMEOUT_MS;
 });
 
 test("reports an unconfigured provider as unavailable without probing", async () => {

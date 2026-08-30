@@ -472,7 +472,7 @@ async function verifyAnalysisProviderHealth(
       headers: analysisToken
         ? { Authorization: `Bearer ${analysisToken}` }
         : undefined,
-      signal: AbortSignal.timeout(providerHealthTimeoutMs()),
+      signal: AbortSignal.timeout(providerHealthTimeoutMs(provider.id)),
     });
     if (!response.ok) throw new Error(`health check returned HTTP ${response.status}`);
     const payload = await response.json() as unknown;
@@ -1107,7 +1107,7 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
       const healthUrl = providerHealthUrl(this.definition.id, this.endpoint);
       const response = await fetch(healthUrl, {
         headers: this.headers(),
-        signal: AbortSignal.timeout(providerHealthTimeoutMs()),
+        signal: AbortSignal.timeout(providerHealthTimeoutMs(this.definition.id)),
       });
       if (!response.ok) {
         throw new Error(`health check returned HTTP ${response.status}`);
@@ -1663,13 +1663,15 @@ const providerHealthCache = new Map<string, {
   snapshot: ProviderRuntimeSnapshot;
 }>();
 
-function providerHealthTimeoutMs(): number {
+function providerHealthTimeoutMs(providerId: string): number {
   const configured = Number.parseInt(
-    process.env["MUSIC_PROVIDER_HEALTH_TIMEOUT_MS"] ?? "5000",
+    process.env[`MUSIC_PROVIDER_${providerId}_HEALTH_TIMEOUT_MS`] ??
+      process.env["MUSIC_PROVIDER_HEALTH_TIMEOUT_MS"] ??
+      "5000",
     10,
   );
   return Number.isFinite(configured)
-    ? Math.max(100, Math.min(30_000, configured))
+    ? Math.max(100, Math.min(300_000, configured))
     : 5_000;
 }
 

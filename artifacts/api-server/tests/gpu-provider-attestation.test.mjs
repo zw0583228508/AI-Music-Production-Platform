@@ -62,6 +62,8 @@ const promotionPublicKey = promotionKeys.publicKey.export({
   type: "spki",
   format: "pem",
 });
+delete process.env.MUSIC_PROVIDER_ACE_STEP_PROMOTION_BUNDLE;
+delete process.env.MUSIC_PROVIDER_ACE_STEP_PROMOTION_PUBLIC_KEY;
 
 after(async () => {
   delete process.env.ACE_STEP_API_URL;
