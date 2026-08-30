@@ -731,11 +731,109 @@ export const ArrangementStatus = {
   ready: 'ready',
 } as const;
 
+export type EditorChordEventQuality = typeof EditorChordEventQuality[keyof typeof EditorChordEventQuality];
+
+
+export const EditorChordEventQuality = {
+  major: 'major',
+  minor: 'minor',
+  dominant: 'dominant',
+  suspended: 'suspended',
+  diminished: 'diminished',
+} as const;
+
+export interface EditorChordEvent {
+  id: string;
+  startBeat: number;
+  durationBeats: number;
+  symbol: string;
+  quality: EditorChordEventQuality;
+  /**
+     * @minimum 0
+     * @maximum 3
+     */
+  inversion: number;
+  bass?: string;
+}
+
+export interface TimelineMarker {
+  id: string;
+  bar: number;
+  label: string;
+  color: string;
+}
+
+export interface AutomationPoint {
+  bar: number;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  value: number;
+}
+
+export type PianoNoteArticulation = typeof PianoNoteArticulation[keyof typeof PianoNoteArticulation];
+
+
+export const PianoNoteArticulation = {
+  sustain: 'sustain',
+  staccato: 'staccato',
+  accent: 'accent',
+  ghost: 'ghost',
+} as const;
+
+export interface PianoNote {
+  id: string;
+  /**
+     * @minimum 0
+     * @maximum 127
+     */
+  pitch: number;
+  /** @minimum 0 */
+  start: number;
+  /** @minimum 0.0625 */
+  duration: number;
+  /**
+     * @minimum 1
+     * @maximum 127
+     */
+  velocity: number;
+  articulation: PianoNoteArticulation;
+}
+
+export interface MidiTrackEditor {
+  notes: PianoNote[];
+  /**
+     * @items.minimum 0
+     * @items.maximum 127
+     */
+  cc: number[];
+}
+
+export type ArrangementSectionMidiTracks = {[key: string]: MidiTrackEditor};
+
 export interface ArrangementSection {
   name: string;
   energy: number;
   density: number;
   tracks: string[];
+  startBar?: number;
+  endBar?: number;
+  chords?: EditorChordEvent[];
+  markers?: TimelineMarker[];
+  automation?: AutomationPoint[];
+  midiNotes?: PianoNote[];
+  /**
+     * @items.minimum 0
+     * @items.maximum 127
+     */
+  cc?: number[];
+  midiTracks?: ArrangementSectionMidiTracks;
+  /**
+     * @minimum -24
+     * @maximum 24
+     */
+  transposeSemitones?: number;
 }
 
 export interface Candidate {
@@ -990,6 +1088,10 @@ export interface ArrangementUpdate {
   rhythmIntensity?: number;
   /** @nullable */
   selectedCandidateId?: string | null;
+  /** @minimum 1 */
+  expectedVersion?: number;
+  /** Local timeline and semantic edits for this arrangement */
+  sections?: ArrangementSection[];
 }
 
 export type GenerationInputProvider = typeof GenerationInputProvider[keyof typeof GenerationInputProvider];
@@ -1336,11 +1438,24 @@ export interface ExportPackage {
 export interface CopilotInput {
   /** @minLength 1 */
   command: string;
+  arrangementId?: string;
+  targetSection?: string;
+  targetTrack?: string;
+  /** @minimum 1 */
+  startBar?: number;
+  /** @minimum 1 */
+  endBar?: number;
 }
 
 export interface CopilotOperation {
   type: string;
   label: string;
+  targetSection?: string;
+  targetTrack?: string;
+  /** @minimum 1 */
+  startBar?: number;
+  /** @minimum 1 */
+  endBar?: number;
 }
 
 export interface CopilotResult {

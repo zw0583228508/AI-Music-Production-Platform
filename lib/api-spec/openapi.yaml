@@ -1300,6 +1300,12 @@ components:
         orchestraSize: { type: number, minimum: 0, maximum: 1 }
         rhythmIntensity: { type: number, minimum: 0, maximum: 1 }
         selectedCandidateId: { type: ["string", "null"] }
+        expectedVersion: { type: number, minimum: 1 }
+        sections:
+          type: array
+          description: Local timeline and semantic edits for this arrangement
+          items:
+            $ref: "#/components/schemas/ArrangementSection"
     Arrangement:
       type: object
       required: [id, projectId, name, style, mode, version, status, harmonyComplexity, energy, density, orchestraSize, rhythmIntensity, sections, generationProvider, candidates, selectedCandidateId, createdAt]
@@ -1349,6 +1355,82 @@ components:
         tracks:
           type: array
           items: { type: string }
+        startBar: { type: number }
+        endBar: { type: number }
+        chords:
+          type: array
+          items:
+            $ref: "#/components/schemas/EditorChordEvent"
+        markers:
+          type: array
+          items:
+            $ref: "#/components/schemas/TimelineMarker"
+        automation:
+          type: array
+          items:
+            $ref: "#/components/schemas/AutomationPoint"
+        midiNotes:
+          type: array
+          items:
+            $ref: "#/components/schemas/PianoNote"
+        cc:
+          type: array
+          items: { type: number, minimum: 0, maximum: 127 }
+        midiTracks:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/MidiTrackEditor"
+        transposeSemitones: { type: number, minimum: -24, maximum: 24 }
+    EditorChordEvent:
+      type: object
+      required: [id, startBeat, durationBeats, symbol, quality, inversion]
+      properties:
+        id: { type: string }
+        startBeat: { type: number }
+        durationBeats: { type: number }
+        symbol: { type: string }
+        quality:
+          type: string
+          enum: [major, minor, dominant, suspended, diminished]
+        inversion: { type: number, minimum: 0, maximum: 3 }
+        bass: { type: string }
+    TimelineMarker:
+      type: object
+      required: [id, bar, label, color]
+      properties:
+        id: { type: string }
+        bar: { type: number }
+        label: { type: string }
+        color: { type: string }
+    AutomationPoint:
+      type: object
+      required: [bar, value]
+      properties:
+        bar: { type: number }
+        value: { type: number, minimum: 0, maximum: 1 }
+    PianoNote:
+      type: object
+      required: [id, pitch, start, duration, velocity, articulation]
+      properties:
+        id: { type: string }
+        pitch: { type: number, minimum: 0, maximum: 127 }
+        start: { type: number, minimum: 0 }
+        duration: { type: number, minimum: 0.0625 }
+        velocity: { type: number, minimum: 1, maximum: 127 }
+        articulation:
+          type: string
+          enum: [sustain, staccato, accent, ghost]
+    MidiTrackEditor:
+      type: object
+      required: [notes, cc]
+      properties:
+        notes:
+          type: array
+          items:
+            $ref: "#/components/schemas/PianoNote"
+        cc:
+          type: array
+          items: { type: number, minimum: 0, maximum: 127 }
     GenerationInput:
       type: object
       properties:
@@ -1682,6 +1764,11 @@ components:
       required: [command]
       properties:
         command: { type: string, minLength: 1 }
+        arrangementId: { type: string }
+        targetSection: { type: string }
+        targetTrack: { type: string }
+        startBar: { type: number, minimum: 1 }
+        endBar: { type: number, minimum: 1 }
     CopilotResult:
       type: object
       required: [reply, operations, affectedSections]
@@ -1700,6 +1787,10 @@ components:
       properties:
         type: { type: string }
         label: { type: string }
+        targetSection: { type: string }
+        targetTrack: { type: string }
+        startBar: { type: number, minimum: 1 }
+        endBar: { type: number, minimum: 1 }
 x-task1-conflict-archive:
   parameters:
     ProjectId:

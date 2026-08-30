@@ -5,3 +5,4 @@
 - [Generated-code verification](generated-code-verification.md) — restart the frontend workflow after API code generation before trusting browser HMR or module-loading logs.
 - [Background analysis leases](background-analysis-leases.md) — resumable workers must use expiring DB leases and lease-conditional writes, not process-local job guards.
 - [Song Model evidence gates](song-model-evidence-gates.md) — field confidence must come from musical evidence; absent evidence yields empty maps, never duration-based defaults.
+- [Versioned editor rehydration](versioned-editor-rehydration.md) — local DAW edits must clear “saving” only after acknowledgment and rehydrate from each accepted server revision.

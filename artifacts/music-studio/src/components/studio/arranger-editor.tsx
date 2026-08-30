@@ -1,0 +1,818 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import type {
+  Analysis,
+  Arrangement,
+  ArrangementSection,
+  Track,
+} from "@workspace/api-client-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Eraser,
+  GitBranch,
+  Grid3X3,
+  Magnet,
+  MousePointer2,
+  Music2,
+  Pencil,
+  Plus,
+  Redo2,
+  Scissors,
+  SlidersHorizontal,
+  Sparkles,
+  Trash2,
+  Undo2,
+  Wand2,
+  X,
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
+import { cn } from "@/lib/utils";
+import type {
+  AutomationPoint,
+  ChordEvent,
+  CopilotEditorResult,
+  EditorSection,
+  EditorSelection,
+  PianoNote,
+  TimelineMarker,
+} from "./editor-types";
+import { EditorConflictError, EditorSaveCoordinator } from "./editor-save-coordinator";
+
+type EditorTool = "select" | "draw" | "split" | "erase";
+type DetailPanel = "chord" | "piano" | null;
+
+type ArrangerEditorProps = {
+  arrangement?: Arrangement;
+  analysis?: Analysis;
+  tracks: Track[];
+  copilotResult?: CopilotEditorResult | null;
+  onSelectionChange: (selection: EditorSelection) => void;
+  onSectionsChange: (sections: ArrangementSection[]) => Promise<void>;
+};
+
+const SECTION_COLORS = ["#fb7185", "#fbbf24", "#38bdf8", "#a78bfa", "#34d399", "#f97316"];
+const PITCHES = ["C6", "B5", "A#5", "A5", "G#5", "G5", "F#5", "F5", "E5", "D#5", "D5", "C#5", "C5"];
+const SCALE_PITCHES = [60, 62, 64, 65, 67, 69, 71, 72, 74, 76, 77, 79, 81];
+const DEFAULT_CC = [42, 61, 53, 75, 64, 81, 70, 88];
+
+function makeChord(id: string, startBeat: number, symbol: string, quality: ChordEvent["quality"]): ChordEvent {
+  return { id, startBeat, durationBeats: 4, symbol, quality, inversion: 0 };
+}
+
+function chordsForSection(section: ArrangementSection, index: number, totalBeats: number): ChordEvent[] {
+  const rootProgression = index % 2 === 0
+    ? [["Dm", "minor"], ["Bb", "major"], ["F", "major"], ["C", "major"]]
+    : [["Bb", "major"], ["F", "major"], ["C", "major"], ["Dm", "minor"]];
+  return Array.from({ length: Math.max(1, Math.ceil(totalBeats / 4)) }, (_, chordIndex) => {
+    const [symbol, quality] = rootProgression[chordIndex % rootProgression.length];
+    return makeChord(`${section.name}-${chordIndex}`, chordIndex * 4, symbol, quality as ChordEvent["quality"]);
+  });
+}
+
+function normalizeSections(
+  sections: ArrangementSection[] | undefined,
+  analysisSections: Analysis["sections"] | undefined,
+  tracks: Track[],
+): EditorSection[] {
+  const source = sections?.length
+    ? sections
+    : (analysisSections ?? []).map((section) => ({
+        name: section.name,
+        startBar: section.startBar,
+        endBar: section.endBar,
+        energy: section.energy,
+        density: Math.min(1, section.energy + 0.2),
+        tracks: [],
+      }));
+  return source.map((section, index) => {
+    const candidate = section as ArrangementSection & Partial<EditorSection>;
+    const startBar = candidate.startBar ?? analysisSections?.[index]?.startBar ?? index * 8 + 1;
+    const endBar = candidate.endBar ?? analysisSections?.[index]?.endBar ?? startBar + 7;
+    const midiTrackNames = tracks.filter((track) => track.kind === "midi").map((track) => track.name);
+    const legacyNotes = candidate.midiNotes?.length ? candidate.midiNotes : noteSeed(index);
+    const legacyCc = candidate.cc?.length ? candidate.cc : DEFAULT_CC;
+    const midiTracks = candidate.midiTracks ?? Object.fromEntries(
+      midiTrackNames.map((trackName, trackIndex) => [
+        trackName,
+        { notes: trackIndex === 0 ? legacyNotes : noteSeed(index + trackIndex), cc: legacyCc },
+      ]),
+    );
+    return {
+      ...section,
+      startBar,
+      endBar: Math.max(startBar, endBar),
+      chords: candidate.chords?.length ? candidate.chords : chordsForSection(section, index, (endBar - startBar + 1) * 4),
+      markers: candidate.markers ?? [],
+      automation: candidate.automation ?? [
+        { bar: startBar, value: section.energy },
+        { bar: endBar, value: section.energy },
+      ],
+      midiNotes: candidate.midiNotes?.length ? candidate.midiNotes : noteSeed(index),
+      cc: legacyCc,
+      midiTracks,
+      transposeSemitones: candidate.transposeSemitones ?? 0,
+    };
+  });
+}
+
+function noteSeed(trackIndex: number): PianoNote[] {
+  const root = 60 + (trackIndex % 3) * 5;
+  return Array.from({ length: 6 }, (_, index) => ({
+    id: `seed-${trackIndex}-${index}`,
+    pitch: root + [0, 4, 7, 12, 7, 4][index],
+    start: index * 2,
+    duration: index % 2 ? 1.5 : 2,
+    velocity: 72 + (index % 3) * 10,
+    articulation: index === 2 ? "accent" : "sustain",
+  }));
+}
+
+function waveform(trackIndex: number) {
+  return Array.from({ length: 44 }, (_, index) => 18 + ((index * 17 + trackIndex * 23) % 37));
+}
+
+function sectionToApi(section: EditorSection): ArrangementSection {
+  return section;
+}
+
+export function ArrangerEditor({
+  arrangement,
+  analysis,
+  tracks,
+  copilotResult,
+  onSelectionChange,
+  onSectionsChange,
+}: ArrangerEditorProps) {
+  const [tool, setTool] = useState<EditorTool>("select");
+  const [snap, setSnap] = useState(true);
+  const [snapValue, setSnapValue] = useState("1/16");
+  const [selectedSectionName, setSelectedSectionName] = useState<string | null>(null);
+  const [selectedChordId, setSelectedChordId] = useState<string | null>(null);
+  const [detailPanel, setDetailPanel] = useState<DetailPanel>(null);
+  const [openAutomation, setOpenAutomation] = useState<Record<string, boolean>>({});
+  const [dirty, setDirty] = useState(false);
+  const [hasConflict, setHasConflict] = useState(false);
+  const saveCoordinator = useRef(new EditorSaveCoordinator());
+  const [savePass, setSavePass] = useState(0);
+  const firstMidiTrackName = tracks.find((track) => track.kind === "midi")?.name ?? "MIDI";
+  const [selectedTrackName, setSelectedTrackName] = useState(firstMidiTrackName);
+  const initialSections = normalizeSections(arrangement?.sections, analysis?.sections, tracks);
+  const [notes, setNotes] = useState<PianoNote[]>(() => initialSections[0]?.midiTracks[firstMidiTrackName]?.notes ?? noteSeed(2));
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
+  const [ccPoints, setCcPoints] = useState<number[]>(() => initialSections[0]?.midiTracks[firstMidiTrackName]?.cc ?? DEFAULT_CC);
+  const [articulation, setArticulation] = useState<PianoNote["articulation"]>("sustain");
+  const lastArrangementRevision = useRef<string | null>(null);
+  const appliedCopilotResult = useRef<CopilotEditorResult | null>(null);
+
+  const [sections, setSections] = useState<EditorSection[]>(initialSections);
+
+  useEffect(() => {
+    const revision = arrangement ? `${arrangement.id}:${arrangement.version}` : null;
+    if (arrangement?.id && revision && lastArrangementRevision.current !== revision) {
+      if (dirty) return;
+      lastArrangementRevision.current = revision;
+      const normalized = normalizeSections(arrangement.sections, analysis?.sections, tracks);
+      setSections(normalized);
+      setDirty(false);
+      const hydratedSection = normalized.find((section) => section.name === selectedSectionName) ?? normalized[0];
+      const defaultTrackName = tracks.find((track) => track.kind === "midi")?.name ?? "MIDI";
+      const trackName = hydratedSection?.midiTracks[selectedTrackName]
+        ? selectedTrackName
+        : defaultTrackName;
+      setSelectedTrackName(trackName);
+      setNotes(hydratedSection?.midiTracks[trackName]?.notes ?? noteSeed(2));
+      setCcPoints(hydratedSection?.midiTracks[trackName]?.cc ?? DEFAULT_CC);
+    }
+  }, [arrangement, analysis?.sections, dirty, selectedSectionName, selectedTrackName, tracks]);
+
+  useEffect(() => {
+    if (!dirty || hasConflict || saveCoordinator.current.hasInFlightSave()) return;
+    const timeout = window.setTimeout(() => {
+      const savingGeneration = saveCoordinator.current.beginSave();
+      if (savingGeneration === null) return;
+      void onSectionsChange(sections.map(sectionToApi))
+        .then(() => {
+          const acknowledgement = saveCoordinator.current.acknowledge(savingGeneration);
+          if (acknowledgement === "synced") {
+            setDirty(false);
+          } else if (acknowledgement === "resave") {
+            setSavePass((pass) => pass + 1);
+          }
+        })
+        .catch((error: unknown) => {
+          saveCoordinator.current.reject(savingGeneration);
+          if (error instanceof EditorConflictError) setHasConflict(true);
+          setDirty(true);
+        });
+    }, 650);
+    return () => window.clearTimeout(timeout);
+  }, [dirty, hasConflict, onSectionsChange, savePass, sections]);
+
+  useEffect(() => {
+    if (!copilotResult || appliedCopilotResult.current === copilotResult) return;
+    appliedCopilotResult.current = copilotResult;
+    const affected = copilotResult.affectedSections;
+    setSections((current) => current.map((section) => {
+      if (!affected.includes("Full arrangement") && !affected.includes(section.name)) return section;
+      return copilotResult.operations.reduce((next, operation) => {
+        if (operation.targetSection && operation.targetSection !== section.name) return next;
+        const scopeStart = operation.startBar ?? section.startBar;
+        const scopeEnd = operation.endBar ?? section.endBar;
+        const coversWholeSection = scopeStart <= section.startBar && scopeEnd >= section.endBar;
+        if (operation.type === "MODULATE") {
+          return coversWholeSection
+            ? { ...next, energy: Math.min(1, next.energy + 0.08), transposeSemitones: Math.min(24, next.transposeSemitones + 2) }
+            : next;
+        }
+        if (operation.type === "SET_SECTION_ENERGY") {
+          const scopedAutomation = [
+            ...next.automation.filter((point) => point.bar < scopeStart || point.bar > scopeEnd),
+            { bar: scopeStart, value: Math.min(1, next.energy + 0.14) },
+            { bar: scopeEnd, value: Math.min(1, next.energy + 0.14) },
+          ].sort((a, b) => a.bar - b.bar);
+          return { ...next, ...(coversWholeSection ? { energy: Math.min(1, next.energy + 0.14) } : {}), automation: scopedAutomation };
+        }
+        if (operation.type === "SET_SECTION_DENSITY") {
+          return coversWholeSection ? { ...next, density: Math.max(0, next.density - 0.14) } : next;
+        }
+        if (operation.type === "REHARMONIZE_CHORDS") {
+          return {
+            ...next,
+            chords: next.chords.map((chord, index) => {
+              const chordBar = section.startBar + Math.floor(chord.startBeat / 4);
+              return chordBar >= scopeStart && chordBar <= scopeEnd
+                ? { ...chord, symbol: index % 2 ? "Fmaj7" : "Gm9", quality: index % 2 ? "major" : "minor" }
+                : chord;
+            }),
+          };
+        }
+        if (operation.type === "ADD_COUNTERMELODY") {
+          return coversWholeSection
+            ? { ...next, density: Math.min(1, next.density + 0.12), tracks: next.tracks.includes("Cello") ? next.tracks : [...next.tracks, "Cello"] }
+            : next;
+        }
+        if (operation.type === "UPDATE_TRACK") {
+          return coversWholeSection ? {
+            ...next,
+            density: Math.min(1, next.density + 0.06),
+            tracks: operation.targetTrack && !next.tracks.includes(operation.targetTrack)
+              ? [...next.tracks, operation.targetTrack]
+              : next.tracks,
+          } : next;
+        }
+        return next;
+      }, section);
+    }));
+    saveCoordinator.current.markChanged();
+    setDirty(true);
+  }, [copilotResult]);
+
+  const barCount = useMemo(
+    () => Math.max(88, ...sections.map((section) => section.endBar)),
+    [sections],
+  );
+  const timelineWidth = barCount * 42;
+  const selectedSection = sections.find((section) => section.name === selectedSectionName) ?? sections[0];
+  const selectedSectionBeatCount = selectedSection
+    ? Math.max(4, (selectedSection.endBar - selectedSection.startBar + 1) * 4)
+    : 16;
+  const selectedChord = selectedSection?.chords.find((chord) => chord.id === selectedChordId) ?? selectedSection?.chords[0];
+  const selectedNote = notes.find((note) => note.id === selectedNoteId);
+  const snapStep = snap && snapValue !== "off"
+    ? ({ "1/4": 1, "1/8": 0.5, "1/16": 0.25, triplet: 1 / 3 }[snapValue] ?? 0.25)
+    : 0.125;
+
+  const updateSections = (updater: (current: EditorSection[]) => EditorSection[]) => {
+    setSections((current) => updater(current));
+    saveCoordinator.current.markChanged();
+    setDirty(true);
+  };
+
+  const loadTrackEditor = (section: EditorSection, trackName: string) => {
+    const editor = section.midiTracks[trackName] ?? { notes: noteSeed(tracks.findIndex((track) => track.name === trackName)), cc: DEFAULT_CC };
+    setSelectedTrackName(trackName);
+    setNotes(editor.notes);
+    setCcPoints(editor.cc);
+  };
+
+  const selectSection = (section: EditorSection) => {
+    setSelectedSectionName(section.name);
+    setSelectedChordId(null);
+    setDetailPanel(null);
+    loadTrackEditor(section, selectedTrackName);
+    onSelectionChange({ kind: "section", sectionName: section.name, startBar: section.startBar, endBar: section.endBar });
+  };
+
+  const selectChord = (section: EditorSection, chord: ChordEvent) => {
+    setSelectedSectionName(section.name);
+    setSelectedChordId(chord.id);
+    setDetailPanel("chord");
+    loadTrackEditor(section, selectedTrackName);
+    onSelectionChange({
+      kind: "chord",
+      sectionName: section.name,
+      chordId: chord.id,
+      startBar: section.startBar,
+      endBar: section.endBar,
+    });
+  };
+
+  const updateSelectedSection = (updates: Partial<EditorSection>) => {
+    if (!selectedSection) return;
+    updateSections((current) => current.map((section) =>
+      section.name === selectedSection.name ? { ...section, ...updates } : section,
+    ));
+  };
+
+  const updateSelectedChord = (updates: Partial<ChordEvent>) => {
+    if (!selectedSection || !selectedChord) return;
+    updateSections((current) => current.map((section) => section.name !== selectedSection.name
+      ? section
+      : { ...section, chords: section.chords.map((chord) => chord.id === selectedChord.id ? { ...chord, ...updates } : chord) }));
+  };
+
+  const applyChordAction = (action: "reharmonize" | "simplify" | "richen" | "invert" | "bass" | "alternative") => {
+    if (!selectedSection || !selectedChord) return;
+    const changesByAction: Record<typeof action, Partial<ChordEvent>> = {
+      reharmonize: { symbol: selectedChord.symbol === "Dm" ? "Gm7" : "Dm7", quality: "minor" },
+      simplify: { symbol: selectedChord.symbol.replace(/7|9|11/g, ""), durationBeats: 4 },
+      richen: { symbol: `${selectedChord.symbol}9`, durationBeats: 4 },
+      invert: { inversion: (selectedChord.inversion + 1) % 3 },
+      bass: { bass: selectedChord.symbol.slice(0, 1) === "D" ? "A" : "C" },
+      alternative: { symbol: selectedChord.symbol === "F" ? "Am7" : "Fmaj7", quality: "major" },
+    };
+    updateSelectedChord(changesByAction[action]);
+  };
+
+  const toggleTrackInSection = (trackName: string) => {
+    if (!selectedSection) return;
+    const active = selectedSection.tracks.includes(trackName);
+    updateSelectedSection({ tracks: active
+      ? selectedSection.tracks.filter((name) => name !== trackName)
+      : [...selectedSection.tracks, trackName] });
+  };
+
+  const addMarker = () => {
+    if (!selectedSection) return;
+    const marker: TimelineMarker = {
+      id: `marker-${Date.now()}`,
+      bar: selectedSection.startBar,
+      label: "Cue",
+      color: "#fb7185",
+    };
+    updateSelectedSection({ markers: [...selectedSection.markers, marker] });
+  };
+
+  const handlePianoGridClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (tool === "erase") {
+      if (selectedNoteId) {
+        updateNotes((current) => current.filter((note) => note.id !== selectedNoteId));
+        setSelectedNoteId(null);
+      }
+      return;
+    }
+    if (tool !== "draw") return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const step = snapStep;
+    const start = Math.max(0, Math.min(
+      selectedSectionBeatCount - 1,
+      Math.round(((event.clientX - rect.left) / rect.width) * selectedSectionBeatCount / step) * step,
+    ));
+    const row = Math.max(0, Math.min(PITCHES.length - 1, Math.floor(((event.clientY - rect.top) / rect.height) * PITCHES.length)));
+    const newNote: PianoNote = {
+      id: `note-${Date.now()}`,
+      pitch: SCALE_PITCHES[SCALE_PITCHES.length - row - 1],
+      start,
+      duration: Math.max(step, 1),
+      velocity: 80,
+      articulation,
+    };
+    updateNotes((current) => [...current, newNote]);
+    setSelectedNoteId(newNote.id);
+    setDetailPanel("piano");
+  };
+
+  const updateNotes = (updater: (current: PianoNote[]) => PianoNote[]) => {
+    const updated = updater(notes);
+    setNotes(updated);
+    if (selectedSection) {
+      setSections((sectionsCurrent) => sectionsCurrent.map((section) =>
+        section.name === selectedSection.name
+          ? {
+              ...section,
+              midiTracks: {
+                ...section.midiTracks,
+                [selectedTrackName]: {
+                  notes: updated,
+                  cc: section.midiTracks[selectedTrackName]?.cc ?? ccPoints,
+                },
+              },
+            }
+          : section,
+      ));
+    }
+    saveCoordinator.current.markChanged();
+    setDirty(true);
+  };
+
+  const applyNoteOperation = (operation: "quantize" | "humanize" | "transpose" | "duplicate" | "resize" | "move") => {
+    if (!selectedNote) return;
+    updateNotes((current) => {
+      if (operation === "duplicate") {
+        const duplicateStart = selectedNote.start + selectedNote.duration;
+        return duplicateStart + selectedNote.duration <= selectedSectionBeatCount
+          ? [...current, { ...selectedNote, id: `note-${Date.now()}`, start: duplicateStart }]
+          : current;
+      }
+      return current.map((note) => {
+        if (note.id !== selectedNote.id) return note;
+        if (operation === "quantize") return { ...note, start: Math.min(selectedSectionBeatCount - note.duration, Math.round(note.start / snapStep) * snapStep) };
+        if (operation === "humanize") return { ...note, start: Math.max(0, Math.min(selectedSectionBeatCount - note.duration, note.start + (note.start % 2 ? -0.08 : 0.08))), velocity: Math.max(1, Math.min(127, note.velocity + (note.velocity % 2 ? -4 : 4))) };
+        if (operation === "transpose") return { ...note, pitch: Math.max(36, Math.min(96, note.pitch + 2)) };
+        if (operation === "move") return { ...note, start: Math.min(selectedSectionBeatCount - note.duration, note.start + snapStep) };
+        return {
+          ...note,
+          duration: Math.min(
+            selectedSectionBeatCount - note.start,
+            Math.max(snapStep, note.duration + (operation === "resize" ? snapStep : 0)),
+          ),
+        };
+      });
+    });
+  };
+
+  const splitNote = (note: PianoNote) => {
+    const splitDuration = Math.round((note.duration / 2) / snapStep) * snapStep;
+    if (splitDuration < snapStep || note.duration - splitDuration < snapStep) return;
+    const secondId = `note-${Date.now()}-split`;
+    updateNotes((current) => current.flatMap((candidate) => candidate.id === note.id
+      ? [
+          { ...candidate, duration: splitDuration },
+          {
+            ...candidate,
+            id: secondId,
+            start: candidate.start + splitDuration,
+            duration: candidate.duration - splitDuration,
+          },
+        ]
+      : candidate));
+    setSelectedNoteId(secondId);
+  };
+
+  const updateCcPoint = (pointIndex: number) => {
+    const updated = ccPoints.map((value, index) => index === pointIndex ? Math.min(127, value + 8) : value);
+    setCcPoints(updated);
+    if (selectedSection) {
+      updateSelectedSection({
+        midiTracks: {
+          ...selectedSection.midiTracks,
+          [selectedTrackName]: {
+            notes,
+            cc: updated,
+          },
+        },
+      });
+    }
+  };
+
+  const headerTools: Array<{ id: EditorTool; label: string; icon: typeof MousePointer2 }> = [
+    { id: "select", label: "Select / move", icon: MousePointer2 },
+    { id: "draw", label: "Draw", icon: Pencil },
+    { id: "split", label: "Split", icon: Scissors },
+    { id: "erase", label: "Erase", icon: Eraser },
+  ];
+
+  return (
+    <div className="flex min-h-0 flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-3 py-2 shadow-sm">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center rounded-lg border bg-muted/30 p-0.5">
+            {headerTools.map(({ id, label, icon: Icon }) => (
+              <Button
+                key={id}
+                variant={tool === id ? "secondary" : "ghost"}
+                size="sm"
+                className="h-8 gap-1.5 px-2.5 text-xs"
+                title={label}
+                onClick={() => {
+                  if (id === "erase" && detailPanel === "piano" && selectedNoteId) {
+                    updateNotes((current) => current.filter((note) => note.id !== selectedNoteId));
+                    setSelectedNoteId(null);
+                  }
+                  setTool(id);
+                }}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                <span className="hidden xl:inline">{label.split(" ")[0]}</span>
+              </Button>
+            ))}
+          </div>
+          <div className="hidden items-center gap-1.5 text-xs text-muted-foreground md:flex">
+            <span className="font-mono text-foreground">01:12:03</span>
+            <span>/</span>
+            <span>{barCount} bars</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant={snap ? "secondary" : "ghost"} size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setSnap((value) => !value)}>
+            <Magnet className="h-3.5 w-3.5" />
+            Snap
+          </Button>
+          <Select value={snapValue} onValueChange={setSnapValue}>
+            <SelectTrigger className="h-8 w-[82px] text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="1/4">1/4</SelectItem>
+              <SelectItem value="1/8">1/8</SelectItem>
+              <SelectItem value="1/16">1/16</SelectItem>
+              <SelectItem value="triplet">Triplet</SelectItem>
+              <SelectItem value="off">Off</SelectItem>
+            </SelectContent>
+          </Select>
+          <Badge variant="outline" className={cn("font-mono text-[10px]", dirty && "border-primary/50 text-primary")}>
+            {dirty ? "saving local edit…" : `v${arrangement?.version ?? 1} · synced`}
+          </Badge>
+        </div>
+      </div>
+      {hasConflict && (
+        <div role="alert" className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-900">
+          <span className="mr-auto">A newer arrangement revision exists. Resolve it before saving again.</span>
+          <Button variant="outline" size="sm" className="h-7 text-[10px]" onClick={() => {
+            setHasConflict(false);
+            setDirty(false);
+          }}>Load latest</Button>
+          <Button size="sm" className="h-7 text-[10px]" onClick={() => {
+            setHasConflict(false);
+            setSavePass((pass) => pass + 1);
+          }}>Apply local edit</Button>
+        </div>
+      )}
+
+      <Card className="overflow-hidden border shadow-sm">
+        <CardHeader className="flex flex-row items-center justify-between border-b bg-muted/10 px-4 py-2.5">
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <Grid3X3 className="h-4 w-4 text-primary" />
+            Arranger
+            <span className="font-normal text-muted-foreground">/ timeline</span>
+          </CardTitle>
+          <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+            <span className="h-2 w-2 rounded-full bg-primary" /> semantic lanes
+            <span className="ml-2 h-2 w-2 rounded-full bg-sky-400" /> MIDI
+            <span className="ml-2 h-2 w-2 rounded-full bg-emerald-400" /> audio
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="flex min-h-[360px] overflow-x-auto">
+            <div className="sticky left-0 z-20 w-36 shrink-0 border-r bg-card">
+              <div className="h-9 border-b bg-muted/20 px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Tracks</div>
+              <div className="h-9 border-b bg-primary/5 px-3 py-2 text-[10px] font-semibold text-primary">Sections</div>
+              <div className="h-11 border-b bg-violet-500/5 px-3 py-2 text-[10px] font-semibold text-violet-600">Chords</div>
+              <div className="h-8 border-b bg-amber-500/5 px-3 py-2 text-[10px] font-semibold text-amber-700">Markers</div>
+              {tracks.map((track) => (
+                <div key={track.id} className="flex h-14 items-center gap-2 border-b px-3 text-xs">
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: track.color }} />
+                  <span className="min-w-0 flex-1 truncate">{track.name}</span>
+                  <span className="font-mono text-[9px] text-muted-foreground">{track.kind === "midi" ? "MIDI" : "WAV"}</span>
+                </div>
+              ))}
+              <div className="h-9 border-b bg-orange-500/5 px-3 py-2 text-[10px] font-semibold text-orange-700">Automation</div>
+            </div>
+
+            <div className="relative" style={{ minWidth: timelineWidth }}>
+              <div
+                className="grid h-9 border-b bg-muted/20"
+                style={{ gridTemplateColumns: `repeat(${barCount}, 42px)` }}
+              >
+                {Array.from({ length: barCount }, (_, index) => (
+                  <div key={index} className={cn("border-r px-1 pt-2 font-mono text-[9px] text-muted-foreground", index % 4 === 0 && "border-r-foreground/20 font-bold text-foreground")}>
+                    {index % 4 === 0 ? String(index + 1).padStart(2, "0") : "·"}
+                  </div>
+                ))}
+              </div>
+              <div className="relative h-9 border-b bg-primary/[0.03]">
+                {sections.map((section, index) => (
+                  <button
+                    type="button"
+                    key={section.name}
+                    onClick={() => selectSection(section)}
+                    className={cn("absolute inset-y-1 rounded border px-2 text-left text-[10px] font-semibold transition-shadow hover:shadow-sm", selectedSectionName === section.name ? "border-primary ring-1 ring-primary/40" : "border-primary/20")}
+                    style={{ left: `${((section.startBar - 1) / barCount) * 100}%`, width: `${((section.endBar - section.startBar + 1) / barCount) * 100}%`, backgroundColor: `${SECTION_COLORS[index % SECTION_COLORS.length]}16` }}
+                  >
+                    {section.name}
+                  </button>
+                ))}
+              </div>
+              <div className="relative h-11 border-b bg-violet-500/[0.03]">
+                {sections.flatMap((section) => section.chords.map((chord) => (
+                  <button
+                    type="button"
+                    key={chord.id}
+                    onClick={() => selectChord(section, chord)}
+                    className={cn("absolute top-1.5 h-8 rounded border px-2 text-left font-mono text-[10px] transition-colors", selectedChordId === chord.id ? "border-violet-500 bg-violet-500/20 text-violet-800" : "border-violet-400/30 bg-violet-400/10 hover:bg-violet-400/20")}
+                    style={{
+                      left: `${((section.startBar - 1 + chord.startBeat / 4) / barCount) * 100}%`,
+                      width: `${(Math.max(1, chord.durationBeats / 4) / barCount) * 100}%`,
+                    }}
+                  >
+                    {chord.symbol}{chord.inversion ? ` / ${chord.inversion}` : ""}
+                  </button>
+                )))}
+              </div>
+              <div className="relative h-8 border-b bg-amber-500/[0.03]">
+                {sections.flatMap((section) => section.markers.map((marker) => (
+                  <button key={marker.id} type="button" title={marker.label} onClick={() => selectSection(section)} className="absolute top-1 h-6 w-px bg-amber-500" style={{ left: `${((marker.bar - 1) / barCount) * 100}%` }}>
+                    <span className="absolute -left-1 -top-0.5 h-2 w-2 rotate-45 bg-amber-500" />
+                  </button>
+                )))}
+                <button type="button" onClick={addMarker} className="absolute right-3 top-1 flex h-6 items-center gap-1 rounded border border-dashed px-1.5 text-[9px] text-muted-foreground hover:border-primary hover:text-primary">
+                  <Plus className="h-3 w-3" /> cue
+                </button>
+              </div>
+              {tracks.map((track, trackIndex) => (
+                <div key={track.id} className="relative h-14 border-b bg-background/70">
+                  {sections.map((section, sectionIndex) => {
+                    const isActive = !section.tracks.length || section.tracks.includes(track.name);
+                    return (
+                      <button
+                        type="button"
+                        key={`${track.id}-${section.name}`}
+                        onClick={() => {
+                          setSelectedSectionName(section.name);
+                          onSelectionChange({ kind: "track", trackName: track.name, sectionName: section.name, startBar: section.startBar, endBar: section.endBar });
+                          if (track.kind === "midi") {
+                            loadTrackEditor(section, track.name);
+                            setDetailPanel("piano");
+                          } else {
+                            setDetailPanel(null);
+                          }
+                        }}
+                        className={cn("absolute inset-y-2 rounded border text-left transition-opacity hover:brightness-95", !isActive && "opacity-25", track.kind === "midi" ? "border-sky-400/40 bg-sky-400/10" : "border-emerald-400/40 bg-emerald-400/10")}
+                        style={{ left: `${((section.startBar - 1) / barCount) * 100}%`, width: `${((section.endBar - section.startBar + 1) / barCount) * 100}%` }}
+                      >
+                        <span className="absolute inset-x-1 top-1 flex items-end gap-0.5 overflow-hidden">
+                          {waveform(trackIndex).slice(0, Math.max(3, Math.floor((section.endBar - section.startBar + 1) / 2))).map((height, index) => (
+                            <i key={index} className={cn("w-0.5 rounded-full", track.kind === "midi" ? "bg-sky-500/60" : "bg-emerald-500/60")} style={{ height: `${Math.min(24, height / 2)}px` }} />
+                          ))}
+                        </span>
+                        {track.kind === "midi" && <span className="absolute bottom-1 left-1 font-mono text-[8px] text-sky-700">MIDI CLIP · {section.name}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+              <div className="relative h-9 border-b bg-orange-500/[0.03]">
+                {sections.map((section) => (
+                  <div key={section.name} className="absolute inset-y-1" style={{ left: `${((section.startBar - 1) / barCount) * 100}%`, width: `${((section.endBar - section.startBar + 1) / barCount) * 100}%` }}>
+                    <svg className="h-full w-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 100">
+                      <polyline points={section.automation.map((point: AutomationPoint) => `${((point.bar - section.startBar) / Math.max(1, section.endBar - section.startBar)) * 100},${100 - point.value * 80}`).join(" ")} fill="none" stroke="#f97316" strokeWidth="3" vectorEffect="non-scaling-stroke" />
+                    </svg>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid min-h-0 gap-3 xl:grid-cols-[1.35fr_0.65fr]">
+        <Card className="overflow-hidden border shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between border-b px-4 py-3">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              {detailPanel === "piano" ? <Pencil className="h-4 w-4 text-sky-500" /> : <Music2 className="h-4 w-4 text-violet-500" />}
+              {detailPanel === "piano" ? `Piano roll · ${selectedTrackName}` : "Chord track"}
+              {selectedSection && <Badge variant="secondary" className="ml-1 text-[10px]">{selectedSection.name}</Badge>}
+            </CardTitle>
+            <div className="flex items-center gap-1">
+              {detailPanel && <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setDetailPanel(null)}><X className="h-3.5 w-3.5" /></Button>}
+              <Button variant="outline" size="sm" className="h-7 gap-1 text-[10px]" onClick={() => setDetailPanel(detailPanel === "piano" ? "chord" : "piano")}>
+                <GitBranch className="h-3 w-3" /> switch editor
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {detailPanel === "piano" ? (
+              <div className="min-h-[236px]">
+                <div className="flex items-center gap-1 border-b bg-muted/20 px-3 py-2">
+                  {[
+                    ["quantize", "Quantize"],
+                    ["humanize", "Humanize"],
+                    ["move", "Move +snap"],
+                    ["transpose", "Transpose"],
+                    ["duplicate", "Duplicate"],
+                    ["resize", "Resize"],
+                  ].map(([operation, label]) => (
+                    <Button key={operation} variant="ghost" size="sm" className="h-7 px-2 text-[10px]" onClick={() => applyNoteOperation(operation as "quantize" | "humanize" | "transpose" | "duplicate" | "resize" | "move")}>{label}</Button>
+                  ))}
+                  <Button variant="ghost" size="icon" className="ml-auto h-7 w-7 text-destructive" disabled={!selectedNote} onClick={() => selectedNote && updateNotes((current) => current.filter((note) => note.id !== selectedNote.id))}><Trash2 className="h-3.5 w-3.5" /></Button>
+                </div>
+                {selectedNote && (
+                  <div className="grid grid-cols-[1fr_130px] items-center gap-3 border-b px-3 py-2">
+                    <div className="flex items-center gap-2"><Badge variant="outline" className="font-mono text-[8px]">{selectedNote.id}</Badge><Label className="w-14 text-[9px] uppercase text-muted-foreground">Velocity</Label><Slider value={[selectedNote.velocity]} min={1} max={127} step={1} onValueChange={([velocity]) => updateNotes((current) => current.map((note) => note.id === selectedNote.id ? { ...note, velocity } : note))} /><span className="w-7 font-mono text-[9px]">{selectedNote.velocity}</span></div>
+                    <Select value={selectedNote.articulation} onValueChange={(value) => updateNotes((current) => current.map((note) => note.id === selectedNote.id ? { ...note, articulation: value as PianoNote["articulation"] } : note))}><SelectTrigger className="h-7 text-[10px]"><SelectValue /></SelectTrigger><SelectContent>{["sustain", "staccato", "accent", "ghost"].map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select>
+                  </div>
+                )}
+                <div className="flex h-[178px]">
+                  <div className="w-12 shrink-0 border-r bg-muted/30">
+                    {PITCHES.map((pitch, index) => <div key={pitch} className={cn("h-[13.6px] border-b px-1 font-mono text-[8px]", pitch.includes("#") ? "bg-foreground text-background" : "bg-card text-muted-foreground")}>{index % 2 === 0 ? pitch : ""}</div>)}
+                  </div>
+                  <div
+                    className="relative flex-1 overflow-hidden bg-[linear-gradient(to_right,hsl(var(--border)/.55)_1px,transparent_1px),linear-gradient(to_bottom,hsl(var(--border)/.45)_1px,transparent_1px)]"
+                    style={{ backgroundSize: `${100 / selectedSectionBeatCount}% 100%, 100% 13.6px` }}
+                    onClick={handlePianoGridClick}
+                  >
+                    {notes.map((note) => {
+                      const row = SCALE_PITCHES.length - 1 - SCALE_PITCHES.indexOf(note.pitch);
+                      const pitchRow = row < 0 ? Math.abs(note.pitch - 60) % PITCHES.length : row;
+                      return (
+                        <button
+                          type="button"
+                          key={note.id}
+                          aria-label={`Note ${note.id} pitch ${note.pitch} beat ${note.start + 1}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            if (tool === "erase") {
+                              updateNotes((current) => current.filter((candidate) => candidate.id !== note.id));
+                              return;
+                            }
+                            if (tool === "split") {
+                              splitNote(note);
+                              return;
+                            }
+                            setSelectedNoteId(note.id);
+                            setDetailPanel("piano");
+                            onSelectionChange({ kind: "note", trackName: selectedTrackName, sectionName: selectedSection?.name ?? "Section", startBar: selectedSection?.startBar ?? 1, endBar: selectedSection?.endBar ?? 8 });
+                          }}
+                          className={cn("absolute h-3 rounded-sm border px-1 text-left text-[8px] font-semibold text-sky-950 shadow-sm", selectedNoteId === note.id ? "border-primary bg-sky-400 ring-1 ring-primary" : "border-sky-500/50 bg-sky-400/80")}
+                          style={{ left: `${(note.start / selectedSectionBeatCount) * 100}%`, top: `${Math.max(0, Math.min(PITCHES.length - 1, pitchRow)) * 13.6}px`, width: `${Math.max(1.5, (note.duration / selectedSectionBeatCount) * 100)}%` }}
+                        >
+                          {note.articulation === "accent" ? ">" : ""}
+                        </button>
+                      );
+                    })}
+                    {tool === "draw" && <div className="pointer-events-none absolute inset-2 flex items-center justify-center rounded border border-dashed border-primary/50 text-[10px] text-primary">click to draw note</div>}
+                  </div>
+                </div>
+                <div className="flex border-t bg-muted/20">
+                  <div className="w-12 shrink-0 px-1 py-1 font-mono text-[8px] text-muted-foreground">VEL</div>
+                  <div className="flex h-8 flex-1 items-end gap-1 px-2">
+                    {ccPoints.map((point, index) => <button type="button" key={index} title={`CC1 ${point}`} onClick={() => updateCcPoint(index)} className="flex-1 rounded-t bg-violet-400/70 hover:bg-violet-500" style={{ height: `${Math.max(10, point / 4)}px` }} />)}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="p-4">
+                {selectedChord ? (
+                  <>
+                    <div className="grid gap-3 sm:grid-cols-[1fr_130px_130px]">
+                      <div><Label className="text-[10px] uppercase text-muted-foreground">Symbol</Label><Input className="mt-1 h-9 font-mono" value={selectedChord.symbol} onChange={(event) => updateSelectedChord({ symbol: event.target.value })} /></div>
+                      <div><Label className="text-[10px] uppercase text-muted-foreground">Quality</Label><Select value={selectedChord.quality} onValueChange={(value) => updateSelectedChord({ quality: value as ChordEvent["quality"] })}><SelectTrigger className="mt-1 h-9 text-xs"><SelectValue /></SelectTrigger><SelectContent>{["major", "minor", "dominant", "suspended", "diminished"].map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select></div>
+                      <div><Label className="text-[10px] uppercase text-muted-foreground">Inversion</Label><Select value={String(selectedChord.inversion)} onValueChange={(value) => updateSelectedChord({ inversion: Number(value) })}><SelectTrigger className="mt-1 h-9 text-xs"><SelectValue /></SelectTrigger><SelectContent>{[0, 1, 2].map((value) => <SelectItem key={value} value={String(value)}>Root position {value}</SelectItem>)}</SelectContent></Select></div>
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-1.5">
+                      {[
+                        ["reharmonize", "Reharmonize", Wand2],
+                        ["simplify", "Simplify", SlidersHorizontal],
+                        ["richen", "Richen", Sparkles],
+                        ["invert", "Invert", ArrowUp],
+                        ["bass", "Set bass", ArrowDown],
+                        ["alternative", "Alternatives", GitBranch],
+                      ].map(([action, label, Icon]) => <Button key={action as string} variant="outline" size="sm" className="h-8 gap-1.5 text-[10px]" onClick={() => applyChordAction(action as "reharmonize" | "simplify" | "richen" | "invert" | "bass" | "alternative")}><Icon className="h-3 w-3" />{label as string}</Button>)}
+                    </div>
+                    <div className="mt-4 rounded-lg border bg-muted/20 p-3 text-xs text-muted-foreground">
+                      <span className="font-semibold text-foreground">{selectedChord.symbol}</span> is scoped to beat {selectedChord.startBeat + 1} and edits only <span className="font-semibold text-foreground">{selectedSection?.name}</span>. Choose an alternative to compare voicings without regenerating the arrangement.
+                    </div>
+                  </>
+                ) : <div className="flex min-h-[160px] flex-col items-center justify-center text-center text-sm text-muted-foreground"><Music2 className="mb-2 h-8 w-8 opacity-30" />Select a chord block to edit its harmony.</div>}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border shadow-sm">
+          <CardHeader className="border-b px-4 py-3"><CardTitle className="flex items-center gap-2 text-sm"><SlidersHorizontal className="h-4 w-4 text-orange-500" />Semantic conductor</CardTitle></CardHeader>
+          <CardContent className="space-y-4 p-4">
+            {selectedSection ? (
+              <>
+                <div className="flex items-center justify-between"><div><div className="text-sm font-semibold">{selectedSection.name}</div><div className="font-mono text-[10px] text-muted-foreground">bars {selectedSection.startBar}–{selectedSection.endBar}</div></div><Badge variant="outline" className="text-[10px]">local scope</Badge></div>
+                <div className="flex items-center justify-between rounded-md border bg-muted/20 px-2 py-1.5 text-[10px]"><span>Harmonic shift</span><span className="font-mono">{selectedSection.transposeSemitones > 0 ? "+" : ""}{selectedSection.transposeSemitones} semitones</span></div>
+                <div><Label className="flex justify-between text-[10px] uppercase text-muted-foreground"><span>Energy</span><span className="font-mono text-foreground">{Math.round(selectedSection.energy * 100)}%</span></Label><Slider className="mt-2" value={[selectedSection.energy]} min={0} max={1} step={0.01} onValueChange={([value]) => updateSelectedSection({ energy: value, automation: selectedSection.automation.map((point) => ({ ...point, value })) })} /></div>
+                <div><Label className="flex justify-between text-[10px] uppercase text-muted-foreground"><span>Density</span><span className="font-mono text-foreground">{Math.round(selectedSection.density * 100)}%</span></Label><Slider className="mt-2" value={[selectedSection.density]} min={0} max={1} step={0.01} onValueChange={([value]) => updateSelectedSection({ density: value })} /></div>
+                <div className="border-t pt-3"><div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Track activation</div><div className="flex flex-wrap gap-1.5">{tracks.map((track) => <button type="button" key={track.id} onClick={() => toggleTrackInSection(track.name)} className={cn("rounded border px-2 py-1 text-[10px] transition-colors", selectedSection.tracks.includes(track.name) || !selectedSection.tracks.length ? "border-primary/40 bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted")}>{track.name}</button>)}</div></div>
+                <div className="flex gap-2 border-t pt-3"><Button variant="outline" size="sm" className="h-8 flex-1 gap-1 text-[10px]" onClick={() => updateSelectedSection({ automation: [...selectedSection.automation, { bar: Math.min(selectedSection.endBar, selectedSection.startBar + 4), value: Math.min(1, selectedSection.energy + 0.12) }] })}><Plus className="h-3 w-3" /> Add envelope point</Button><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setOpenAutomation((current) => ({ ...current, [selectedSection.name]: !current[selectedSection.name] }))}>{openAutomation[selectedSection.name] ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}</Button></div>
+                {openAutomation[selectedSection.name] && <div className="rounded border bg-muted/20 p-2 font-mono text-[10px] text-muted-foreground">{selectedSection.automation.map((point, index) => <div className="flex justify-between py-0.5" key={`${point.bar}-${index}`}><span>bar {point.bar}</span><span>{Math.round(point.value * 100)}%</span></div>)}</div>}
+              </>
+            ) : <div className="py-8 text-center text-xs text-muted-foreground">Select a section to direct its musical intent.</div>}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}

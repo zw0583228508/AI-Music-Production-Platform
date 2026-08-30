@@ -1377,9 +1377,92 @@ router.patch("/arrangements/:arrangementId", async (req, res): Promise<void> => 
       return;
     }
   }
-  const [arrangement] = await db.update(arrangementsTable).set(body.data).where(eq(arrangementsTable.id, params.data.arrangementId)).returning();
+  const { expectedVersion, ...updateData } = body.data;
+  if (updateData.sections) {
+    if (expectedVersion === undefined) {
+      res.status(400).json({ error: "expectedVersion is required for timeline edits" });
+      return;
+    }
+    let previousEnd = 0;
+    for (const section of updateData.sections) {
+      if (
+        !Number.isInteger(section.startBar) ||
+        !Number.isInteger(section.endBar) ||
+        section.startBar! < 1 ||
+        section.endBar! < section.startBar! ||
+        section.startBar! <= previousEnd
+      ) {
+        res.status(400).json({ error: "Arrangement sections must have ordered, non-overlapping bar ranges" });
+        return;
+      }
+      previousEnd = section.endBar!;
+      if (
+        section.chords?.some((chord) =>
+          !Number.isFinite(chord.startBeat) ||
+          chord.startBeat < 0 ||
+          !Number.isFinite(chord.durationBeats) ||
+          chord.durationBeats <= 0 ||
+          chord.startBeat + chord.durationBeats > (section.endBar! - section.startBar! + 1) * 4
+        )
+      ) {
+        res.status(400).json({ error: "Chord events must stay inside their section and have a positive duration" });
+        return;
+      }
+      if (
+        section.markers?.some((marker) =>
+          marker.bar < section.startBar! || marker.bar > section.endBar!
+        ) ||
+        section.automation?.some((point) =>
+          point.bar < section.startBar! || point.bar > section.endBar!
+        )
+      ) {
+        res.status(400).json({ error: "Markers and automation points must stay inside their section" });
+        return;
+      }
+      if (
+        section.midiTracks &&
+        Object.values(section.midiTracks).some((editor) =>
+          editor.notes.some((note) =>
+            note.pitch < 0 ||
+            note.pitch > 127 ||
+            note.start < 0 ||
+            note.duration <= 0 ||
+            note.start + note.duration > (section.endBar! - section.startBar! + 1) * 4 ||
+            note.velocity < 1 ||
+            note.velocity > 127
+          ) ||
+          editor.cc.some((value) => value < 0 || value > 127)
+        )
+      ) {
+        res.status(400).json({ error: "MIDI notes and CC values are outside supported ranges" });
+        return;
+      }
+    }
+  }
+  const updates = updateData.sections
+    ? {
+        ...updateData,
+        version: sql<number>`${arrangementsTable.version} + 1`,
+      }
+    : updateData;
+  const where = updateData.sections
+    ? and(
+        eq(arrangementsTable.id, params.data.arrangementId),
+        eq(arrangementsTable.version, expectedVersion!),
+      )
+    : eq(arrangementsTable.id, params.data.arrangementId);
+  const [arrangement] = await db.update(arrangementsTable).set(updates).where(where).returning();
   if (!arrangement) {
-    res.status(404).json({ error: "Arrangement not found" });
+    const [existing] = await db
+      .select({ id: arrangementsTable.id })
+      .from(arrangementsTable)
+      .where(eq(arrangementsTable.id, params.data.arrangementId))
+      .limit(1);
+    res.status(existing ? 409 : 404).json({
+      error: existing
+        ? "Arrangement changed while this local edit was saving. Reload the latest version and try again."
+        : "Arrangement not found",
+    });
     return;
   }
   res.json(UpdateArrangementResponse.parse(arrangementResponse(arrangement)));
@@ -1943,17 +2026,101 @@ router.post("/projects/:projectId/copilot", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Invalid copilot command" });
     return;
   }
+  if ((body.data.startBar === undefined) !== (body.data.endBar === undefined)) {
+    res.status(400).json({ error: "Copilot bar targets require both startBar and endBar" });
+    return;
+  }
+  if (
+    body.data.startBar !== undefined &&
+    body.data.endBar !== undefined &&
+    body.data.endBar < body.data.startBar
+  ) {
+    res.status(400).json({ error: "Copilot target endBar must not precede startBar" });
+    return;
+  }
+  const [scopedArrangement] = body.data.arrangementId
+    ? await db
+        .select()
+        .from(arrangementsTable)
+        .where(and(
+          eq(arrangementsTable.id, body.data.arrangementId),
+          eq(arrangementsTable.projectId, params.data.projectId),
+        ))
+        .limit(1)
+    : [];
+  if (body.data.arrangementId && !scopedArrangement) {
+    res.status(404).json({ error: "Arrangement not found in this project" });
+    return;
+  }
+  if (
+    body.data.targetSection &&
+    scopedArrangement &&
+    !scopedArrangement.sections.some((section) => section.name === body.data.targetSection)
+  ) {
+    res.status(400).json({ error: "Target section is not part of this arrangement" });
+    return;
+  }
+  if (body.data.targetTrack) {
+    const trackRows = await db
+      .select({ name: tracksTable.name })
+      .from(tracksTable)
+      .where(eq(tracksTable.projectId, params.data.projectId));
+    if (!trackRows.some((track) => track.name === body.data.targetTrack)) {
+      res.status(400).json({ error: "Target track is not part of this project" });
+      return;
+    }
+  }
+  if (body.data.targetSection && scopedArrangement) {
+    const targetSection = scopedArrangement.sections.find((section) => section.name === body.data.targetSection);
+    if (
+      targetSection?.startBar !== undefined &&
+      targetSection.endBar !== undefined &&
+      (
+        (body.data.startBar !== undefined && body.data.startBar < targetSection.startBar) ||
+        (body.data.endBar !== undefined && body.data.endBar > targetSection.endBar)
+      )
+    ) {
+      res.status(400).json({ error: "Copilot target bars must stay inside the selected section" });
+      return;
+    }
+  }
   const command = body.data.command.toLowerCase();
-  const operations: Array<{ type: string; label: string }> = [];
+  const operationScope = {
+    ...(body.data.targetSection ? { targetSection: body.data.targetSection } : {}),
+    ...(body.data.targetTrack ? { targetTrack: body.data.targetTrack } : {}),
+    ...(body.data.startBar !== undefined ? { startBar: body.data.startBar } : {}),
+    ...(body.data.endBar !== undefined ? { endBar: body.data.endBar } : {}),
+  };
+  const operations: Array<{
+    type: string;
+    label: string;
+    targetSection?: string;
+    targetTrack?: string;
+    startBar?: number;
+    endBar?: number;
+  }> = [];
   const affectedSections: string[] = [];
-  if (command.includes("drum")) operations.push({ type: "UPDATE_TRACK", label: "Update drums" });
-  if (command.includes("piano") || command.includes("guitar")) operations.push({ type: "REPLACE_INSTRUMENT", label: "Replace instrument" });
-  if (command.includes("cello") || command.includes("counter")) operations.push({ type: "ADD_COUNTERMELODY", label: "Add cello countermelody" });
-  if (command.includes("modulat") || command.includes("tone") || command.includes("טון")) operations.push({ type: "MODULATE", label: "Modulate final chorus" });
-  if (command.includes("bridge") || command.includes("גשר")) affectedSections.push("Bridge");
-  if (command.includes("chorus") || command.includes("פזמון")) affectedSections.push("Final Chorus");
-  if (command.includes("verse") || command.includes("בית")) affectedSections.push("Verse 1");
-  if (operations.length === 0) operations.push({ type: "REFINE_ARRANGEMENT", label: "Refine arrangement direction" });
+  if (command.includes("energy") || command.includes("bigger") || command.includes("lift")) {
+    operations.push({ type: "SET_SECTION_ENERGY", label: "Raise section energy", ...operationScope });
+  }
+  if (command.includes("sparse") || command.includes("simpler") || command.includes("less busy")) {
+    operations.push({ type: "SET_SECTION_DENSITY", label: "Reduce arrangement density", ...operationScope });
+  }
+  if (command.includes("reharmon") || command.includes("chord")) {
+    operations.push({ type: "REHARMONIZE_CHORDS", label: "Reharmonize local chord region", ...operationScope });
+  }
+  if (command.includes("drum")) operations.push({ type: "UPDATE_TRACK", label: "Update drums", ...operationScope });
+  if (command.includes("piano") || command.includes("guitar")) operations.push({ type: "UPDATE_TRACK", label: "Update selected instrument", ...operationScope });
+  if (command.includes("cello") || command.includes("counter")) operations.push({ type: "ADD_COUNTERMELODY", label: "Add cello countermelody", ...operationScope });
+  if (command.includes("modulat") || command.includes("tone") || command.includes("טון")) operations.push({ type: "MODULATE", label: "Modulate local section", ...operationScope });
+  if (body.data.targetSection) {
+    affectedSections.push(body.data.targetSection);
+  } else {
+    if (command.includes("bridge") || command.includes("גשר")) affectedSections.push("Bridge");
+    if (command.includes("chorus") || command.includes("פזמון")) affectedSections.push("Final Chorus");
+    if (command.includes("verse") || command.includes("בית")) affectedSections.push("Verse 1");
+  }
+  if (operations.length === 0) operations.push({ type: "REFINE_ARRANGEMENT", label: "Refine arrangement direction", ...operationScope });
   if (affectedSections.length === 0) affectedSections.push("Full arrangement");
   res.json(RunCopilotResponse.parse({
     reply: `Prepared ${operations.length} focused arrangement ${operations.length === 1 ? "change" : "changes"} without regenerating the full song.`,

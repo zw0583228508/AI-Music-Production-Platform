@@ -21,6 +21,45 @@ export type ArrangementSection = {
   energy: number;
   density: number;
   tracks: string[];
+  startBar?: number;
+  endBar?: number;
+  chords?: Array<{
+    id: string;
+    startBeat: number;
+    durationBeats: number;
+    symbol: string;
+    quality: string;
+    inversion: number;
+    bass?: string;
+  }>;
+  markers?: Array<{
+    id: string;
+    bar: number;
+    label: string;
+    color: string;
+  }>;
+  automation?: Array<{ bar: number; value: number }>;
+  midiNotes?: Array<{
+    id: string;
+    pitch: number;
+    start: number;
+    duration: number;
+    velocity: number;
+    articulation: string;
+  }>;
+  cc?: number[];
+  midiTracks?: Record<string, {
+    notes: Array<{
+      id: string;
+      pitch: number;
+      start: number;
+      duration: number;
+      velocity: number;
+      articulation: string;
+    }>;
+    cc: number[];
+  }>;
+  transposeSemitones?: number;
 };
 
 export type MusicGenerationTask =

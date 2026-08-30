@@ -27,7 +27,42 @@ type Arrangement = {
   density: number;
   orchestraSize: number;
   rhythmIntensity: number;
-  sections: Array<{ name: string; energy: number; density: number; tracks: string[] }>;
+  sections: Array<{
+    name: string;
+    energy: number;
+    density: number;
+    tracks: string[];
+    startBar?: number;
+    endBar?: number;
+    transposeSemitones?: number;
+    chords?: Array<{
+      startBeat: number;
+      durationBeats: number;
+      symbol: string;
+      quality: string;
+      inversion: number;
+      bass?: string;
+    }>;
+    automation?: Array<{ bar: number; value: number }>;
+    midiNotes?: Array<{
+      pitch: number;
+      start: number;
+      duration: number;
+      velocity: number;
+      articulation: string;
+    }>;
+    cc?: number[];
+    midiTracks?: Record<string, {
+      notes: Array<{
+        pitch: number;
+        start: number;
+        duration: number;
+        velocity: number;
+        articulation: string;
+      }>;
+      cc: number[];
+    }>;
+  }>;
 };
 
 export type TrackPerformance = {
@@ -254,6 +289,37 @@ function expressionAt(tick: number, expression: TrackPerformance["expression"]):
   return value;
 }
 
+const ROOT_PITCH_CLASS: Record<string, number> = {
+  C: 0, "C#": 1, Db: 1, D: 2, "D#": 3, Eb: 3, E: 4,
+  F: 5, "F#": 6, Gb: 6, G: 7, "G#": 8, Ab: 8, A: 9,
+  "A#": 10, Bb: 10, B: 11,
+};
+
+function chordPitches(
+  chord: NonNullable<Arrangement["sections"][number]["chords"]>[number],
+  transpose: number,
+): number[] {
+  const rootName = chord.symbol.match(/^[A-G](?:#|b)?/)?.[0] ?? chord.bass ?? "C";
+  const root = 48 + (ROOT_PITCH_CLASS[rootName] ?? 0) + transpose;
+  const intervals = chord.quality === "minor"
+    ? [0, 3, 7]
+    : chord.quality === "diminished"
+      ? [0, 3, 6]
+      : chord.quality === "suspended"
+        ? [0, 5, 7]
+        : chord.quality === "dominant"
+          ? [0, 4, 7, 10]
+          : [0, 4, 7];
+  const pitches = intervals.map((interval) => root + interval);
+  for (let inversion = 0; inversion < Math.min(chord.inversion, pitches.length); inversion += 1) {
+    pitches.push(pitches.shift()! + 12);
+  }
+  if (chord.bass && ROOT_PITCH_CLASS[chord.bass] !== undefined) {
+    pitches.unshift(36 + ROOT_PITCH_CLASS[chord.bass] + transpose);
+  }
+  return pitches;
+}
+
 export function createTrackPerformance(
   track: Track,
   project: Project,
@@ -264,23 +330,25 @@ export function createTrackPerformance(
   const [numeratorText, denominatorText] = project.meter.split("/");
   const numerator = Number(numeratorText) || 4;
   const denominator = Number(denominatorText) || 4;
-  const sections = project.sections.length
+  const sections: Array<Arrangement["sections"][number] & { startBar: number; endBar: number }> = project.sections.length
     ? project.sections.map((section, sectionIndex) => {
         const arrangementSection = arrangement.sections.find((candidate) =>
           candidate.name.toLowerCase() === section.name.toLowerCase())
           ?? arrangement.sections[sectionIndex];
         return {
           ...section,
+          ...arrangementSection,
           energy: arrangementSection?.energy ?? section.energy,
+          density: arrangementSection?.density ?? arrangement.density,
           tracks: arrangementSection?.tracks ?? [],
+          startBar: arrangementSection?.startBar ?? section.startBar,
+          endBar: arrangementSection?.endBar ?? section.endBar,
         };
       })
     : arrangement.sections.map((section, index) => ({
-        name: section.name,
-        startBar: index * 8 + 1,
-        endBar: index * 8 + 8,
-        energy: section.energy,
-        tracks: section.tracks,
+        ...section,
+        startBar: section.startBar ?? index * 8 + 1,
+        endBar: section.endBar ?? index * 8 + 8,
       }));
   const rolePitch: Record<string, number> = {
     rhythm: 36,
@@ -335,6 +403,55 @@ export function createTrackPerformance(
       type: articulation,
       keyswitch: articulation === "accent" ? 26 : articulation === "staccato" ? 25 : 24,
     });
+    for (const point of section.automation ?? []) {
+      expression.push({
+        tick: Math.max(0, point.bar - 1) * numerator * PPQ,
+        value: Math.max(0, Math.min(127, Math.round(point.value * 127))),
+      });
+    }
+    const transpose = section.transposeSemitones ?? 0;
+    const editor = section.midiTracks?.[track.name]
+      ?? (track.kind === "midi" && section.midiNotes
+        ? { notes: section.midiNotes, cc: section.cc ?? [] }
+        : undefined);
+    if (editor) {
+      const sectionDurationTicks = (section.endBar - section.startBar + 1) * numerator * PPQ;
+      for (const [ccIndex, value] of editor.cc.entries()) {
+        expression.push({
+          tick: sectionTick + Math.round((ccIndex / Math.max(1, editor.cc.length - 1)) * sectionDurationTicks),
+          value: Math.max(0, Math.min(127, Math.round(value))),
+        });
+      }
+      for (const note of editor.notes) {
+        const noteTick = sectionTick + Math.round(note.start * PPQ);
+        notes.push({
+          startTick: noteTick,
+          durationTicks: Math.max(1, Math.round(note.duration * PPQ)),
+          pitch: Math.max(0, Math.min(127, note.pitch + transpose)),
+          velocity: Math.max(1, Math.min(127, Math.round(note.velocity))),
+        });
+        articulations.push({
+          tick: noteTick,
+          type: note.articulation,
+          keyswitch: note.articulation === "accent" ? 26 : note.articulation === "staccato" ? 25 : note.articulation === "ghost" ? 23 : 24,
+        });
+      }
+    }
+    if (track.role === "harmony" && section.chords?.length) {
+      for (const chord of section.chords) {
+        const startTick = sectionTick + Math.round(chord.startBeat * PPQ);
+        const durationTicks = Math.max(1, Math.round(chord.durationBeats * PPQ));
+        for (const pitch of chordPitches(chord, transpose)) {
+          notes.push({
+            startTick,
+            durationTicks,
+            pitch: Math.max(0, Math.min(127, pitch)),
+            velocity: Math.max(35, Math.min(127, Math.round(54 + section.energy * 64))),
+          });
+        }
+      }
+    }
+    if (editor || (track.role === "harmony" && section.chords?.length)) continue;
     const stepsPerBar = track.role === "rhythm" ? numerator : track.role === "bass" ? 2 : 1;
     const stepTicks = Math.max(PPQ, Math.round((numerator * PPQ) / stepsPerBar));
     for (let bar = section.startBar; bar <= section.endBar; bar += 1) {
@@ -353,8 +470,8 @@ export function createTrackPerformance(
     tempoMap,
     meterMap: [{ tick: 0, numerator, denominator }],
     notes,
-    expression,
-    articulations,
+    expression: expression.sort((left, right) => left.tick - right.tick),
+    articulations: articulations.sort((left, right) => left.tick - right.tick),
   };
 }
 
@@ -377,9 +494,14 @@ export function performanceDurationSeconds(
 
 function arrangementEndTick(project: Project, arrangement: Arrangement): number {
   const numerator = Number(project.meter.split("/")[0]) || 4;
-  const finalBar = project.sections.length
-    ? Math.max(...project.sections.map((section) => section.endBar))
-    : arrangement.sections.length * 8;
+  const editedEndBars = arrangement.sections
+    .map((section) => section.endBar)
+    .filter((endBar): endBar is number => Number.isFinite(endBar));
+  const finalBar = editedEndBars.length
+    ? Math.max(...editedEndBars)
+    : project.sections.length
+      ? Math.max(...project.sections.map((section) => section.endBar))
+      : arrangement.sections.length * 8;
   return finalBar * numerator * PPQ;
 }
 

@@ -9,4 +9,11 @@
 export interface CopilotInput {
   /** @minLength 1 */
   command: string;
+  arrangementId?: string;
+  targetSection?: string;
+  targetTrack?: string;
+  /** @minimum 1 */
+  startBar?: number;
+  /** @minimum 1 */
+  endBar?: number;
 }

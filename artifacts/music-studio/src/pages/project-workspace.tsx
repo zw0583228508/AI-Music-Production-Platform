@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useRoute } from "wouter";
 import { 
   useGetProject, 
@@ -23,7 +23,8 @@ import {
   GenerationCandidate,
   ArrangementMode,
   ArrangementStatus,
-  Arrangement
+  Arrangement,
+  ArrangementSection
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getGetProjectQueryKey, getListArrangementsQueryKey } from "@workspace/api-client-react";
@@ -40,7 +41,8 @@ import {
   Plus,
   Download,
   FileArchive,
-  Loader2
+  Loader2,
+  Grid3X3
 } from "lucide-react";
 
 import { EmptyState } from "@/components/ui/empty";
@@ -60,6 +62,9 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { SourceImport } from "@/components/studio/source-import";
 import { SongModelInspector } from "@/components/studio/song-model-inspector";
+import { ArrangerEditor } from "@/components/studio/arranger-editor";
+import { EditorConflictError } from "@/components/studio/editor-save-coordinator";
+import type { CopilotEditorResult, EditorSelection } from "@/components/studio/editor-types";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -96,7 +101,7 @@ export default function ProjectWorkspace() {
   const createExport = useCreateProjectExport();
   // const runCopilot = useRunCopilot(); // We'll mock copilot if it's not exported, but let's assume it is
 
-  const [activeTab, setActiveTab] = useState("model");
+  const [activeTab, setActiveTab] = useState("editor");
   const [selectedArrangementId, setSelectedArrangementId] = useState<string | null>(null);
   const [generationJobId, setGenerationJobId] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
@@ -106,6 +111,8 @@ export default function ProjectWorkspace() {
   const [exportResult, setExportResult] = useState<ExportResult | null>(null);
 
   const [copilotCommand, setCopilotCommand] = useState("");
+  const [editorSelection, setEditorSelection] = useState<EditorSelection>(null);
+  const [copilotEditorResult, setCopilotEditorResult] = useState<CopilotEditorResult | null>(null);
   const runCopilot = useRunCopilot();
   const [copilotMessages, setCopilotMessages] = useState<Array<{role: 'user'|'assistant', text: string, operations?: any[]}>>([
     { role: 'assistant', text: "Hi! I'm your studio assistant. I can help analyze the track, tweak arrangement parameters, or suggest structural changes. What would you like to do?" }
@@ -119,6 +126,41 @@ export default function ProjectWorkspace() {
   }, [arrangements, selectedArrangementId]);
 
   const activeArrangement = arrangements?.find(a => a.id === selectedArrangementId);
+  const handleEditorSectionsChange = useCallback(async (sections: ArrangementSection[]) => {
+    if (!activeArrangement) return;
+    try {
+      const updated = await updateArrangement.mutateAsync({
+        arrangementId: activeArrangement.id,
+        data: { sections, expectedVersion: activeArrangement.version },
+      });
+      queryClient.setQueryData(
+        getListArrangementsQueryKey(projectId),
+        (current: typeof arrangements | undefined) =>
+          current?.map((arrangement) => arrangement.id === updated.id ? updated : arrangement),
+      );
+    } catch (saveError) {
+      if (
+        saveError
+        && typeof saveError === "object"
+        && "status" in saveError
+        && saveError.status === 409
+      ) {
+        await queryClient.refetchQueries({ queryKey: getListArrangementsQueryKey(projectId) });
+        toast({
+          title: "Arrangement changed elsewhere",
+          description: "Choose whether to load the latest revision or apply your local edit.",
+          variant: "destructive",
+        });
+        throw new EditorConflictError();
+      }
+      toast({
+        title: "Local edit could not be saved",
+        description: saveError instanceof Error ? saveError.message : "Review the edit and try again.",
+        variant: "destructive",
+      });
+      throw saveError;
+    }
+  }, [activeArrangement, arrangements, projectId, queryClient, toast, updateArrangement]);
   const requestedGenerationTask =
     activeArrangement?.mode === "PRO_SCORE" ? "ORCHESTRATION" : "ARRANGEMENT";
   const requestedGenerationSpeed =
@@ -376,7 +418,14 @@ export default function ProjectWorkspace() {
 
     runCopilot.mutate({
       projectId,
-      data: { command }
+      data: {
+        command,
+        arrangementId: activeArrangement?.id,
+        targetSection: editorSelection?.sectionName,
+        targetTrack: editorSelection && "trackName" in editorSelection ? editorSelection.trackName : undefined,
+        startBar: editorSelection?.startBar,
+        endBar: editorSelection?.endBar,
+      }
     }, {
       onSuccess: (res) => {
         setCopilotMessages(prev => [...prev, { 
@@ -384,6 +433,7 @@ export default function ProjectWorkspace() {
           text: res.reply,
           operations: res.operations
         }]);
+        setCopilotEditorResult(res);
         // Also refresh arrangement / project data just in case copilot changed something!
         queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(projectId) });
         queryClient.invalidateQueries({ queryKey: getListArrangementsQueryKey(projectId) });
@@ -548,12 +598,33 @@ export default function ProjectWorkspace() {
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
             <div className="px-6 pt-4 shrink-0">
-              <TabsList className="grid w-full max-w-md grid-cols-3">
+              <TabsList className="grid w-full max-w-2xl grid-cols-4">
+                <TabsTrigger value="editor">Editor</TabsTrigger>
                 <TabsTrigger value="model" data-testid="tab-model">Song Model</TabsTrigger>
                 <TabsTrigger value="arrangement" data-testid="tab-director">Director</TabsTrigger>
                 <TabsTrigger value="candidates" data-testid="tab-candidates">Candidates</TabsTrigger>
               </TabsList>
             </div>
+
+            <TabsContent value="editor" className="flex-1 min-h-0 overflow-auto m-0 p-4">
+              {activeArrangement ? (
+                <ArrangerEditor
+                  arrangement={activeArrangement}
+                  analysis={analysis}
+                  tracks={tracks ?? []}
+                  copilotResult={copilotEditorResult}
+                  onSelectionChange={setEditorSelection}
+                  onSectionsChange={handleEditorSectionsChange}
+                />
+              ) : (
+                <EmptyState
+                  icon={Grid3X3}
+                  title="Create an arrangement to start editing"
+                  description="The timeline keeps every chord, MIDI note, automation point, and semantic direction inside a versioned arrangement."
+                  action={<Button onClick={handleCreateArrangement}>Create Arrangement</Button>}
+                />
+              )}
+            </TabsContent>
 
             <TabsContent value="model" className="flex-1 min-h-0 overflow-auto m-0 p-6">
               <div className="max-w-4xl mx-auto h-full">
@@ -797,6 +868,16 @@ export default function ProjectWorkspace() {
           </ScrollArea>
 
           <div className="p-3 border-t bg-background">
+            {editorSelection && (
+              <div className="mb-2 flex items-center justify-between rounded-md border border-primary/20 bg-primary/5 px-2 py-1.5 text-[10px]">
+                <span className="min-w-0 truncate">
+                  Target: {editorSelection.sectionName}
+                  {"trackName" in editorSelection ? ` · ${editorSelection.trackName}` : ""}
+                  {editorSelection.startBar ? ` · bars ${editorSelection.startBar}–${editorSelection.endBar}` : ""}
+                </span>
+                <button type="button" className="ml-2 text-muted-foreground hover:text-foreground" onClick={() => setEditorSelection(null)}>Clear</button>
+              </div>
+            )}
             <form className="flex gap-2" onSubmit={handleCopilotSubmit}>
               <Input 
                 placeholder="Ask copilot..." 

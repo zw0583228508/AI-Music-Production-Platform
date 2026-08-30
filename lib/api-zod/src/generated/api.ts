@@ -185,6 +185,41 @@ export const GetProjectParams = zod.object({
   "projectId": zod.coerce.string()
 })
 
+export const getProjectResponseArrangementsItemSectionsItemChordsItemInversionMin = 0;
+export const getProjectResponseArrangementsItemSectionsItemChordsItemInversionMax = 3;
+
+export const getProjectResponseArrangementsItemSectionsItemAutomationItemValueMin = 0;
+export const getProjectResponseArrangementsItemSectionsItemAutomationItemValueMax = 1;
+
+export const getProjectResponseArrangementsItemSectionsItemMidiNotesItemPitchMin = 0;
+export const getProjectResponseArrangementsItemSectionsItemMidiNotesItemPitchMax = 127;
+
+export const getProjectResponseArrangementsItemSectionsItemMidiNotesItemStartMin = 0;
+
+export const getProjectResponseArrangementsItemSectionsItemMidiNotesItemDurationMin = 0.0625;
+
+export const getProjectResponseArrangementsItemSectionsItemMidiNotesItemVelocityMax = 127;
+
+export const getProjectResponseArrangementsItemSectionsItemCcItemMin = 0;
+export const getProjectResponseArrangementsItemSectionsItemCcItemMax = 127;
+
+export const getProjectResponseArrangementsItemSectionsItemMidiTracksNotesItemPitchMin = 0;
+export const getProjectResponseArrangementsItemSectionsItemMidiTracksNotesItemPitchMax = 127;
+
+export const getProjectResponseArrangementsItemSectionsItemMidiTracksNotesItemStartMin = 0;
+
+export const getProjectResponseArrangementsItemSectionsItemMidiTracksNotesItemDurationMin = 0.0625;
+
+export const getProjectResponseArrangementsItemSectionsItemMidiTracksNotesItemVelocityMax = 127;
+
+export const getProjectResponseArrangementsItemSectionsItemMidiTracksCcItemMin = 0;
+export const getProjectResponseArrangementsItemSectionsItemMidiTracksCcItemMax = 127;
+
+export const getProjectResponseArrangementsItemSectionsItemTransposeSemitonesMin = -24;
+export const getProjectResponseArrangementsItemSectionsItemTransposeSemitonesMax = 24;
+
+
+
 export const GetProjectResponse = zod.object({
   "project": zod.object({
   "id": zod.string(),
@@ -228,7 +263,49 @@ export const GetProjectResponse = zod.object({
   "name": zod.string(),
   "energy": zod.number(),
   "density": zod.number(),
-  "tracks": zod.array(zod.string())
+  "tracks": zod.array(zod.string()),
+  "startBar": zod.number().optional(),
+  "endBar": zod.number().optional(),
+  "chords": zod.array(zod.object({
+  "id": zod.string(),
+  "startBeat": zod.number(),
+  "durationBeats": zod.number(),
+  "symbol": zod.string(),
+  "quality": zod.enum(['major', 'minor', 'dominant', 'suspended', 'diminished']),
+  "inversion": zod.number().min(getProjectResponseArrangementsItemSectionsItemChordsItemInversionMin).max(getProjectResponseArrangementsItemSectionsItemChordsItemInversionMax),
+  "bass": zod.string().optional()
+})).optional(),
+  "markers": zod.array(zod.object({
+  "id": zod.string(),
+  "bar": zod.number(),
+  "label": zod.string(),
+  "color": zod.string()
+})).optional(),
+  "automation": zod.array(zod.object({
+  "bar": zod.number(),
+  "value": zod.number().min(getProjectResponseArrangementsItemSectionsItemAutomationItemValueMin).max(getProjectResponseArrangementsItemSectionsItemAutomationItemValueMax)
+})).optional(),
+  "midiNotes": zod.array(zod.object({
+  "id": zod.string(),
+  "pitch": zod.number().min(getProjectResponseArrangementsItemSectionsItemMidiNotesItemPitchMin).max(getProjectResponseArrangementsItemSectionsItemMidiNotesItemPitchMax),
+  "start": zod.number().min(getProjectResponseArrangementsItemSectionsItemMidiNotesItemStartMin),
+  "duration": zod.number().min(getProjectResponseArrangementsItemSectionsItemMidiNotesItemDurationMin),
+  "velocity": zod.number().min(1).max(getProjectResponseArrangementsItemSectionsItemMidiNotesItemVelocityMax),
+  "articulation": zod.enum(['sustain', 'staccato', 'accent', 'ghost'])
+})).optional(),
+  "cc": zod.array(zod.number().min(getProjectResponseArrangementsItemSectionsItemCcItemMin).max(getProjectResponseArrangementsItemSectionsItemCcItemMax)).optional(),
+  "midiTracks": zod.record(zod.string(), zod.object({
+  "notes": zod.array(zod.object({
+  "id": zod.string(),
+  "pitch": zod.number().min(getProjectResponseArrangementsItemSectionsItemMidiTracksNotesItemPitchMin).max(getProjectResponseArrangementsItemSectionsItemMidiTracksNotesItemPitchMax),
+  "start": zod.number().min(getProjectResponseArrangementsItemSectionsItemMidiTracksNotesItemStartMin),
+  "duration": zod.number().min(getProjectResponseArrangementsItemSectionsItemMidiTracksNotesItemDurationMin),
+  "velocity": zod.number().min(1).max(getProjectResponseArrangementsItemSectionsItemMidiTracksNotesItemVelocityMax),
+  "articulation": zod.enum(['sustain', 'staccato', 'accent', 'ghost'])
+})),
+  "cc": zod.array(zod.number().min(getProjectResponseArrangementsItemSectionsItemMidiTracksCcItemMin).max(getProjectResponseArrangementsItemSectionsItemMidiTracksCcItemMax))
+})).optional(),
+  "transposeSemitones": zod.number().min(getProjectResponseArrangementsItemSectionsItemTransposeSemitonesMin).max(getProjectResponseArrangementsItemSectionsItemTransposeSemitonesMax).optional()
 })),
   "generationProvider": zod.string().nullable(),
   "candidates": zod.array(zod.object({
@@ -1078,6 +1155,41 @@ export const ListArrangementsParams = zod.object({
   "projectId": zod.coerce.string()
 })
 
+export const listArrangementsResponseSectionsItemChordsItemInversionMin = 0;
+export const listArrangementsResponseSectionsItemChordsItemInversionMax = 3;
+
+export const listArrangementsResponseSectionsItemAutomationItemValueMin = 0;
+export const listArrangementsResponseSectionsItemAutomationItemValueMax = 1;
+
+export const listArrangementsResponseSectionsItemMidiNotesItemPitchMin = 0;
+export const listArrangementsResponseSectionsItemMidiNotesItemPitchMax = 127;
+
+export const listArrangementsResponseSectionsItemMidiNotesItemStartMin = 0;
+
+export const listArrangementsResponseSectionsItemMidiNotesItemDurationMin = 0.0625;
+
+export const listArrangementsResponseSectionsItemMidiNotesItemVelocityMax = 127;
+
+export const listArrangementsResponseSectionsItemCcItemMin = 0;
+export const listArrangementsResponseSectionsItemCcItemMax = 127;
+
+export const listArrangementsResponseSectionsItemMidiTracksNotesItemPitchMin = 0;
+export const listArrangementsResponseSectionsItemMidiTracksNotesItemPitchMax = 127;
+
+export const listArrangementsResponseSectionsItemMidiTracksNotesItemStartMin = 0;
+
+export const listArrangementsResponseSectionsItemMidiTracksNotesItemDurationMin = 0.0625;
+
+export const listArrangementsResponseSectionsItemMidiTracksNotesItemVelocityMax = 127;
+
+export const listArrangementsResponseSectionsItemMidiTracksCcItemMin = 0;
+export const listArrangementsResponseSectionsItemMidiTracksCcItemMax = 127;
+
+export const listArrangementsResponseSectionsItemTransposeSemitonesMin = -24;
+export const listArrangementsResponseSectionsItemTransposeSemitonesMax = 24;
+
+
+
 export const ListArrangementsResponseItem = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -1095,7 +1207,49 @@ export const ListArrangementsResponseItem = zod.object({
   "name": zod.string(),
   "energy": zod.number(),
   "density": zod.number(),
-  "tracks": zod.array(zod.string())
+  "tracks": zod.array(zod.string()),
+  "startBar": zod.number().optional(),
+  "endBar": zod.number().optional(),
+  "chords": zod.array(zod.object({
+  "id": zod.string(),
+  "startBeat": zod.number(),
+  "durationBeats": zod.number(),
+  "symbol": zod.string(),
+  "quality": zod.enum(['major', 'minor', 'dominant', 'suspended', 'diminished']),
+  "inversion": zod.number().min(listArrangementsResponseSectionsItemChordsItemInversionMin).max(listArrangementsResponseSectionsItemChordsItemInversionMax),
+  "bass": zod.string().optional()
+})).optional(),
+  "markers": zod.array(zod.object({
+  "id": zod.string(),
+  "bar": zod.number(),
+  "label": zod.string(),
+  "color": zod.string()
+})).optional(),
+  "automation": zod.array(zod.object({
+  "bar": zod.number(),
+  "value": zod.number().min(listArrangementsResponseSectionsItemAutomationItemValueMin).max(listArrangementsResponseSectionsItemAutomationItemValueMax)
+})).optional(),
+  "midiNotes": zod.array(zod.object({
+  "id": zod.string(),
+  "pitch": zod.number().min(listArrangementsResponseSectionsItemMidiNotesItemPitchMin).max(listArrangementsResponseSectionsItemMidiNotesItemPitchMax),
+  "start": zod.number().min(listArrangementsResponseSectionsItemMidiNotesItemStartMin),
+  "duration": zod.number().min(listArrangementsResponseSectionsItemMidiNotesItemDurationMin),
+  "velocity": zod.number().min(1).max(listArrangementsResponseSectionsItemMidiNotesItemVelocityMax),
+  "articulation": zod.enum(['sustain', 'staccato', 'accent', 'ghost'])
+})).optional(),
+  "cc": zod.array(zod.number().min(listArrangementsResponseSectionsItemCcItemMin).max(listArrangementsResponseSectionsItemCcItemMax)).optional(),
+  "midiTracks": zod.record(zod.string(), zod.object({
+  "notes": zod.array(zod.object({
+  "id": zod.string(),
+  "pitch": zod.number().min(listArrangementsResponseSectionsItemMidiTracksNotesItemPitchMin).max(listArrangementsResponseSectionsItemMidiTracksNotesItemPitchMax),
+  "start": zod.number().min(listArrangementsResponseSectionsItemMidiTracksNotesItemStartMin),
+  "duration": zod.number().min(listArrangementsResponseSectionsItemMidiTracksNotesItemDurationMin),
+  "velocity": zod.number().min(1).max(listArrangementsResponseSectionsItemMidiTracksNotesItemVelocityMax),
+  "articulation": zod.enum(['sustain', 'staccato', 'accent', 'ghost'])
+})),
+  "cc": zod.array(zod.number().min(listArrangementsResponseSectionsItemMidiTracksCcItemMin).max(listArrangementsResponseSectionsItemMidiTracksCcItemMax))
+})).optional(),
+  "transposeSemitones": zod.number().min(listArrangementsResponseSectionsItemTransposeSemitonesMin).max(listArrangementsResponseSectionsItemTransposeSemitonesMax).optional()
 })),
   "generationProvider": zod.string().nullable(),
   "candidates": zod.array(zod.object({
@@ -1144,6 +1298,41 @@ export const CreateArrangementBody = zod.object({
   "mode": zod.enum(['QUICK_ARRANGE', 'STUDIO', 'PRO_SCORE'])
 })
 
+export const createArrangementResponseSectionsItemChordsItemInversionMin = 0;
+export const createArrangementResponseSectionsItemChordsItemInversionMax = 3;
+
+export const createArrangementResponseSectionsItemAutomationItemValueMin = 0;
+export const createArrangementResponseSectionsItemAutomationItemValueMax = 1;
+
+export const createArrangementResponseSectionsItemMidiNotesItemPitchMin = 0;
+export const createArrangementResponseSectionsItemMidiNotesItemPitchMax = 127;
+
+export const createArrangementResponseSectionsItemMidiNotesItemStartMin = 0;
+
+export const createArrangementResponseSectionsItemMidiNotesItemDurationMin = 0.0625;
+
+export const createArrangementResponseSectionsItemMidiNotesItemVelocityMax = 127;
+
+export const createArrangementResponseSectionsItemCcItemMin = 0;
+export const createArrangementResponseSectionsItemCcItemMax = 127;
+
+export const createArrangementResponseSectionsItemMidiTracksNotesItemPitchMin = 0;
+export const createArrangementResponseSectionsItemMidiTracksNotesItemPitchMax = 127;
+
+export const createArrangementResponseSectionsItemMidiTracksNotesItemStartMin = 0;
+
+export const createArrangementResponseSectionsItemMidiTracksNotesItemDurationMin = 0.0625;
+
+export const createArrangementResponseSectionsItemMidiTracksNotesItemVelocityMax = 127;
+
+export const createArrangementResponseSectionsItemMidiTracksCcItemMin = 0;
+export const createArrangementResponseSectionsItemMidiTracksCcItemMax = 127;
+
+export const createArrangementResponseSectionsItemTransposeSemitonesMin = -24;
+export const createArrangementResponseSectionsItemTransposeSemitonesMax = 24;
+
+
+
 export const CreateArrangementResponse = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -1161,7 +1350,49 @@ export const CreateArrangementResponse = zod.object({
   "name": zod.string(),
   "energy": zod.number(),
   "density": zod.number(),
-  "tracks": zod.array(zod.string())
+  "tracks": zod.array(zod.string()),
+  "startBar": zod.number().optional(),
+  "endBar": zod.number().optional(),
+  "chords": zod.array(zod.object({
+  "id": zod.string(),
+  "startBeat": zod.number(),
+  "durationBeats": zod.number(),
+  "symbol": zod.string(),
+  "quality": zod.enum(['major', 'minor', 'dominant', 'suspended', 'diminished']),
+  "inversion": zod.number().min(createArrangementResponseSectionsItemChordsItemInversionMin).max(createArrangementResponseSectionsItemChordsItemInversionMax),
+  "bass": zod.string().optional()
+})).optional(),
+  "markers": zod.array(zod.object({
+  "id": zod.string(),
+  "bar": zod.number(),
+  "label": zod.string(),
+  "color": zod.string()
+})).optional(),
+  "automation": zod.array(zod.object({
+  "bar": zod.number(),
+  "value": zod.number().min(createArrangementResponseSectionsItemAutomationItemValueMin).max(createArrangementResponseSectionsItemAutomationItemValueMax)
+})).optional(),
+  "midiNotes": zod.array(zod.object({
+  "id": zod.string(),
+  "pitch": zod.number().min(createArrangementResponseSectionsItemMidiNotesItemPitchMin).max(createArrangementResponseSectionsItemMidiNotesItemPitchMax),
+  "start": zod.number().min(createArrangementResponseSectionsItemMidiNotesItemStartMin),
+  "duration": zod.number().min(createArrangementResponseSectionsItemMidiNotesItemDurationMin),
+  "velocity": zod.number().min(1).max(createArrangementResponseSectionsItemMidiNotesItemVelocityMax),
+  "articulation": zod.enum(['sustain', 'staccato', 'accent', 'ghost'])
+})).optional(),
+  "cc": zod.array(zod.number().min(createArrangementResponseSectionsItemCcItemMin).max(createArrangementResponseSectionsItemCcItemMax)).optional(),
+  "midiTracks": zod.record(zod.string(), zod.object({
+  "notes": zod.array(zod.object({
+  "id": zod.string(),
+  "pitch": zod.number().min(createArrangementResponseSectionsItemMidiTracksNotesItemPitchMin).max(createArrangementResponseSectionsItemMidiTracksNotesItemPitchMax),
+  "start": zod.number().min(createArrangementResponseSectionsItemMidiTracksNotesItemStartMin),
+  "duration": zod.number().min(createArrangementResponseSectionsItemMidiTracksNotesItemDurationMin),
+  "velocity": zod.number().min(1).max(createArrangementResponseSectionsItemMidiTracksNotesItemVelocityMax),
+  "articulation": zod.enum(['sustain', 'staccato', 'accent', 'ghost'])
+})),
+  "cc": zod.array(zod.number().min(createArrangementResponseSectionsItemMidiTracksCcItemMin).max(createArrangementResponseSectionsItemMidiTracksCcItemMax))
+})).optional(),
+  "transposeSemitones": zod.number().min(createArrangementResponseSectionsItemTransposeSemitonesMin).max(createArrangementResponseSectionsItemTransposeSemitonesMax).optional()
 })),
   "generationProvider": zod.string().nullable(),
   "candidates": zod.array(zod.object({
@@ -1212,6 +1443,40 @@ export const updateArrangementBodyRhythmIntensityMin = 0;
 export const updateArrangementBodyRhythmIntensityMax = 1;
 
 
+export const updateArrangementBodySectionsItemChordsItemInversionMin = 0;
+export const updateArrangementBodySectionsItemChordsItemInversionMax = 3;
+
+export const updateArrangementBodySectionsItemAutomationItemValueMin = 0;
+export const updateArrangementBodySectionsItemAutomationItemValueMax = 1;
+
+export const updateArrangementBodySectionsItemMidiNotesItemPitchMin = 0;
+export const updateArrangementBodySectionsItemMidiNotesItemPitchMax = 127;
+
+export const updateArrangementBodySectionsItemMidiNotesItemStartMin = 0;
+
+export const updateArrangementBodySectionsItemMidiNotesItemDurationMin = 0.0625;
+
+export const updateArrangementBodySectionsItemMidiNotesItemVelocityMax = 127;
+
+export const updateArrangementBodySectionsItemCcItemMin = 0;
+export const updateArrangementBodySectionsItemCcItemMax = 127;
+
+export const updateArrangementBodySectionsItemMidiTracksNotesItemPitchMin = 0;
+export const updateArrangementBodySectionsItemMidiTracksNotesItemPitchMax = 127;
+
+export const updateArrangementBodySectionsItemMidiTracksNotesItemStartMin = 0;
+
+export const updateArrangementBodySectionsItemMidiTracksNotesItemDurationMin = 0.0625;
+
+export const updateArrangementBodySectionsItemMidiTracksNotesItemVelocityMax = 127;
+
+export const updateArrangementBodySectionsItemMidiTracksCcItemMin = 0;
+export const updateArrangementBodySectionsItemMidiTracksCcItemMax = 127;
+
+export const updateArrangementBodySectionsItemTransposeSemitonesMin = -24;
+export const updateArrangementBodySectionsItemTransposeSemitonesMax = 24;
+
+
 
 export const UpdateArrangementBody = zod.object({
   "name": zod.string().optional(),
@@ -1220,8 +1485,92 @@ export const UpdateArrangementBody = zod.object({
   "density": zod.number().min(updateArrangementBodyDensityMin).max(updateArrangementBodyDensityMax).optional(),
   "orchestraSize": zod.number().min(updateArrangementBodyOrchestraSizeMin).max(updateArrangementBodyOrchestraSizeMax).optional(),
   "rhythmIntensity": zod.number().min(updateArrangementBodyRhythmIntensityMin).max(updateArrangementBodyRhythmIntensityMax).optional(),
-  "selectedCandidateId": zod.string().nullish()
+  "selectedCandidateId": zod.string().nullish(),
+  "expectedVersion": zod.number().min(1).optional(),
+  "sections": zod.array(zod.object({
+  "name": zod.string(),
+  "energy": zod.number(),
+  "density": zod.number(),
+  "tracks": zod.array(zod.string()),
+  "startBar": zod.number().optional(),
+  "endBar": zod.number().optional(),
+  "chords": zod.array(zod.object({
+  "id": zod.string(),
+  "startBeat": zod.number(),
+  "durationBeats": zod.number(),
+  "symbol": zod.string(),
+  "quality": zod.enum(['major', 'minor', 'dominant', 'suspended', 'diminished']),
+  "inversion": zod.number().min(updateArrangementBodySectionsItemChordsItemInversionMin).max(updateArrangementBodySectionsItemChordsItemInversionMax),
+  "bass": zod.string().optional()
+})).optional(),
+  "markers": zod.array(zod.object({
+  "id": zod.string(),
+  "bar": zod.number(),
+  "label": zod.string(),
+  "color": zod.string()
+})).optional(),
+  "automation": zod.array(zod.object({
+  "bar": zod.number(),
+  "value": zod.number().min(updateArrangementBodySectionsItemAutomationItemValueMin).max(updateArrangementBodySectionsItemAutomationItemValueMax)
+})).optional(),
+  "midiNotes": zod.array(zod.object({
+  "id": zod.string(),
+  "pitch": zod.number().min(updateArrangementBodySectionsItemMidiNotesItemPitchMin).max(updateArrangementBodySectionsItemMidiNotesItemPitchMax),
+  "start": zod.number().min(updateArrangementBodySectionsItemMidiNotesItemStartMin),
+  "duration": zod.number().min(updateArrangementBodySectionsItemMidiNotesItemDurationMin),
+  "velocity": zod.number().min(1).max(updateArrangementBodySectionsItemMidiNotesItemVelocityMax),
+  "articulation": zod.enum(['sustain', 'staccato', 'accent', 'ghost'])
+})).optional(),
+  "cc": zod.array(zod.number().min(updateArrangementBodySectionsItemCcItemMin).max(updateArrangementBodySectionsItemCcItemMax)).optional(),
+  "midiTracks": zod.record(zod.string(), zod.object({
+  "notes": zod.array(zod.object({
+  "id": zod.string(),
+  "pitch": zod.number().min(updateArrangementBodySectionsItemMidiTracksNotesItemPitchMin).max(updateArrangementBodySectionsItemMidiTracksNotesItemPitchMax),
+  "start": zod.number().min(updateArrangementBodySectionsItemMidiTracksNotesItemStartMin),
+  "duration": zod.number().min(updateArrangementBodySectionsItemMidiTracksNotesItemDurationMin),
+  "velocity": zod.number().min(1).max(updateArrangementBodySectionsItemMidiTracksNotesItemVelocityMax),
+  "articulation": zod.enum(['sustain', 'staccato', 'accent', 'ghost'])
+})),
+  "cc": zod.array(zod.number().min(updateArrangementBodySectionsItemMidiTracksCcItemMin).max(updateArrangementBodySectionsItemMidiTracksCcItemMax))
+})).optional(),
+  "transposeSemitones": zod.number().min(updateArrangementBodySectionsItemTransposeSemitonesMin).max(updateArrangementBodySectionsItemTransposeSemitonesMax).optional()
+})).optional().describe('Local timeline and semantic edits for this arrangement')
 })
+
+export const updateArrangementResponseSectionsItemChordsItemInversionMin = 0;
+export const updateArrangementResponseSectionsItemChordsItemInversionMax = 3;
+
+export const updateArrangementResponseSectionsItemAutomationItemValueMin = 0;
+export const updateArrangementResponseSectionsItemAutomationItemValueMax = 1;
+
+export const updateArrangementResponseSectionsItemMidiNotesItemPitchMin = 0;
+export const updateArrangementResponseSectionsItemMidiNotesItemPitchMax = 127;
+
+export const updateArrangementResponseSectionsItemMidiNotesItemStartMin = 0;
+
+export const updateArrangementResponseSectionsItemMidiNotesItemDurationMin = 0.0625;
+
+export const updateArrangementResponseSectionsItemMidiNotesItemVelocityMax = 127;
+
+export const updateArrangementResponseSectionsItemCcItemMin = 0;
+export const updateArrangementResponseSectionsItemCcItemMax = 127;
+
+export const updateArrangementResponseSectionsItemMidiTracksNotesItemPitchMin = 0;
+export const updateArrangementResponseSectionsItemMidiTracksNotesItemPitchMax = 127;
+
+export const updateArrangementResponseSectionsItemMidiTracksNotesItemStartMin = 0;
+
+export const updateArrangementResponseSectionsItemMidiTracksNotesItemDurationMin = 0.0625;
+
+export const updateArrangementResponseSectionsItemMidiTracksNotesItemVelocityMax = 127;
+
+export const updateArrangementResponseSectionsItemMidiTracksCcItemMin = 0;
+export const updateArrangementResponseSectionsItemMidiTracksCcItemMax = 127;
+
+export const updateArrangementResponseSectionsItemTransposeSemitonesMin = -24;
+export const updateArrangementResponseSectionsItemTransposeSemitonesMax = 24;
+
+
 
 export const UpdateArrangementResponse = zod.object({
   "id": zod.string(),
@@ -1240,7 +1589,49 @@ export const UpdateArrangementResponse = zod.object({
   "name": zod.string(),
   "energy": zod.number(),
   "density": zod.number(),
-  "tracks": zod.array(zod.string())
+  "tracks": zod.array(zod.string()),
+  "startBar": zod.number().optional(),
+  "endBar": zod.number().optional(),
+  "chords": zod.array(zod.object({
+  "id": zod.string(),
+  "startBeat": zod.number(),
+  "durationBeats": zod.number(),
+  "symbol": zod.string(),
+  "quality": zod.enum(['major', 'minor', 'dominant', 'suspended', 'diminished']),
+  "inversion": zod.number().min(updateArrangementResponseSectionsItemChordsItemInversionMin).max(updateArrangementResponseSectionsItemChordsItemInversionMax),
+  "bass": zod.string().optional()
+})).optional(),
+  "markers": zod.array(zod.object({
+  "id": zod.string(),
+  "bar": zod.number(),
+  "label": zod.string(),
+  "color": zod.string()
+})).optional(),
+  "automation": zod.array(zod.object({
+  "bar": zod.number(),
+  "value": zod.number().min(updateArrangementResponseSectionsItemAutomationItemValueMin).max(updateArrangementResponseSectionsItemAutomationItemValueMax)
+})).optional(),
+  "midiNotes": zod.array(zod.object({
+  "id": zod.string(),
+  "pitch": zod.number().min(updateArrangementResponseSectionsItemMidiNotesItemPitchMin).max(updateArrangementResponseSectionsItemMidiNotesItemPitchMax),
+  "start": zod.number().min(updateArrangementResponseSectionsItemMidiNotesItemStartMin),
+  "duration": zod.number().min(updateArrangementResponseSectionsItemMidiNotesItemDurationMin),
+  "velocity": zod.number().min(1).max(updateArrangementResponseSectionsItemMidiNotesItemVelocityMax),
+  "articulation": zod.enum(['sustain', 'staccato', 'accent', 'ghost'])
+})).optional(),
+  "cc": zod.array(zod.number().min(updateArrangementResponseSectionsItemCcItemMin).max(updateArrangementResponseSectionsItemCcItemMax)).optional(),
+  "midiTracks": zod.record(zod.string(), zod.object({
+  "notes": zod.array(zod.object({
+  "id": zod.string(),
+  "pitch": zod.number().min(updateArrangementResponseSectionsItemMidiTracksNotesItemPitchMin).max(updateArrangementResponseSectionsItemMidiTracksNotesItemPitchMax),
+  "start": zod.number().min(updateArrangementResponseSectionsItemMidiTracksNotesItemStartMin),
+  "duration": zod.number().min(updateArrangementResponseSectionsItemMidiTracksNotesItemDurationMin),
+  "velocity": zod.number().min(1).max(updateArrangementResponseSectionsItemMidiTracksNotesItemVelocityMax),
+  "articulation": zod.enum(['sustain', 'staccato', 'accent', 'ghost'])
+})),
+  "cc": zod.array(zod.number().min(updateArrangementResponseSectionsItemMidiTracksCcItemMin).max(updateArrangementResponseSectionsItemMidiTracksCcItemMax))
+})).optional(),
+  "transposeSemitones": zod.number().min(updateArrangementResponseSectionsItemTransposeSemitonesMin).max(updateArrangementResponseSectionsItemTransposeSemitonesMax).optional()
 })),
   "generationProvider": zod.string().nullable(),
   "candidates": zod.array(zod.object({
@@ -1362,6 +1753,41 @@ export const ListGenerationCandidatesParams = zod.object({
   "jobId": zod.coerce.string()
 })
 
+export const listGenerationCandidatesResponsePlanSectionsItemChordsItemInversionMin = 0;
+export const listGenerationCandidatesResponsePlanSectionsItemChordsItemInversionMax = 3;
+
+export const listGenerationCandidatesResponsePlanSectionsItemAutomationItemValueMin = 0;
+export const listGenerationCandidatesResponsePlanSectionsItemAutomationItemValueMax = 1;
+
+export const listGenerationCandidatesResponsePlanSectionsItemMidiNotesItemPitchMin = 0;
+export const listGenerationCandidatesResponsePlanSectionsItemMidiNotesItemPitchMax = 127;
+
+export const listGenerationCandidatesResponsePlanSectionsItemMidiNotesItemStartMin = 0;
+
+export const listGenerationCandidatesResponsePlanSectionsItemMidiNotesItemDurationMin = 0.0625;
+
+export const listGenerationCandidatesResponsePlanSectionsItemMidiNotesItemVelocityMax = 127;
+
+export const listGenerationCandidatesResponsePlanSectionsItemCcItemMin = 0;
+export const listGenerationCandidatesResponsePlanSectionsItemCcItemMax = 127;
+
+export const listGenerationCandidatesResponsePlanSectionsItemMidiTracksNotesItemPitchMin = 0;
+export const listGenerationCandidatesResponsePlanSectionsItemMidiTracksNotesItemPitchMax = 127;
+
+export const listGenerationCandidatesResponsePlanSectionsItemMidiTracksNotesItemStartMin = 0;
+
+export const listGenerationCandidatesResponsePlanSectionsItemMidiTracksNotesItemDurationMin = 0.0625;
+
+export const listGenerationCandidatesResponsePlanSectionsItemMidiTracksNotesItemVelocityMax = 127;
+
+export const listGenerationCandidatesResponsePlanSectionsItemMidiTracksCcItemMin = 0;
+export const listGenerationCandidatesResponsePlanSectionsItemMidiTracksCcItemMax = 127;
+
+export const listGenerationCandidatesResponsePlanSectionsItemTransposeSemitonesMin = -24;
+export const listGenerationCandidatesResponsePlanSectionsItemTransposeSemitonesMax = 24;
+
+
+
 export const ListGenerationCandidatesResponseItem = zod.object({
   "id": zod.string(),
   "jobId": zod.string(),
@@ -1383,7 +1809,49 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "name": zod.string(),
   "energy": zod.number(),
   "density": zod.number(),
-  "tracks": zod.array(zod.string())
+  "tracks": zod.array(zod.string()),
+  "startBar": zod.number().optional(),
+  "endBar": zod.number().optional(),
+  "chords": zod.array(zod.object({
+  "id": zod.string(),
+  "startBeat": zod.number(),
+  "durationBeats": zod.number(),
+  "symbol": zod.string(),
+  "quality": zod.enum(['major', 'minor', 'dominant', 'suspended', 'diminished']),
+  "inversion": zod.number().min(listGenerationCandidatesResponsePlanSectionsItemChordsItemInversionMin).max(listGenerationCandidatesResponsePlanSectionsItemChordsItemInversionMax),
+  "bass": zod.string().optional()
+})).optional(),
+  "markers": zod.array(zod.object({
+  "id": zod.string(),
+  "bar": zod.number(),
+  "label": zod.string(),
+  "color": zod.string()
+})).optional(),
+  "automation": zod.array(zod.object({
+  "bar": zod.number(),
+  "value": zod.number().min(listGenerationCandidatesResponsePlanSectionsItemAutomationItemValueMin).max(listGenerationCandidatesResponsePlanSectionsItemAutomationItemValueMax)
+})).optional(),
+  "midiNotes": zod.array(zod.object({
+  "id": zod.string(),
+  "pitch": zod.number().min(listGenerationCandidatesResponsePlanSectionsItemMidiNotesItemPitchMin).max(listGenerationCandidatesResponsePlanSectionsItemMidiNotesItemPitchMax),
+  "start": zod.number().min(listGenerationCandidatesResponsePlanSectionsItemMidiNotesItemStartMin),
+  "duration": zod.number().min(listGenerationCandidatesResponsePlanSectionsItemMidiNotesItemDurationMin),
+  "velocity": zod.number().min(1).max(listGenerationCandidatesResponsePlanSectionsItemMidiNotesItemVelocityMax),
+  "articulation": zod.enum(['sustain', 'staccato', 'accent', 'ghost'])
+})).optional(),
+  "cc": zod.array(zod.number().min(listGenerationCandidatesResponsePlanSectionsItemCcItemMin).max(listGenerationCandidatesResponsePlanSectionsItemCcItemMax)).optional(),
+  "midiTracks": zod.record(zod.string(), zod.object({
+  "notes": zod.array(zod.object({
+  "id": zod.string(),
+  "pitch": zod.number().min(listGenerationCandidatesResponsePlanSectionsItemMidiTracksNotesItemPitchMin).max(listGenerationCandidatesResponsePlanSectionsItemMidiTracksNotesItemPitchMax),
+  "start": zod.number().min(listGenerationCandidatesResponsePlanSectionsItemMidiTracksNotesItemStartMin),
+  "duration": zod.number().min(listGenerationCandidatesResponsePlanSectionsItemMidiTracksNotesItemDurationMin),
+  "velocity": zod.number().min(1).max(listGenerationCandidatesResponsePlanSectionsItemMidiTracksNotesItemVelocityMax),
+  "articulation": zod.enum(['sustain', 'staccato', 'accent', 'ghost'])
+})),
+  "cc": zod.array(zod.number().min(listGenerationCandidatesResponsePlanSectionsItemMidiTracksCcItemMin).max(listGenerationCandidatesResponsePlanSectionsItemMidiTracksCcItemMax))
+})).optional(),
+  "transposeSemitones": zod.number().min(listGenerationCandidatesResponsePlanSectionsItemTransposeSemitonesMin).max(listGenerationCandidatesResponsePlanSectionsItemTransposeSemitonesMax).optional()
 })),
   "tracks": zod.array(zod.object({
   "name": zod.string(),
@@ -1403,6 +1871,41 @@ export const SelectGenerationCandidateParams = zod.object({
   "candidateId": zod.coerce.string()
 })
 
+export const selectGenerationCandidateResponseSectionsItemChordsItemInversionMin = 0;
+export const selectGenerationCandidateResponseSectionsItemChordsItemInversionMax = 3;
+
+export const selectGenerationCandidateResponseSectionsItemAutomationItemValueMin = 0;
+export const selectGenerationCandidateResponseSectionsItemAutomationItemValueMax = 1;
+
+export const selectGenerationCandidateResponseSectionsItemMidiNotesItemPitchMin = 0;
+export const selectGenerationCandidateResponseSectionsItemMidiNotesItemPitchMax = 127;
+
+export const selectGenerationCandidateResponseSectionsItemMidiNotesItemStartMin = 0;
+
+export const selectGenerationCandidateResponseSectionsItemMidiNotesItemDurationMin = 0.0625;
+
+export const selectGenerationCandidateResponseSectionsItemMidiNotesItemVelocityMax = 127;
+
+export const selectGenerationCandidateResponseSectionsItemCcItemMin = 0;
+export const selectGenerationCandidateResponseSectionsItemCcItemMax = 127;
+
+export const selectGenerationCandidateResponseSectionsItemMidiTracksNotesItemPitchMin = 0;
+export const selectGenerationCandidateResponseSectionsItemMidiTracksNotesItemPitchMax = 127;
+
+export const selectGenerationCandidateResponseSectionsItemMidiTracksNotesItemStartMin = 0;
+
+export const selectGenerationCandidateResponseSectionsItemMidiTracksNotesItemDurationMin = 0.0625;
+
+export const selectGenerationCandidateResponseSectionsItemMidiTracksNotesItemVelocityMax = 127;
+
+export const selectGenerationCandidateResponseSectionsItemMidiTracksCcItemMin = 0;
+export const selectGenerationCandidateResponseSectionsItemMidiTracksCcItemMax = 127;
+
+export const selectGenerationCandidateResponseSectionsItemTransposeSemitonesMin = -24;
+export const selectGenerationCandidateResponseSectionsItemTransposeSemitonesMax = 24;
+
+
+
 export const SelectGenerationCandidateResponse = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -1420,7 +1923,49 @@ export const SelectGenerationCandidateResponse = zod.object({
   "name": zod.string(),
   "energy": zod.number(),
   "density": zod.number(),
-  "tracks": zod.array(zod.string())
+  "tracks": zod.array(zod.string()),
+  "startBar": zod.number().optional(),
+  "endBar": zod.number().optional(),
+  "chords": zod.array(zod.object({
+  "id": zod.string(),
+  "startBeat": zod.number(),
+  "durationBeats": zod.number(),
+  "symbol": zod.string(),
+  "quality": zod.enum(['major', 'minor', 'dominant', 'suspended', 'diminished']),
+  "inversion": zod.number().min(selectGenerationCandidateResponseSectionsItemChordsItemInversionMin).max(selectGenerationCandidateResponseSectionsItemChordsItemInversionMax),
+  "bass": zod.string().optional()
+})).optional(),
+  "markers": zod.array(zod.object({
+  "id": zod.string(),
+  "bar": zod.number(),
+  "label": zod.string(),
+  "color": zod.string()
+})).optional(),
+  "automation": zod.array(zod.object({
+  "bar": zod.number(),
+  "value": zod.number().min(selectGenerationCandidateResponseSectionsItemAutomationItemValueMin).max(selectGenerationCandidateResponseSectionsItemAutomationItemValueMax)
+})).optional(),
+  "midiNotes": zod.array(zod.object({
+  "id": zod.string(),
+  "pitch": zod.number().min(selectGenerationCandidateResponseSectionsItemMidiNotesItemPitchMin).max(selectGenerationCandidateResponseSectionsItemMidiNotesItemPitchMax),
+  "start": zod.number().min(selectGenerationCandidateResponseSectionsItemMidiNotesItemStartMin),
+  "duration": zod.number().min(selectGenerationCandidateResponseSectionsItemMidiNotesItemDurationMin),
+  "velocity": zod.number().min(1).max(selectGenerationCandidateResponseSectionsItemMidiNotesItemVelocityMax),
+  "articulation": zod.enum(['sustain', 'staccato', 'accent', 'ghost'])
+})).optional(),
+  "cc": zod.array(zod.number().min(selectGenerationCandidateResponseSectionsItemCcItemMin).max(selectGenerationCandidateResponseSectionsItemCcItemMax)).optional(),
+  "midiTracks": zod.record(zod.string(), zod.object({
+  "notes": zod.array(zod.object({
+  "id": zod.string(),
+  "pitch": zod.number().min(selectGenerationCandidateResponseSectionsItemMidiTracksNotesItemPitchMin).max(selectGenerationCandidateResponseSectionsItemMidiTracksNotesItemPitchMax),
+  "start": zod.number().min(selectGenerationCandidateResponseSectionsItemMidiTracksNotesItemStartMin),
+  "duration": zod.number().min(selectGenerationCandidateResponseSectionsItemMidiTracksNotesItemDurationMin),
+  "velocity": zod.number().min(1).max(selectGenerationCandidateResponseSectionsItemMidiTracksNotesItemVelocityMax),
+  "articulation": zod.enum(['sustain', 'staccato', 'accent', 'ghost'])
+})),
+  "cc": zod.array(zod.number().min(selectGenerationCandidateResponseSectionsItemMidiTracksCcItemMin).max(selectGenerationCandidateResponseSectionsItemMidiTracksCcItemMax))
+})).optional(),
+  "transposeSemitones": zod.number().min(selectGenerationCandidateResponseSectionsItemTransposeSemitonesMin).max(selectGenerationCandidateResponseSectionsItemTransposeSemitonesMax).optional()
 })),
   "generationProvider": zod.string().nullable(),
   "candidates": zod.array(zod.object({
@@ -1625,15 +2170,30 @@ export const RunCopilotParams = zod.object({
 
 
 
+
+
 export const RunCopilotBody = zod.object({
-  "command": zod.string().min(1)
+  "command": zod.string().min(1),
+  "arrangementId": zod.string().optional(),
+  "targetSection": zod.string().optional(),
+  "targetTrack": zod.string().optional(),
+  "startBar": zod.number().min(1).optional(),
+  "endBar": zod.number().min(1).optional()
 })
+
+
+
+
 
 export const RunCopilotResponse = zod.object({
   "reply": zod.string(),
   "operations": zod.array(zod.object({
   "type": zod.string(),
-  "label": zod.string()
+  "label": zod.string(),
+  "targetSection": zod.string().optional(),
+  "targetTrack": zod.string().optional(),
+  "startBar": zod.number().min(1).optional(),
+  "endBar": zod.number().min(1).optional()
 })),
   "affectedSections": zod.array(zod.string())
 })

@@ -5,10 +5,32 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { ArrangementSectionMidiTracks } from './arrangementSectionMidiTracks';
+import type { AutomationPoint } from './automationPoint';
+import type { EditorChordEvent } from './editorChordEvent';
+import type { PianoNote } from './pianoNote';
+import type { TimelineMarker } from './timelineMarker';
 
 export interface ArrangementSection {
   name: string;
   energy: number;
   density: number;
   tracks: string[];
+  startBar?: number;
+  endBar?: number;
+  chords?: EditorChordEvent[];
+  markers?: TimelineMarker[];
+  automation?: AutomationPoint[];
+  midiNotes?: PianoNote[];
+  /**
+     * @items.minimum 0
+     * @items.maximum 127
+     */
+  cc?: number[];
+  midiTracks?: ArrangementSectionMidiTracks;
+  /**
+     * @minimum -24
+     * @maximum 24
+     */
+  transposeSemitones?: number;
 }

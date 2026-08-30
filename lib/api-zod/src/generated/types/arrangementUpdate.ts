@@ -5,6 +5,7 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { ArrangementSection } from './arrangementSection';
 
 export interface ArrangementUpdate {
   name?: string;
@@ -35,4 +36,8 @@ export interface ArrangementUpdate {
   rhythmIntensity?: number;
   /** @nullable */
   selectedCandidateId?: string | null;
+  /** @minimum 1 */
+  expectedVersion?: number;
+  /** Local timeline and semantic edits for this arrangement */
+  sections?: ArrangementSection[];
 }

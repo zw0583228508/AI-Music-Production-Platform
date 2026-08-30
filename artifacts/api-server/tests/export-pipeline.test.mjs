@@ -234,3 +234,174 @@ test("export ZIP keeps MIDI and WAV timelines aligned with section activation", 
   assert.equal(peakBefore(pianoStem, sectionTwoSeconds - 0.1), 0);
   assert.equal(peakAfter(pianoStem, outroSeconds + 0.5), 0);
 });
+
+test("versioned piano, chord, CC, articulation, and transpose edits drive exported performance", () => {
+  const project = {
+    id: "edited-project",
+    name: "Edited Project",
+    duration: "0:08",
+    bpm: 120,
+    meter: "4/4",
+    key: "C major",
+    sourceType: "PROMPT",
+    sections: [{ name: "Intro", startBar: 1, endBar: 2, energy: 0.6 }],
+    energy: [0.6],
+    providers: [],
+  };
+  const arrangement = {
+    id: "edited-arrangement",
+    projectId: project.id,
+    name: "Local edits",
+    style: "Test",
+    mode: "STUDIO",
+    version: 7,
+    harmonyComplexity: 6,
+    energy: 0.6,
+    density: 0.5,
+    orchestraSize: 0.5,
+    rhythmIntensity: 0.5,
+    sections: [{
+      name: "Intro",
+      startBar: 1,
+      endBar: 2,
+      energy: 0.6,
+      density: 0.5,
+      tracks: ["Bass", "Piano"],
+      transposeSemitones: 2,
+      automation: [{ bar: 1, value: 0.25 }, { bar: 2, value: 0.75 }],
+      chords: [{
+        startBeat: 0,
+        durationBeats: 4,
+        symbol: "Dm",
+        quality: "minor",
+        inversion: 1,
+        bass: "A",
+      }],
+      midiTracks: {
+        "Electric Bass": {
+          notes: [{
+            pitch: 45,
+            start: 1,
+            duration: 2,
+            velocity: 101,
+            articulation: "staccato",
+          }],
+          cc: [10, 100],
+        },
+      },
+    }],
+  };
+  const emptyPerformance = {
+    tempoMap: [],
+    meterMap: [],
+    notes: [],
+    expression: [],
+    articulations: [],
+  };
+  const bass = {
+    id: "edited-bass",
+    name: "Electric Bass",
+    role: "bass",
+    kind: "midi",
+    volume: 0,
+    muted: false,
+    solo: false,
+    performance: emptyPerformance,
+  };
+  const piano = {
+    ...bass,
+    id: "edited-piano",
+    name: "Grand Piano",
+    role: "harmony",
+  };
+  const editedBass = createTrackPerformance(bass, project, arrangement, 0);
+  const editedPiano = createTrackPerformance(piano, project, arrangement, 1);
+
+  assert.deepEqual(editedBass.notes, [{
+    startTick: 480,
+    durationTicks: 960,
+    pitch: 47,
+    velocity: 101,
+  }]);
+  assert.ok(editedBass.expression.some((event) => event.value === 10));
+  assert.ok(editedBass.expression.some((event) => event.value === 100));
+  assert.ok(editedBass.expression.some((event) => event.value === 32));
+  assert.ok(editedBass.articulations.some((event) =>
+    event.tick === 480 && event.type === "staccato" && event.keyswitch === 25));
+  assert.deepEqual(
+    editedPiano.notes.map((note) => note.pitch).sort((left, right) => left - right),
+    [47, 55, 59, 64],
+  );
+
+  const baselineArrangement = {
+    ...arrangement,
+    sections: [{
+      ...arrangement.sections[0],
+      transposeSemitones: 0,
+      chords: [{
+        startBeat: 0,
+        durationBeats: 4,
+        symbol: "C",
+        quality: "major",
+        inversion: 0,
+      }],
+      midiTracks: {
+        "Electric Bass": {
+          notes: [{
+            pitch: 40,
+            start: 0,
+            duration: 1,
+            velocity: 70,
+            articulation: "sustain",
+          }],
+          cc: [64],
+        },
+      },
+    }],
+  };
+  const baselineBass = createTrackPerformance(bass, project, baselineArrangement, 0);
+  const editedBundle = createExportBundle(
+    project,
+    arrangement,
+    [{ ...bass, performance: editedBass }, { ...piano, performance: editedPiano }],
+    { includeStems: false, includeMidi: true, includeMix: false, includeMetadata: false },
+    1,
+    "",
+    "edited-export",
+  );
+  const baselineBundle = createExportBundle(
+    project,
+    baselineArrangement,
+    [{ ...bass, performance: baselineBass }],
+    { includeStems: false, includeMidi: true, includeMix: false, includeMetadata: false },
+    1,
+    "",
+    "baseline-export",
+  );
+  const editedMidi = openStoredZip(editedBundle.zip).get("midi/edited-project-arrangement.mid");
+  const baselineMidi = openStoredZip(baselineBundle.zip).get("midi/edited-project-arrangement.mid");
+  assert.ok(editedMidi && baselineMidi);
+  assert.notDeepEqual(editedMidi, baselineMidi);
+
+  const extendedArrangement = {
+    ...arrangement,
+    sections: [{ ...arrangement.sections[0], endBar: 4 }],
+  };
+  const extendedBass = createTrackPerformance(bass, project, extendedArrangement, 0);
+  const extendedBundle = createExportBundle(
+    project,
+    extendedArrangement,
+    [{ ...bass, performance: extendedBass }],
+    { includeStems: false, includeMidi: true, includeMix: false, includeMetadata: false },
+    1,
+    "",
+    "extended-export",
+  );
+  const extendedMidi = openStoredZip(extendedBundle.zip).get("midi/edited-project-arrangement.mid");
+  assert.ok(extendedMidi);
+  assert.equal(
+    lastMidiTick(extendedMidi),
+    4 * 4 * 480,
+    "MIDI endpoint must follow the arrangement's edited section boundary",
+  );
+});
