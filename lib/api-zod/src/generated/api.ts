@@ -21,9 +21,9 @@ export const HealthCheckResponse = zod.object({
  * @summary Get studio dashboard
  */
 export const GetDashboardResponse = zod.object({
-  "activeProjects": zod.int(),
-  "totalRenders": zod.int(),
-  "savedArtifacts": zod.int(),
+  "activeProjects": zod.number(),
+  "totalRenders": zod.number(),
+  "savedArtifacts": zod.number(),
   "recentActivity": zod.array(zod.object({
   "id": zod.string(),
   "title": zod.string(),
@@ -102,8 +102,8 @@ export const GetProjectResponse = zod.object({
   "confidence": zod.number(),
   "sections": zod.array(zod.object({
   "name": zod.string(),
-  "startBar": zod.int(),
-  "endBar": zod.int(),
+  "startBar": zod.number(),
+  "endBar": zod.number(),
   "energy": zod.number()
 })),
   "energy": zod.array(zod.number()),
@@ -115,9 +115,9 @@ export const GetProjectResponse = zod.object({
   "name": zod.string(),
   "style": zod.string(),
   "mode": zod.enum(['QUICK_ARRANGE', 'STUDIO', 'PRO_SCORE']),
-  "version": zod.int(),
+  "version": zod.number(),
   "status": zod.enum(['draft', 'generating', 'ready']),
-  "harmonyComplexity": zod.int(),
+  "harmonyComplexity": zod.number(),
   "energy": zod.number(),
   "density": zod.number(),
   "orchestraSize": zod.number(),
@@ -147,7 +147,7 @@ export const GetProjectResponse = zod.object({
   "projectId": zod.string(),
   "type": zod.enum(['SOURCE', 'NORMALIZED_AUDIO', 'STEM', 'ANALYSIS', 'SONG_MODEL', 'ARRANGEMENT_PLAN', 'MIDI', 'AUDIO_TRACK', 'MIX', 'MASTER', 'EXPORT']),
   "label": zod.string(),
-  "version": zod.int(),
+  "version": zod.number(),
   "size": zod.string(),
   "format": zod.string(),
   "createdAt": zod.string(),
@@ -175,8 +175,8 @@ export const AnalyzeProjectResponse = zod.object({
   "confidence": zod.number(),
   "sections": zod.array(zod.object({
   "name": zod.string(),
-  "startBar": zod.int(),
-  "endBar": zod.int(),
+  "startBar": zod.number(),
+  "endBar": zod.number(),
   "energy": zod.number()
 })),
   "energy": zod.array(zod.number()),
@@ -197,9 +197,9 @@ export const ListArrangementsResponseItem = zod.object({
   "name": zod.string(),
   "style": zod.string(),
   "mode": zod.enum(['QUICK_ARRANGE', 'STUDIO', 'PRO_SCORE']),
-  "version": zod.int(),
+  "version": zod.number(),
   "status": zod.enum(['draft', 'generating', 'ready']),
-  "harmonyComplexity": zod.int(),
+  "harmonyComplexity": zod.number(),
   "energy": zod.number(),
   "density": zod.number(),
   "orchestraSize": zod.number(),
@@ -230,7 +230,7 @@ export const createArrangementBodyHarmonyComplexityMax = 10;
 export const CreateArrangementBody = zod.object({
   "name": zod.string().min(1),
   "style": zod.string(),
-  "harmonyComplexity": zod.int().min(1).max(createArrangementBodyHarmonyComplexityMax),
+  "harmonyComplexity": zod.number().min(1).max(createArrangementBodyHarmonyComplexityMax),
   "mode": zod.enum(['QUICK_ARRANGE', 'STUDIO', 'PRO_SCORE'])
 })
 
@@ -240,9 +240,9 @@ export const CreateArrangementResponse = zod.object({
   "name": zod.string(),
   "style": zod.string(),
   "mode": zod.enum(['QUICK_ARRANGE', 'STUDIO', 'PRO_SCORE']),
-  "version": zod.int(),
+  "version": zod.number(),
   "status": zod.enum(['draft', 'generating', 'ready']),
-  "harmonyComplexity": zod.int(),
+  "harmonyComplexity": zod.number(),
   "energy": zod.number(),
   "density": zod.number(),
   "orchestraSize": zod.number(),
@@ -282,7 +282,7 @@ export const updateArrangementBodyRhythmIntensityMax = 1;
 
 export const UpdateArrangementBody = zod.object({
   "name": zod.string().optional(),
-  "harmonyComplexity": zod.int().min(1).max(updateArrangementBodyHarmonyComplexityMax).optional(),
+  "harmonyComplexity": zod.number().min(1).max(updateArrangementBodyHarmonyComplexityMax).optional(),
   "energy": zod.number().min(updateArrangementBodyEnergyMin).max(updateArrangementBodyEnergyMax).optional(),
   "density": zod.number().min(updateArrangementBodyDensityMin).max(updateArrangementBodyDensityMax).optional(),
   "orchestraSize": zod.number().min(updateArrangementBodyOrchestraSizeMin).max(updateArrangementBodyOrchestraSizeMax).optional(),
@@ -295,9 +295,9 @@ export const UpdateArrangementResponse = zod.object({
   "name": zod.string(),
   "style": zod.string(),
   "mode": zod.enum(['QUICK_ARRANGE', 'STUDIO', 'PRO_SCORE']),
-  "version": zod.int(),
+  "version": zod.number(),
   "status": zod.enum(['draft', 'generating', 'ready']),
-  "harmonyComplexity": zod.int(),
+  "harmonyComplexity": zod.number(),
   "energy": zod.number(),
   "density": zod.number(),
   "orchestraSize": zod.number(),
@@ -324,9 +324,9 @@ export const generateArrangementBodyCandidatesMax = 3;
 
 
 export const GenerateArrangementBody = zod.object({
-  "candidates": zod.int().min(1).max(generateArrangementBodyCandidatesMax).optional(),
+  "candidates": zod.number().min(1).max(generateArrangementBodyCandidatesMax).optional(),
   "provider": zod.enum(['ACE_STEP_BASE', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR', 'CUSTOM']).optional(),
-  "seed": zod.int().optional()
+  "seed": zod.number().optional()
 })
 
 export const GenerateArrangementResponse = zod.object({
@@ -336,9 +336,9 @@ export const GenerateArrangementResponse = zod.object({
   "name": zod.string(),
   "style": zod.string(),
   "mode": zod.enum(['QUICK_ARRANGE', 'STUDIO', 'PRO_SCORE']),
-  "version": zod.int(),
+  "version": zod.number(),
   "status": zod.enum(['draft', 'generating', 'ready']),
-  "harmonyComplexity": zod.int(),
+  "harmonyComplexity": zod.number(),
   "energy": zod.number(),
   "density": zod.number(),
   "orchestraSize": zod.number(),
@@ -395,7 +395,7 @@ export const ListArtifactsResponseItem = zod.object({
   "projectId": zod.string(),
   "type": zod.enum(['SOURCE', 'NORMALIZED_AUDIO', 'STEM', 'ANALYSIS', 'SONG_MODEL', 'ARRANGEMENT_PLAN', 'MIDI', 'AUDIO_TRACK', 'MIX', 'MASTER', 'EXPORT']),
   "label": zod.string(),
-  "version": zod.int(),
+  "version": zod.number(),
   "size": zod.string(),
   "format": zod.string(),
   "createdAt": zod.string(),

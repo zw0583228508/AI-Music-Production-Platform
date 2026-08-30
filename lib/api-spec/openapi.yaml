@@ -284,11 +284,11 @@ components:
       required: [activeProjects, totalRenders, savedArtifacts, recentActivity]
       properties:
         activeProjects:
-          type: integer
+          type: number
         totalRenders:
-          type: integer
+          type: number
         savedArtifacts:
-          type: integer
+          type: number
         recentActivity:
           type: array
           items:
@@ -381,8 +381,8 @@ components:
       required: [name, startBar, endBar, energy]
       properties:
         name: { type: string }
-        startBar: { type: integer }
-        endBar: { type: integer }
+        startBar: { type: number }
+        endBar: { type: number }
         energy: { type: number }
     ArrangementInput:
       type: object
@@ -390,7 +390,7 @@ components:
       properties:
         name: { type: string, minLength: 1 }
         style: { type: string }
-        harmonyComplexity: { type: integer, minimum: 1, maximum: 10 }
+        harmonyComplexity: { type: number, minimum: 1, maximum: 10 }
         mode:
           type: string
           enum: [QUICK_ARRANGE, STUDIO, PRO_SCORE]
@@ -398,7 +398,7 @@ components:
       type: object
       properties:
         name: { type: string }
-        harmonyComplexity: { type: integer, minimum: 1, maximum: 10 }
+        harmonyComplexity: { type: number, minimum: 1, maximum: 10 }
         energy: { type: number, minimum: 0, maximum: 1 }
         density: { type: number, minimum: 0, maximum: 1 }
         orchestraSize: { type: number, minimum: 0, maximum: 1 }
@@ -414,11 +414,11 @@ components:
         mode:
           type: string
           enum: [QUICK_ARRANGE, STUDIO, PRO_SCORE]
-        version: { type: integer }
+        version: { type: number }
         status:
           type: string
           enum: [draft, generating, ready]
-        harmonyComplexity: { type: integer }
+        harmonyComplexity: { type: number }
         energy: { type: number }
         density: { type: number }
         orchestraSize: { type: number }
@@ -441,11 +441,11 @@ components:
     GenerationInput:
       type: object
       properties:
-        candidates: { type: integer, minimum: 1, maximum: 3 }
+        candidates: { type: number, minimum: 1, maximum: 3 }
         provider:
           type: string
           enum: [ACE_STEP_BASE, ANYACCOMP, SYMPHONYGEN, METEOR, CUSTOM]
-        seed: { type: integer }
+        seed: { type: number }
     GenerationResult:
       type: object
       required: [arrangement, candidates, selectedCandidate]
@@ -493,7 +493,7 @@ components:
           type: string
           enum: [SOURCE, NORMALIZED_AUDIO, STEM, ANALYSIS, SONG_MODEL, ARRANGEMENT_PLAN, MIDI, AUDIO_TRACK, MIX, MASTER, EXPORT]
         label: { type: string }
-        version: { type: integer }
+        version: { type: number }
         size: { type: string }
         format: { type: string }
         createdAt: { type: string }
