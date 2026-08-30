@@ -1,0 +1,110 @@
+name: Sign Modal promotion
+
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: Provider to promote
+        required: true
+        type: choice
+        options:
+          - ACE_STEP
+          - BS_ROFORMER
+          - MT3
+          - ALL_IN_ONE
+      modal_app_id:
+        description: Observed Modal app ID
+        required: true
+        type: string
+      modal_deployment_id:
+        description: Observed Modal deployment ID
+        required: true
+        type: string
+      modal_function_id:
+        description: Observed Modal function ID
+        required: true
+        type: string
+      modal_image_id:
+        description: Observed Modal image ID
+        required: true
+        type: string
+      endpoint_origin:
+        description: Canonical HTTPS provider origin
+        required: true
+        type: string
+      checkpoint_sha256:
+        description: Observed checkpoint SHA-256
+        required: true
+        type: string
+      source_revision:
+        description: Immutable deployed source revision
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: modal-promotion-${{ inputs.provider }}
+  cancel-in-progress: false
+
+jobs:
+  sign:
+    name: Sign observed Modal identity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the promoted revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_revision }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Materialize the CI-only signing key
+        env:
+          PROMOTION_PRIVATE_KEY: ${{ secrets.MUSIC_GPU_PROMOTION_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$PROMOTION_PRIVATE_KEY"
+          install -m 600 /dev/null "$RUNNER_TEMP/promotion-ed25519.pem"
+          printf '%s' "$PROMOTION_PRIVATE_KEY" > "$RUNNER_TEMP/promotion-ed25519.pem"
+
+      - name: Sign the promotion record
+        env:
+          PROVIDER: ${{ inputs.provider }}
+          MODAL_APP_ID: ${{ inputs.modal_app_id }}
+          MODAL_DEPLOYMENT_ID: ${{ inputs.modal_deployment_id }}
+          MODAL_FUNCTION_ID: ${{ inputs.modal_function_id }}
+          MODAL_IMAGE_ID: ${{ inputs.modal_image_id }}
+          ENDPOINT_ORIGIN: ${{ inputs.endpoint_origin }}
+          CHECKPOINT_SHA256: ${{ inputs.checkpoint_sha256 }}
+          SOURCE_REVISION: ${{ inputs.source_revision }}
+          MUSIC_GPU_PROMOTION_PRIVATE_KEY_FILE: ${{ runner.temp }}/promotion-ed25519.pem
+        run: |
+          set -euo pipefail
+          mkdir -p promotion
+          python services/music-ai-gpu-worker/promote_modal.py \
+            --provider "$PROVIDER" \
+            --modal-app-id "$MODAL_APP_ID" \
+            --modal-deployment-id "$MODAL_DEPLOYMENT_ID" \
+            --modal-function-id "$MODAL_FUNCTION_ID" \
+            --modal-image-id "$MODAL_IMAGE_ID" \
+            --endpoint-origin "$ENDPOINT_ORIGIN" \
+            --checkpoint-sha256 "$CHECKPOINT_SHA256" \
+            --source-revision "$SOURCE_REVISION" \
+            --output promotion/bundle.json \
+            --worker-identity-output promotion/worker-identity.json
+          rm -f "$MUSIC_GPU_PROMOTION_PRIVATE_KEY_FILE"
+
+      - name: Upload the signed public promotion
+        uses: actions/upload-artifact@v4
+        with:
+          name: modal-promotion-${{ inputs.provider }}-${{ github.run_id }}
+          path: promotion
+          if-no-files-found: error
+          retention-days: 7
