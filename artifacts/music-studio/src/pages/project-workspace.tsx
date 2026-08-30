@@ -431,7 +431,7 @@ export default function ProjectWorkspace() {
           <div className="w-1 h-1 rounded-full bg-border" />
           <div className="flex items-center gap-2">
             <span className="text-muted-foreground text-xs uppercase">Time</span>
-            {analysis?.meter || "4/4"}
+            {analysis?.meter || "—"}
           </div>
         </div>
 
@@ -443,6 +443,7 @@ export default function ProjectWorkspace() {
               void queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(projectId) });
               void queryClient.invalidateQueries({ queryKey: getGetProjectSongModelQueryKey(projectId) });
               void queryClient.invalidateQueries({ queryKey: getListArtifactsQueryKey(projectId) });
+              void queryClient.invalidateQueries({ queryKey: getGetProjectSongModelQueryKey(projectId) });
             }}
           />
           <Button variant="outline" size="sm" className="font-mono text-xs hidden sm:flex">
@@ -548,9 +549,9 @@ export default function ProjectWorkspace() {
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
             <div className="px-6 pt-4 shrink-0">
               <TabsList className="grid w-full max-w-md grid-cols-3">
-                <TabsTrigger value="model">Song Model</TabsTrigger>
-                <TabsTrigger value="arrangement">Director</TabsTrigger>
-                <TabsTrigger value="candidates">Candidates</TabsTrigger>
+                <TabsTrigger value="model" data-testid="tab-model">Song Model</TabsTrigger>
+                <TabsTrigger value="arrangement" data-testid="tab-director">Director</TabsTrigger>
+                <TabsTrigger value="candidates" data-testid="tab-candidates">Candidates</TabsTrigger>
               </TabsList>
             </div>
 

@@ -535,7 +535,7 @@ export const getProjectSongModelResponseKeyMapItemConfidenceMax = 1;
 export const getProjectSongModelResponseStemsItemConfidenceMin = 0;
 export const getProjectSongModelResponseStemsItemConfidenceMax = 1;
 
-export const getProjectSongModelResponseProvenanceItemAttemptsMin = 0;
+export const getProjectSongModelResponseProviderProvenanceItemAttemptsMin = 0;
 
 export const getProjectSongModelResponseConfidenceMin = 0;
 export const getProjectSongModelResponseConfidenceMax = 1;
@@ -560,7 +560,7 @@ export const GetProjectSongModelResponse = zod.object({
 }))
 }),
   "fusion": zod.object({
-  "selectedProvider": zod.string(),
+  "selectedProvider": zod.string().nullable(),
   "confidence": zod.number().min(getProjectSongModelResponseFusionConfidenceMin).max(getProjectSongModelResponseFusionConfidenceMax),
   "decisions": zod.array(zod.object({
   "provider": zod.string(),
@@ -664,15 +664,75 @@ export const GetProjectSongModelResponse = zod.object({
   "confidence": zod.number()
 })),
   "confidenceByField": zod.record(zod.string(), zod.number()),
-  "provenance": zod.array(zod.object({
+  "providerProvenance": zod.array(zod.object({
   "capability": zod.string(),
   "provider": zod.string(),
   "version": zod.string(),
   "status": zod.enum(['ready', 'fallback', 'unavailable', 'failed']),
-  "attempts": zod.number().min(getProjectSongModelResponseProvenanceItemAttemptsMin).optional(),
+  "attempts": zod.number().min(getProjectSongModelResponseProviderProvenanceItemAttemptsMin).optional(),
   "errorCode": zod.string().optional(),
   "errorMessage": zod.string().optional()
 })),
+  "fieldStatus": zod.object({
+  "tempo": zod.object({
+  "status": zod.enum(['detected', 'low_confidence', 'failed', 'not_available']),
+  "confidence": zod.number().nullable(),
+  "providers": zod.array(zod.string()),
+  "message": zod.string().nullable(),
+  "edited": zod.boolean()
+}),
+  "meter": zod.object({
+  "status": zod.enum(['detected', 'low_confidence', 'failed', 'not_available']),
+  "confidence": zod.number().nullable(),
+  "providers": zod.array(zod.string()),
+  "message": zod.string().nullable(),
+  "edited": zod.boolean()
+}),
+  "key": zod.object({
+  "status": zod.enum(['detected', 'low_confidence', 'failed', 'not_available']),
+  "confidence": zod.number().nullable(),
+  "providers": zod.array(zod.string()),
+  "message": zod.string().nullable(),
+  "edited": zod.boolean()
+}),
+  "melody": zod.object({
+  "status": zod.enum(['detected', 'low_confidence', 'failed', 'not_available']),
+  "confidence": zod.number().nullable(),
+  "providers": zod.array(zod.string()),
+  "message": zod.string().nullable(),
+  "edited": zod.boolean()
+}),
+  "harmony": zod.object({
+  "status": zod.enum(['detected', 'low_confidence', 'failed', 'not_available']),
+  "confidence": zod.number().nullable(),
+  "providers": zod.array(zod.string()),
+  "message": zod.string().nullable(),
+  "edited": zod.boolean()
+}),
+  "sections": zod.object({
+  "status": zod.enum(['detected', 'low_confidence', 'failed', 'not_available']),
+  "confidence": zod.number().nullable(),
+  "providers": zod.array(zod.string()),
+  "message": zod.string().nullable(),
+  "edited": zod.boolean()
+}),
+  "energy": zod.object({
+  "status": zod.enum(['detected', 'low_confidence', 'failed', 'not_available']),
+  "confidence": zod.number().nullable(),
+  "providers": zod.array(zod.string()),
+  "message": zod.string().nullable(),
+  "edited": zod.boolean()
+})
+}),
+  "provenance": zod.object({
+  "tempo": zod.array(zod.string()),
+  "meter": zod.array(zod.string()),
+  "key": zod.array(zod.string()),
+  "melody": zod.array(zod.string()),
+  "harmony": zod.array(zod.string()),
+  "sections": zod.array(zod.string()),
+  "energy": zod.array(zod.string())
+}),
   "providers": zod.array(zod.string()),
   "confidence": zod.number().min(getProjectSongModelResponseConfidenceMin).max(getProjectSongModelResponseConfidenceMax),
   "createdAt": zod.string(),
@@ -758,7 +818,7 @@ export const correctProjectSongModelResponseKeyMapItemConfidenceMax = 1;
 export const correctProjectSongModelResponseStemsItemConfidenceMin = 0;
 export const correctProjectSongModelResponseStemsItemConfidenceMax = 1;
 
-export const correctProjectSongModelResponseProvenanceItemAttemptsMin = 0;
+export const correctProjectSongModelResponseProviderProvenanceItemAttemptsMin = 0;
 
 export const correctProjectSongModelResponseConfidenceMin = 0;
 export const correctProjectSongModelResponseConfidenceMax = 1;
@@ -783,7 +843,7 @@ export const CorrectProjectSongModelResponse = zod.object({
 }))
 }),
   "fusion": zod.object({
-  "selectedProvider": zod.string(),
+  "selectedProvider": zod.string().nullable(),
   "confidence": zod.number().min(correctProjectSongModelResponseFusionConfidenceMin).max(correctProjectSongModelResponseFusionConfidenceMax),
   "decisions": zod.array(zod.object({
   "provider": zod.string(),
@@ -887,15 +947,75 @@ export const CorrectProjectSongModelResponse = zod.object({
   "confidence": zod.number()
 })),
   "confidenceByField": zod.record(zod.string(), zod.number()),
-  "provenance": zod.array(zod.object({
+  "providerProvenance": zod.array(zod.object({
   "capability": zod.string(),
   "provider": zod.string(),
   "version": zod.string(),
   "status": zod.enum(['ready', 'fallback', 'unavailable', 'failed']),
-  "attempts": zod.number().min(correctProjectSongModelResponseProvenanceItemAttemptsMin).optional(),
+  "attempts": zod.number().min(correctProjectSongModelResponseProviderProvenanceItemAttemptsMin).optional(),
   "errorCode": zod.string().optional(),
   "errorMessage": zod.string().optional()
 })),
+  "fieldStatus": zod.object({
+  "tempo": zod.object({
+  "status": zod.enum(['detected', 'low_confidence', 'failed', 'not_available']),
+  "confidence": zod.number().nullable(),
+  "providers": zod.array(zod.string()),
+  "message": zod.string().nullable(),
+  "edited": zod.boolean()
+}),
+  "meter": zod.object({
+  "status": zod.enum(['detected', 'low_confidence', 'failed', 'not_available']),
+  "confidence": zod.number().nullable(),
+  "providers": zod.array(zod.string()),
+  "message": zod.string().nullable(),
+  "edited": zod.boolean()
+}),
+  "key": zod.object({
+  "status": zod.enum(['detected', 'low_confidence', 'failed', 'not_available']),
+  "confidence": zod.number().nullable(),
+  "providers": zod.array(zod.string()),
+  "message": zod.string().nullable(),
+  "edited": zod.boolean()
+}),
+  "melody": zod.object({
+  "status": zod.enum(['detected', 'low_confidence', 'failed', 'not_available']),
+  "confidence": zod.number().nullable(),
+  "providers": zod.array(zod.string()),
+  "message": zod.string().nullable(),
+  "edited": zod.boolean()
+}),
+  "harmony": zod.object({
+  "status": zod.enum(['detected', 'low_confidence', 'failed', 'not_available']),
+  "confidence": zod.number().nullable(),
+  "providers": zod.array(zod.string()),
+  "message": zod.string().nullable(),
+  "edited": zod.boolean()
+}),
+  "sections": zod.object({
+  "status": zod.enum(['detected', 'low_confidence', 'failed', 'not_available']),
+  "confidence": zod.number().nullable(),
+  "providers": zod.array(zod.string()),
+  "message": zod.string().nullable(),
+  "edited": zod.boolean()
+}),
+  "energy": zod.object({
+  "status": zod.enum(['detected', 'low_confidence', 'failed', 'not_available']),
+  "confidence": zod.number().nullable(),
+  "providers": zod.array(zod.string()),
+  "message": zod.string().nullable(),
+  "edited": zod.boolean()
+})
+}),
+  "provenance": zod.object({
+  "tempo": zod.array(zod.string()),
+  "meter": zod.array(zod.string()),
+  "key": zod.array(zod.string()),
+  "melody": zod.array(zod.string()),
+  "harmony": zod.array(zod.string()),
+  "sections": zod.array(zod.string()),
+  "energy": zod.array(zod.string())
+}),
   "providers": zod.array(zod.string()),
   "confidence": zod.number().min(correctProjectSongModelResponseConfidenceMin).max(correctProjectSongModelResponseConfidenceMax),
   "createdAt": zod.string(),

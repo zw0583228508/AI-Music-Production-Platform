@@ -16,6 +16,8 @@ import {
   studioActivitiesTable,
   type AnalysisSection,
   type SongModelData,
+  type SongModelField,
+  type SongModelFieldStatus,
 } from "@workspace/db";
 import {
   fuseCanonicalNotes,
@@ -335,6 +337,28 @@ function makeSections(
   });
 }
 
+function detectEnergyEvidence(
+  samples: Float32Array,
+): { values: number[]; confidence: number } | null {
+  if (!samples.length) return null;
+  let mean = 0;
+  for (const sample of samples) mean += sample;
+  mean /= samples.length;
+  let centeredEnergy = 0;
+  let active = 0;
+  for (const sample of samples) {
+    const centered = sample - mean;
+    centeredEnergy += centered * centered;
+    if (Math.abs(centered) > 0.002) active += 1;
+  }
+  const rms = Math.sqrt(centeredEnergy / samples.length);
+  const activeRatio = active / samples.length;
+  if (rms < 0.001 || activeRatio < 0.005) return null;
+  return {
+    values: energyCurve(samples),
+    confidence: Number(Math.min(0.82, 0.35 + rms * 8 + activeRatio).toFixed(2)),
+  };
+}
 async function providerStemData(
   stem: SeparationAnalysisResult["stems"][number],
 ): Promise<Buffer> {
@@ -356,6 +380,7 @@ async function providerStemData(
   }
   const response = await fetch(stem.downloadUrl, {
     signal: AbortSignal.timeout(10 * 60_000),
+    redirect: "error",
   });
   if (!response.ok) {
     throw new Error(`BS_ROFORMER ${stem.role} download returned HTTP ${response.status}`);
@@ -679,7 +704,6 @@ async function analyzeProjectSourceBeforeTask1(sourceId: string): Promise<void> 
       beats = providerResults.structure.beats;
       bars = providerResults.structure.bars;
       sections = providerResults.structure.sections;
-      secondsPerBeat = 60 / bpm;
     }
     const successfulAnalysisProviders: string[] = [];
     if (providerResults.structure) {
@@ -1078,7 +1102,9 @@ export async function analyzeProjectSource(
       await execFileAsync("ffmpeg", ["-v", "error", "-i", inputPath, "-map", "0:a:0", "-c:a", "flac", normalizedPath]);
       normalizedObjectPath = await saveSourceProxyObject(source.id, normalizedPath, "audio/flac");
     }
-    const fingerprint = await fingerprintFile(inputPath);
+    const energyDetection = midi ? null : detectEnergyEvidence(samples);
+    const localTempo = midi ? null : detectTempoEvidence(samples, decodeRate);
+    const keyDetection = midi ? null : detectKeyEvidence(samples, decodeRate);
     const energy = midi
       ? (() => {
           const values = Array.from({ length: Math.max(24, Math.min(1280, Math.ceil(durationSeconds / 2))) }, () => 0);
@@ -1091,31 +1117,12 @@ export async function analyzeProjectSource(
         })()
       : waveform;
     if (midi) waveform = energy;
-    let bpm = midi?.bpm ?? estimateBpm(samples, decodeRate);
-    const key = midi?.key ?? estimateKey(samples, decodeRate, fingerprint);
-    let meter = midi?.meter ?? "4/4";
-    let sections = makeSections(durationSeconds, bpm, energy);
-    let secondsPerBeat = 60 / bpm;
-    const beatCount = Math.max(1, Math.floor(durationSeconds / secondsPerBeat));
-    let beats = midi?.beats ?? Array.from({ length: beatCount }, (_, index) => ({
-      time: Number((index * secondsPerBeat).toFixed(4)),
-      beat: (index % 4) + 1,
-      bar: Math.floor(index / 4) + 1,
-      confidence: 0.68,
-    }));
-    let bars = midi?.bars ?? Array.from(
-      { length: Math.max(1, Math.ceil(beatCount / 4)) },
-      (_, index) => ({
-        bar: index + 1,
-        start: Number((index * secondsPerBeat * 4).toFixed(4)),
-        end: Number(Math.min(durationSeconds, (index + 1) * secondsPerBeat * 4).toFixed(4)),
-        beats: 4,
-        confidence: 0.68,
-      }),
-    );
-    const confidence = midi ? 1 : Number(
-      Math.min(0.94, 0.62 + Math.log10(Math.max(10, samples.length)) / 30).toFixed(2),
-    );
+    let bpm = midi?.bpm ?? localTempo?.bpm ?? 0;
+    const key = midi?.keyMap.length ? midi.key : keyDetection?.key ?? "—";
+    let meter = midi?.meterMap.length ? midi.meter : "—";
+    let sections: AnalysisSection[] = [];
+    let beats = midi?.beats ?? [];
+    let bars = midi?.bars ?? [];
     await updateOwnedStage("provider_analysis", 68);
     const needsProviderSource = !midi && [
       "BS_ROFORMER",
@@ -1190,15 +1197,14 @@ export async function analyzeProjectSource(
       beats = providerResults.structure.beats;
       bars = providerResults.structure.bars;
       sections = providerResults.structure.sections;
-      secondsPerBeat = 60 / bpm;
     }
     const melody = midi?.melody ??
       fuseCanonicalNotes(providerResults.transcriptions);
     const confidenceByField = {
-      tempo: midi ? 1 : providerResults.structure?.confidence ?? confidence,
-      meter: midi ? 1 : providerResults.structure?.confidence ?? 0.74,
-      key: midi ? 1 : Math.max(0.5, confidence - 0.12),
-      structure: midi ? 1 : providerResults.structure?.confidence ?? 0.58,
+      tempo: midi ? 1 : providerResults.structure?.confidence ?? localTempo?.confidence ?? 0,
+      meter: midi?.meterMap.length ? 1 : providerResults.structure?.confidence ?? 0,
+      key: midi?.keyMap.length ? 1 : keyDetection?.confidence ?? 0,
+      structure: providerResults.structure?.confidence ?? 0,
       melody: midi
         ? 1
         : providerResults.transcriptions.length
@@ -1206,6 +1212,75 @@ export async function analyzeProjectSource(
           : 0,
       harmony: midi ? 0 : providerResults.harmonyConfidence,
       separation: midi ? 1 : providerResults.separation?.confidence ?? 0,
+      energy: midi ? 1 : energyDetection?.confidence ?? 0,
+    };
+    const structureProvider = providerResults.structure?.providerId;
+    const melodyProviders = midi
+      ? ["STANDARD_MIDI"]
+      : [...new Set(providerResults.transcriptions.map((item) => item.providerId))];
+    const harmonyProviders = [...new Set(providerResults.harmony.map((item) => item.providerId))];
+    const fieldStatus: Record<SongModelField, SongModelFieldStatus> = {
+      tempo: {
+        status: midi || structureProvider ? "detected" : localTempo ? "low_confidence" : "not_available",
+        confidence: confidenceByField.tempo || null,
+        providers: midi ? ["STANDARD_MIDI"] : structureProvider ? [structureProvider] :
+          localTempo ? ["LOCAL_SIGNAL_ANALYZER_V1"] : [],
+        message: midi || structureProvider ? null : localTempo
+          ? "Tempo is a local signal estimate and was not confirmed by a structure provider."
+          : "No usable periodic tempo evidence was detected.",
+        edited: false,
+      },
+      meter: {
+        status: midi?.meterMap.length || structureProvider ? "detected" : "not_available",
+        confidence: confidenceByField.meter || null,
+        providers: midi?.meterMap.length ? ["STANDARD_MIDI"] :
+          structureProvider ? [structureProvider] : [],
+        message: midi?.meterMap.length || structureProvider ? null :
+          "No structure provider returned a verified meter.",
+        edited: false,
+      },
+      key: {
+        status: midi?.keyMap.length ? "detected" : keyDetection ? "low_confidence" : "not_available",
+        confidence: confidenceByField.key || null,
+        providers: midi?.keyMap.length ? ["STANDARD_MIDI"] :
+          keyDetection ? ["LOCAL_SIGNAL_ANALYZER_V1"] : [],
+        message: midi?.keyMap.length ? null : keyDetection
+          ? "Key is a local spectral estimate and was not confirmed by a harmony provider."
+          : "No unambiguous tonal center was detected.",
+        edited: false,
+      },
+      melody: {
+        status: melody.length ? "detected" : "not_available",
+        confidence: confidenceByField.melody || null,
+        providers: melody.length ? melodyProviders : [],
+        message: melody.length ? null : "No transcription provider returned a melodic line.",
+        edited: false,
+      },
+      harmony: {
+        status: providerResults.chords.length ? "detected" : "not_available",
+        confidence: confidenceByField.harmony || null,
+        providers: providerResults.chords.length ? harmonyProviders : [],
+        message: providerResults.chords.length ? null : "No harmony provider returned chord events.",
+        edited: false,
+      },
+      sections: {
+        status: providerResults.structure ? "detected" : "not_available",
+        confidence: confidenceByField.structure || null,
+        providers: structureProvider ? [structureProvider] : [],
+        message: providerResults.structure ? null :
+          "No structure provider returned verified section boundaries.",
+        edited: false,
+      },
+      energy: {
+        status: midi ? "detected" : energyDetection ? "low_confidence" : "not_available",
+        confidence: confidenceByField.energy || null,
+        providers: midi ? ["STANDARD_MIDI"] :
+          energyDetection ? ["LOCAL_SIGNAL_ANALYZER_V1"] : [],
+        message: midi ? null : energyDetection
+          ? "Energy is measured locally from the decoded signal."
+          : "The decoded signal did not contain usable energy evidence.",
+        edited: false,
+      },
     };
     const verifiedConfidences = Object.values(confidenceByField)
       .filter((value) => value > 0);
@@ -1233,22 +1308,27 @@ export async function analyzeProjectSource(
         proxyContentType: normalizedObjectPath ? "audio/flac" : null,
         analysisStartSeconds,
         analysisDurationSeconds,
-        analysisCoverage: analysisCoverage < 1 ? "representative" : "full",
+        analysisCoverage: analysisCoverage < 1
+          ? "representative" as const
+          : "full" as const,
       },
       analysisStartSeconds,
       analysisDurationSeconds,
       analysisCoverage,
-      tempoMap: midi?.tempoMap ??
-        providerResults.structure?.tempoMap ??
-        [{ time: 0, bpm, confidence }],
+      tempoMap: midi?.tempoMap.length
+        ? midi.tempoMap
+        : providerResults.structure?.tempoMap ??
+          (localTempo
+            ? [{ time: 0, bpm: localTempo.bpm, confidence: localTempo.confidence }]
+            : []),
       meterMap: midi?.meterMap.length
         ? midi.meterMap
-        : providerResults.structure?.meterMap ?? [{
-            bar: 1,
-            meter,
-            confidence: providerResults.structure?.confidence ?? 0.74,
-          }],
-      keyMap: midi?.keyMap ?? [{ time: 0, key, confidence: Math.max(0.5, confidence - 0.12) }],
+        : providerResults.structure?.meterMap ?? [],
+      keyMap: midi?.keyMap.length
+        ? midi.keyMap
+        : keyDetection
+          ? [{ time: 0, key: keyDetection.key, confidence: keyDetection.confidence }]
+          : [],
       beats,
       bars,
       melody,
@@ -1267,18 +1347,18 @@ export async function analyzeProjectSource(
       sourceStems,
       lyrics: [],
       confidenceByField,
-      provenance: [
+      providerProvenance: [
         {
           capability: "preprocessing",
           provider: midi ? "STANDARD_MIDI" : "FFMPEG",
           version: "system",
-          status: "ready",
+          status: "ready" as const,
         },
         {
           capability: "key_analysis",
           provider: midi ? "STANDARD_MIDI" : "LOCAL_SIGNAL_ANALYZER_V1",
           version: "1.0.0",
-          status: midi ? "ready" : "fallback",
+          status: midi ? "ready" as const : "fallback" as const,
         },
         ...(midi
           ? [{
@@ -1297,25 +1377,41 @@ export async function analyzeProjectSource(
             : []),
         ...providerResults.provenance,
       ],
+      fieldStatus,
+      provenance: {
+        tempo: fieldStatus.tempo.providers,
+        meter: fieldStatus.meter.providers,
+        key: fieldStatus.key.providers,
+        melody: fieldStatus.melody.providers,
+        harmony: fieldStatus.harmony.providers,
+        sections: fieldStatus.sections.providers,
+        energy: fieldStatus.energy.providers,
+      },
     };
+    const candidateProvider = midi
+      ? "STANDARD_MIDI"
+      : successfulAnalysisProviders.join("+") || "UNVERIFIED_ANALYSIS";
     const fusion = fuseProviderSongModels([{
-      provider: midi
-        ? "STANDARD_MIDI"
-        : successfulAnalysisProviders.join("+") || "LOCAL_SIGNAL_ANALYZER_V1",
+      provider: candidateProvider,
       output: candidate,
       confidence: candidateConfidence,
     }]);
-    if (!fusion.accepted) {
-      throw new Error(
-        `Analysis providers returned an invalid Song Model. ${
-          fusion.issues.map((item) => item.message).join(" ")
-        }`,
-      );
-    }
-    const model: SongModelData = fusion.model;
-    bpm = model.tempoMap[0].bpm;
-    meter = model.meterMap[0].meter;
-    sections = model.sections;
+    const model: SongModelData = fusion.accepted ? fusion.model : {
+      ...candidate,
+      contractVersion: "1.0",
+      validation: { status: "flagged", issues: fusion.issues },
+      fusion: {
+        selectedProvider: null,
+        confidence: candidateConfidence,
+        decisions: fusion.decisions.length ? fusion.decisions : [{
+          provider: candidateProvider,
+          status: "rejected",
+          confidence: candidateConfidence,
+          compatibility: 0,
+          issues: fusion.issues,
+        }],
+      },
+    };
     const persistedProviders = midi
       ? ["STANDARD_MIDI"]
       : [
@@ -1323,7 +1419,7 @@ export async function analyzeProjectSource(
           "LOCAL_SIGNAL_ANALYZER_V1",
           ...successfulAnalysisProviders,
         ];
-    const fusedConfidence = model.fusion.confidence;
+    const fusedConfidence = fusion.accepted ? model.fusion.confidence : candidateConfidence;
     await updateOwnedStage("persisting_song_model", 88);
     const songModelId = randomUUID();
     const now = new Date();
@@ -1752,3 +1848,80 @@ type MidiModelData = {
   melody: Array<{ start: number; end: number; pitch: number; velocity: number; confidence: number; source: string }>;
   sourceStems: Array<{ role: string; objectPath: string; provider: string; confidence: number }>;
 };
+
+function detectKeyEvidence(
+  samples: Float32Array,
+  sampleRate: number,
+): { key: string; confidence: number } | null {
+  const noteNames = ["C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"];
+  const maxSamples = Math.min(samples.length, sampleRate * 60);
+  if (!maxSamples) return null;
+  let mean = 0;
+  for (let i = 0; i < maxSamples; i += 1) mean += samples[i];
+  mean /= maxSamples;
+  const pitchEnergy = Array.from({ length: 12 }, () => 0);
+  for (let midi = 48; midi <= 71; midi += 1) {
+    const omega = (2 * Math.PI * (440 * 2 ** ((midi - 69) / 12))) / sampleRate;
+    let real = 0;
+    let imaginary = 0;
+    for (let i = 0; i < maxSamples; i += 8) {
+      const centered = samples[i] - mean;
+      real += centered * Math.cos(omega * i);
+      imaginary -= centered * Math.sin(omega * i);
+    }
+    pitchEnergy[midi % 12] += Math.hypot(real, imaginary);
+  }
+  const ranked = [...pitchEnergy].sort((a, b) => b - a);
+  const peak = ranked[0] ?? 0;
+  const runnerUp = ranked[1] ?? 0;
+  const total = pitchEnergy.reduce((sum, value) => sum + value, 0);
+  if (total <= 0 || peak <= 0) return null;
+  const peakShare = peak / total;
+  const separation = (peak - runnerUp) / peak;
+  if (peakShare < 0.1 || separation < 0.04) return null;
+  const root = pitchEnergy.indexOf(peak);
+  const minor = pitchEnergy[(root + 3) % 12] + pitchEnergy[(root + 8) % 12] >
+    pitchEnergy[(root + 4) % 12] + pitchEnergy[(root + 7) % 12];
+  return {
+    key: `${noteNames[root]} ${minor ? "minor" : "major"}`,
+    confidence: Number(Math.min(0.82, 0.35 + peakShare * 1.8 + separation).toFixed(2)),
+  };
+}
+
+function detectTempoEvidence(
+  samples: Float32Array,
+  sampleRate: number,
+): { bpm: number; confidence: number } | null {
+  const hop = 512;
+  const frame = 1024;
+  const envelope: number[] = [];
+  let previous = 0;
+  for (let start = 0; start + frame < samples.length; start += hop) {
+    let sum = 0;
+    for (let i = start; i < start + frame; i += 1) sum += samples[i] * samples[i];
+    const rms = Math.sqrt(sum / frame);
+    envelope.push(Math.max(0, rms - previous));
+    previous = rms;
+  }
+  if (envelope.length < 16) return null;
+  const scores: Array<{ bpm: number; score: number }> = [];
+  for (let bpm = 60; bpm <= 180; bpm += 1) {
+    const lag = Math.round((60 * sampleRate) / (bpm * hop));
+    let score = 0;
+    for (let i = lag; i < envelope.length; i += 1) score += envelope[i] * envelope[i - lag];
+    scores.push({ bpm, score });
+  }
+  scores.sort((a, b) => b.score - a.score);
+  const best = scores[0];
+  const runnerUp = scores.find((item) => Math.abs(item.bpm - best.bpm) > 4);
+  const total = envelope.reduce((sum, value) => sum + value, 0);
+  if (!best || best.score <= 0 || total <= 0) return null;
+  const separation = runnerUp ? (best.score - runnerUp.score) / best.score : 1;
+  const onsetDensity = envelope.filter((value) => value > total / envelope.length).length /
+    envelope.length;
+  if (separation < 0.025 || onsetDensity < 0.01) return null;
+  return {
+    bpm: best.bpm,
+    confidence: Number(Math.min(0.78, 0.35 + separation * 1.8 + onsetDensity).toFixed(2)),
+  };
+}

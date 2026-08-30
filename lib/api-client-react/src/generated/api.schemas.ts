@@ -250,7 +250,8 @@ export interface ProviderFusionDecision {
 }
 
 export interface SongModelFusion {
-  selectedProvider: string;
+  /** @nullable */
+  selectedProvider: string | null;
   /**
      * @minimum 0
      * @maximum 1
@@ -409,6 +410,46 @@ export interface ProviderProvenance {
   errorMessage?: string;
 }
 
+export type SongModelFieldStatusPropertyStatus = typeof SongModelFieldStatusPropertyStatus[keyof typeof SongModelFieldStatusPropertyStatus];
+
+
+export const SongModelFieldStatusPropertyStatus = {
+  detected: 'detected',
+  low_confidence: 'low_confidence',
+  failed: 'failed',
+  not_available: 'not_available',
+} as const;
+
+export interface SongModelFieldStatusProperty {
+  status: SongModelFieldStatusPropertyStatus;
+  /** @nullable */
+  confidence: number | null;
+  providers: string[];
+  /** @nullable */
+  message: string | null;
+  edited: boolean;
+}
+
+export interface SongModelFieldStatus {
+  tempo: SongModelFieldStatusProperty;
+  meter: SongModelFieldStatusProperty;
+  key: SongModelFieldStatusProperty;
+  melody: SongModelFieldStatusProperty;
+  harmony: SongModelFieldStatusProperty;
+  sections: SongModelFieldStatusProperty;
+  energy: SongModelFieldStatusProperty;
+}
+
+export interface SongModelProvenance {
+  tempo: string[];
+  meter: string[];
+  key: string[];
+  melody: string[];
+  harmony: string[];
+  sections: string[];
+  energy: string[];
+}
+
 export type SongModelCorrectionFieldsItem = typeof SongModelCorrectionFieldsItem[keyof typeof SongModelCorrectionFieldsItem];
 
 
@@ -462,7 +503,9 @@ export interface SongModel {
   sourceStems: SourceStem[];
   lyrics: LyricEvent[];
   confidenceByField: SongModelConfidenceByField;
-  provenance: ProviderProvenance[];
+  providerProvenance: ProviderProvenance[];
+  fieldStatus: SongModelFieldStatus;
+  provenance: SongModelProvenance;
   providers: string[];
   /**
      * @minimum 0

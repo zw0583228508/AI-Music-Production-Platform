@@ -8,7 +8,8 @@
 import type { ProviderFusionDecision } from './providerFusionDecision';
 
 export interface SongModelFusion {
-  selectedProvider: string;
+  /** @nullable */
+  selectedProvider: string | null;
   /**
      * @minimum 0
      * @maximum 1

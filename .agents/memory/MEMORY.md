@@ -4,3 +4,4 @@
 - [Managed database schema flow](managed-database-schema-flow.md) — use Drizzle push for dev/test and Replit Publish’s schema diff for production; never run startup or deploy DDL.
 - [Generated-code verification](generated-code-verification.md) — restart the frontend workflow after API code generation before trusting browser HMR or module-loading logs.
 - [Background analysis leases](background-analysis-leases.md) — resumable workers must use expiring DB leases and lease-conditional writes, not process-local job guards.
+- [Song Model evidence gates](song-model-evidence-gates.md) — field confidence must come from musical evidence; absent evidence yields empty maps, never duration-based defaults.

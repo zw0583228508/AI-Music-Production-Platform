@@ -1,84 +1,150 @@
 import { useEffect, useRef, useState } from "react";
-import { 
-  useGetProjectSongModel, 
-  useListAnalysisJobs, 
-  useRetryProjectSourceAnalysis,
-  useCorrectProjectSongModel,
-  useListMusicProviders,
-  getListAnalysisJobsQueryKey,
-  getGetProjectSongModelQueryKey,
+import {
   getGetProjectQueryKey,
+  getGetProjectSongModelQueryKey,
+  getListAnalysisJobsQueryKey,
+  getListProjectSourcesQueryKey,
+  ProjectSource,
+  SongModelFieldStatusProperty,
+  useCorrectProjectSongModel,
+  useGetProjectSongModel,
+  useListAnalysisJobs,
+  useListMusicProviders,
+  useListProjectSources,
+  useRetryProjectSourceAnalysis,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { format } from "date-fns";
-import { 
-  Activity, AlertTriangle, CheckCircle2, Cpu, Database, Layers, 
-  Mic, Music, RefreshCw, Server, Shield, Timer, Workflow, Loader2 
+import {
+  Activity,
+  AlertCircle,
+  AlertTriangle,
+  BarChart2,
+  CheckCircle2,
+  Clock,
+  Cpu,
+  FileAudio,
+  FileType2,
+  Hash,
+  Loader2,
+  Layers,
+  Music2,
+  RefreshCw,
+  Server,
+  ShieldAlert,
+  ShieldCheck,
+  Timer,
 } from "lucide-react";
-
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { EmptyState } from "@/components/ui/empty";
+import { ResponsiveContainer, AreaChart, Area, Tooltip } from "recharts";
 
-function formatDuration(seconds: number) {
-  if (!seconds) return "0:00";
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${s.toString().padStart(2, '0')}`;
+interface SongModelInspectorProps {
+  projectId: string;
 }
 
-export function SongModelInspector({ projectId }: { projectId: string }) {
+export function SongModelInspector({ projectId }: SongModelInspectorProps) {
   const queryClient = useQueryClient();
   const refreshedCompletedJobRef = useRef<string | null>(null);
-  const { data: jobs, isLoading: isJobsLoading } = useListAnalysisJobs(projectId, {
+  const { data: jobs, isLoading: jobsLoading } = useListAnalysisJobs(projectId, {
     query: {
       queryKey: getListAnalysisJobsQueryKey(projectId),
-      refetchInterval: (query) => {
-        const hasActive = query.state.data?.some(j => j.status === 'running' || j.status === 'queued');
-        return hasActive ? 2000 : false;
-      }
-    }
+      retry: false,
+      refetchInterval: (query) => query.state.data?.some((job) =>
+        job.status === "running" || job.status === "queued"
+      ) ? 2_000 : false,
+    },
   });
-  
-  const hasActiveJob = jobs?.some(job => job.status === "running" || job.status === "queued") ?? false;
-  const { data: model, isLoading: isModelLoading } = useGetProjectSongModel(projectId, {
+  const {
+    data: sources,
+    error: sourcesError,
+    isLoading: sourcesLoading,
+  } = useListProjectSources(projectId, {
+    query: {
+      queryKey: getListProjectSourcesQueryKey(projectId),
+      retry: false,
+      refetchInterval: (query) => {
+        const data = query.state.data as ProjectSource[] | undefined;
+        return data?.some((source) =>
+          ["queued", "preprocessing", "analyzing"].includes(source.status)
+        ) ? 1_500 : false;
+      },
+    },
+  });
+  const latestSource = sources?.[0];
+  const sourceIsProcessing = Boolean(
+    latestSource && ["queued", "preprocessing", "analyzing"].includes(latestSource.status),
+  );
+  const hasActiveJob = jobs?.some((job) =>
+    job.status === "running" || job.status === "queued"
+  ) ?? false;
+  const {
+    data: model,
+    error: modelError,
+    isLoading,
+    isError,
+    refetch: refetchModel,
+  } = useGetProjectSongModel(projectId, {
     query: {
       queryKey: getGetProjectSongModelQueryKey(projectId),
       retry: false,
-      refetchInterval: hasActiveJob ? 2_000 : false,
-    }
+      refetchInterval: sourceIsProcessing || hasActiveJob ? 1_500 : false,
+    },
   });
-
   const { data: providers } = useListMusicProviders();
-  const retry = useRetryProjectSourceAnalysis();
+  const retryAnalysis = useRetryProjectSourceAnalysis();
   const correctModel = useCorrectProjectSongModel();
+  const readySourceRef = useRef<string | null>(null);
+  const currentSource = model
+    ? sources?.find((source) => source.id === model.sourceId) ?? latestSource
+    : latestSource;
+  const accessDenied = [getErrorStatus(sourcesError), getErrorStatus(modelError)]
+    .some((status) => status === 401 || status === 403);
   const [bpm, setBpm] = useState("");
   const [key, setKey] = useState("");
   const [meter, setMeter] = useState("");
-  const [sections, setSections] = useState<Array<{ name: string; startBar: string; endBar: string }>>([]);
+  const [sections, setSections] = useState<Array<{
+    name: string;
+    startBar: string;
+    endBar: string;
+  }>>([]);
   const [correctionError, setCorrectionError] = useState<string | null>(null);
 
   useEffect(() => {
-    const latestCompleted = jobs?.find(job => job.status === "completed");
-    if (latestCompleted && refreshedCompletedJobRef.current !== latestCompleted.id) {
-      refreshedCompletedJobRef.current = latestCompleted.id;
-      void queryClient.invalidateQueries({
-        queryKey: getGetProjectSongModelQueryKey(projectId),
-      });
-    }
+    if (latestSource?.status !== "ready" || readySourceRef.current === latestSource.id) return;
+    readySourceRef.current = latestSource.id;
+    void refetchModel();
+  }, [latestSource, refetchModel]);
+
+  useEffect(() => {
+    const latestCompleted = jobs?.find((job) => job.status === "completed");
+    if (!latestCompleted || refreshedCompletedJobRef.current === latestCompleted.id) return;
+    refreshedCompletedJobRef.current = latestCompleted.id;
+    void queryClient.invalidateQueries({
+      queryKey: getGetProjectSongModelQueryKey(projectId),
+    });
   }, [jobs, projectId, queryClient]);
 
   useEffect(() => {
     if (!model) return;
-    setBpm(model.tempoMap?.[0]?.bpm?.toString() ?? "");
-    setKey(model.keyMap?.[0]?.key ?? "");
-    setMeter(model.meterMap?.[0]?.meter ?? "");
-    setSections((model.sections ?? []).map((section) => ({
+    setBpm(model.tempoMap[0]?.bpm?.toString() ?? "");
+    setKey(model.keyMap[0]?.key ?? "");
+    setMeter(model.meterMap[0]?.meter ?? "");
+    setSections(model.sections.map((section) => ({
       name: section.name,
       startBar: section.startBar.toString(),
       endBar: section.endBar.toString(),
@@ -87,33 +153,17 @@ export function SongModelInspector({ projectId }: { projectId: string }) {
   }, [model?.id]);
 
   const handleRetry = (sourceId: string) => {
-    retry.mutate({ projectId, sourceId }, {
+    retryAnalysis.mutate({ projectId, sourceId }, {
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getListAnalysisJobsQueryKey(projectId) });
-        queryClient.invalidateQueries({ queryKey: getGetProjectSongModelQueryKey(projectId) });
-      }
+        void queryClient.invalidateQueries({ queryKey: getListAnalysisJobsQueryKey(projectId) });
+        void queryClient.invalidateQueries({ queryKey: getGetProjectSongModelQueryKey(projectId) });
+      },
     });
   };
 
   const saveCorrections = () => {
     if (!model) return;
-    const currentBpm = model.tempoMap?.[0]?.bpm;
     const parsedBpm = Number(bpm);
-    const changedSections = sections.some((section, index) => {
-      const current = model.sections[index];
-      return !current ||
-        section.name !== current.name ||
-        Number(section.startBar) !== current.startBar ||
-        Number(section.endBar) !== current.endBar;
-    });
-    const data: {
-      baseVersion: number;
-      bpm?: number;
-      key?: string;
-      meter?: string;
-      sections?: Array<{ name: string; startBar: number; endBar: number }>;
-    } = { baseVersion: model.version };
-
     if (!Number.isFinite(parsedBpm) || parsedBpm < 20 || parsedBpm > 400) {
       setCorrectionError("BPM must be a number between 20 and 400.");
       return;
@@ -132,17 +182,35 @@ export function SongModelInspector({ projectId }: { projectId: string }) {
       endBar: Number(section.endBar),
     }));
     if (normalizedSections.some((section, index) =>
-      !section.name || !Number.isInteger(section.startBar) || !Number.isInteger(section.endBar) ||
-      section.startBar < 1 || section.endBar < section.startBar ||
-      (index > 0 && section.startBar <= normalizedSections[index - 1].endBar),
+      !section.name ||
+      !Number.isInteger(section.startBar) ||
+      !Number.isInteger(section.endBar) ||
+      section.startBar < 1 ||
+      section.endBar < section.startBar ||
+      (index > 0 && section.startBar <= normalizedSections[index - 1].endBar)
     )) {
       setCorrectionError("Section names and ordered, non-overlapping bar boundaries are required.");
       return;
     }
-    if (parsedBpm !== currentBpm) data.bpm = parsedBpm;
-    if (key.trim() !== (model.keyMap?.[0]?.key ?? "")) data.key = key.trim();
-    if (meter !== (model.meterMap?.[0]?.meter ?? "")) data.meter = meter;
-    if (changedSections) data.sections = normalizedSections;
+    const data: {
+      baseVersion: number;
+      bpm?: number;
+      key?: string;
+      meter?: string;
+      sections?: Array<{ name: string; startBar: number; endBar: number }>;
+    } = { baseVersion: model.version };
+    if (parsedBpm !== model.tempoMap[0]?.bpm) data.bpm = parsedBpm;
+    if (key.trim() !== (model.keyMap[0]?.key ?? "")) data.key = key.trim();
+    if (meter !== (model.meterMap[0]?.meter ?? "")) data.meter = meter;
+    if (normalizedSections.some((section, index) => {
+      const current = model.sections[index];
+      return !current ||
+        section.name !== current.name ||
+        section.startBar !== current.startBar ||
+        section.endBar !== current.endBar;
+    })) {
+      data.sections = normalizedSections;
+    }
     if (Object.keys(data).length === 1) {
       setCorrectionError("Make a change before saving.");
       return;
@@ -159,331 +227,916 @@ export function SongModelInspector({ projectId }: { projectId: string }) {
     });
   };
 
-  const activeProviderDetails = providers?.filter(p => model?.providers?.includes(p.id)) || [];
-  
-  if (isJobsLoading || isModelLoading) {
+  if (isLoading || sourcesLoading || jobsLoading) {
     return (
-      <div className="flex flex-col items-center justify-center p-12 text-muted-foreground gap-3">
-        <Loader2 className="h-6 w-6 animate-spin text-primary" />
-        <p className="text-sm font-mono">Retrieving analysis data...</p>
+      <div className="flex flex-col items-center justify-center h-full p-8 text-muted-foreground space-y-4">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" data-testid="icon-loading" />
+        <p className="text-sm font-mono tracking-widest uppercase">Retrieving Song Model</p>
       </div>
     );
   }
 
-  if (!jobs?.length && !model) {
+  if (isError || !model) {
     return (
-      <div className="pt-12">
-        <EmptyState 
-          icon={Database} 
-          title="No Analysis Data" 
-          description="Upload a source track to begin musical analysis and build a Song Model."
+      <div className="space-y-4 p-4 lg:p-6">
+        <AnalysisActivity
+          jobs={jobs}
+          retrying={retryAnalysis.isPending}
+          onRetry={handleRetry}
         />
+        <SourceAnalysisState source={currentSource} accessDenied={accessDenied} />
       </div>
     );
   }
+
+  const warningFields = Object.entries(model.fieldStatus).filter(([, value]) =>
+    value.status === "low_confidence" ||
+    value.status === "failed" ||
+    value.status === "not_available"
+  );
+  const editedFields = Object.values(model.fieldStatus).filter((value) => value.edited);
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 pb-12">
-      
-      {/* Analysis Activity */}
-      {jobs && jobs.length > 0 && (
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2 border-b pb-2">
-            <Activity className="h-4 w-4" /> Analysis Activity
-          </h3>
-          <div className="grid gap-3">
-            {jobs.map(job => (
-              <Card key={job.id} className={cn("overflow-hidden transition-all", job.status === 'failed' ? 'border-destructive/50 shadow-sm shadow-destructive/10' : 'bg-muted/10')}>
-                <div className="p-4 flex flex-col gap-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      {job.status === 'running' && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
-                      {job.status === 'completed' && <CheckCircle2 className="h-4 w-4 text-emerald-500" />}
-                      {job.status === 'failed' && <AlertTriangle className="h-4 w-4 text-destructive" />}
-                      {job.status === 'queued' && <Timer className="h-4 w-4 text-muted-foreground" />}
-                      <span className="font-semibold text-sm">
-                        {job.stage ? `Stage: ${job.stage}` : 'Analysis Job'} 
-                      </span>
-                      <Badge variant={job.status === 'failed' ? 'destructive' : job.status === 'completed' ? 'outline' : 'secondary'} className="text-[10px] font-mono py-0 h-5">
-                        {job.status}
-                      </Badge>
-                    </div>
-                    <div className="text-xs font-mono text-muted-foreground flex gap-4">
-                      {job.startedAt && <span>{format(new Date(job.startedAt), 'HH:mm:ss')}</span>}
-                      <span>Attempt {job.attempt || 1}</span>
-                    </div>
-                  </div>
-                  
-                  {(job.status === 'running' || job.status === 'queued') && (
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
-                        <span>Progress</span>
-                        <span>{job.progress}%</span>
-                      </div>
-                      <Progress value={job.progress} className="h-1.5 bg-primary/10" />
-                    </div>
-                  )}
+    <div className="flex flex-col h-full space-y-4 p-4 lg:p-6" data-testid="song-model-inspector">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-xl font-bold tracking-tight flex items-center gap-2">
+            <Activity className="h-5 w-5 text-primary" />
+            Analysis Model
+          </h2>
+          <p className="text-xs text-muted-foreground mt-1">
+            Raw detection output. This data drives the generative arrangement engine.
+          </p>
+        </div>
 
-                  {job.status === 'failed' && (
-                    <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md border border-destructive/20 flex flex-col gap-3 mt-1">
-                      <p className="font-mono text-xs">{job.error || "An unknown error occurred during analysis."}</p>
-                      <Button 
-                        size="sm" 
-                        variant="outline" 
-                        className="self-start border-destructive/30 hover:bg-destructive/20 hover:text-destructive h-8 text-xs"
-                        onClick={() => handleRetry(job.sourceId)}
-                        disabled={retry.isPending}
-                      >
-                        {retry.isPending ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-2" />}
-                        Retry Analysis
-                      </Button>
-                    </div>
+        <div className="flex items-center gap-2 flex-wrap text-xs">
+          <Badge variant="outline" className="font-mono bg-card" data-testid="badge-version">
+            v{model.version}
+          </Badge>
+          <Badge
+            variant="outline"
+            className={cn(
+              "font-mono shadow-sm",
+              model.confidence <= 0 ? "bg-muted text-muted-foreground border-border" :
+              model.confidence > 0.8 ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30" :
+              model.confidence > 0.5 ? "bg-yellow-500/10 text-yellow-600 border-yellow-500/30" :
+              "bg-red-500/10 text-red-600 border-red-500/30"
+            )}
+            data-testid="badge-confidence"
+          >
+            {model.confidence > 0.8 ? <ShieldCheck className="h-3 w-3 mr-1" /> : <ShieldAlert className="h-3 w-3 mr-1" />}
+            {model.confidence > 0
+              ? `${Math.round(model.confidence * 100)}% Confidence`
+              : "Confidence unavailable"}
+          </Badge>
+        </div>
+      </div>
+
+      <AnalysisActivity
+        jobs={jobs}
+        retrying={retryAnalysis.isPending}
+        onRetry={handleRetry}
+      />
+
+      <Card
+        className={cn(
+          model.validation.status === "accepted"
+            ? "border-emerald-500/25"
+            : "border-amber-500/35",
+        )}
+        data-testid="song-model-validation"
+      >
+        <CardHeader className="p-4 pb-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              {model.validation.status === "accepted"
+                ? <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                : <AlertTriangle className="h-4 w-4 text-amber-600" />}
+              Canonical validation
+            </CardTitle>
+            <Badge
+              variant="outline"
+              className={cn(
+                model.validation.status === "accepted"
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
+                  : "border-amber-500/30 bg-amber-500/10 text-amber-700",
+              )}
+            >
+              {model.validation.status}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3 p-4 pt-0">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+            <span className="text-muted-foreground">Selected provider</span>
+            <span className="font-mono font-medium" data-testid="fusion-selected-provider">
+              {model.fusion.selectedProvider || "None — all candidates rejected"}
+            </span>
+            <span className="text-muted-foreground">Fusion confidence</span>
+            <span className="font-mono">{Math.round(model.fusion.confidence * 100)}%</span>
+          </div>
+          {model.validation.issues.length > 0 && (
+            <div className="space-y-1.5" data-testid="validation-issues">
+              {model.validation.issues.map((issue, index) => (
+                <div
+                  key={`${issue.code}-${issue.path}-${index}`}
+                  className={cn(
+                    "rounded border px-3 py-2 text-xs",
+                    issue.severity === "error"
+                      ? "border-destructive/25 bg-destructive/5"
+                      : "border-amber-500/25 bg-amber-500/5",
                   )}
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" className="h-5 text-[9px]">
+                      {issue.severity}
+                    </Badge>
+                    <span className="font-mono text-[10px] text-muted-foreground">
+                      {issue.path || "song model"} · {issue.code}
+                    </span>
+                    {issue.provider && (
+                      <span className="font-mono text-[10px] text-muted-foreground">
+                        {issue.provider}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1">{issue.message}</p>
                 </div>
-              </Card>
+              ))}
+            </div>
+          )}
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3" data-testid="fusion-decisions">
+            {model.fusion.decisions.map((decision, index) => (
+              <div key={`${decision.provider}-${index}`} className="rounded border bg-muted/15 p-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate font-mono text-xs">{decision.provider}</span>
+                  <Badge variant="outline" className="h-5 text-[9px]">{decision.status}</Badge>
+                </div>
+                <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+                  Confidence {Math.round(decision.confidence * 100)}% · compatibility{" "}
+                  {Math.round(decision.compatibility * 100)}%
+                </p>
+              </div>
             ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-md border bg-card px-4 py-3 text-xs">
+        <div className="flex items-center gap-2">
+          <Badge className="bg-sky-500/10 text-sky-700 border-sky-500/30" variant="outline">
+            Detected
+          </Badge>
+          <span className="text-muted-foreground">Provider output stored in Song Model v{model.version}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge className="bg-violet-500/10 text-violet-700 border-violet-500/30" variant="outline">
+            User edit
+          </Badge>
+          <span className="text-muted-foreground" data-testid="text-user-edit-state">
+            {editedFields.length ? `${editedFields.length} edited fields` : "No user edits recorded"}
+          </span>
+        </div>
+      </div>
+
+      {warningFields.length > 0 && (
+        <div
+          className="flex flex-wrap items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-3"
+          data-testid="song-model-quality-warnings"
+        >
+          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold">Review {warningFields.length} fields before arranging</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {warningFields.map(([field, value]) => (
+                <FieldStatusBadge key={field} field={field} value={value} />
+              ))}
+            </div>
           </div>
         </div>
       )}
 
-      {/* The Model */}
-      {model && (
-        <div className="space-y-6">
-          <div className="flex items-center gap-2 border-b pb-2">
-            <Database className="h-5 w-5 text-primary" />
-            <h2 className="text-lg font-bold">Song Model Details</h2>
-            <Badge variant="outline" className="ml-auto font-mono text-muted-foreground">{model.version ? `v${model.version}` : 'v1'}</Badge>
-          </div>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 shrink-0">
+        <Card className="shadow-sm">
+          <CardHeader className="p-4 pb-2">
+            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+              <Cpu className="h-3.5 w-3.5" /> Providers
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-4 pt-0">
+            {model.providers.length > 0 ? (
+              <div className="flex flex-wrap gap-1 mt-1" data-testid="list-providers">
+                {model.providers.map(p => (
+                  <Badge key={p} variant="secondary" className="text-[10px] font-mono px-1.5 py-0">
+                    {p}
+                  </Badge>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground mt-1 italic" data-testid="text-no-providers">No providers recorded</p>
+            )}
+          </CardContent>
+        </Card>
 
-          {/* Identity & Audio */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Card className="shadow-sm border-t-2 border-t-primary/50 bg-card/50 backdrop-blur">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
-                  <Mic className="h-4 w-4" /> Source DNA
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 gap-y-4 gap-x-2">
-                  <div>
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Duration</div>
-                    <div className="font-mono text-sm">{formatDuration(model.audio?.durationSeconds || 0)}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Sample Rate</div>
-                    <div className="font-mono text-sm">{(model.audio?.sampleRate ? model.audio.sampleRate / 1000 : 0).toFixed(1)} kHz</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Channels</div>
-                    <div className="font-mono text-sm">{model.audio?.channels === 2 ? 'Stereo' : model.audio?.channels === 1 ? 'Mono' : (model.audio?.channels || 'Unknown')}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Size</div>
-                    <div className="font-mono text-sm">{(model.audio?.size ? model.audio.size / (1024 * 1024) : 0).toFixed(1)} MB</div>
-                  </div>
+        <Card className="shadow-sm">
+          <CardHeader className="p-4 pb-2">
+            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+              <FileAudio className="h-3.5 w-3.5" /> Source Audio
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-4 pt-0">
+            <div className="grid grid-cols-2 gap-x-2 gap-y-1 mt-1 text-xs" data-testid="audio-metadata">
+              <div className="text-muted-foreground">File</div>
+              <div className="truncate font-mono text-right" title={model.audio.name}>{model.audio.name}</div>
+
+              <div className="text-muted-foreground">Size</div>
+              <div className="font-mono text-right">{formatBytes(model.audio.size)}</div>
+
+              <div className="text-muted-foreground">Format</div>
+              <div className="font-mono text-right">{model.audio.contentType.split('/')[1] || model.audio.contentType}</div>
+
+              <div className="text-muted-foreground">Sample Rate</div>
+              <div className="font-mono text-right">{model.audio.sampleRate.toLocaleString()} Hz</div>
+
+              <div className="text-muted-foreground">Channels</div>
+              <div className="font-mono text-right">{model.audio.channels}</div>
+
+              <div className="text-muted-foreground">Duration</div>
+              <div className="font-mono text-right">{formatTime(model.audio.durationSeconds)}</div>
+
+              <div className="text-muted-foreground">Imported</div>
+              <div className="font-mono text-right">
+                {currentSource ? new Date(currentSource.createdAt).toLocaleDateString() : "—"}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm md:col-span-2">
+          <CardHeader className="p-4 pb-2">
+            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+              <BarChart2 className="h-3.5 w-3.5" /> Global Energy
+              <FieldStatusBadge field="energy" value={model.fieldStatus.energy} compact />
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-4 pt-0">
+             {isFieldUsable(model.fieldStatus.energy) && model.energy.length > 0 ? (
+                <div className="h-16 w-full mt-1" data-testid="chart-energy">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={model.energy.map((val, i) => ({ frame: i, energy: val }))} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="energyGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.8}/>
+                          <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <Tooltip
+                        content={({ active, payload }) => {
+                          if (active && payload && payload.length) {
+                            return (
+                              <div className="bg-popover border text-popover-foreground text-xs p-1 px-2 rounded shadow-md font-mono">
+                                E: {Number(payload[0].value).toFixed(2)}
+                              </div>
+                            );
+                          }
+                          return null;
+                        }}
+                      />
+                      <Area type="monotone" dataKey="energy" stroke="hsl(var(--primary))" fill="url(#energyGrad)" strokeWidth={1.5} isAnimationActive={false} />
+                    </AreaChart>
+                  </ResponsiveContainer>
                 </div>
-              </CardContent>
-            </Card>
+             ) : (
+               <p className="text-xs text-muted-foreground mt-1 italic text-center py-4 border border-dashed rounded" data-testid="text-no-energy">
+                  {fieldEmptyMessage(model.fieldStatus.energy, "No energy values were detected.")}
+               </p>
+             )}
+          </CardContent>
+        </Card>
+      </div>
 
-            <Card className="shadow-sm border-t-2 border-t-emerald-500/50 bg-card/50 backdrop-blur">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
-                  <Music className="h-4 w-4" /> Derived Features
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 gap-y-4 gap-x-2">
-                  <div>
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Dominant Key</div>
-                    <div className="font-mono text-sm font-semibold">{model.keyMap?.[0]?.key || "Unknown"}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Tempo</div>
-                    <div className="font-mono text-sm font-semibold">{model.tempoMap?.[0]?.bpm ? Math.round(model.tempoMap[0].bpm) : "Unknown"} BPM</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Meter</div>
-                    <div className="font-mono text-sm font-semibold">{model.meterMap?.[0]?.meter || "4/4"}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Structure</div>
-                    <div className="font-mono text-sm font-semibold">{model.sections?.length || 0} Sections</div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+      <div className="rounded-md border bg-card px-4 py-3" data-testid="field-provenance">
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <Cpu className="h-3.5 w-3.5" />
+          Field provenance
+        </div>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {songModelFields.map((field) => {
+            const providers = model.provenance[field] ?? [];
+            return (
+              <div key={field} className="flex min-w-0 items-center justify-between gap-3 rounded border bg-muted/15 px-2.5 py-2">
+                <span className="text-xs font-medium capitalize">{field}</span>
+                <span
+                  className={cn(
+                    "truncate text-right font-mono text-[10px]",
+                    providers.length ? "text-foreground" : "text-muted-foreground",
+                  )}
+                  title={providers.length ? providers.join(", ") : "No provider output"}
+                  data-testid={`provenance-${field}`}
+                >
+                  {providers.length ? providers.join(" · ") : "No provider output"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
-          <Card className="shadow-sm border-t-2 border-t-amber-500/60">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <Music className="h-4 w-4 text-amber-600" /> Correct before arranging
+      {(model.providerProvenance.length > 0 || model.sourceStems.length > 0) && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card>
+            <CardHeader className="p-4 pb-2">
+              <CardTitle className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground">
+                <Server className="h-3.5 w-3.5" />
+                Provider capabilities
               </CardTitle>
-              <p className="text-xs font-normal text-muted-foreground">
-                Saves an auditable new Song Model version. Provider provenance and confidence remain unchanged.
-              </p>
             </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="song-model-bpm">BPM</Label>
-                  <Input id="song-model-bpm" type="number" min="20" max="400" value={bpm} onChange={(event) => setBpm(event.target.value)} />
+            <CardContent className="grid gap-2 p-4 pt-0 sm:grid-cols-2">
+              {model.providerProvenance.map((item) => (
+                <div key={`${item.capability}-${item.provider}`} className="rounded border bg-muted/15 p-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-xs font-medium capitalize">
+                      {item.capability.replace(/_/g, " ")}
+                    </span>
+                    <Badge variant="outline" className="h-5 text-[9px]">{item.status}</Badge>
+                  </div>
+                  <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
+                    {item.provider} · {item.version}
+                  </p>
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="song-model-key">Key</Label>
-                  <Input id="song-model-key" value={key} onChange={(event) => setKey(event.target.value)} placeholder="D minor" />
+              ))}
+              {providers?.filter((provider) => model.providers.includes(provider.id)).map((provider) => (
+                <div key={`engine-${provider.id}`} className="rounded border border-dashed p-2">
+                  <p className="truncate text-xs font-medium">{provider.name}</p>
+                  <p className="font-mono text-[10px] text-muted-foreground">
+                    {provider.execution} · v{provider.version}
+                  </p>
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="song-model-meter">Meter</Label>
-                  <Input id="song-model-meter" value={meter} onChange={(event) => setMeter(event.target.value)} placeholder="4/4" />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label>Section labels and boundaries</Label>
-                <div className="space-y-2">
-                  {sections.map((section, index) => (
-                    <div key={index} className="grid grid-cols-[minmax(0,1fr)_80px_80px] gap-2">
-                      <Input aria-label={`Section ${index + 1} name`} value={section.name} onChange={(event) => setSections((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))} />
-                      <Input aria-label={`Section ${index + 1} start bar`} type="number" min="1" value={section.startBar} onChange={(event) => setSections((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, startBar: event.target.value } : item))} />
-                      <Input aria-label={`Section ${index + 1} end bar`} type="number" min="1" value={section.endBar} onChange={(event) => setSections((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, endBar: event.target.value } : item))} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-              {correctionError && <p className="text-sm text-destructive">{correctionError}</p>}
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-xs text-muted-foreground">Section count and energy are retained.</span>
-                <Button onClick={saveCorrections} disabled={correctModel.isPending}>
-                  {correctModel.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Save corrections
-                </Button>
-              </div>
+              ))}
             </CardContent>
           </Card>
+          <Card>
+            <CardHeader className="p-4 pb-2">
+              <CardTitle className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground">
+                <Layers className="h-3.5 w-3.5" />
+                Source stems
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 p-4 pt-0">
+              {model.sourceStems.length > 0 ? model.sourceStems.map((stem) => (
+                <div key={`${stem.role}-${stem.objectPath}`} className="flex items-center justify-between gap-3 rounded border px-3 py-2">
+                  <span className="text-xs font-medium capitalize">{stem.role}</span>
+                  <span className="font-mono text-[10px] text-muted-foreground">
+                    {stem.provider} · {Math.round(stem.confidence * 100)}%
+                  </span>
+                </div>
+              )) : (
+                <p className="text-xs text-muted-foreground">No source stems were produced.</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
-          {/* Raw Insights Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <StatCard title="Total Beats" value={model.beats?.length || 0} icon={Activity} />
-            <StatCard title="Total Bars" value={model.bars?.length || 0} icon={Workflow} />
-            <StatCard title="Chord Changes" value={model.chords?.length || 0} icon={Music} />
-            <StatCard title="Melodic Notes" value={model.melody?.length || 0} icon={Activity} />
+      <Card className="border-violet-500/25">
+        <CardHeader className="p-4 pb-2">
+          <CardTitle className="text-sm">Correct before arranging</CardTitle>
+          <p className="text-xs font-normal text-muted-foreground">
+            Saves an auditable Song Model version while retaining detected provider provenance.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4 p-4 pt-0">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="song-model-bpm">BPM</Label>
+              <Input id="song-model-bpm" type="number" min="20" max="400" value={bpm} onChange={(event) => setBpm(event.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="song-model-key">Key</Label>
+              <Input id="song-model-key" value={key} onChange={(event) => setKey(event.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="song-model-meter">Meter</Label>
+              <Input id="song-model-meter" value={meter} onChange={(event) => setMeter(event.target.value)} />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Section labels and boundaries</Label>
+            {sections.map((section, index) => (
+              <div key={index} className="grid grid-cols-[minmax(0,1fr)_80px_80px] gap-2">
+                <Input aria-label={`Section ${index + 1} name`} value={section.name} onChange={(event) => setSections((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))} />
+                <Input aria-label={`Section ${index + 1} start bar`} type="number" min="1" value={section.startBar} onChange={(event) => setSections((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, startBar: event.target.value } : item))} />
+                <Input aria-label={`Section ${index + 1} end bar`} type="number" min="1" value={section.endBar} onChange={(event) => setSections((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, endBar: event.target.value } : item))} />
+              </div>
+            ))}
+          </div>
+          {correctionError && <p className="text-xs text-destructive">{correctionError}</p>}
+          <div className="flex justify-end">
+            <Button onClick={saveCorrections} disabled={correctModel.isPending}>
+              {correctModel.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Save corrections
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Tabs defaultValue="tempo" className="flex-1 flex flex-col min-h-0">
+        <TabsList className="justify-start shrink-0 w-full rounded-none border-b bg-transparent h-12 p-0 overflow-x-auto overflow-y-hidden space-x-6">
+          <TabsTrigger value="tempo" data-testid="tab-tempo" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 data-[state=active]:shadow-none">
+            Tempo & Meter
+          </TabsTrigger>
+          <TabsTrigger value="harmony" data-testid="tab-harmony" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 data-[state=active]:shadow-none">
+            Harmony Map
+          </TabsTrigger>
+          <TabsTrigger value="melody" data-testid="tab-melody" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 data-[state=active]:shadow-none">
+            Melody
+          </TabsTrigger>
+          <TabsTrigger value="sections" data-testid="tab-sections" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 data-[state=active]:shadow-none">
+            Structure
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="tempo" className="flex-1 min-h-0 overflow-hidden m-0 pt-4 flex gap-4">
+          <div className="flex-1 border rounded-md bg-card overflow-hidden flex flex-col">
+             <div className="px-4 py-2 border-b bg-muted/20 font-semibold text-xs flex items-center gap-2">
+               <Clock className="h-4 w-4" /> Tempo Events
+               <FieldStatusBadge field="tempo" value={model.fieldStatus.tempo} compact />
+             </div>
+             <ScrollArea className="flex-1">
+               {isFieldUsable(model.fieldStatus.tempo) && model.tempoMap.length > 0 ? (
+                 <Table>
+                   <TableHeader className="bg-transparent sticky top-0 backdrop-blur-md">
+                     <TableRow className="hover:bg-transparent">
+                       <TableHead className="w-[100px]">Time</TableHead>
+                       <TableHead>BPM</TableHead>
+                       <TableHead className="text-right">Confidence</TableHead>
+                     </TableRow>
+                   </TableHeader>
+                   <TableBody>
+                     {model.tempoMap.map((t, idx) => (
+                       <TableRow key={`tempo-${idx}`} data-testid={`row-tempo-${idx}`}>
+                         <TableCell className="font-mono text-xs text-muted-foreground">{formatTime(t.time)}</TableCell>
+                         <TableCell className="font-mono font-medium text-xs">{Math.round(t.bpm * 10) / 10}</TableCell>
+                         <TableCell className="text-right">
+                           <ConfidenceScore value={t.confidence} />
+                         </TableCell>
+                       </TableRow>
+                     ))}
+                   </TableBody>
+                 </Table>
+               ) : (
+                  <div className="p-8 text-center text-sm text-muted-foreground italic" data-testid="text-no-tempo">
+                    {fieldEmptyMessage(model.fieldStatus.tempo, "No tempo events were detected.")}
+                  </div>
+               )}
+             </ScrollArea>
           </div>
 
-          {/* Confidence & Providers Matrix */}
-          <Card className="shadow-sm overflow-hidden">
-            <CardHeader className="pb-3 bg-muted/20 border-b">
-              <CardTitle className="text-sm flex items-center justify-between">
+          <div className="flex-1 border rounded-md bg-card overflow-hidden flex flex-col">
+             <div className="px-4 py-2 border-b bg-muted/20 font-semibold text-xs flex items-center gap-2">
+               <Hash className="h-4 w-4" /> Meter Events
+               <FieldStatusBadge field="meter" value={model.fieldStatus.meter} compact />
+             </div>
+             <ScrollArea className="flex-1">
+               {isFieldUsable(model.fieldStatus.meter) && model.meterMap.length > 0 ? (
+                 <Table>
+                   <TableHeader className="bg-transparent sticky top-0 backdrop-blur-md">
+                     <TableRow className="hover:bg-transparent">
+                       <TableHead className="w-[100px]">Bar</TableHead>
+                       <TableHead>Signature</TableHead>
+                       <TableHead className="text-right">Confidence</TableHead>
+                     </TableRow>
+                   </TableHeader>
+                   <TableBody>
+                     {model.meterMap.map((m, idx) => (
+                       <TableRow key={`meter-${idx}`} data-testid={`row-meter-${idx}`}>
+                         <TableCell className="font-mono text-xs text-muted-foreground">{m.bar}</TableCell>
+                         <TableCell className="font-mono font-medium text-xs bg-muted/30 rounded inline-block px-1.5 py-0.5 mt-2">{m.meter}</TableCell>
+                         <TableCell className="text-right">
+                           <ConfidenceScore value={m.confidence} />
+                         </TableCell>
+                       </TableRow>
+                     ))}
+                   </TableBody>
+                 </Table>
+               ) : (
+                  <div className="p-8 text-center text-sm text-muted-foreground italic" data-testid="text-no-meter">
+                    {fieldEmptyMessage(model.fieldStatus.meter, "No meter events were detected.")}
+                  </div>
+               )}
+             </ScrollArea>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="harmony" className="flex-1 min-h-0 overflow-hidden m-0 pt-4 flex gap-4">
+           <div className="flex-[0.4] border rounded-md bg-card overflow-hidden flex flex-col">
+             <div className="px-4 py-2 border-b bg-muted/20 font-semibold text-xs flex items-center gap-2">
+                Key Map
+                <FieldStatusBadge field="key" value={model.fieldStatus.key} compact />
+             </div>
+             <ScrollArea className="flex-1">
+                {isFieldUsable(model.fieldStatus.key) && model.keyMap.length > 0 ? (
+                 <Table>
+                   <TableHeader className="bg-transparent sticky top-0 backdrop-blur-md">
+                     <TableRow className="hover:bg-transparent">
+                       <TableHead className="w-[80px]">Time</TableHead>
+                       <TableHead>Key</TableHead>
+                       <TableHead className="text-right">Conf</TableHead>
+                     </TableRow>
+                   </TableHeader>
+                   <TableBody>
+                     {model.keyMap.map((k, idx) => (
+                       <TableRow key={`key-${idx}`} data-testid={`row-key-${idx}`}>
+                         <TableCell className="font-mono text-xs text-muted-foreground">{formatTime(k.time)}</TableCell>
+                         <TableCell className="font-semibold text-xs text-primary">{k.key}</TableCell>
+                         <TableCell className="text-right">
+                           <ConfidenceScore value={k.confidence} hideBar />
+                         </TableCell>
+                       </TableRow>
+                     ))}
+                   </TableBody>
+                 </Table>
+               ) : (
+                  <div className="p-8 text-center text-sm text-muted-foreground italic" data-testid="text-no-key">
+                    {fieldEmptyMessage(model.fieldStatus.key, "No key events were detected.")}
+                  </div>
+               )}
+             </ScrollArea>
+          </div>
+
+          <div className="flex-1 border rounded-md bg-card overflow-hidden flex flex-col">
+             <div className="px-4 py-2 border-b bg-muted/20 font-semibold text-xs flex items-center gap-2">
+                Chord Progressions
+                <FieldStatusBadge field="harmony" value={model.fieldStatus.harmony} compact />
+             </div>
+             <ScrollArea className="flex-1">
+                {isFieldUsable(model.fieldStatus.harmony) && model.chords.length > 0 ? (
+                 <Table>
+                   <TableHeader className="bg-transparent sticky top-0 backdrop-blur-md">
+                     <TableRow className="hover:bg-transparent">
+                       <TableHead className="w-[140px]">Time Range</TableHead>
+                       <TableHead>Symbol</TableHead>
+                       <TableHead>Roman</TableHead>
+                       <TableHead className="text-right">Confidence</TableHead>
+                     </TableRow>
+                   </TableHeader>
+                   <TableBody>
+                     {model.chords.map((c, idx) => (
+                       <TableRow key={`chord-${idx}`} data-testid={`row-chord-${idx}`}>
+                         <TableCell className="font-mono text-xs text-muted-foreground">
+                           {formatTime(c.start)} - {formatTime(c.end)}
+                         </TableCell>
+                         <TableCell className="font-mono font-semibold text-xs">
+                           <span className="bg-secondary px-2 py-0.5 rounded border shadow-sm">{c.symbol}</span>
+                         </TableCell>
+                         <TableCell className="font-serif text-xs italic">{c.roman}</TableCell>
+                         <TableCell className="text-right">
+                           <ConfidenceScore value={c.confidence} />
+                         </TableCell>
+                       </TableRow>
+                     ))}
+                   </TableBody>
+                 </Table>
+               ) : (
+                  <div className="p-8 text-center text-sm text-muted-foreground italic" data-testid="text-no-chords">
+                    {fieldEmptyMessage(model.fieldStatus.harmony, "No chord events were detected.")}
+                  </div>
+               )}
+             </ScrollArea>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="melody" className="flex-1 min-h-0 overflow-hidden m-0 pt-4">
+           <div className="h-full border rounded-md bg-card overflow-hidden flex flex-col">
+             <div className="px-4 py-2 border-b bg-muted/20 font-semibold text-xs flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Shield className="h-4 w-4 text-primary" /> Confidence & Provenance
+                  <Music2 className="h-4 w-4" /> Note Events
+                  <FieldStatusBadge field="melody" value={model.fieldStatus.melody} compact />
                 </div>
-                <Badge className="bg-primary/10 text-primary hover:bg-primary/20 font-mono shadow-sm border-primary/20">
-                  {Math.round((model.confidence || 0) * 100)}% Quality
-                </Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-6">
-              <div className="space-y-8">
-                
-                {/* Capability Matrix */}
-                {model.provenance && model.provenance.length > 0 && (
-                  <div>
-                    <h4 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-4">Model Capabilities</h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                      {model.provenance.map(prov => {
-                        const conf = model.confidenceByField?.[prov.capability] || 0;
-                        return (
-                          <div key={prov.capability} className="bg-muted/20 p-3 rounded-lg border border-border/50 flex flex-col gap-2 hover:border-primary/30 transition-colors">
-                            <div className="flex justify-between items-start">
-                              <span className="text-sm font-medium capitalize">{prov.capability.replace(/_/g, ' ').toLowerCase()}</span>
-                              <Badge variant="outline" className={cn("text-[9px] py-0 h-4 px-1.5 font-mono shadow-sm", 
-                                prov.status === 'ready' ? 'bg-primary/10 text-primary border-primary/20' : 'bg-muted text-muted-foreground'
-                              )}>
-                                {prov.status}
-                              </Badge>
-                            </div>
-                            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono">
-                              <Cpu className="h-3 w-3" />
-                              <span className="truncate">{prov.provider}</span>
-                              {prov.version && <span className="opacity-60">v{prov.version}</span>}
-                            </div>
-                            <div className="mt-1 space-y-1.5">
-                              <div className="flex justify-between text-[9px] font-mono text-muted-foreground">
-                                <span>CONFIDENCE</span>
-                                <span>{Math.round(conf * 100)}%</span>
-                              </div>
-                              <div className="h-1 w-full bg-muted rounded-full overflow-hidden">
-                                <div className="h-full bg-primary" style={{ width: `${conf * 100}%` }} />
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Engine Roster */}
-                {activeProviderDetails.length > 0 && (
-                  <div>
-                    <h4 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-4 flex items-center gap-2">
-                      <Server className="h-3.5 w-3.5" /> Engine Roster
-                    </h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {activeProviderDetails.map(provider => (
-                        <div key={provider.id} className="border border-border/50 bg-muted/10 p-3 rounded-lg flex flex-col gap-1.5 hover:border-primary/30 transition-colors">
-                           <div className="flex justify-between items-start">
-                             <span className="font-semibold text-sm">{provider.name}</span>
-                             <Badge variant="outline" className="text-[9px] h-4 py-0 font-mono bg-background shadow-sm">{provider.execution}</Badge>
+               <Badge variant="outline" className="font-mono text-[10px]">
+                 Total: {model.melody.length}
+               </Badge>
+             </div>
+             <ScrollArea className="flex-1">
+                {isFieldUsable(model.fieldStatus.melody) && model.melody.length > 0 ? (
+                 <Table>
+                   <TableHeader className="bg-transparent sticky top-0 backdrop-blur-md">
+                     <TableRow className="hover:bg-transparent">
+                       <TableHead className="w-[140px]">Time Range</TableHead>
+                       <TableHead>Pitch</TableHead>
+                       <TableHead>Velocity</TableHead>
+                       <TableHead>Source</TableHead>
+                       <TableHead className="text-right">Confidence</TableHead>
+                     </TableRow>
+                   </TableHeader>
+                   <TableBody>
+                     {model.melody.map((n, idx) => (
+                       <TableRow key={`note-${idx}`} data-testid={`row-note-${idx}`}>
+                         <TableCell className="font-mono text-xs text-muted-foreground">
+                           {formatTime(n.start)} - {formatTime(n.end)}
+                         </TableCell>
+                         <TableCell className="font-mono text-xs font-semibold">{midiToNote(n.pitch)} ({n.pitch})</TableCell>
+                         <TableCell>
+                           <div className="flex items-center gap-2 max-w-[80px]">
+                             <span className="font-mono text-[10px] w-6">{n.velocity}</span>
+                             <Progress value={(n.velocity / 127) * 100} className="h-1.5 bg-muted/50" />
                            </div>
-                           <div className="text-[10px] text-muted-foreground font-mono">v{provider.version} · {provider.provider}</div>
-                           <div className="flex flex-wrap gap-1 mt-1.5">
-                             {provider.capabilities?.map(cap => (
-                               <span key={cap} className="text-[9px] bg-background border px-1.5 py-0.5 rounded text-muted-foreground uppercase tracking-wider">
-                                 {cap.replace(/_/g, ' ')}
-                               </span>
-                             ))}
+                         </TableCell>
+                         <TableCell>
+                           <Badge variant="secondary" className="text-[9px] uppercase tracking-wider">{n.source}</Badge>
+                         </TableCell>
+                         <TableCell className="text-right">
+                           <ConfidenceScore value={n.confidence} />
+                         </TableCell>
+                       </TableRow>
+                     ))}
+                   </TableBody>
+                 </Table>
+               ) : (
+                 <div className="flex flex-col items-center justify-center h-48 text-muted-foreground space-y-2">
+                    <AlertCircle className="h-6 w-6 text-yellow-500/80" />
+                     <p className="text-sm font-medium">
+                       {fieldEmptyMessage(model.fieldStatus.melody, "No melodic line was detected.")}
+                     </p>
+                    <p className="text-xs text-center max-w-xs">
+                      If the track is instrumental or percussive, this is normal. Otherwise, the analysis may have failed.
+                    </p>
+                 </div>
+               )}
+             </ScrollArea>
+           </div>
+        </TabsContent>
+
+        <TabsContent value="sections" className="flex-1 min-h-0 overflow-hidden m-0 pt-4">
+           <div className="h-full border rounded-md bg-card overflow-hidden flex flex-col">
+              <div className="px-4 py-2 border-b bg-muted/20 font-semibold text-xs flex items-center gap-2">
+                <FileType2 className="h-4 w-4" /> Structural Boundaries
+                <FieldStatusBadge field="sections" value={model.fieldStatus.sections} compact />
+             </div>
+             <ScrollArea className="flex-1">
+                {isFieldUsable(model.fieldStatus.sections) && model.sections.length > 0 ? (
+                 <Table>
+                   <TableHeader className="bg-transparent sticky top-0 backdrop-blur-md">
+                     <TableRow className="hover:bg-transparent">
+                       <TableHead>Section Label</TableHead>
+                       <TableHead className="w-[120px]">Bar Range</TableHead>
+                       <TableHead className="w-[200px]">Energy</TableHead>
+                     </TableRow>
+                   </TableHeader>
+                   <TableBody>
+                     {model.sections.map((s, idx) => (
+                       <TableRow key={`section-${idx}`} data-testid={`row-section-${idx}`}>
+                         <TableCell className="font-bold text-xs capitalize tracking-wide">{s.name}</TableCell>
+                         <TableCell className="font-mono text-xs text-muted-foreground">
+                           {s.startBar} &rarr; {s.endBar}
+                         </TableCell>
+                         <TableCell>
+                           <div className="flex items-center gap-2">
+                             <span className="font-mono text-[10px] w-6">{Math.round(s.energy * 100)}%</span>
+                             <Progress value={s.energy * 100} className="h-1.5 bg-muted/50" />
                            </div>
-                        </div>
-                      ))}
-                    </div>
+                         </TableCell>
+                       </TableRow>
+                     ))}
+                   </TableBody>
+                 </Table>
+               ) : (
+                  <div className="p-8 text-center text-sm text-muted-foreground italic" data-testid="text-no-sections">
+                    {fieldEmptyMessage(model.fieldStatus.sections, "No structural sections were detected.")}
                   </div>
-                )}
+               )}
+             </ScrollArea>
+           </div>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
 
-                {/* Extracted Stems */}
-                {model.sourceStems && model.sourceStems.length > 0 && (
-                  <div>
-                    <h4 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-4 flex items-center gap-2">
-                      <Layers className="h-3.5 w-3.5" /> Source Stems
-                    </h4>
-                    <div className="flex flex-wrap gap-2">
-                      {model.sourceStems.map((stem, i) => (
-                        <div key={i} className="flex items-center gap-2 bg-background border border-border/60 pl-3 pr-1.5 py-1.5 rounded-full text-sm shadow-sm hover:border-primary/40 transition-colors">
-                          <span className="font-semibold text-xs capitalize">{stem.role}</span>
-                          <span className="text-[10px] font-mono text-muted-foreground border-l pl-2 py-0.5">{stem.provider}</span>
-                          <Badge variant="secondary" className="text-[10px] font-mono bg-primary/10 text-primary py-0 h-5 px-1.5 border-primary/20">
-                            {Math.round(stem.confidence * 100)}%
-                          </Badge>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+const songModelFields = [
+  "tempo",
+  "meter",
+  "key",
+  "melody",
+  "harmony",
+  "sections",
+  "energy",
+] as const;
 
-              </div>
-            </CardContent>
-          </Card>
+function ConfidenceScore({ value, hideBar = false }: { value: number, hideBar?: boolean }) {
+  const percentage = Math.round(value * 100);
+  const colorClass = value > 0.8 ? "text-emerald-500" : value > 0.5 ? "text-yellow-500" : "text-red-500 bg-red-500/10 px-1 rounded";
+  const progressClass = value > 0.8 ? "bg-emerald-500" : value > 0.5 ? "bg-yellow-500" : "bg-red-500";
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <span className={cn("font-mono text-[10px] font-medium", colorClass)}>
+        {percentage}%
+      </span>
+      {!hideBar && (
+        <div className="h-1 w-12 bg-muted/50 rounded-full overflow-hidden">
+          <div className={cn("h-full rounded-full", progressClass)} style={{ width: `${percentage}%` }} />
         </div>
       )}
     </div>
   );
 }
 
-function StatCard({ title, value, icon: Icon }: { title: string, value: number, icon: any }) {
+function AnalysisActivity({
+  jobs,
+  retrying,
+  onRetry,
+}: {
+  jobs?: Array<{
+    id: string;
+    sourceId: string;
+    status: string;
+    stage: string;
+    progress: number;
+    attempt: number;
+    error: string | null;
+    startedAt: string | null;
+  }>;
+  retrying: boolean;
+  onRetry: (sourceId: string) => void;
+}) {
+  if (!jobs?.length) return null;
   return (
-    <div className="bg-card/50 backdrop-blur border border-border/60 rounded-lg p-5 flex flex-col items-center justify-center text-center gap-2 shadow-sm hover:border-primary/40 transition-colors">
-      <Icon className="h-5 w-5 text-muted-foreground opacity-50 mb-1" />
-      <div className="text-2xl font-bold font-mono text-foreground tracking-tight">{value}</div>
-      <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">{title}</div>
+    <Card data-testid="analysis-activity">
+      <CardHeader className="p-4 pb-2">
+        <CardTitle className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground">
+          <Activity className="h-3.5 w-3.5" />
+          Analysis activity
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2 p-4 pt-0">
+        {jobs.map((job) => (
+          <div key={job.id} className="rounded border bg-muted/10 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                {job.status === "running" && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+                {job.status === "completed" && <CheckCircle2 className="h-4 w-4 text-emerald-500" />}
+                {job.status === "failed" && <AlertTriangle className="h-4 w-4 text-destructive" />}
+                {job.status === "queued" && <Timer className="h-4 w-4 text-muted-foreground" />}
+                <span className="text-xs font-medium">{job.stage || "Analysis job"}</span>
+                <Badge variant="outline" className="h-5 text-[9px]">{job.status}</Badge>
+              </div>
+              <span className="font-mono text-[10px] text-muted-foreground">
+                Attempt {job.attempt}
+                {job.startedAt ? ` · ${new Date(job.startedAt).toLocaleTimeString()}` : ""}
+              </span>
+            </div>
+            {(job.status === "running" || job.status === "queued") && (
+              <Progress value={job.progress} className="mt-2 h-1.5" />
+            )}
+            {job.status === "failed" && (
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded bg-destructive/5 p-2">
+                <p className="text-xs text-destructive">{job.error || "Analysis failed."}</p>
+                <Button size="sm" variant="outline" onClick={() => onRetry(job.sourceId)} disabled={retrying}>
+                  <RefreshCw className={cn("mr-2 h-3.5 w-3.5", retrying && "animate-spin")} />
+                  Retry analysis
+                </Button>
+              </div>
+            )}
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SourceAnalysisState({
+  source,
+  accessDenied = false,
+}: {
+  source?: ProjectSource;
+  accessDenied?: boolean;
+}) {
+  const isFailed = source?.status === "failed";
+  const isProcessing = source && ["queued", "preprocessing", "analyzing"].includes(source.status);
+  const title = accessDenied
+    ? "Log in to inspect this Song Model"
+    : isFailed
+    ? "Source analysis failed"
+    : isProcessing
+      ? "Song Model is still being built"
+      : source?.status === "ready"
+        ? "Song Model record is unavailable"
+        : "No Song Model exists yet";
+  const detail = accessDenied
+    ? "This project contains protected source analysis owned by another session."
+    : isFailed
+    ? source.error || "The analyzer did not return a usable model."
+    : isProcessing
+      ? `${source.progress}% complete · ${source.name}`
+      : source?.status === "ready"
+        ? "The source completed, but no canonical model response was found."
+        : "Import a real source recording to create an inspectable model.";
+
+  return (
+    <div
+      className="flex h-full flex-col items-center justify-center space-y-4 p-8 text-center text-muted-foreground"
+      data-testid="song-model-unavailable"
+    >
+      {isProcessing && !accessDenied ? (
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      ) : (
+        <AlertCircle className={cn("h-8 w-8", isFailed ? "text-destructive" : "text-amber-600")} />
+      )}
+      <div>
+        <p className="text-sm font-semibold text-foreground">{title}</p>
+        <p className="mt-1 max-w-md text-xs">{detail}</p>
+      </div>
+      {source && (
+        <div className="grid min-w-72 grid-cols-2 gap-x-4 gap-y-1 rounded-md border bg-card p-3 text-left text-xs">
+          <span>Source</span>
+          <span className="truncate text-right font-mono">{source.name}</span>
+          <span>Status</span>
+          <span className="text-right font-mono">{source.status}</span>
+          <span>Format</span>
+          <span className="text-right font-mono">{source.contentType}</span>
+          <span>Size</span>
+          <span className="text-right font-mono">{formatBytes(source.size)}</span>
+        </div>
+      )}
+      <p className="rounded border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-800">
+        No seed or placeholder analysis values are shown.
+      </p>
     </div>
-  )
+  );
+}
+
+function FieldStatusBadge({
+  field,
+  value,
+  compact = false,
+}: {
+  field: string;
+  value?: SongModelFieldStatusProperty;
+  compact?: boolean;
+}) {
+  const status = value?.status ?? "not_available";
+  const label = value?.edited
+    ? "User edit"
+    : status === "detected"
+      ? "Detected"
+      : status === "low_confidence"
+        ? "Low confidence"
+        : status === "failed"
+          ? "Failed"
+          : "Not available";
+  const className = value?.edited
+    ? "border-violet-500/30 bg-violet-500/10 text-violet-700"
+    : status === "detected"
+      ? "border-sky-500/30 bg-sky-500/10 text-sky-700"
+      : status === "low_confidence"
+        ? "border-amber-500/30 bg-amber-500/10 text-amber-700"
+        : "border-red-500/30 bg-red-500/10 text-red-700";
+  const providers = value?.providers.length ? value.providers.join(", ") : "No provider";
+  const confidence = value?.confidence == null ? "" : ` · ${Math.round(value.confidence * 100)}%`;
+
+  return (
+    <Badge
+      variant="outline"
+      className={cn("font-mono font-normal", compact ? "ml-auto px-1.5 py-0 text-[9px]" : "text-[10px]", className)}
+      title={`${field}: ${providers}${confidence}${value?.message ? ` · ${value.message}` : ""}`}
+      data-testid={`status-field-${field}`}
+    >
+      {compact ? label : `${field}: ${label}${confidence}`}
+    </Badge>
+  );
+}
+
+function isFieldUsable(value?: SongModelFieldStatusProperty): boolean {
+  return value?.status !== "failed" && value?.status !== "not_available";
+}
+
+function fieldEmptyMessage(value: SongModelFieldStatusProperty | undefined, fallback: string): string {
+  return value?.message || fallback;
+}
+
+function getErrorStatus(error: unknown): number | null {
+  if (!error || typeof error !== "object" || !("status" in error)) return null;
+  return typeof error.status === "number" ? error.status : null;
+}
+
+function formatTime(seconds: number): string {
+  if (isNaN(seconds)) return "0:00.0";
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  const ms = Math.floor((seconds % 1) * 10);
+  return `${m}:${s.toString().padStart(2, '0')}.${ms}`;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+const noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+function midiToNote(midi: number): string {
+  const octave = Math.floor(midi / 12) - 1;
+  const note = noteNames[midi % 12];
+  return `${note}${octave}`;
 }

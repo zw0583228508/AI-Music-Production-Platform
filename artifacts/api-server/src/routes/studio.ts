@@ -74,6 +74,8 @@ import {
   studioActivitiesTable,
   tracksTable,
   type SongModelData,
+  type SongModelField,
+  type SongModelFieldStatus,
 } from "@workspace/db";
 import {
   createZip,
@@ -257,21 +259,78 @@ const sourceResponse = (
   createdAt: iso(source.createdAt),
 });
 
+const songModelFields: SongModelField[] = [
+  "tempo",
+  "meter",
+  "key",
+  "melody",
+  "harmony",
+  "sections",
+  "energy",
+];
+
+function normalizeSongModelQuality(model: SongModelData): {
+  fieldStatus: Record<SongModelField, SongModelFieldStatus>;
+  provenance: Record<SongModelField, string[]>;
+} {
+  const quality = model.fieldStatus ?? {};
+  const provenance = !Array.isArray(model.provenance) ? model.provenance ?? {} : {};
+  const fieldStatus = Object.fromEntries(songModelFields.map((field) => {
+    const existing = quality[field];
+    if (existing) return [field, existing];
+    return [field, {
+      status: "not_available",
+      confidence: null,
+      providers: [],
+      message: "This legacy Song Model has no field-specific evidence. Reanalyze the source to verify it.",
+      edited: false,
+    }];
+  })) as Record<SongModelField, SongModelFieldStatus>;
+
+  return {
+    fieldStatus,
+    provenance: Object.fromEntries(songModelFields.map((field) => [
+      field,
+      quality[field] ? provenance[field] ?? fieldStatus[field].providers : [],
+    ])) as Record<SongModelField, string[]>,
+  };
+}
+
+function aggregateSongModelConfidence(
+  fieldStatus: Record<SongModelField, SongModelFieldStatus>,
+): number {
+  const valid = Object.values(fieldStatus)
+    .map((field) => field.confidence)
+    .filter((value): value is number => value !== null);
+  return valid.length
+    ? Number((valid.reduce((sum, value) => sum + value, 0) / valid.length).toFixed(2))
+    : 0;
+}
+
 const songModelResponse = (
   row: typeof songModelsTable.$inferSelect,
-) => ({
-  id: row.id,
-  projectId: row.projectId,
-  sourceId: row.sourceId,
-  version: row.version,
-  status: row.status,
-  parentModelId: row.parentModelId,
-  correction: row.correction,
-  ...normalizeSongModel(row.model),
-  providers: row.providers,
-  confidence: row.confidence,
-  createdAt: iso(row.createdAt),
-});
+) => {
+  const model = normalizeSongModel(row.model) as SongModelData;
+  const quality = normalizeSongModelQuality(model);
+  const legacyProviderProvenance = Array.isArray(model.provenance)
+    ? model.provenance
+    : [];
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    sourceId: row.sourceId,
+    version: row.version,
+    status: row.status,
+    parentModelId: row.parentModelId,
+    correction: row.correction,
+    ...model,
+    providerProvenance: model.providerProvenance ?? legacyProviderProvenance,
+    ...quality,
+    providers: row.providers,
+    confidence: aggregateSongModelConfidence(quality.fieldStatus),
+    createdAt: iso(row.createdAt),
+  };
+};
 
 /**
  * Completed models live in JSONB and older rows predate newer analysis
@@ -747,6 +806,25 @@ router.get("/projects/:projectId/sources", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
+  const [project] = await db
+    .select()
+    .from(musicProjectsTable)
+    .where(eq(musicProjectsTable.id, params.data.projectId))
+    .limit(1);
+  if (!project) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+  if (project.ownerId) {
+    if (!req.isAuthenticated()) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    if (project.ownerId !== req.user.id) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+  }
   const sources = await db
     .select()
     .from(projectSourcesTable)
@@ -934,6 +1012,25 @@ router.get("/projects/:projectId/song-model", async (req, res): Promise<void> =>
     res.status(400).json({ error: params.error.message });
     return;
   }
+  const [project] = await db
+    .select()
+    .from(musicProjectsTable)
+    .where(eq(musicProjectsTable.id, params.data.projectId))
+    .limit(1);
+  if (!project) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+  if (project.ownerId) {
+    if (!req.isAuthenticated()) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    if (project.ownerId !== req.user.id) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+  }
   const [songModel] = await db
     .select()
     .from(songModelsTable)
@@ -1014,8 +1111,60 @@ router.patch("/projects/:projectId/song-model", async (req, res): Promise<void> 
   const existingTempo = latest.model.tempoMap[0];
   const existingKey = latest.model.keyMap[0];
   const existingMeter = latest.model.meterMap[0];
-  const correctedModel = {
+  const editedFieldStatus = {
+    ...latest.model.fieldStatus,
+    ...(correction.bpm === undefined
+      ? {}
+      : {
+          tempo: {
+            ...latest.model.fieldStatus?.tempo,
+            status: "detected" as const,
+            confidence: latest.model.fieldStatus?.tempo?.confidence ?? null,
+            providers: latest.model.fieldStatus?.tempo?.providers ?? [],
+            message: "User-edited value; detected provider output remains in provenance.",
+            edited: true,
+          },
+        }),
+    ...(correction.key === undefined
+      ? {}
+      : {
+          key: {
+            ...latest.model.fieldStatus?.key,
+            status: "detected" as const,
+            confidence: latest.model.fieldStatus?.key?.confidence ?? null,
+            providers: latest.model.fieldStatus?.key?.providers ?? [],
+            message: "User-edited value; detected provider output remains in provenance.",
+            edited: true,
+          },
+        }),
+    ...(correction.meter === undefined
+      ? {}
+      : {
+          meter: {
+            ...latest.model.fieldStatus?.meter,
+            status: "detected" as const,
+            confidence: latest.model.fieldStatus?.meter?.confidence ?? null,
+            providers: latest.model.fieldStatus?.meter?.providers ?? [],
+            message: "User-edited value; detected provider output remains in provenance.",
+            edited: true,
+          },
+        }),
+    ...(correction.sections === undefined
+      ? {}
+      : {
+          sections: {
+            ...latest.model.fieldStatus?.sections,
+            status: "detected" as const,
+            confidence: latest.model.fieldStatus?.sections?.confidence ?? null,
+            providers: latest.model.fieldStatus?.sections?.providers ?? [],
+            message: "User-edited value; detected provider output remains in provenance.",
+            edited: true,
+          },
+        }),
+  };
+  const correctedModel: SongModelData = {
     ...latest.model,
+    fieldStatus: editedFieldStatus,
     ...(correction.bpm === undefined
       ? {}
       : {
@@ -1143,6 +1292,25 @@ router.get("/projects/:projectId/analysis-jobs", async (req, res): Promise<void>
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
     return;
+  }
+  const [project] = await db
+    .select()
+    .from(musicProjectsTable)
+    .where(eq(musicProjectsTable.id, params.data.projectId))
+    .limit(1);
+  if (!project) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+  if (project.ownerId) {
+    if (!req.isAuthenticated()) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    if (project.ownerId !== req.user.id) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
   }
   const jobs = await db
     .select()

@@ -18,7 +18,9 @@ import type { SongModelAudio } from './songModelAudio';
 import type { SongModelConfidenceByField } from './songModelConfidenceByField';
 import type { SongModelContractVersion } from './songModelContractVersion';
 import type { SongModelCorrection } from './songModelCorrection';
+import type { SongModelFieldStatus } from './songModelFieldStatus';
 import type { SongModelFusion } from './songModelFusion';
+import type { SongModelProvenance } from './songModelProvenance';
 import type { SongModelStatus } from './songModelStatus';
 import type { SongModelStem } from './songModelStem';
 import type { SongModelValidation } from './songModelValidation';
@@ -62,7 +64,9 @@ export interface SongModel {
   sourceStems: SourceStem[];
   lyrics: LyricEvent[];
   confidenceByField: SongModelConfidenceByField;
-  provenance: ProviderProvenance[];
+  providerProvenance: ProviderProvenance[];
+  fieldStatus: SongModelFieldStatus;
+  provenance: SongModelProvenance;
   providers: string[];
   /**
      * @minimum 0

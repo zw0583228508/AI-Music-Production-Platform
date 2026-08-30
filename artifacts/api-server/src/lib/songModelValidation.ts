@@ -689,8 +689,13 @@ export function validateCanonicalSongModel(input: unknown): ValidationResult<Son
   }
   if (
     !isRecord(input.fusion) ||
-    typeof input.fusion.selectedProvider !== "string" ||
-    !input.fusion.selectedProvider.trim() ||
+    !(
+      input.fusion.selectedProvider === null ||
+      (
+        typeof input.fusion.selectedProvider === "string" &&
+        input.fusion.selectedProvider.trim()
+      )
+    ) ||
     !isFiniteNumber(input.fusion.confidence) ||
     input.fusion.confidence < 0 ||
     input.fusion.confidence > 1 ||
@@ -747,16 +752,23 @@ export function validateCanonicalSongModel(input: unknown): ValidationResult<Son
     const selected = decisions.filter((decision) =>
       isRecord(decision) && decision.status === "selected"
     );
+    const selectedProvider = input.fusion.selectedProvider;
     if (
-      selected.length !== 1 ||
-      !isRecord(selected[0]) ||
-      selected[0].provider !== input.fusion.selectedProvider
+      (selectedProvider === null && selected.length !== 0) ||
+      (
+        selectedProvider !== null &&
+        (
+          selected.length !== 1 ||
+          !isRecord(selected[0]) ||
+          selected[0].provider !== selectedProvider
+        )
+      )
     ) {
       issues.push(issue(
         "INVALID_SELECTED_PROVIDER",
         "error",
         "fusion.selectedProvider",
-        "Fusion metadata must identify exactly one selected provider.",
+        "Fusion metadata must identify exactly one selected provider, or none when all candidates were rejected.",
       ));
     }
   }

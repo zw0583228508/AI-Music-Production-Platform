@@ -62,6 +62,14 @@ export type ExportFileRecord = {
   url: string;
 };
 
+export type SongModelField =
+  | "tempo"
+  | "meter"
+  | "key"
+  | "melody"
+  | "harmony"
+  | "sections"
+  | "energy";
 export type SongModelValidationIssue = {
   code: string;
   severity: "error" | "warning";
@@ -76,7 +84,7 @@ export type SongModelData = SongModelCore & {
     issues: SongModelValidationIssue[];
   };
   fusion: {
-    selectedProvider: string;
+    selectedProvider: string | null;
     confidence: number;
     decisions: ProviderFusionDecision[];
   };
@@ -125,7 +133,7 @@ export type SongModelData = SongModelCore & {
     confidence: number;
   }>;
   confidenceByField: Record<string, number>;
-  provenance: Array<{
+  providerProvenance: Array<{
     capability: string;
     provider: string;
     version: string;
@@ -134,6 +142,8 @@ export type SongModelData = SongModelCore & {
     errorCode?: string;
     errorMessage?: string;
   }>;
+  fieldStatus?: Partial<Record<SongModelField, SongModelFieldStatus>>;
+  provenance?: Partial<Record<SongModelField, string[]>>;
 };
 
 export type SongModelCorrection = {
@@ -513,6 +523,13 @@ export type SongModelCore = {
   energy: number[];
 };
 
+export type SongModelFieldStatus = {
+  status: "detected" | "low_confidence" | "failed" | "not_available";
+  confidence: number | null;
+  providers: string[];
+  message: string | null;
+  edited: boolean;
+};
 export type ArrangementGenerationProvenance = {
   jobId: string;
   candidateId: string;

@@ -1,6 +1,6 @@
 import type { AnalysisSection, SongModelData } from "@workspace/db";
 
-type ProviderProvenance = SongModelData["provenance"][number];
+type ProviderProvenance = SongModelData["providerProvenance"][number];
 type MelodyNote = SongModelData["melody"][number];
 type ChordEvent = SongModelData["chords"][number];
 type BeatEvent = SongModelData["beats"][number];
