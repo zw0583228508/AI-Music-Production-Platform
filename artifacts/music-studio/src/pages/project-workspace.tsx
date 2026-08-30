@@ -42,7 +42,8 @@ import {
   Download,
   FileArchive,
   Loader2,
-  Grid3X3
+  Grid3X3,
+  ShieldCheck
 } from "lucide-react";
 
 import { EmptyState } from "@/components/ui/empty";
@@ -99,7 +100,6 @@ export default function ProjectWorkspace() {
   const generateArrangement = useGenerateArrangement();
   const selectGenerationCandidate = useSelectGenerationCandidate();
   const createExport = useCreateProjectExport();
-  // const runCopilot = useRunCopilot(); // We'll mock copilot if it's not exported, but let's assume it is
 
   const [activeTab, setActiveTab] = useState("editor");
   const [revisionPreviewing, setRevisionPreviewing] = useState(false);
@@ -115,7 +115,12 @@ export default function ProjectWorkspace() {
   const [editorSelection, setEditorSelection] = useState<EditorSelection>(null);
   const [copilotEditorResult, setCopilotEditorResult] = useState<CopilotEditorResult | null>(null);
   const runCopilot = useRunCopilot();
-  const [copilotMessages, setCopilotMessages] = useState<Array<{role: 'user'|'assistant', text: string, operations?: any[]}>>([
+  const [copilotMessages, setCopilotMessages] = useState<Array<{
+    role: 'user'|'assistant';
+    text: string;
+    operations?: any[];
+    interpreter?: "openai" | "deterministic";
+  }>>([
     { role: 'assistant', text: "Hi! I'm your studio assistant. I can help analyze the track, tweak arrangement parameters, or suggest structural changes. What would you like to do?" }
   ]);
 
@@ -462,7 +467,8 @@ export default function ProjectWorkspace() {
         setCopilotMessages(prev => [...prev, { 
           role: 'assistant', 
           text: res.reply,
-          operations: res.operations
+           operations: res.operations,
+           interpreter: res.interpreter,
         }]);
         setCopilotEditorResult(res);
         // Also refresh arrangement / project data just in case copilot changed something!
@@ -890,6 +896,21 @@ export default function ProjectWorkspace() {
               {copilotMessages.map((msg, i) => (
                 <div key={i} className={cn("p-3 rounded-lg", msg.role === 'assistant' ? "bg-muted rounded-tl-none" : "bg-primary text-primary-foreground rounded-tr-none ml-6")}>
                   <p className={msg.operations?.length ? "mb-2" : ""}>{msg.text}</p>
+                   {msg.role === "assistant" && msg.interpreter && (
+                     <Badge
+                       variant="outline"
+                       className={cn(
+                         "mb-2 h-5 text-[10px]",
+                         msg.interpreter === "openai"
+                           ? "border-sky-500/30 bg-sky-500/10 text-sky-700"
+                           : "border-amber-500/30 bg-amber-500/10 text-amber-700",
+                       )}
+                     >
+                       {msg.interpreter === "openai" ? "AI interpreted" : (
+                         <><ShieldCheck className="mr-1 h-3 w-3" />Safe local fallback</>
+                       )}
+                     </Badge>
+                   )}
                   {msg.operations && msg.operations.length > 0 && (
                     <div className="bg-background text-foreground rounded border p-2 text-xs font-mono space-y-1">
                       {msg.operations.map((op, j) => (

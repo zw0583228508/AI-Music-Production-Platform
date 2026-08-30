@@ -6,9 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { CopilotOperation } from './copilotOperation';
+import type { CopilotResultInterpreter } from './copilotResultInterpreter';
 
 export interface CopilotResult {
   reply: string;
   operations: CopilotOperation[];
   affectedSections: string[];
+  interpreter: CopilotResultInterpreter;
 }

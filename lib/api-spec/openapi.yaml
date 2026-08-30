@@ -1887,7 +1887,7 @@ components:
         endBar: { type: number, minimum: 1 }
     CopilotResult:
       type: object
-      required: [reply, operations, affectedSections]
+      required: [reply, operations, affectedSections, interpreter]
       properties:
         reply: { type: string }
         operations:
@@ -1897,6 +1897,9 @@ components:
         affectedSections:
           type: array
           items: { type: string }
+        interpreter:
+          type: string
+          enum: [openai, deterministic]
     CopilotOperation:
       type: object
       required: [type, label]

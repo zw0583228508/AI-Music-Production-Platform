@@ -142,7 +142,14 @@ function parseModelOutput(content: string, command: string, scope: CopilotScope)
   } catch {
     return null;
   }
-  const parsed = RunCopilotResponse.safeParse(decoded);
+  // Provenance is assigned by this server, never accepted from model output.
+  // Injecting it for validation keeps the public response schema strict while
+  // ensuring a model cannot claim that it was not the interpreter.
+  const parsed = RunCopilotResponse.safeParse(
+    decoded && typeof decoded === "object" && !Array.isArray(decoded)
+      ? { ...decoded, interpreter: "openai" }
+      : decoded,
+  );
   if (!parsed.success || parsed.data.operations.length === 0) return null;
   const operationScope = scopeFields(scope);
   const modelOperations = parsed.data.operations
@@ -168,7 +175,10 @@ function parseModelOutput(content: string, command: string, scope: CopilotScope)
       if (operations[index]?.type === "REFINE_ARRANGEMENT") operations.splice(index, 1);
     }
   }
-  if (!operations.length) return null;
+  const hasAcceptedModelOperation = modelOperations.some((operation) =>
+    operations.includes(operation)
+  );
+  if (!operations.length || !hasAcceptedModelOperation) return null;
   const affectedSections = affectedSectionsFor(command.toLowerCase(), scope, parsed.data.affectedSections);
   return {
     reply: parsed.data.reply,

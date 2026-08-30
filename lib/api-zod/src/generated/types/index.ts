@@ -49,6 +49,7 @@ export * from './controlEvent';
 export * from './copilotInput';
 export * from './copilotOperation';
 export * from './copilotResult';
+export * from './copilotResultInterpreter';
 export * from './dashboard';
 export * from './editorChordEvent';
 export * from './editorChordEventQuality';

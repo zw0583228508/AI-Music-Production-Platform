@@ -1105,6 +1105,33 @@ export interface ArrangementRevisionSummary {
   conductorControls: string[];
   candidateSelectionChanged: boolean;
 }
+
+export interface ArrangementRevisionSnapshot {
+  name: string;
+  harmonyComplexity: number;
+  energy: number;
+  density: number;
+  orchestraSize: number;
+  rhythmIntensity: number;
+  /** @nullable */
+  selectedCandidateId: string | null;
+  sections: ArrangementSection[];
+}
+
+export interface ArrangementRevision {
+  id: string;
+  arrangementId: string;
+  version: number;
+  snapshot: ArrangementRevisionSnapshot;
+  summary: ArrangementRevisionSummary;
+  createdAt: string;
+}
+
+export interface RestoreArrangementRevisionInput {
+  /** @minimum 1 */
+  expectedVersion: number;
+}
+
 export type GenerationInputProvider = typeof GenerationInputProvider[keyof typeof GenerationInputProvider];
 
 
@@ -1574,6 +1601,14 @@ export interface CopilotInput {
   endBar?: number;
 }
 
+export type CopilotResultInterpreter = typeof CopilotResultInterpreter[keyof typeof CopilotResultInterpreter];
+
+
+export const CopilotResultInterpreter = {
+  openai: 'openai',
+  deterministic: 'deterministic',
+} as const;
+
 export interface CopilotOperation {
   type: string;
   label: string;
@@ -1589,6 +1624,7 @@ export interface CopilotResult {
   reply: string;
   operations: CopilotOperation[];
   affectedSections: string[];
+  interpreter: CopilotResultInterpreter;
 }
 
 export type StyleSpecTempoCharacter = typeof StyleSpecTempoCharacter[keyof typeof StyleSpecTempoCharacter];
@@ -1662,28 +1698,3 @@ returnTo?: string;
 export type LogoutBrowserSessionParams = {
 returnTo?: string;
 };
-export interface RestoreArrangementRevisionInput {
-  /** @minimum 1 */
-  expectedVersion: number;
-}
-
-export interface ArrangementRevisionSnapshot {
-  name: string;
-  harmonyComplexity: number;
-  energy: number;
-  density: number;
-  orchestraSize: number;
-  rhythmIntensity: number;
-  /** @nullable */
-  selectedCandidateId: string | null;
-  sections: ArrangementSection[];
-}
-
-export interface ArrangementRevision {
-  id: string;
-  arrangementId: string;
-  version: number;
-  snapshot: ArrangementRevisionSnapshot;
-  summary: ArrangementRevisionSummary;
-  createdAt: string;
-}

@@ -51,6 +51,7 @@ export type EditorSelection =
   | null;
 
 export type CopilotEditorResult = {
+  interpreter: "openai" | "deterministic";
   operations: Array<{
     type: string;
     label: string;

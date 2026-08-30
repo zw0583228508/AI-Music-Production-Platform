@@ -2498,6 +2498,7 @@ router.post("/projects/:projectId/copilot", async (req, res): Promise<void> => {
       : interpretation.reply,
     operations: interpretation.operations,
     affectedSections: interpretation.affectedSections,
+    interpreter: interpretation.interpreter,
   }));
 });
 

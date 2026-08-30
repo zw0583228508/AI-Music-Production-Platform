@@ -7,7 +7,7 @@ Never attribute musical output to an external model unless that provider is actu
 
 **Why:** Convincing fallback data can otherwise look like a successful AI-provider result, making musical provenance and quality claims unreliable.
 
-**How to apply:** Keep unavailable providers visible as unavailable, validate canonical contracts before persistence, and preserve provider/version provenance with every result.
+**How to apply:** Keep unavailable providers visible as unavailable, validate canonical contracts before persistence, and preserve provider/version provenance with every result. Assign interpreter provenance on the server after execution; never accept a model's own claim about which interpreter ran. If validation removes every provider contribution and local logic supplies the result, classify the whole result as fallback.
 
 Provider trust boundaries start before JSON parsing and continue through artifact persistence: bound response bytes, validate copied media locally, and never treat provider-reported object paths as ownership proof. Fusion provenance requires independent corroborating evidence.
 
