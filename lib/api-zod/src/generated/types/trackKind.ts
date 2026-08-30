@@ -6,6 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface HealthStatus {
-  status: string;
-}
+export type TrackKind = typeof TrackKind[keyof typeof TrackKind];
+
+
+export const TrackKind = {
+  audio: 'audio',
+  midi: 'midi',
+} as const;

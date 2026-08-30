@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "AI Music Production Studio"
+description = "A professional AI music production workspace that analyzes songs, creates structured arrangements, manages stems and tracks, and exports editable music projects."
+version = "1.0.0"
+id = "artifacts/music-studio"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22226
+
+[services.development]
+run = "pnpm --filter @workspace/music-studio run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/music-studio", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/music-studio/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22226"
+BASE_PATH = "/"

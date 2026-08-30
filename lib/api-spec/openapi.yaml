@@ -3,13 +3,21 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: API for the AI Music Production Studio
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: dashboard
+    description: Studio dashboard summaries
+  - name: projects
+    description: Song projects and analysis
+  - name: arrangements
+    description: Arrangement plans and generations
+  - name: studio
+    description: Tracks, artifacts, and copilot commands
 paths:
   /healthz:
     get:
@@ -24,7 +32,239 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [dashboard]
+      summary: Get studio dashboard
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dashboard"
+  /projects:
+    get:
+      operationId: listProjects
+      tags: [projects]
+      summary: List music projects
+      responses:
+        "200":
+          description: Project list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+    post:
+      operationId: createProject
+      tags: [projects]
+      summary: Create a music project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectInput"
+      responses:
+        "201":
+          description: Created project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+  /projects/{projectId}:
+    get:
+      operationId: getProject
+      tags: [projects]
+      summary: Get project workspace data
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectWorkspace"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /projects/{projectId}/analyze:
+    post:
+      operationId: analyzeProject
+      tags: [projects]
+      summary: Analyze a source recording
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalysisInput"
+      responses:
+        "200":
+          description: Updated analysis
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Analysis"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /projects/{projectId}/arrangements:
+    get:
+      operationId: listArrangements
+      tags: [arrangements]
+      summary: List arrangement versions
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Arrangement versions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Arrangement"
+    post:
+      operationId: createArrangement
+      tags: [arrangements]
+      summary: Create an arrangement plan
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArrangementInput"
+      responses:
+        "201":
+          description: Created arrangement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Arrangement"
+  /arrangements/{arrangementId}:
+    patch:
+      operationId: updateArrangement
+      tags: [arrangements]
+      summary: Update arrangement controls
+      parameters:
+        - $ref: "#/components/parameters/ArrangementId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArrangementUpdate"
+      responses:
+        "200":
+          description: Updated arrangement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Arrangement"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /arrangements/{arrangementId}/generate:
+    post:
+      operationId: generateArrangement
+      tags: [arrangements]
+      summary: Generate arrangement candidates
+      parameters:
+        - $ref: "#/components/parameters/ArrangementId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerationInput"
+      responses:
+        "200":
+          description: Generated arrangement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerationResult"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /projects/{projectId}/tracks:
+    get:
+      operationId: listTracks
+      tags: [studio]
+      summary: List project tracks
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Track list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Track"
+  /projects/{projectId}/artifacts:
+    get:
+      operationId: listArtifacts
+      tags: [studio]
+      summary: List project artifacts
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Artifact list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Artifact"
+  /projects/{projectId}/copilot:
+    post:
+      operationId: runCopilot
+      tags: [studio]
+      summary: Interpret an arranger copilot command
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CopilotInput"
+      responses:
+        "200":
+          description: Parsed copilot operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CopilotResult"
 components:
+  parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+    ArrangementId:
+      name: arrangementId
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +273,252 @@ components:
           type: string
       required:
         - status
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+    Dashboard:
+      type: object
+      required: [activeProjects, totalRenders, savedArtifacts, recentActivity]
+      properties:
+        activeProjects:
+          type: integer
+        totalRenders:
+          type: integer
+        savedArtifacts:
+          type: integer
+        recentActivity:
+          type: array
+          items:
+            $ref: "#/components/schemas/Activity"
+    Activity:
+      type: object
+      required: [id, title, detail, time, type]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        detail: { type: string }
+        time: { type: string }
+        type:
+          type: string
+          enum: [analysis, arrangement, render, export]
+    ProjectInput:
+      type: object
+      required: [name, sourceType]
+      properties:
+        name: { type: string, minLength: 1 }
+        sourceType:
+          type: string
+          enum: [FULL_SONG, VOCAL_ONLY, SOLO_INSTRUMENT, INSTRUMENTAL, MIDI, VIDEO]
+        sourceName: { type: ["string", "null"] }
+    Project:
+      type: object
+      required: [id, name, sourceType, status, updatedAt, duration, key, bpm]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        sourceType:
+          type: string
+          enum: [FULL_SONG, VOCAL_ONLY, SOLO_INSTRUMENT, INSTRUMENTAL, MIDI, VIDEO]
+        status:
+          type: string
+          enum: [draft, analyzing, ready, rendering]
+        updatedAt: { type: string }
+        duration: { type: string }
+        key: { type: string }
+        bpm: { type: number }
+        coverColor: { type: string }
+    ProjectWorkspace:
+      type: object
+      required: [project, analysis, arrangements, tracks, artifacts]
+      properties:
+        project:
+          $ref: "#/components/schemas/Project"
+        analysis:
+          $ref: "#/components/schemas/Analysis"
+        arrangements:
+          type: array
+          items:
+            $ref: "#/components/schemas/Arrangement"
+        tracks:
+          type: array
+          items:
+            $ref: "#/components/schemas/Track"
+        artifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/Artifact"
+    AnalysisInput:
+      type: object
+      properties:
+        provider:
+          type: string
+          enum: [BS_ROFORMER_SW, ALL_IN_ONE, MT3, BASIC_PITCH, FUSION]
+        refresh:
+          type: boolean
+    Analysis:
+      type: object
+      required: [bpm, meter, key, confidence, sections, energy, providers]
+      properties:
+        bpm: { type: number }
+        meter: { type: string }
+        key: { type: string }
+        confidence: { type: number }
+        sections:
+          type: array
+          items:
+            $ref: "#/components/schemas/Section"
+        energy:
+          type: array
+          items: { type: number }
+        providers:
+          type: array
+          items: { type: string }
+    Section:
+      type: object
+      required: [name, startBar, endBar, energy]
+      properties:
+        name: { type: string }
+        startBar: { type: integer }
+        endBar: { type: integer }
+        energy: { type: number }
+    ArrangementInput:
+      type: object
+      required: [name, style, harmonyComplexity, mode]
+      properties:
+        name: { type: string, minLength: 1 }
+        style: { type: string }
+        harmonyComplexity: { type: integer, minimum: 1, maximum: 10 }
+        mode:
+          type: string
+          enum: [QUICK_ARRANGE, STUDIO, PRO_SCORE]
+    ArrangementUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        harmonyComplexity: { type: integer, minimum: 1, maximum: 10 }
+        energy: { type: number, minimum: 0, maximum: 1 }
+        density: { type: number, minimum: 0, maximum: 1 }
+        orchestraSize: { type: number, minimum: 0, maximum: 1 }
+        rhythmIntensity: { type: number, minimum: 0, maximum: 1 }
+    Arrangement:
+      type: object
+      required: [id, projectId, name, style, mode, version, status, harmonyComplexity, energy, density, orchestraSize, rhythmIntensity, sections, createdAt]
+      properties:
+        id: { type: string }
+        projectId: { type: string }
+        name: { type: string }
+        style: { type: string }
+        mode:
+          type: string
+          enum: [QUICK_ARRANGE, STUDIO, PRO_SCORE]
+        version: { type: integer }
+        status:
+          type: string
+          enum: [draft, generating, ready]
+        harmonyComplexity: { type: integer }
+        energy: { type: number }
+        density: { type: number }
+        orchestraSize: { type: number }
+        rhythmIntensity: { type: number }
+        sections:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArrangementSection"
+        createdAt: { type: string }
+    ArrangementSection:
+      type: object
+      required: [name, energy, density, tracks]
+      properties:
+        name: { type: string }
+        energy: { type: number }
+        density: { type: number }
+        tracks:
+          type: array
+          items: { type: string }
+    GenerationInput:
+      type: object
+      properties:
+        candidates: { type: integer, minimum: 1, maximum: 3 }
+        provider:
+          type: string
+          enum: [ACE_STEP_BASE, ANYACCOMP, SYMPHONYGEN, METEOR, CUSTOM]
+        seed: { type: integer }
+    GenerationResult:
+      type: object
+      required: [arrangement, candidates, selectedCandidate]
+      properties:
+        arrangement:
+          $ref: "#/components/schemas/Arrangement"
+        candidates:
+          type: array
+          items:
+            $ref: "#/components/schemas/Candidate"
+        selectedCandidate: { type: string }
+    Candidate:
+      type: object
+      required: [id, label, score, summary]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        score: { type: number }
+        summary: { type: string }
+    Track:
+      type: object
+      required: [id, projectId, name, role, kind, color, volume, muted, solo, status]
+      properties:
+        id: { type: string }
+        projectId: { type: string }
+        name: { type: string }
+        role: { type: string }
+        kind:
+          type: string
+          enum: [audio, midi]
+        color: { type: string }
+        volume: { type: number }
+        muted: { type: boolean }
+        solo: { type: boolean }
+        status:
+          type: string
+          enum: [source, generated, rendered]
+    Artifact:
+      type: object
+      required: [id, projectId, type, label, version, size, format, createdAt]
+      properties:
+        id: { type: string }
+        projectId: { type: string }
+        type:
+          type: string
+          enum: [SOURCE, NORMALIZED_AUDIO, STEM, ANALYSIS, SONG_MODEL, ARRANGEMENT_PLAN, MIDI, AUDIO_TRACK, MIX, MASTER, EXPORT]
+        label: { type: string }
+        version: { type: integer }
+        size: { type: string }
+        format: { type: string }
+        createdAt: { type: string }
+        url: { type: ["string", "null"] }
+    CopilotInput:
+      type: object
+      required: [command]
+      properties:
+        command: { type: string, minLength: 1 }
+    CopilotResult:
+      type: object
+      required: [reply, operations, affectedSections]
+      properties:
+        reply: { type: string }
+        operations:
+          type: array
+          items:
+            $ref: "#/components/schemas/CopilotOperation"
+        affectedSections:
+          type: array
+          items: { type: string }
+    CopilotOperation:
+      type: object
+      required: [type, label]
+      properties:
+        type: { type: string }
+        label: { type: string }
 
