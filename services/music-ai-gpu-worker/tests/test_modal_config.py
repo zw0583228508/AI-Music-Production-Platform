@@ -82,9 +82,13 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             self.assertNotIn("MUSIC_GPU_SOURCE_IMAGE_DIGEST", build_args)
 
     def test_source_identity_is_runtime_only(self):
-        dockerfile = (ROOT / "Dockerfile").read_text()
         modal_app = (ROOT / "modal_app.py").read_text()
-        self.assertNotIn("MUSIC_GPU_SOURCE_IMAGE_DIGEST", dockerfile)
+        for provider in modal_config.DEPLOYMENTS:
+            dockerfile = ROOT / f"Dockerfile.{provider.lower().replace('_', '-')}"
+            self.assertTrue(dockerfile.is_file())
+            self.assertNotIn(
+                "MUSIC_GPU_SOURCE_IMAGE_DIGEST", dockerfile.read_text()
+            )
         self.assertNotIn("MUSIC_GPU_SOURCE_IMAGE_DIGEST", modal_app)
         for deployment in modal_config.DEPLOYMENTS.values():
             self.assertEqual(
@@ -93,6 +97,38 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
                 ],
                 deployment.source_image_digest,
             )
+
+    def test_source_digest_covers_every_copied_executable_input(self):
+        source = (ROOT / "modal_config.py").read_text()
+        for required_input in (
+            'SOURCE_ROOT / "app.py"',
+            'SOURCE_ROOT / "modal_config.py"',
+            'SOURCE_ROOT / "model_manifest.json"',
+            'SOURCE_ROOT / "runners" / "__init__.py"',
+            'SOURCE_ROOT / "runners" / "common.py"',
+            'SOURCE_ROOT / "runners" / f"{provider.lower()}.py"',
+        ):
+            self.assertIn(required_input, source)
+        for provider, deployment in modal_config.DEPLOYMENTS.items():
+            dockerfile = (
+                ROOT / f"Dockerfile.{provider.lower().replace('_', '-')}"
+            ).read_text()
+            self.assertNotIn("COPY services/music-ai-gpu-worker /app", dockerfile)
+            self.assertIn(
+                "app.py services/music-ai-gpu-worker/modal_config.py "
+                "services/music-ai-gpu-worker/model_manifest.json /app/",
+                dockerfile,
+            )
+            self.assertIn(
+                f"runners/{provider.lower()}.py /app/runners/",
+                dockerfile,
+            )
+            self.assertIn(
+                f"runners/{deployment.requirements_file} /tmp/provider-requirements.txt",
+                dockerfile,
+            )
+            self.assertIn("MUSIC_GPU_SOURCE_ROOT=/provenance", dockerfile)
+            self.assertIn("/provenance/runners/", dockerfile)
 
     def test_secret_and_volume_names_are_explicitly_versioned(self):
         self.assertEqual(modal_config.RUNTIME_SECRET_NAME, "music-ai-worker-runtime")
@@ -105,18 +141,25 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
         self.assertEqual(source.count("@modal.concurrent(max_inputs=1)"), 4)
         self.assertNotIn('"max_inputs":', source)
 
-    def test_modal_selection_defaults_to_only_verified_ace_and_is_strict(self):
-        with mock.patch.dict(__import__("os").environ, {}, clear=False):
-            __import__("os").environ.pop("MUSIC_GPU_MODAL_DEPLOY_PROVIDERS", None)
-            self.assertEqual(set(modal_config.selected_deployments()), {"ACE_STEP"})
-        self.assertEqual(
-            set(modal_config.selected_deployments("MT3,BS_ROFORMER")),
-            {"MT3", "BS_ROFORMER"},
-        )
-        with self.assertRaisesRegex(ValueError, "must not be empty"):
-            modal_config.selected_deployments(" , ")
-        with self.assertRaisesRegex(ValueError, "unknown"):
-            modal_config.selected_deployments("NOT_A_PROVIDER")
+    def test_modal_images_use_distinct_provider_dockerfiles(self):
+        source = (ROOT / "modal_app.py").read_text()
+        self.assertNotIn("MUSIC_GPU_MODAL_DEPLOY_PROVIDERS", source)
+        self.assertEqual(source.count("modal.Image.from_dockerfile("), 4)
+        dockerfiles = {
+            provider: ROOT / f"Dockerfile.{provider.lower().replace('_', '-')}"
+            for provider in modal_config.DEPLOYMENTS
+        }
+        self.assertEqual(len(set(dockerfiles.values())), 4)
+        for provider, dockerfile in dockerfiles.items():
+            self.assertTrue(dockerfile.is_file())
+            self.assertIn(
+                f"Modal image identity: {provider}",
+                dockerfile.read_text(),
+            )
+            self.assertIn(
+                f'PROVIDER_DOCKERFILES["{provider}"]',
+                source,
+            )
 
     def test_ace_step_uses_its_official_cuda_128_stack(self):
         ace = modal_config.DEPLOYMENTS["ACE_STEP"]

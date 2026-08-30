@@ -61,19 +61,21 @@ runs as an unprivileged `music-ai` user.
 worker but enables only its own provider. MusicGen is deliberately not a Modal
 priority deployment.
 
-`MUSIC_GPU_MODAL_DEPLOY_PROVIDERS` is a strict comma-separated deployment
-allowlist. It defaults to `ACE_STEP`, the only provider with a verified public
-checkpoint snapshot. An explicitly empty value or unknown provider aborts
-module evaluation. For example, after separately validating and mounting MT3:
+All four endpoint classes are always defined and deployed. Modal imports this
+module again inside each remote container, so deploy-time-only selection
+variables cannot safely control class definitions. Deployment does not imply
+readiness: providers without verified checkpoints remain fail-closed.
 
 ```sh
-MUSIC_GPU_PUBLIC_ORIGIN_ACE_STEP=https://workspace--music-ai-gpu-worker-ace-step.modal.run \
-MUSIC_GPU_MODAL_DEPLOY_PROVIDERS=ACE_STEP,MT3 \
+MUSIC_GPU_PUBLIC_ORIGIN_ACE_STEP=https://workspace--ace-step.modal.run \
+MUSIC_GPU_PUBLIC_ORIGIN_BS_ROFORMER=https://workspace--bs-roformer.modal.run \
+MUSIC_GPU_PUBLIC_ORIGIN_MT3=https://workspace--mt3.modal.run \
+MUSIC_GPU_PUBLIC_ORIGIN_ALL_IN_ONE=https://workspace--all-in-one.modal.run \
   modal deploy services/music-ai-gpu-worker/modal_app.py
 ```
 
 Set one exact `MUSIC_GPU_PUBLIC_ORIGIN_<PROVIDER>` at deploy time for every
-selected provider. The worker receives it as `MUSIC_GPU_PUBLIC_ORIGIN` and
+provider. The worker receives it as `MUSIC_GPU_PUBLIC_ORIGIN` and
 fails health/submission closed when it is absent or differs from the request
 origin.
 
@@ -85,14 +87,32 @@ stack until their checkpoint/runtime combination is validated.
 It remains bearer-protected by `MUSIC_AI_WORKER_TOKEN`; endpoint URLs are not
 an authorization boundary and must not be placed in clients.
 
-The Modal image is built from the checked-in Dockerfile, retaining its pinned
-CUDA, Python, PyTorch, Transformers, Accelerate, and `uv` identities. Separate
-durable Volumes hold models, SQLite jobs, and runner outputs. Provider classes
-have one concurrent input and exactly one container because the FastAPI worker
-uses a process-local task registry around its durable SQLite journal.
+Each Modal image is built from a checked-in provider-specific Dockerfile,
+retaining its pinned CUDA, Python, PyTorch, Transformers, Accelerate, and `uv`
+identities. Distinct Dockerfile paths are required because Modal identifies
+Dockerfile images before applying build arguments; sharing one path can silently
+substitute another provider's dependency stack. Separate durable Volumes hold
+models, SQLite jobs, and runner outputs. Provider classes have one concurrent
+input and exactly one container because the FastAPI worker uses a process-local
+task registry around its durable SQLite journal.
 Each provider image installs only its own pinned
 `runners/requirements-<provider>.txt` dependency set during its OCI build; it
 does not download weights or executable model code while serving a request.
+
+### Verified provider capability matrix
+
+| Provider | Modal GPU/runtime | Installed adapter | Checkpoint and smoke status | API readiness |
+| --- | --- | --- | --- | --- |
+| ACE-Step 1.5 | L40S; CUDA 12.8.1; Torch 2.10.0+cu128 | Official ACE-Step source at `ca1e85fe9430179831e6bc6be790c332190a3866` | Composite checkpoint SHA verified; real GPU smoke passed | `ready` |
+| BS-RoFormer | L4; CUDA 12.4.1; Torch 2.5.1+cu124 | `bs-roformer-infer==0.1.5` | No unambiguous immutable Viperx-v1 checkpoint source; no real smoke | `configured`, blocked |
+| MT3 | L4; CUDA 12.4.1; Torch 2.5.1+cu124 | `mt3-infer` at `331519f1951d3d198aef01664bb0406512f97c77` | No verified public T5X/converted checkpoint snapshot; no real smoke | `configured`, blocked |
+| All-In-One | L4; CUDA 12.4.1; Torch 2.5.1+cu124 | `all-in-one-infer` at `3c93b4ae389328544dd5955af7497030cb1bca3a` | No verified immutable weight snapshot; no real smoke | `configured`, blocked |
+
+`runtimeReady=true` for the three blocked providers proves their isolated image,
+CUDA/Torch stack, and adapter import are usable. It is not permission to route
+jobs: `checkpointReady=false`, `smokeTested=false`, and `healthy=false` keep
+them unavailable until immutable sources, licenses, revisions, SHA-256 values,
+and real model-specific GPU smoke results are established.
 
 Create the volumes before deployment. The application deliberately uses
 `create_if_missing=False`: an accidentally empty volume must make deployment

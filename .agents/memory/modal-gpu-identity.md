@@ -14,3 +14,9 @@ Treat mounted model snapshots as immutable. If an upstream loader syncs code, ca
 **Why:** ACE-Step initialization overwrites model-adjacent Python files, which changes an otherwise canonical checkpoint digest after successful inference.
 
 **How to apply:** Reject checkpoint symlink escapes, hash the canonical aggregate snapshot, direct loader writes to temporary storage, and verify the checkpoint hash remains stable after smoke and queued jobs.
+
+Give each provider a distinct Dockerfile path, and keep executable runtime files separate from source-evidence files needed when Modal re-imports the deployment module inside a container.
+
+**Why:** Modal can merge Dockerfile-image caches when providers share one Dockerfile with only different build arguments. Remote class hydration also re-imports deployment configuration and may recompute every provider digest; omitting those evidence files crash-loops otherwise healthy images.
+
+**How to apply:** Put only the selected provider runner on the application import path. Copy the complete digest evidence set to a separate non-importable directory, point digest calculation there in containers, and test a constrained-filesystem import before deployment.

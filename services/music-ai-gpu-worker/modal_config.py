@@ -15,6 +15,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent
+SOURCE_ROOT = Path(os.getenv("MUSIC_GPU_SOURCE_ROOT", ROOT))
 MANIFEST_PATH = ROOT / "model_manifest.json"
 MODEL_MOUNT = "/var/lib/music-ai-gpu/models"
 JOB_MOUNT = "/var/lib/music-ai-gpu/jobs"
@@ -75,14 +76,18 @@ MANIFEST = load_manifest()
 def provider_source_image_digest(provider: str, requirements_file: str) -> str:
     """Hash immutable, reviewed provider-image inputs (not an OCI layer digest)."""
     paths = [
-        ROOT / "Dockerfile", ROOT / "app.py", ROOT / "modal_config.py",
-        ROOT / "modal_app.py", ROOT / "checkpoint_bootstrap.py",
-        ROOT / "model_manifest.json", ROOT / "runners" / requirements_file,
-        ROOT / "runners" / f"{provider.lower()}.py", ROOT / "runners" / "common.py",
+        SOURCE_ROOT / f"Dockerfile.{provider.lower().replace('_', '-')}",
+        SOURCE_ROOT / "app.py", SOURCE_ROOT / "modal_config.py",
+        SOURCE_ROOT / "modal_app.py", SOURCE_ROOT / "checkpoint_bootstrap.py",
+        SOURCE_ROOT / "model_manifest.json",
+        SOURCE_ROOT / "runners" / requirements_file,
+        SOURCE_ROOT / "runners" / "__init__.py",
+        SOURCE_ROOT / "runners" / f"{provider.lower()}.py",
+        SOURCE_ROOT / "runners" / "common.py",
     ]
     digest = hashlib.sha256()
     for path in paths:
-        digest.update(path.relative_to(ROOT).as_posix().encode() + b"\0")
+        digest.update(path.relative_to(SOURCE_ROOT).as_posix().encode() + b"\0")
         digest.update(path.read_bytes())
         digest.update(b"\0")
     return "sha256:" + digest.hexdigest()
@@ -125,19 +130,6 @@ DEPLOYMENTS = {
     for provider, details in MANIFEST["providers"].items()
     if provider in _CAPACITY
 }
-
-
-def selected_deployments(value: str | None = None) -> dict[str, ProviderDeployment]:
-    """Validate an explicit Modal deployment allowlist; default to verified ACE."""
-    raw = os.getenv("MUSIC_GPU_MODAL_DEPLOY_PROVIDERS") if value is None else value
-    raw = "ACE_STEP" if raw is None else raw
-    selected = {item.strip().upper() for item in raw.split(",") if item.strip()}
-    if not selected:
-        raise ValueError("MUSIC_GPU_MODAL_DEPLOY_PROVIDERS must not be empty")
-    unknown = selected - set(DEPLOYMENTS)
-    if unknown:
-        raise ValueError("unknown Modal deploy providers: " + ", ".join(sorted(unknown)))
-    return {provider: DEPLOYMENTS[provider] for provider in DEPLOYMENTS if provider in selected}
 
 
 def worker_environment(deployment: ProviderDeployment) -> dict[str, str]:

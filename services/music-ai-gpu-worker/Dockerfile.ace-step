@@ -1,0 +1,48 @@
+# Modal image identity: ACE_STEP. Keep synchronized with Dockerfile.
+ARG CUDA_IMAGE=nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
+FROM ${CUDA_IMAGE}
+ARG PROVIDER_REQUIREMENTS=requirements-ace-step.txt
+ARG CUDA_RUNTIME=12.8.1
+ARG PYTORCH_SPEC=torch==2.10.0+cu128
+ARG TORCHVISION_SPEC=torchvision==0.25.0+cu128
+ARG TORCHAUDIO_SPEC=torchaudio==2.10.0+cu128
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu128
+ARG TRANSFORMERS_SPEC=transformers==4.57.6
+ARG ACCELERATE_SPEC=accelerate==1.12.0
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    MUSIC_GPU_CHECKPOINT_ROOT=/var/lib/music-ai-gpu/models \
+    MUSIC_GPU_SOURCE_ROOT=/provenance \
+    MUSIC_GPU_CUDA_VERSION=${CUDA_RUNTIME}
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      ca-certificates ffmpeg git libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=ghcr.io/astral-sh/uv:0.6.1 /uv /uvx /bin/
+RUN uv python install 3.11.11
+RUN uv venv --python 3.11.11 /opt/music-ai-venv
+ENV PATH="/opt/music-ai-venv/bin:${PATH}"
+RUN uv pip install --python /opt/music-ai-venv/bin/python \
+    "${PYTORCH_SPEC}" "${TORCHVISION_SPEC}" "${TORCHAUDIO_SPEC}" \
+    --index-url "${TORCH_INDEX_URL}"
+RUN uv pip install --python /opt/music-ai-venv/bin/python \
+    fastapi==0.141.1 uvicorn==0.52.4 pydantic==2.13.5 \
+    "${TRANSFORMERS_SPEC}" "${ACCELERATE_SPEC}"
+
+WORKDIR /app
+COPY services/music-ai-gpu-worker/runners/requirements-ace-step.txt /tmp/provider-requirements.txt
+RUN uv pip install --python /opt/music-ai-venv/bin/python \
+      -r /tmp/provider-requirements.txt
+RUN mkdir -p /app/runners /provenance/runners
+COPY services/music-ai-gpu-worker/app.py services/music-ai-gpu-worker/modal_config.py services/music-ai-gpu-worker/model_manifest.json /app/
+COPY services/music-ai-gpu-worker/runners/__init__.py services/music-ai-gpu-worker/runners/common.py services/music-ai-gpu-worker/runners/ace_step.py /app/runners/
+COPY services/music-ai-gpu-worker/Dockerfile.ace-step services/music-ai-gpu-worker/Dockerfile.bs-roformer services/music-ai-gpu-worker/Dockerfile.mt3 services/music-ai-gpu-worker/Dockerfile.all-in-one services/music-ai-gpu-worker/app.py services/music-ai-gpu-worker/modal_config.py services/music-ai-gpu-worker/modal_app.py services/music-ai-gpu-worker/checkpoint_bootstrap.py services/music-ai-gpu-worker/model_manifest.json /provenance/
+COPY services/music-ai-gpu-worker/runners/__init__.py services/music-ai-gpu-worker/runners/common.py services/music-ai-gpu-worker/runners/ace_step.py services/music-ai-gpu-worker/runners/bs_roformer.py services/music-ai-gpu-worker/runners/mt3.py services/music-ai-gpu-worker/runners/all_in_one.py services/music-ai-gpu-worker/runners/requirements-ace-step.txt services/music-ai-gpu-worker/runners/requirements-bs-roformer.txt services/music-ai-gpu-worker/runners/requirements-mt3.txt services/music-ai-gpu-worker/runners/requirements-all-in-one.txt /provenance/runners/
+RUN groupadd --system music-ai && useradd --system --gid music-ai --home /app music-ai \
+    && mkdir -p /var/lib/music-ai-gpu/models \
+    && chown -R music-ai:music-ai /app /var/lib/music-ai-gpu
+EXPOSE 8009
+USER music-ai
+CMD ["python", "-m", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8009"]

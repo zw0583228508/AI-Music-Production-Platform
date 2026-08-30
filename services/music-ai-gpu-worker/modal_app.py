@@ -23,7 +23,6 @@ from modal_config import (
     OUTPUT_VOLUME_NAME,
     RUNTIME_SECRET_NAME,
     provider_image_build_args,
-    selected_deployments,
     worker_environment,
 )
 
@@ -38,20 +37,37 @@ REPOSITORY_ROOT = next(
     ),
     MODULE_ROOT,
 )
-DOCKERFILE = MODULE_ROOT / "Dockerfile"
+PROVIDER_DOCKERFILES = {
+    "ACE_STEP": MODULE_ROOT / "Dockerfile.ace-step",
+    "BS_ROFORMER": MODULE_ROOT / "Dockerfile.bs-roformer",
+    "MT3": MODULE_ROOT / "Dockerfile.mt3",
+    "ALL_IN_ONE": MODULE_ROOT / "Dockerfile.all-in-one",
+}
 app = modal.App(APP_NAME)
 
-# Build a separate OCI image for every provider.  Its pinned runner
-# requirements are installed during the image build, never at request time.
-SELECTED_DEPLOYMENTS = selected_deployments()
-provider_images = {
-    provider: modal.Image.from_dockerfile(
-        DOCKERFILE,
+# Modal identifies Dockerfile-based images by Dockerfile path before it applies
+# build arguments. Every provider therefore needs a unique Dockerfile path.
+provider_images: dict[str, modal.Image] = {
+    "BS_ROFORMER": modal.Image.from_dockerfile(
+        PROVIDER_DOCKERFILES["BS_ROFORMER"],
         context_dir=REPOSITORY_ROOT,
-        # Source identity is runtime provenance, not a Docker cache input.
-        build_args=provider_image_build_args(deployment),
-    )
-    for provider, deployment in SELECTED_DEPLOYMENTS.items()
+        build_args=provider_image_build_args(DEPLOYMENTS["BS_ROFORMER"]),
+    ),
+    "ACE_STEP": modal.Image.from_dockerfile(
+        PROVIDER_DOCKERFILES["ACE_STEP"],
+        context_dir=REPOSITORY_ROOT,
+        build_args=provider_image_build_args(DEPLOYMENTS["ACE_STEP"]),
+    ),
+    "MT3": modal.Image.from_dockerfile(
+        PROVIDER_DOCKERFILES["MT3"],
+        context_dir=REPOSITORY_ROOT,
+        build_args=provider_image_build_args(DEPLOYMENTS["MT3"]),
+    ),
+    "ALL_IN_ONE": modal.Image.from_dockerfile(
+        PROVIDER_DOCKERFILES["ALL_IN_ONE"],
+        context_dir=REPOSITORY_ROOT,
+        build_args=provider_image_build_args(DEPLOYMENTS["ALL_IN_ONE"]),
+    ),
 }
 model_volume = modal.Volume.from_name(MODEL_VOLUME_NAME, create_if_missing=False)
 job_volume = modal.Volume.from_name(JOB_VOLUME_NAME, create_if_missing=False)
@@ -78,41 +94,37 @@ def _worker_options(provider: str) -> dict:
     }
 
 
-if "BS_ROFORMER" in SELECTED_DEPLOYMENTS:
-    @app.cls(**_worker_options("BS_ROFORMER"))
-    @modal.concurrent(max_inputs=1)
-    class BSRoFormerWorker:
-        @modal.asgi_app(label="bs-roformer")
-        def endpoint(self):
-            from app import app as fastapi_app
-            return fastapi_app
+@app.cls(**_worker_options("BS_ROFORMER"))
+@modal.concurrent(max_inputs=1)
+class BSRoFormerWorker:
+    @modal.asgi_app(label="bs-roformer")
+    def endpoint(self):
+        from app import app as fastapi_app
+        return fastapi_app
 
 
-if "ACE_STEP" in SELECTED_DEPLOYMENTS:
-    @app.cls(**_worker_options("ACE_STEP"))
-    @modal.concurrent(max_inputs=1)
-    class AceStepWorker:
-        @modal.asgi_app(label="ace-step")
-        def endpoint(self):
-            from app import app as fastapi_app
-            return fastapi_app
+@app.cls(**_worker_options("ACE_STEP"))
+@modal.concurrent(max_inputs=1)
+class AceStepWorker:
+    @modal.asgi_app(label="ace-step")
+    def endpoint(self):
+        from app import app as fastapi_app
+        return fastapi_app
 
 
-if "MT3" in SELECTED_DEPLOYMENTS:
-    @app.cls(**_worker_options("MT3"))
-    @modal.concurrent(max_inputs=1)
-    class MT3Worker:
-        @modal.asgi_app(label="mt3")
-        def endpoint(self):
-            from app import app as fastapi_app
-            return fastapi_app
+@app.cls(**_worker_options("MT3"))
+@modal.concurrent(max_inputs=1)
+class MT3Worker:
+    @modal.asgi_app(label="mt3")
+    def endpoint(self):
+        from app import app as fastapi_app
+        return fastapi_app
 
 
-if "ALL_IN_ONE" in SELECTED_DEPLOYMENTS:
-    @app.cls(**_worker_options("ALL_IN_ONE"))
-    @modal.concurrent(max_inputs=1)
-    class AllInOneWorker:
-        @modal.asgi_app(label="all-in-one")
-        def endpoint(self):
-            from app import app as fastapi_app
-            return fastapi_app
+@app.cls(**_worker_options("ALL_IN_ONE"))
+@modal.concurrent(max_inputs=1)
+class AllInOneWorker:
+    @modal.asgi_app(label="all-in-one")
+    def endpoint(self):
+        from app import app as fastapi_app
+        return fastapi_app
