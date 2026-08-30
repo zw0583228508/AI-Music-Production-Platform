@@ -64,6 +64,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import { SourceImport } from "@/components/studio/source-import";
 import { SongModelInspector } from "@/components/studio/song-model-inspector";
@@ -85,11 +86,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 export default function ProjectWorkspace() {
   const [, params] = useRoute("/projects/:projectId");
   const projectId = params?.projectId || "";
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const isMobile = useIsMobile();
 
   const { data: workspace, isLoading, error } = useGetProject(projectId);
   const { data: songModel } = useGetProjectSongModel(projectId, {
@@ -141,6 +150,10 @@ export default function ProjectWorkspace() {
   const [copilotCommand, setCopilotCommand] = useState("");
   const [editorSelection, setEditorSelection] = useState<EditorSelection>(null);
   const [copilotEditorResult, setCopilotEditorResult] = useState<CopilotEditorResult | null>(null);
+  const [mobilePanel, setMobilePanel] = useState<"tracks" | "copilot" | null>(null);
+  useEffect(() => {
+    if (!isMobile) setMobilePanel(null);
+  }, [isMobile]);
   const currentSource =
     sources?.find((source) => source.id === songModel?.sourceId)
     ?? sources?.[0];
@@ -550,6 +563,108 @@ export default function ProjectWorkspace() {
     });
   };
 
+  const renderTracksPanel = () => (
+    <>
+      <div className="h-12 shrink-0 border-b flex items-center px-4 justify-between bg-sidebar-accent/30 font-semibold text-sm">
+        <div className="flex items-center gap-2">
+          <ListMusic className="h-4 w-4 text-primary" />
+          Tracks
+        </div>
+        <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full"><Plus className="h-3.5 w-3.5" /></Button>
+      </div>
+      <ScrollArea className="flex-1">
+        <div className="p-2 space-y-1">
+          {tracks?.map(track => (
+            <div key={track.id} className="flex items-center gap-3 p-2 rounded-md hover:bg-sidebar-accent/50 group text-sm border border-transparent hover:border-sidebar-border transition-all">
+              <div className="w-2 h-2 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: track.color || 'hsl(var(--primary))' }} />
+              <div className="flex-1 truncate font-medium">{track.name}</div>
+              <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity gap-1">
+                <button className={cn("h-5 w-5 rounded flex items-center justify-center text-[10px] font-bold border", track.muted ? "bg-red-500/10 text-red-500 border-red-500/20" : "bg-muted text-muted-foreground hover:bg-background")}>M</button>
+                <button className={cn("h-5 w-5 rounded flex items-center justify-center text-[10px] font-bold border", track.solo ? "bg-yellow-500/10 text-yellow-600 border-yellow-500/20" : "bg-muted text-muted-foreground hover:bg-background")}>S</button>
+              </div>
+            </div>
+          ))}
+          {!tracks?.length && (
+            <div className="text-center p-4 text-xs text-muted-foreground italic">No tracks generated yet.</div>
+          )}
+        </div>
+      </ScrollArea>
+    </>
+  );
+
+  const renderCopilotPanel = () => (
+    <>
+      <div className="h-12 shrink-0 border-b flex items-center px-4 gap-2 font-semibold text-sm bg-muted/10">
+        <Bot className="h-4 w-4 text-primary" />
+        Studio Copilot
+      </div>
+
+      <ScrollArea className="flex-1 p-4">
+        <div className="space-y-4 text-sm">
+          {copilotMessages.map((msg, i) => (
+            <div key={i} className={cn("p-3 rounded-lg", msg.role === 'assistant' ? "bg-muted rounded-tl-none" : "bg-primary text-primary-foreground rounded-tr-none ml-6")}>
+              <p className={msg.operations?.length ? "mb-2" : ""}>{msg.text}</p>
+              {msg.role === "assistant" && msg.interpreter && (
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "mb-2 h-5 text-[10px]",
+                    msg.interpreter === "openai"
+                      ? "border-sky-500/30 bg-sky-500/10 text-sky-700"
+                      : "border-amber-500/30 bg-amber-500/10 text-amber-700",
+                  )}
+                >
+                  {msg.interpreter === "openai" ? "AI interpreted" : (
+                    <><ShieldCheck className="mr-1 h-3 w-3" />Safe local fallback</>
+                  )}
+                </Badge>
+              )}
+              {msg.operations && msg.operations.length > 0 && (
+                <div className="bg-background text-foreground rounded border p-2 text-xs font-mono space-y-1">
+                  {msg.operations.map((op, j) => (
+                    <div key={j} className="flex justify-between">
+                      <span>{op.type}</span> <span className="text-primary">{op.label}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+          {runCopilot.isPending && (
+            <div className="bg-muted p-3 rounded-lg rounded-tl-none animate-pulse">
+              Thinking...
+            </div>
+          )}
+        </div>
+      </ScrollArea>
+
+      <div className="p-3 border-t bg-background">
+        {editorSelection && (
+          <div className="mb-2 flex items-center justify-between rounded-md border border-primary/20 bg-primary/5 px-2 py-1.5 text-[10px]">
+            <span className="min-w-0 truncate">
+              Target: {editorSelection.sectionName}
+              {"trackName" in editorSelection ? ` · ${editorSelection.trackName}` : ""}
+              {editorSelection.startBar ? ` · bars ${editorSelection.startBar}–${editorSelection.endBar}` : ""}
+            </span>
+            <button type="button" className="ml-2 text-muted-foreground hover:text-foreground" onClick={() => setEditorSelection(null)}>Clear</button>
+          </div>
+        )}
+        <form className="flex gap-2" onSubmit={handleCopilotSubmit}>
+          <Input
+            placeholder="Ask copilot..."
+            className="text-sm shadow-sm"
+            value={copilotCommand}
+            onChange={(e) => setCopilotCommand(e.target.value)}
+            disabled={runCopilot.isPending || revisionPreviewing}
+          />
+          <Button type="submit" size="icon" className="shrink-0" disabled={!copilotCommand.trim() || runCopilot.isPending || revisionPreviewing}>
+            <Bot className="h-4 w-4" />
+          </Button>
+        </form>
+      </div>
+    </>
+  );
+
   if (isLoading) {
     return <div className="p-10 flex items-center justify-center min-h-screen text-muted-foreground"><Activity className="animate-pulse mr-2" /> Loading workspace...</div>;
   }
@@ -631,37 +746,36 @@ export default function ProjectWorkspace() {
             Export <ChevronRight className="h-4 w-4 ml-1" />
           </Button>
         </div>
+        <div className="order-4 flex w-full gap-2 md:hidden">
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1 justify-center gap-1.5 bg-background"
+            onClick={() => setMobilePanel("tracks")}
+            aria-label="Open Tracks"
+          >
+            <ListMusic className="h-4 w-4 text-primary" />
+            Tracks
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1 justify-center gap-1.5 bg-background"
+            onClick={() => setMobilePanel("copilot")}
+            aria-label="Open Studio Copilot"
+          >
+            <Bot className="h-4 w-4 text-primary" />
+            Copilot
+          </Button>
+        </div>
       </header>
 
       {/* Main Workspace Area */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
         
         {/* Left Panel: Tracks */}
-        <aside className="w-64 border-r bg-sidebar flex flex-col shrink-0 z-10 shadow-[2px_0_10px_rgba(0,0,0,0.02)]">
-          <div className="h-12 border-b flex items-center px-4 justify-between bg-sidebar-accent/30 font-semibold text-sm">
-            <div className="flex items-center gap-2">
-              <ListMusic className="h-4 w-4 text-primary" />
-              Tracks
-            </div>
-            <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full"><Plus className="h-3.5 w-3.5" /></Button>
-          </div>
-          <ScrollArea className="flex-1">
-            <div className="p-2 space-y-1">
-              {tracks?.map(track => (
-                <div key={track.id} className="flex items-center gap-3 p-2 rounded-md hover:bg-sidebar-accent/50 group text-sm border border-transparent hover:border-sidebar-border transition-all">
-                  <div className="w-2 h-2 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: track.color || 'hsl(var(--primary))' }} />
-                  <div className="flex-1 truncate font-medium">{track.name}</div>
-                  <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity gap-1">
-                    <button className={cn("h-5 w-5 rounded flex items-center justify-center text-[10px] font-bold border", track.muted ? "bg-red-500/10 text-red-500 border-red-500/20" : "bg-muted text-muted-foreground hover:bg-background")}>M</button>
-                    <button className={cn("h-5 w-5 rounded flex items-center justify-center text-[10px] font-bold border", track.solo ? "bg-yellow-500/10 text-yellow-600 border-yellow-500/20" : "bg-muted text-muted-foreground hover:bg-background")}>S</button>
-                  </div>
-                </div>
-              ))}
-              {!tracks?.length && (
-                <div className="text-center p-4 text-xs text-muted-foreground italic">No tracks generated yet.</div>
-              )}
-            </div>
-          </ScrollArea>
+        <aside className="hidden w-64 border-r bg-sidebar flex-col shrink-0 z-10 shadow-[2px_0_10px_rgba(0,0,0,0.02)] md:flex">
+          {renderTracksPanel()}
         </aside>
 
         {/* Center Panel: Arrangement & Timeline */}
@@ -1080,78 +1194,31 @@ export default function ProjectWorkspace() {
         </main>
 
         {/* Right Panel: Copilot */}
-        <aside className="w-[300px] border-l bg-card flex flex-col shrink-0 z-10 shadow-[-2px_0_10px_rgba(0,0,0,0.02)]">
-          <div className="h-12 border-b flex items-center px-4 gap-2 font-semibold text-sm bg-muted/10">
-            <Bot className="h-4 w-4 text-primary" />
-            Studio Copilot
-          </div>
-          
-          <ScrollArea className="flex-1 p-4">
-            <div className="space-y-4 text-sm">
-              {copilotMessages.map((msg, i) => (
-                <div key={i} className={cn("p-3 rounded-lg", msg.role === 'assistant' ? "bg-muted rounded-tl-none" : "bg-primary text-primary-foreground rounded-tr-none ml-6")}>
-                  <p className={msg.operations?.length ? "mb-2" : ""}>{msg.text}</p>
-                   {msg.role === "assistant" && msg.interpreter && (
-                     <Badge
-                       variant="outline"
-                       className={cn(
-                         "mb-2 h-5 text-[10px]",
-                         msg.interpreter === "openai"
-                           ? "border-sky-500/30 bg-sky-500/10 text-sky-700"
-                           : "border-amber-500/30 bg-amber-500/10 text-amber-700",
-                       )}
-                     >
-                       {msg.interpreter === "openai" ? "AI interpreted" : (
-                         <><ShieldCheck className="mr-1 h-3 w-3" />Safe local fallback</>
-                       )}
-                     </Badge>
-                   )}
-                  {msg.operations && msg.operations.length > 0 && (
-                    <div className="bg-background text-foreground rounded border p-2 text-xs font-mono space-y-1">
-                      {msg.operations.map((op, j) => (
-                        <div key={j} className="flex justify-between">
-                          <span>{op.type}</span> <span className="text-primary">{op.label}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-              {runCopilot.isPending && (
-                <div className="bg-muted p-3 rounded-lg rounded-tl-none animate-pulse">
-                  Thinking...
-                </div>
-              )}
-            </div>
-          </ScrollArea>
-
-          <div className="p-3 border-t bg-background">
-            {editorSelection && (
-              <div className="mb-2 flex items-center justify-between rounded-md border border-primary/20 bg-primary/5 px-2 py-1.5 text-[10px]">
-                <span className="min-w-0 truncate">
-                  Target: {editorSelection.sectionName}
-                  {"trackName" in editorSelection ? ` · ${editorSelection.trackName}` : ""}
-                  {editorSelection.startBar ? ` · bars ${editorSelection.startBar}–${editorSelection.endBar}` : ""}
-                </span>
-                <button type="button" className="ml-2 text-muted-foreground hover:text-foreground" onClick={() => setEditorSelection(null)}>Clear</button>
-              </div>
-            )}
-            <form className="flex gap-2" onSubmit={handleCopilotSubmit}>
-              <Input 
-                placeholder="Ask copilot..." 
-                className="text-sm shadow-sm" 
-                value={copilotCommand}
-                onChange={(e) => setCopilotCommand(e.target.value)}
-                disabled={runCopilot.isPending || revisionPreviewing}
-              />
-              <Button type="submit" size="icon" className="shrink-0" disabled={!copilotCommand.trim() || runCopilot.isPending || revisionPreviewing}>
-                <Bot className="h-4 w-4" />
-              </Button>
-            </form>
-          </div>
+        <aside className="hidden w-[300px] border-l bg-card flex-col shrink-0 z-10 shadow-[-2px_0_10px_rgba(0,0,0,0.02)] md:flex">
+          {renderCopilotPanel()}
         </aside>
 
       </div>
+
+      {/* Mobile panel sheets overlay the editor so the workspace width and selection never change. */}
+      {isMobile && (
+        <Sheet open={mobilePanel !== null} onOpenChange={(open) => !open && setMobilePanel(null)}>
+          <SheetContent
+            side={mobilePanel === "tracks" ? "left" : "right"}
+            className="w-[min(88vw,340px)] p-0 flex flex-col gap-0"
+          >
+            <SheetHeader className="sr-only">
+              <SheetTitle>{mobilePanel === "tracks" ? "Tracks" : "Studio Copilot"}</SheetTitle>
+              <SheetDescription>
+                {mobilePanel === "tracks" ? "Track controls" : "Ask Studio Copilot for arrangement help"}
+              </SheetDescription>
+            </SheetHeader>
+            <div className={cn("flex min-h-0 flex-1 flex-col", mobilePanel === "tracks" ? "bg-sidebar" : "bg-card")}>
+              {mobilePanel === "tracks" ? renderTracksPanel() : renderCopilotPanel()}
+            </div>
+          </SheetContent>
+        </Sheet>
+      )}
 
       <Dialog open={exportOpen} onOpenChange={setExportOpen}>
         <DialogContent className="sm:max-w-xl">
