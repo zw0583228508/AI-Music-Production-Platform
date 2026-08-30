@@ -1,0 +1,4 @@
+# Image-build dependencies. Checkpoint weights are mounted; never fetched by a request.
+audio-separator==0.30.1
+numpy==2.1.3
+soundfile==0.12.1

@@ -12,11 +12,15 @@ import type {
 import { db, modelRegistryTable } from "@workspace/db";
 import { attestAnalysisProviderHealth } from "./analysisProviderManifest";
 import {
+  anyAccompCommercialUseAuthorized,
   expectedGpuCheckpointSha256,
+  expectedGpuModelVersion,
   isGpuAttestedProvider,
 } from "./gpuProviderAttestation";
 export {
+  anyAccompCommercialUseAuthorized,
   expectedGpuCheckpointSha256,
+  expectedGpuModelVersion,
   isGpuAttestedProvider,
 } from "./gpuProviderAttestation";
 export type ProviderStatus = "ready" | "configured" | "unavailable";
@@ -1099,6 +1103,11 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
         typeof value === "string" && Boolean(value.trim())
       )?.trim() ?? null;
       const strictGpuAttestation = isGpuAttestedProvider(this.definition.id);
+      const commercialUseAuthorized = this.definition.id !== "ANYACCOMP" ||
+        anyAccompCommercialUseAuthorized();
+      const expectedVersion = strictGpuAttestation
+        ? expectedGpuModelVersion(this.definition.id, this.definition.modelVersion)
+        : this.definition.modelVersion;
       const expectedChecksum = strictGpuAttestation
         ? expectedGpuCheckpointSha256(this.definition.id)
         : null;
@@ -1111,14 +1120,17 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
       const smokeTested = payload["smokeTested"] === true;
       const gpuReady = payload["gpuReady"] === true ||
         runtime["gpuReady"] === true;
-      const exactModel = reportedVersion === this.definition.modelVersion;
+      const exactModel = expectedVersion !== null && reportedVersion === expectedVersion;
+      const runtimeProvenance = parseRuntimeProvenance(payload, reportedVersion, reportedChecksum);
       const strictAttestationReady = !strictGpuAttestation || (
         reportedProvider === this.definition.id &&
         exactModel &&
         isSha256(reportedChecksum) &&
         reportedChecksum.toLowerCase() === expectedChecksum &&
         smokeTested &&
-        gpuReady
+        gpuReady &&
+        runtimeProvenance !== null &&
+        commercialUseAuthorized
       );
       const ready = healthy && checkpointReady && runtimeReady &&
         Boolean(reportedVersion) && strictAttestationReady;
@@ -1131,7 +1143,9 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
           : strictGpuAttestation && reportedProvider !== this.definition.id
             ? "GPU worker health response identified the wrong provider."
             : strictGpuAttestation && !exactModel
-              ? `GPU worker model version does not match ${this.definition.modelVersion}.`
+              ? `GPU worker model version does not match its immutable deployment pin.`
+              : strictGpuAttestation && !commercialUseAuthorized
+                ? "AnyAccomp is blocked until explicit commercial-use authorization is configured."
               : strictGpuAttestation && (
                   !expectedChecksum ||
                   !isSha256(reportedChecksum) ||
@@ -1142,6 +1156,8 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
                   ? "GPU worker has not completed a real smoke inference."
                   : strictGpuAttestation && !gpuReady
                     ? "GPU worker did not attest an available GPU runtime."
+                    : strictGpuAttestation && !runtimeProvenance
+                      ? "GPU worker did not provide complete immutable runtime provenance."
           : !checkpointReady
             ? "Configured worker has not verified its model checkpoint."
             : !runtimeReady
@@ -1162,6 +1178,7 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
         reportedChecksum: isSha256(reportedChecksum)
           ? reportedChecksum.toLowerCase()
           : null,
+        runtimeProvenance,
       };
       this.attestedChecksum = ready && isSha256(reportedChecksum)
         ? reportedChecksum.toLowerCase()
@@ -1181,6 +1198,7 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
           : "Provider health check failed.",
         reportedVersion: null,
         reportedChecksum: null,
+        runtimeProvenance: null,
       };
     }
     providerHealthCache.set(cacheKey, {
@@ -1202,12 +1220,18 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
       const modelVersion = payload["modelVersion"];
       const checkpointSha256 = payload["checkpointSha256"] ??
         payload["checksum"];
+      const runtimeProvenance = parseRuntimeProvenance(
+        payload,
+        typeof modelVersion === "string" ? modelVersion : null,
+        checkpointSha256,
+      );
       if (
         provider !== this.definition.id ||
         modelVersion !== this.definition.modelVersion ||
         !isSha256(checkpointSha256) ||
         checkpointSha256.toLowerCase() !== this.attestedChecksum ||
-        payload["smokeTested"] !== true
+        payload["smokeTested"] !== true ||
+        !sameRuntimeProvenance(runtimeProvenance, this.readiness.runtimeProvenance)
       ) {
         throw new Error(
           `${this.definition.displayName} worker result failed GPU provenance attestation`,
@@ -1233,6 +1257,7 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
         )
         ? String(payload["checkpointSha256"] ?? payload["checksum"]).toLowerCase()
         : null,
+      runtimeProvenance: runtimeProvenance ?? undefined,
       candidates,
     };
   }
@@ -1649,8 +1674,57 @@ export type ProviderGenerationResult = {
   requestId: string | null;
   modelVersion: string;
   checkpointSha256: string | null;
+  runtimeProvenance?: ProviderRuntimeProvenance;
   candidates: ProviderCandidate[];
 };
+
+export type ProviderRuntimeProvenance = {
+  model: string;
+  checkpointSha256: string;
+  revision: string;
+  containerDigest: string;
+  cudaVersion: string;
+  pytorchVersion: string;
+  gpu: string;
+};
+
+function provenanceText(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 && value.trim().length <= 256
+    ? value.trim()
+    : null;
+}
+
+function parseRuntimeProvenance(
+  payload: Record<string, unknown>,
+  modelVersion: string | null,
+  checksum: unknown,
+): ProviderRuntimeProvenance | null {
+  const runtime = isRecord(payload["runtime"]) ? payload["runtime"] : {};
+  const model = provenanceText(modelVersion);
+  const checkpointSha256 = isSha256(checksum) ? checksum.toLowerCase() : null;
+  const revision = provenanceText(payload["revision"] ?? payload["checkpointRevision"] ?? runtime["revision"]);
+  const containerDigest = provenanceText(payload["containerDigest"] ?? runtime["containerDigest"]);
+  const cudaVersion = provenanceText(payload["cudaVersion"] ?? runtime["cudaVersion"]);
+  const pytorchVersion = provenanceText(payload["pytorchVersion"] ?? payload["torchVersion"] ?? runtime["pytorchVersion"] ?? runtime["torchVersion"]);
+  const gpu = provenanceText(payload["gpu"] ?? payload["gpuModel"] ?? runtime["gpu"] ?? runtime["gpuModel"]);
+  return model && checkpointSha256 && revision && containerDigest && cudaVersion && pytorchVersion && gpu
+    ? { model, checkpointSha256, revision, containerDigest, cudaVersion, pytorchVersion, gpu }
+    : null;
+}
+
+function sameRuntimeProvenance(
+  left: ProviderRuntimeProvenance | null,
+  right: ProviderRuntimeProvenance | null | undefined,
+): boolean {
+  return Boolean(left && right &&
+    left.model === right.model &&
+    left.checkpointSha256 === right.checkpointSha256 &&
+    left.revision === right.revision &&
+    left.containerDigest === right.containerDigest &&
+    left.cudaVersion === right.cudaVersion &&
+    left.pytorchVersion === right.pytorchVersion &&
+    left.gpu === right.gpu);
+}
 
 function isSha256(value: unknown): value is string {
   return typeof value === "string" && /^[a-f0-9]{64}$/i.test(value.trim());

@@ -242,6 +242,15 @@ export type ProviderRuntimeSnapshot = {
   message: string | null;
   reportedVersion: string | null;
   reportedChecksum?: string | null;
+  runtimeProvenance?: {
+    model: string;
+    checkpointSha256: string;
+    revision: string;
+    containerDigest: string;
+    cudaVersion: string;
+    pytorchVersion: string;
+    gpu: string;
+  } | null;
 };
 
 export const musicProjectsTable = pgTable("music_projects", {
