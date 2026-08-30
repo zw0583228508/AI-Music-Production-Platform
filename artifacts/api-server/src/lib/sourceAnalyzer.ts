@@ -346,11 +346,17 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
       Math.min(0.94, 0.62 + Math.log10(Math.max(10, samples.length)) / 30).toFixed(2),
     );
     await updateOwnedStage("provider_analysis", 68);
-    const needsProviderSource =
-      (["FULL_SONG", "INSTRUMENTAL", "VIDEO"].includes(source.sourceType) &&
-        Boolean(process.env.ALL_IN_ONE_API_URL)) ||
-      (["VOCAL_ONLY", "SOLO_INSTRUMENT"].includes(source.sourceType) &&
-        Boolean(process.env.BASIC_PITCH_API_URL));
+    const providerEndpointKeys = ["FULL_SONG", "INSTRUMENTAL", "VIDEO"].includes(
+      source.sourceType,
+    )
+      ? [
+          "ALL_IN_ONE_API_URL",
+          "MT3_API_URL",
+          "BS_ROFORMER_API_URL",
+          "SHEET_SAGE_API_URL",
+        ]
+      : ["BASIC_PITCH_API_URL", "SHEET_SAGE_API_URL"];
+    const needsProviderSource = providerEndpointKeys.some((key) => Boolean(process.env[key]));
     let sourceUrl: string | null = null;
     if (needsProviderSource) {
       try {
@@ -379,6 +385,26 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
     if (providerResults.transcription) {
       successfulAnalysisProviders.push(providerResults.transcription.providerId);
     }
+    if (providerResults.separation) {
+      successfulAnalysisProviders.push(providerResults.separation.providerId);
+    }
+    if (providerResults.harmony) {
+      successfulAnalysisProviders.push(providerResults.harmony.providerId);
+    }
+    const providerConfidences = [
+      providerResults.structure?.confidence,
+      providerResults.transcription?.confidence,
+      providerResults.separation?.confidence,
+      providerResults.harmony?.confidence,
+    ].filter((value): value is number => value !== undefined);
+    const candidateConfidence = providerConfidences.length
+      ? Number(
+          (
+            (confidence + providerConfidences.reduce((sum, value) => sum + value, 0)) /
+            (providerConfidences.length + 1)
+          ).toFixed(3),
+        )
+      : confidence;
     const candidate = {
       audio: {
         name: source.name,
@@ -398,11 +424,11 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
       beats,
       bars,
       melody: providerResults.transcription?.notes ?? [],
-      chords: [],
+      chords: providerResults.harmony?.chords ?? [],
       sections,
       energy,
       dynamics: energy,
-      sourceStems: [],
+      sourceStems: providerResults.separation?.stems ?? [],
       lyrics: [],
       confidenceByField: {
         tempo: providerResults.structure?.confidence ?? confidence,
@@ -410,7 +436,7 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
         key: Math.max(0.5, confidence - 0.12),
         structure: providerResults.structure?.confidence ?? 0.58,
         melody: providerResults.transcription?.confidence ?? 0,
-        harmony: 0,
+        harmony: providerResults.harmony?.confidence ?? 0,
       },
       provenance: [
         {
@@ -426,20 +452,12 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
           status: "fallback",
         },
         ...providerResults.provenance,
-        ...(["FULL_SONG", "INSTRUMENTAL", "VIDEO"].includes(source.sourceType)
-          ? [{
-              capability: "transcription",
-              provider: "MT3",
-              version: "not-configured",
-              status: "unavailable" as const,
-            }]
-          : []),
       ],
     };
     const fusion = fuseProviderSongModels([{
       provider: successfulAnalysisProviders.join("+") || "LOCAL_SIGNAL_ANALYZER_V1",
       output: candidate,
-      confidence,
+      confidence: candidateConfidence,
     }]);
     if (!fusion.accepted) {
       throw new Error(

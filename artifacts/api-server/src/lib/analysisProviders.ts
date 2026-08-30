@@ -4,6 +4,8 @@ type ProviderProvenance = SongModelData["provenance"][number];
 type MelodyNote = SongModelData["melody"][number];
 type BeatEvent = SongModelData["beats"][number];
 type BarEvent = SongModelData["bars"][number];
+type ChordEvent = SongModelData["chords"][number];
+type SourceStem = SongModelData["sourceStems"][number];
 
 export type StructureAnalysisResult = {
   providerId: "ALL_IN_ONE";
@@ -17,15 +19,31 @@ export type StructureAnalysisResult = {
 };
 
 export type TranscriptionAnalysisResult = {
-  providerId: "BASIC_PITCH";
+  providerId: "BASIC_PITCH" | "MT3";
   version: string;
   notes: MelodyNote[];
+  confidence: number;
+};
+
+export type SeparationAnalysisResult = {
+  providerId: "BS_ROFORMER";
+  version: string;
+  stems: SourceStem[];
+  confidence: number;
+};
+
+export type HarmonyAnalysisResult = {
+  providerId: "SHEET_SAGE";
+  version: string;
+  chords: ChordEvent[];
   confidence: number;
 };
 
 export type AnalysisProviderResults = {
   structure: StructureAnalysisResult | null;
   transcription: TranscriptionAnalysisResult | null;
+  separation: SeparationAnalysisResult | null;
+  harmony: HarmonyAnalysisResult | null;
   provenance: ProviderProvenance[];
 };
 
@@ -35,8 +53,11 @@ type AnalysisProviderInput = {
   durationSeconds: number;
 };
 
+const providerEnvironmentPrefix = (providerId: string): string =>
+  providerId.replace(/[^A-Z0-9]+/g, "_");
+
 const configuredEndpoint = (providerId: string): string | null =>
-  process.env[`${providerId}_API_URL`]?.trim() || null;
+  process.env[`${providerEnvironmentPrefix(providerId)}_API_URL`]?.trim() || null;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -51,13 +72,13 @@ function integer(value: unknown): value is number {
 }
 
 async function requestProvider(
-  providerId: "ALL_IN_ONE" | "BASIC_PITCH",
+  providerId: "ALL_IN_ONE" | "BASIC_PITCH" | "MT3" | "BS_ROFORMER" | "SHEET_SAGE",
   input: AnalysisProviderInput,
 ): Promise<unknown> {
   const endpoint = configuredEndpoint(providerId);
   if (!endpoint) throw new Error(`${providerId} is not configured`);
   if (!input.sourceUrl) throw new Error("A signed source URL could not be created");
-  const token = process.env[`${providerId}_API_TOKEN`];
+  const token = process.env[`${providerEnvironmentPrefix(providerId)}_API_TOKEN`];
   const response = await fetch(new URL("/analyze", endpoint), {
     method: "POST",
     headers: {
@@ -71,10 +92,58 @@ async function requestProvider(
     }),
     signal: AbortSignal.timeout(10 * 60_000),
   });
+  if (response.status === 202) {
+    const accepted = await response.json() as unknown;
+    if (!isRecord(accepted) || typeof accepted.jobId !== "string" || !accepted.jobId.trim()) {
+      throw new Error(`${providerId} returned 202 without a jobId`);
+    }
+    return pollProviderJob(providerId, endpoint, accepted.jobId, token);
+  }
   if (!response.ok) {
     throw new Error(`${providerId} returned HTTP ${response.status}`);
   }
-  return response.json();
+  const payload = await response.json() as unknown;
+  if (isRecord(payload) && typeof payload.jobId === "string" && payload.jobId.trim()) {
+    const status = typeof payload.status === "string" ? payload.status.toLowerCase() : "";
+    if (!["completed", "succeeded", "ready"].includes(status)) {
+      return pollProviderJob(providerId, endpoint, payload.jobId, token);
+    }
+  }
+  return payload;
+}
+
+const PROVIDER_TIMEOUT_MS = 10 * 60_000;
+const PROVIDER_POLL_MS = 1_500;
+
+async function pollProviderJob(
+  providerId: string,
+  endpoint: string,
+  jobId: string,
+  token: string | undefined,
+): Promise<unknown> {
+  const deadline = Date.now() + PROVIDER_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, PROVIDER_POLL_MS));
+    const response = await fetch(
+      new URL(`/jobs/${encodeURIComponent(jobId)}`, endpoint),
+      {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+    if (!response.ok) throw new Error(`${providerId} job returned HTTP ${response.status}`);
+    const payload = await response.json() as unknown;
+    if (!isRecord(payload)) throw new Error(`${providerId} job response must be an object`);
+    const status = typeof payload.status === "string" ? payload.status.toLowerCase() : "";
+    if (["completed", "succeeded", "ready"].includes(status)) {
+      return isRecord(payload.result) ? payload.result : payload;
+    }
+    if (["failed", "error", "cancelled", "canceled"].includes(status)) {
+      const detail = typeof payload.error === "string" ? `: ${payload.error}` : "";
+      throw new Error(`${providerId} job ${status}${detail}`);
+    }
+  }
+  throw new Error(`${providerId} job timed out`);
 }
 
 function parseStructure(payload: unknown, durationSeconds: number): StructureAnalysisResult {
@@ -203,8 +272,12 @@ function parseStructure(payload: unknown, durationSeconds: number): StructureAna
   };
 }
 
-function parseTranscription(payload: unknown, durationSeconds: number): TranscriptionAnalysisResult {
-  if (!isRecord(payload)) throw new Error("BASIC_PITCH response must be an object");
+function parseTranscription(
+  providerId: "BASIC_PITCH" | "MT3",
+  payload: unknown,
+  durationSeconds: number,
+): TranscriptionAnalysisResult {
+  if (!isRecord(payload)) throw new Error(`${providerId} response must be an object`);
   const rawNotes = payload["notes"];
   const confidence = payload["confidence"];
   const version = payload["version"];
@@ -213,10 +286,10 @@ function parseTranscription(payload: unknown, durationSeconds: number): Transcri
     !finiteNumber(confidence) || confidence < 0 || confidence > 1 ||
     typeof version !== "string" || !version.trim()
   ) {
-    throw new Error("BASIC_PITCH response does not match the transcription contract");
+    throw new Error(`${providerId} response does not match the transcription contract`);
   }
   const notes = rawNotes.map((value, index): MelodyNote => {
-    if (!isRecord(value)) throw new Error(`BASIC_PITCH note ${index + 1} must be an object`);
+    if (!isRecord(value)) throw new Error(`${providerId} note ${index + 1} must be an object`);
     const start = value["start"];
     const end = value["end"];
     const pitch = value["pitch"];
@@ -229,7 +302,7 @@ function parseTranscription(payload: unknown, durationSeconds: number): Transcri
       !integer(velocity) || velocity < 1 || velocity > 127 ||
       !finiteNumber(itemConfidence) || itemConfidence < 0 || itemConfidence > 1
     ) {
-      throw new Error(`BASIC_PITCH note ${index + 1} is invalid`);
+      throw new Error(`${providerId} note ${index + 1} is invalid`);
     }
     return {
       start,
@@ -237,23 +310,133 @@ function parseTranscription(payload: unknown, durationSeconds: number): Transcri
       pitch,
       velocity,
       confidence: itemConfidence,
-      source: "BASIC_PITCH",
+      source: providerId,
     };
   });
   if (notes.some((note, index) => index > 0 && note.start < notes[index - 1].start)) {
-    throw new Error("BASIC_PITCH notes must be ordered by onset");
+    throw new Error(`${providerId} notes must be ordered by onset`);
   }
-  return { providerId: "BASIC_PITCH", version, notes, confidence };
+  return { providerId, version, notes, confidence };
+}
+
+export function parseHarmony(payload: unknown, durationSeconds: number): HarmonyAnalysisResult {
+  if (!isRecord(payload)) throw new Error("SHEET_SAGE response must be an object");
+  const rawChords = payload["chords"];
+  const confidence = payload["confidence"];
+  const version = payload["version"];
+  if (
+    !Array.isArray(rawChords) ||
+    !finiteNumber(confidence) || confidence < 0 || confidence > 1 ||
+    typeof version !== "string" || !version.trim() ||
+    rawChords.length === 0
+  ) {
+    throw new Error("SHEET_SAGE response does not match the harmony contract");
+  }
+  const chords = rawChords.map((value, index): ChordEvent => {
+    if (!isRecord(value)) throw new Error(`SHEET_SAGE chord ${index + 1} must be an object`);
+    const start = value["start"];
+    const end = value["end"];
+    const symbol = value["symbol"];
+    const roman = value["roman"];
+    const itemConfidence = value["confidence"];
+    if (
+      !finiteNumber(start) || start < 0 ||
+      !finiteNumber(end) || end <= start || end > durationSeconds + 1 ||
+      typeof symbol !== "string" || !symbol.trim() ||
+      typeof roman !== "string" || !roman.trim() ||
+      !finiteNumber(itemConfidence) || itemConfidence < 0 || itemConfidence > 1
+    ) {
+      throw new Error(`SHEET_SAGE chord ${index + 1} is invalid`);
+    }
+    return {
+      start,
+      end,
+      symbol: symbol.trim(),
+      roman: roman.trim(),
+      confidence: itemConfidence,
+    };
+  });
+  if (chords.some((chord, index) => index > 0 && chord.start < chords[index - 1].start)) {
+    throw new Error("SHEET_SAGE chords must be ordered by onset");
+  }
+  return { providerId: "SHEET_SAGE", version, chords, confidence };
+}
+
+export function parseSeparation(
+  payload: unknown,
+  durationSeconds: number,
+): SeparationAnalysisResult {
+  if (!isRecord(payload)) throw new Error("BS-RoFormer response must be an object");
+  const rawStems = payload["stems"];
+  const confidence = payload["confidence"];
+  const version = payload["version"];
+  if (
+    !Array.isArray(rawStems) ||
+    !finiteNumber(confidence) || confidence < 0 || confidence > 1 ||
+    typeof version !== "string" || !version.trim() ||
+    rawStems.length === 0
+  ) {
+    throw new Error("BS-RoFormer response does not match the separation contract");
+  }
+  const stems = rawStems.map((value, index): SourceStem => {
+    if (!isRecord(value)) throw new Error(`BS-RoFormer stem ${index + 1} must be an object`);
+    const role = value["role"];
+    const objectPath = value["objectPath"];
+    const stemConfidence = value["confidence"];
+    const duration = value["durationSeconds"];
+    if (
+      typeof role !== "string" || !role.trim() ||
+      typeof objectPath !== "string" ||
+      !objectPath.startsWith("/objects/") ||
+      !finiteNumber(stemConfidence) || stemConfidence < 0 || stemConfidence > 1 ||
+      (duration !== undefined && (!finiteNumber(duration) || Math.abs(duration - durationSeconds) > 1))
+    ) {
+      throw new Error(`BS-RoFormer stem ${index + 1} is invalid`);
+    }
+    return {
+      role: role.trim(),
+      objectPath,
+      provider: "BS_ROFORMER",
+      confidence: stemConfidence,
+    };
+  });
+  if (
+    new Set(stems.map((stem) => stem.role)).size !== stems.length ||
+    new Set(stems.map((stem) => stem.objectPath)).size !== stems.length
+  ) {
+    throw new Error("BS-RoFormer returned duplicate stem roles or object paths");
+  }
+  return { providerId: "BS_ROFORMER", version, stems, confidence };
 }
 
 export async function runAnalysisProviders(
   input: AnalysisProviderInput,
 ): Promise<AnalysisProviderResults> {
   const wantsStructure = ["FULL_SONG", "INSTRUMENTAL", "VIDEO"].includes(input.sourceType);
-  const wantsTranscription = ["VOCAL_ONLY", "SOLO_INSTRUMENT"].includes(input.sourceType);
+  const wantsTranscription = [
+    "FULL_SONG",
+    "INSTRUMENTAL",
+    "VIDEO",
+    "VOCAL_ONLY",
+    "SOLO_INSTRUMENT",
+  ].includes(input.sourceType);
+  const transcriptionProviderId: "BASIC_PITCH" | "MT3" =
+    ["VOCAL_ONLY", "SOLO_INSTRUMENT"].includes(input.sourceType)
+      ? "BASIC_PITCH"
+      : "MT3";
+  const wantsSeparation = ["FULL_SONG", "INSTRUMENTAL", "VIDEO"].includes(input.sourceType);
+  const wantsHarmony = [
+    "FULL_SONG",
+    "INSTRUMENTAL",
+    "VIDEO",
+    "VOCAL_ONLY",
+    "SOLO_INSTRUMENT",
+  ].includes(input.sourceType);
   const provenance: ProviderProvenance[] = [];
   let structure: StructureAnalysisResult | null = null;
   let transcription: TranscriptionAnalysisResult | null = null;
+  let separation: SeparationAnalysisResult | null = null;
+  let harmony: HarmonyAnalysisResult | null = null;
 
   const tasks: Promise<void>[] = [];
   if (wantsStructure) {
@@ -287,21 +470,25 @@ export async function runAnalysisProviders(
     }
   }
   if (wantsTranscription) {
-    const endpoint = configuredEndpoint("BASIC_PITCH");
+    const endpoint = configuredEndpoint(transcriptionProviderId);
     if (!endpoint || !input.sourceUrl) {
       provenance.push({
         capability: "transcription",
-        provider: "BASIC_PITCH",
+        provider: transcriptionProviderId,
         version: endpoint ? "source-unavailable" : "not-configured",
         status: "unavailable",
       });
     } else {
-      tasks.push(requestProvider("BASIC_PITCH", input)
+      tasks.push(requestProvider(transcriptionProviderId, input)
         .then((payload) => {
-          transcription = parseTranscription(payload, input.durationSeconds);
+          transcription = parseTranscription(
+            transcriptionProviderId,
+            payload,
+            input.durationSeconds,
+          );
           provenance.push({
             capability: "transcription",
-            provider: "BASIC_PITCH",
+            provider: transcriptionProviderId,
             version: transcription.version,
             status: "ready",
           });
@@ -309,13 +496,63 @@ export async function runAnalysisProviders(
         .catch(() => {
           provenance.push({
             capability: "transcription",
-            provider: "BASIC_PITCH",
+            provider: transcriptionProviderId,
             version: "provider-failed",
             status: "unavailable",
           });
         }));
     }
   }
+  const optionalProviders = [
+    {
+      enabled: wantsSeparation,
+      providerId: "BS_ROFORMER" as const,
+      capability: "separation",
+      parse: (payload: unknown) => {
+        separation = parseSeparation(payload, input.durationSeconds);
+        return separation.version;
+      },
+    },
+    {
+      enabled: wantsHarmony,
+      providerId: "SHEET_SAGE" as const,
+      capability: "harmony",
+      parse: (payload: unknown) => {
+        harmony = parseHarmony(payload, input.durationSeconds);
+        return harmony.version;
+      },
+    },
+  ];
+  for (const provider of optionalProviders) {
+    if (!provider.enabled) continue;
+    const endpoint = configuredEndpoint(provider.providerId);
+    if (!endpoint || !input.sourceUrl) {
+      provenance.push({
+        capability: provider.capability,
+        provider: provider.providerId,
+        version: endpoint ? "source-unavailable" : "not-configured",
+        status: "unavailable",
+      });
+      continue;
+    }
+    tasks.push(requestProvider(provider.providerId, input)
+      .then((payload) => {
+        provenance.push({
+          capability: provider.capability,
+          provider: provider.providerId,
+          version: provider.parse(payload),
+          status: "ready",
+        });
+      })
+      .catch(() => {
+        provenance.push({
+          capability: provider.capability,
+          provider: provider.providerId,
+          version: "provider-failed",
+          status: "unavailable",
+        });
+      }));
+  }
   await Promise.all(tasks);
-  return { structure, transcription, provenance };
+  return { structure, transcription, separation, harmony, provenance };
 }
