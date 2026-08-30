@@ -7,7 +7,7 @@ ARG PYTORCH_SPEC=torch==2.5.1+cu124
 ARG TORCHVISION_SPEC=torchvision==0.20.1+cu124
 ARG TORCHAUDIO_SPEC=torchaudio==2.5.1+cu124
 ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu124
-ARG TRANSFORMERS_SPEC=transformers==4.48.3
+ARG TRANSFORMERS_SPEC=transformers==4.38.2
 ARG ACCELERATE_SPEC=accelerate==1.3.0
 
 ENV PYTHONUNBUFFERED=1 \
@@ -35,6 +35,19 @@ WORKDIR /app
 COPY services/music-ai-gpu-worker/runners/requirements-mt3.txt /tmp/provider-requirements.txt
 RUN uv pip install --python /opt/music-ai-venv/bin/python \
       -r /tmp/provider-requirements.txt
+# mt3-infer's declared transformers>=4.35 floor is inconsistent with its
+# vendored import: Transformers removed this re-export in 4.35. Move only the
+# import to its canonical torch module and fail if the pinned source drifts.
+RUN python - <<'PY'
+from pathlib import Path
+path = Path("/opt/music-ai-venv/lib/python3.11/site-packages/mt3_infer/models/mt3_pytorch/t5.py")
+source = path.read_text()
+before = "from transformers.models.t5.modeling_t5 import Seq2SeqLMOutput, BaseModelOutput, BaseModelOutputWithPastAndCrossAttentions, checkpoint, T5LayerNorm, T5Block\n"
+after = "from transformers.models.t5.modeling_t5 import Seq2SeqLMOutput, BaseModelOutput, BaseModelOutputWithPastAndCrossAttentions, T5LayerNorm, T5Block\nfrom torch.utils.checkpoint import checkpoint\n"
+if source.count(before) != 1 or "from torch.utils.checkpoint import checkpoint" in source:
+    raise SystemExit("pinned mt3-infer checkpoint import correction no longer applies exactly")
+path.write_text(source.replace(before, after))
+PY
 RUN mkdir -p /app/runners /provenance/runners
 COPY services/music-ai-gpu-worker/app.py services/music-ai-gpu-worker/modal_config.py services/music-ai-gpu-worker/model_manifest.json /app/
 COPY services/music-ai-gpu-worker/runners/__init__.py services/music-ai-gpu-worker/runners/common.py services/music-ai-gpu-worker/runners/mt3.py /app/runners/

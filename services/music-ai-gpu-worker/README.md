@@ -105,7 +105,7 @@ does not download weights or executable model code while serving a request.
 | --- | --- | --- | --- | --- |
 | ACE-Step 1.5 | L40S; CUDA 12.8.1; Torch 2.10.0+cu128 | Official ACE-Step source at `ca1e85fe9430179831e6bc6be790c332190a3866` | Composite checkpoint SHA verified; real GPU smoke passed | `ready` |
 | BS-RoFormer | L4; CUDA 12.4.1; Torch 2.5.1+cu124 | `bs-roformer-infer==0.1.5` | No unambiguous immutable Viperx-v1 checkpoint source; no real smoke | `configured`, blocked |
-| MT3 | L4; CUDA 12.4.1; Torch 2.5.1+cu124 | `mt3-infer` at `331519f1951d3d198aef01664bb0406512f97c77` | No verified public T5X/converted checkpoint snapshot; no real smoke | `configured`, blocked |
+| MT3 | L4; CUDA 12.4.1; Torch 2.5.1+cu124; Transformers 4.38.2 | `mt3-infer==0.1.3` at `280a95817a67da0ae46987ddbb18c946963afffe` | Converted checkpoint snapshot and canonical SHA verified; real L4 smoke produced valid transcription; routing still requires the exact signed matching promotion | fail-closed pending signed matching promotion |
 | All-In-One | L4; CUDA 12.4.1; Torch 2.5.1+cu124 | `all-in-one-infer` at `3c93b4ae389328544dd5955af7497030cb1bca3a`; `demucs-infer` 4.2.2 at `4b79d5c756ce298503d90b0cca2abbc76c565416` | All eight CC-BY-NC-SA-4.0 Harmonix folds and the MIT HTDemucs asset are revision/SHA pinned and atomically staged; readiness still requires real GPU smoke and a signed promotion | `configured` until smoke and promotion pass |
 
 `runtimeReady=true` for blocked providers proves their isolated image,
@@ -242,11 +242,27 @@ configuration. It excludes the turbo and 1.7B thinking model. A prior verified
 `ace-step-1.5-base` is hardlinked (or copied) into staging when available and
 is never deleted; otherwise the base revision is downloaded. The final
 composite is independently canonical-hashed before its model Volume commit.
-Bootstrap entrypoints also
-exist for BS_ROFORMER, MT3, and ALL_IN_ONE, but intentionally fail before
-creating checkpoint files because their current adapter identities do not establish an
+MT3 stages only `config.json` and `mt3.pth` from `kunato/mt3-pytorch` commit
+`e203122fb40eefd3f9068dc6efd1870fe54ca57b`. Each file is bounded and
+SHA-256 verified before the directory is atomically published. The canonical
+directory digest is
+`33f6bc4c0410a1c7c1c426c5406566de0b7418af2dc3dfd798496f70cef85622`.
+The checkpoint was converted by `tools/convert_weight.py` at
+`kunato/mt3-pytorch@03a06ef7f288f64e7cd25f17c3f37bcf9fe111bc` from the
+Apache-2.0 Magenta MT3 source, but the conversion repository declares no
+license; its checkpoint license is therefore recorded as `NOASSERTION`.
+The reviewed runtime uses `mt3-infer==0.1.3` at
+`280a95817a67da0ae46987ddbb18c946963afffe`, Transformers 4.38.2, and one
+exact build-time import relocation identified in runtime provenance.
+The retained L4 result is in `smoke_proofs/mt3-l4.json`: the 32-second
+non-silent structured fixture produced 48 notes and matched the reviewed image
+and source digest. This evidence does not promote the provider or enable API
+routing; only a separately signed, exact matching promotion bundle can do that.
+
+The BS_ROFORMER bootstrap entrypoint intentionally fails before creating
+checkpoint files because its current adapter identity does not establish an
 unambiguous, immutable public checkpoint snapshot. Operators must review and
-pin those sources rather than allowing an inference-time auto-download or a
+pin that source rather than allowing an inference-time auto-download or a
 checkpoint-shaped placeholder. Successful bootstrap output contains only
 provider, relative path, digest, revision, and size.
 

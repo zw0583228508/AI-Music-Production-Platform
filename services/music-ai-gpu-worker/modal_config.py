@@ -177,7 +177,9 @@ def worker_environment(deployment: ProviderDeployment) -> dict[str, str]:
     }
     details = MANIFEST["providers"][deployment.provider]
     checkpoint_sha256 = details.get("checkpoint_sha256")
-    if checkpoint_sha256:
+    if isinstance(checkpoint_sha256, str) and re.fullmatch(
+        r"[a-f0-9]{64}", checkpoint_sha256
+    ):
         environment[
             f"MUSIC_PROVIDER_{deployment.provider}_CHECKPOINT_SHA256"
         ] = checkpoint_sha256

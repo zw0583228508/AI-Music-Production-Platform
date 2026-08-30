@@ -80,7 +80,7 @@ Required environment includes the exact aggregate/file hashes in
 
 Authoritative identities researched at the pinned runner revisions:
 
-* MT3-Infer `331519f1951d3d198aef01664bb0406512f97c77` calls the
+* MT3-Infer `280a95817a67da0ae46987ddbb18c946963afffe` calls the
   `mt3_pytorch` registry entry a directory checkpoint at
   `.mt3_checkpoints/mt3_pytorch`, sourced from kunato/mt3-pytorch
   `pretrained/`; its registry records weight SHA-256

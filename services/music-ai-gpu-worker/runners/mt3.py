@@ -1,8 +1,8 @@
 """Pinned MT3 GPU transcription runner.
 
-This runner uses the official MT3 inference adapter installed from the pinned
-revision in requirements-mt3.txt.  The adapter is intentionally a required
-dependency: it is not replaced with heuristics, Basic Pitch, or CPU inference.
+This runner uses the pinned mt3-infer adapter and a separately attested
+converted MT3 checkpoint. The adapter is intentionally a required dependency:
+it is not replaced with heuristics, Basic Pitch, or CPU inference.
 """
 from __future__ import annotations
 
@@ -15,15 +15,17 @@ from typing import Any, Protocol
 from .common import (
     RunnerError, attest_checkpoint, durable_job_dir, emit, finite_number,
     materialize_source, request_value, require_cuda, require_distribution_version,
-    runtime_provenance,
+    runtime_provenance, validate_audio,
 )
 
-# This revision has not been independently verified in this repository.  It is
-# configuration documentation, not an attestation of an installed source tree.
 BACKEND_DISTRIBUTION = "mt3-infer"
-BACKEND_VERSION = "0.2.0"
-BACKEND_SOURCE_REVISION = "openmirlab/mt3-infer@331519f1951d3d198aef01664bb0406512f97c77"
+BACKEND_VERSION = "0.1.3"
+BACKEND_SOURCE_REVISION = "openmirlab/mt3-infer@280a95817a67da0ae46987ddbb18c946963afffe"
+BACKEND_PATCH = "Dockerfile.mt3:checkpoint-import-relocation"
 UPSTREAM_SOURCE_REVISION = "magenta/mt3@fa53e12321ac417d3baf01f43e6796a7d0775f55"
+CHECKPOINT_SOURCE_REVISION = "kunato/mt3-pytorch@e203122fb40eefd3f9068dc6efd1870fe54ca57b#pretrained"
+CONVERSION_SOURCE_REVISION = "kunato/mt3-pytorch@03a06ef7f288f64e7cd25f17c3f37bcf9fe111bc#tools/convert_weight.py"
+CHECKPOINT_LICENSE = "NOASSERTION"
 PROVIDER = "MT3"
 MODEL_VERSION = "mt3-ismir2021"
 
@@ -41,7 +43,7 @@ class OfficialMt3Backend:
             import soundfile as sf
             from mt3_infer import transcribe
         except ImportError as exc:  # pragma: no cover - deployment dependency
-            raise RunnerError("mt3-infer==0.2.0 is not installed") from exc
+            raise RunnerError("mt3-infer==0.1.3 is not installed") from exc
         samples, sample_rate = sf.read(str(audio), dtype="float32")
         midi = transcribe(
             samples, sr=sample_rate, model=os.getenv("MT3_INFER_MODEL", "mt3_pytorch"),
@@ -105,9 +107,15 @@ def run_job(request: dict[str, Any], checkpoint: Path, backend: Mt3Backend | Non
             *, smoke: bool = False) -> dict[str, Any]:
     require_cuda()
     digest = attest_checkpoint(checkpoint, PROVIDER)
-    duration = finite_number(request_value(request, "durationSeconds"), "durationSeconds", 0.001)
     work = durable_job_dir(request, PROVIDER)
     audio = materialize_source(request, work / "source.wav", checkpoint, smoke)
+    duration_value = request_value(request, "durationSeconds")
+    if duration_value is not None:
+        duration = finite_number(duration_value, "durationSeconds", 0.001)
+    elif smoke:
+        duration = float(validate_audio(audio)["durationSeconds"])
+    else:
+        duration = finite_number(duration_value, "durationSeconds", 0.001)
     active = backend or OfficialMt3Backend()
     notes = normalize_notes(active.transcribe(audio, checkpoint), duration + 1)
     overall = min((note["confidence"] for note in notes), default=0.0)
@@ -115,9 +123,12 @@ def run_job(request: dict[str, Any], checkpoint: Path, backend: Mt3Backend | Non
             "provenance": {"provider": PROVIDER, "modelVersion": MODEL_VERSION,
                            "checkpointSha256": digest, "backend": active.name,
                            "backendVersion": BACKEND_VERSION,
-                            "revision": BACKEND_SOURCE_REVISION,
+                            "revision": CHECKPOINT_SOURCE_REVISION,
                            "sourceRevision": BACKEND_SOURCE_REVISION,
+                            "sourcePatch": BACKEND_PATCH,
                            "upstreamSourceRevision": UPSTREAM_SOURCE_REVISION,
+                            "conversionSourceRevision": CONVERSION_SOURCE_REVISION,
+                            "checkpointLicense": CHECKPOINT_LICENSE,
                             "confidenceBasis": "midi-velocity/127", "device": "cuda",
                             **runtime_provenance()}}
 
@@ -145,8 +156,12 @@ def main(argv: list[str] | None = None) -> int:
         emit({"smokeTested": True, "provider": PROVIDER, "modelVersion": args.model_version,
               "version": args.model_version, "checkpointSha256": digest,
               "backend": OfficialMt3Backend.name, "backendVersion": BACKEND_VERSION,
+               "revision": CHECKPOINT_SOURCE_REVISION,
               "sourceRevision": BACKEND_SOURCE_REVISION,
+               "sourcePatch": BACKEND_PATCH,
               "upstreamSourceRevision": UPSTREAM_SOURCE_REVISION,
+               "conversionSourceRevision": CONVERSION_SOURCE_REVISION,
+               "checkpointLicense": CHECKPOINT_LICENSE,
               "device": "cuda", "provenance": proof_provenance,
               "output": {"notes": len(result["notes"])}})
     else:

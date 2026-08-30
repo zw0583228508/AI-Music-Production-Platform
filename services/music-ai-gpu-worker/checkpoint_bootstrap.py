@@ -32,13 +32,14 @@ class PublicSnapshot:
     revision: str
 
 
-# This is the only public checkpoint snapshot whose immutable revision was
-# verified during implementation. The other provider adapters name model
-# identities, but do not establish an unambiguous public checkpoint snapshot.
 PUBLIC_SNAPSHOTS: dict[str, PublicSnapshot] = {
     "ACE_STEP": PublicSnapshot(
         "ACE-Step/Ace-Step1.5",
         "19671f406d603126926c1b7e2adc169acbcade22",
+    ),
+    "MT3": PublicSnapshot(
+        "kunato/mt3-pytorch",
+        "e203122fb40eefd3f9068dc6efd1870fe54ca57b",
     ),
 }
 ACE_BASE_REPOSITORY = "ACE-Step/acestep-v15-base"
@@ -57,9 +58,26 @@ ACE_BASE_ALLOW_PATTERNS = (
     "silence_latent.pt",
 )
 ACE_FORBIDDEN_PARTS = {"acestep-v15-turbo", "acestep-5Hz-lm-1.7B"}
+MT3_FILES = {
+    "config.json": {
+        "url": (
+            "https://raw.githubusercontent.com/kunato/mt3-pytorch/"
+            "e203122fb40eefd3f9068dc6efd1870fe54ca57b/pretrained/config.json"
+        ),
+        "sha256": "e1584759624ddecfeca7eaaaaf60cea58a5dbd1012957666dc685bf51b93907a",
+        "max_bytes": 4 * 1024,
+    },
+    "mt3.pth": {
+        "url": (
+            "https://media.githubusercontent.com/media/kunato/mt3-pytorch/"
+            "e203122fb40eefd3f9068dc6efd1870fe54ca57b/pretrained/mt3.pth"
+        ),
+        "sha256": "b8a3807ed265059abd25ad7f68142c06c35e8f6144dcaa45bd55946a3745398f",
+        "max_bytes": 192 * 1024 * 1024,
+    },
+}
 UNVERIFIED_SOURCES = {
     "BS_ROFORMER": "no unambiguous public Viperx-v1 checkpoint revision is pinned",
-    "MT3": "the T5X checkpoint tree has no verified public snapshot pin",
 }
 
 
@@ -199,6 +217,73 @@ def _bootstrap_ace(destination: Path, stage: Path) -> None:
     os.replace(stage, destination)
 
 
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _validate_mt3_snapshot(path: Path) -> None:
+    if not path.is_dir() or {item.name for item in path.iterdir()} != set(MT3_FILES):
+        raise RuntimeError("MT3 checkpoint must contain only config.json and mt3.pth")
+    for name, artifact in MT3_FILES.items():
+        item = path / name
+        if not item.is_file() or item.is_symlink():
+            raise RuntimeError(f"MT3 checkpoint artifact {name} is missing or unsafe")
+        if item.stat().st_size <= 0 or item.stat().st_size > artifact["max_bytes"]:
+            raise RuntimeError(f"MT3 checkpoint artifact {name} has an invalid size")
+        if _file_sha256(item) != artifact["sha256"]:
+            raise RuntimeError(f"MT3 checkpoint artifact {name} failed SHA-256 verification")
+    expected = MANIFEST["providers"]["MT3"]["checkpoint_sha256"]
+    if checkpoint_sha256(path) != expected:
+        raise RuntimeError("MT3 canonical checkpoint SHA-256 does not match the manifest")
+
+
+def _download_verified(url: str, destination: Path, expected: str, max_bytes: int) -> None:
+    digest = hashlib.sha256()
+    size = 0
+    request = urllib.request.Request(
+        url, headers={"User-Agent": "music-ai-checkpoint-bootstrap/1"}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response, destination.open(
+            "xb"
+        ) as output:
+            while block := response.read(1024 * 1024):
+                size += len(block)
+                if size > max_bytes:
+                    raise RuntimeError(
+                        "checkpoint artifact exceeds its reviewed size limit"
+                    )
+                digest.update(block)
+                output.write(block)
+            output.flush()
+            os.fsync(output.fileno())
+    except Exception:
+        destination.unlink(missing_ok=True)
+        raise
+    if size <= 0 or digest.hexdigest() != expected:
+        destination.unlink(missing_ok=True)
+        raise RuntimeError("checkpoint artifact failed SHA-256 verification")
+
+
+def _bootstrap_mt3(destination: Path, stage: Path) -> None:
+    stage.mkdir(parents=True, exist_ok=False)
+    for name, artifact in MT3_FILES.items():
+        _download_verified(
+            artifact["url"],
+            stage / name,
+            artifact["sha256"],
+            artifact["max_bytes"],
+        )
+    _validate_mt3_snapshot(stage)
+    if destination.exists():
+        raise RuntimeError("checkpoint destination appeared during bootstrap")
+    os.replace(stage, destination)
+
+
 def _validated_asset(asset: object) -> dict[str, str | int]:
     if not isinstance(asset, dict):
         raise RuntimeError("checkpoint asset metadata is invalid")
@@ -296,6 +381,8 @@ def bootstrap_provider(provider: str) -> dict[str, str | int]:
     if destination.exists():
         if provider == "ACE_STEP":
             _validate_ace_composite(destination)
+        elif provider == "MT3":
+            _validate_mt3_snapshot(destination)
         elif provider == "ALL_IN_ONE":
             _validate_all_in_one(destination)
         digest = checkpoint_sha256(destination)
@@ -304,6 +391,8 @@ def bootstrap_provider(provider: str) -> dict[str, str | int]:
         try:
             if provider == "ACE_STEP":
                 _bootstrap_ace(destination, stage)
+            elif provider == "MT3":
+                _bootstrap_mt3(destination, stage)
             elif provider == "ALL_IN_ONE":
                 _bootstrap_all_in_one(destination, stage)
             else:

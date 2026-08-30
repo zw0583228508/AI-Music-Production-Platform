@@ -83,6 +83,14 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             )
             self.assertNotIn("MUSIC_GPU_SOURCE_IMAGE_DIGEST", build_args)
 
+    def test_mt3_direct_docker_build_uses_the_reviewed_transformers_pin(self):
+        dockerfile = (ROOT / "Dockerfile.mt3").read_text()
+        self.assertIn("ARG TRANSFORMERS_SPEC=transformers==4.38.2", dockerfile)
+        self.assertEqual(
+            modal_config.DEPLOYMENTS["MT3"].transformers,
+            "4.38.2",
+        )
+
     def test_source_identity_is_runtime_only(self):
         modal_app = (ROOT / "modal_app.py").read_text()
         for provider in modal_config.DEPLOYMENTS:
@@ -271,13 +279,124 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             "SMOKE_FIXTURE",
             Path(directory) / "_smoke" / "non-silent-440hz-1s.wav",
         ):
-            for provider in ("BS_ROFORMER", "MT3"):
-                with self.assertRaisesRegex(RuntimeError, "bootstrap unavailable"):
-                    checkpoint_bootstrap.bootstrap_provider(provider)
+            with self.assertRaisesRegex(RuntimeError, "bootstrap unavailable"):
+                checkpoint_bootstrap.bootstrap_provider("BS_ROFORMER")
             self.assertTrue(checkpoint_bootstrap.SMOKE_FIXTURE.is_file())
             self.assertEqual(
                 list(Path(directory).glob("bs-roformer-viperx-v1.ckpt")), []
             )
+
+    def test_reviewed_manifest_checkpoint_hash_is_passed_to_mt3(self):
+        environment = modal_config.worker_environment(
+            modal_config.DEPLOYMENTS["MT3"]
+        )
+        self.assertEqual(
+            environment["MUSIC_PROVIDER_MT3_CHECKPOINT_SHA256"],
+            "33f6bc4c0410a1c7c1c426c5406566de0b7418af2dc3dfd798496f70cef85622",
+        )
+
+    def test_retained_mt3_l4_proof_matches_the_reviewed_deployment(self):
+        record = json.loads((ROOT / "smoke_proofs" / "mt3-l4.json").read_text())
+        proof = record["proof"]
+        provenance = proof["provenance"]
+        deployment = modal_config.DEPLOYMENTS["MT3"]
+        details = modal_config.MANIFEST["providers"]["MT3"]
+        self.assertEqual(proof["provider"], deployment.provider)
+        self.assertEqual(proof["modelVersion"], deployment.model_version)
+        self.assertEqual(proof["revision"], deployment.source_revision)
+        self.assertEqual(
+            proof["checkpointSha256"],
+            modal_config.worker_environment(deployment)[
+                "MUSIC_PROVIDER_MT3_CHECKPOINT_SHA256"
+            ],
+        )
+        self.assertTrue(proof["smokeTested"])
+        self.assertTrue(proof["smokeFixture"]["nonSilent"])
+        self.assertGreater(proof["output"]["notes"], 0)
+        self.assertEqual(provenance["gpu"], "NVIDIA L4")
+        self.assertEqual(provenance["modalImageId"], provenance["imageId"])
+        self.assertEqual(
+            provenance["sourceImageDigest"], deployment.source_image_digest
+        )
+        self.assertEqual(
+            proof["sourceRevision"], details["adapter_revision"]
+        )
+        self.assertEqual(
+            proof["conversionSourceRevision"], details["conversion_revision"]
+        )
+        self.assertEqual(
+            proof["upstreamSourceRevision"], details["upstream_revision"]
+        )
+        self.assertEqual(proof["checkpointLicense"], "NOASSERTION")
+        self.assertEqual(
+            proof["sourcePatch"],
+            "Dockerfile.mt3:checkpoint-import-relocation",
+        )
+        self.assertEqual(
+            details["adapter_patch"],
+            "Dockerfile.mt3 exact transformers-to-torch checkpoint import relocation",
+        )
+        for field in (
+            "sourceRevision",
+            "conversionSourceRevision",
+            "upstreamSourceRevision",
+            "checkpointLicense",
+            "sourcePatch",
+        ):
+            self.assertEqual(provenance[field], proof[field])
+
+    def test_mt3_bootstrap_verifies_files_and_publishes_atomically(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifacts = {
+                "config.json": b'{"model_type":"t5"}',
+                "mt3.pth": b"reviewed-converted-weight",
+            }
+            reviewed = {
+                name: {
+                    "url": f"https://example.test/{name}",
+                    "sha256": __import__("hashlib").sha256(content).hexdigest(),
+                    "max_bytes": 1024,
+                }
+                for name, content in artifacts.items()
+            }
+            canonical = __import__("hashlib").sha256(
+                b"config.json"
+                + artifacts["config.json"]
+                + b"mt3.pth"
+                + artifacts["mt3.pth"]
+            ).hexdigest()
+
+            def download(url, destination, expected, max_bytes):
+                content = artifacts[destination.name]
+                self.assertEqual(
+                    __import__("hashlib").sha256(content).hexdigest(), expected
+                )
+                self.assertLessEqual(len(content), max_bytes)
+                destination.write_bytes(content)
+
+            details = checkpoint_bootstrap.MANIFEST["providers"]["MT3"]
+            with mock.patch.object(
+                checkpoint_bootstrap, "MODEL_ROOT", root
+            ), mock.patch.object(
+                checkpoint_bootstrap,
+                "SMOKE_FIXTURE",
+                root / "_smoke" / "structured-click-track-32s.wav",
+            ), mock.patch.object(
+                checkpoint_bootstrap, "MT3_FILES", reviewed
+            ), mock.patch.object(
+                checkpoint_bootstrap, "_download_verified", side_effect=download
+            ), mock.patch.dict(
+                details, {"checkpoint_sha256": canonical}
+            ):
+                result = checkpoint_bootstrap.bootstrap_provider("MT3")
+
+            destination = root / "mt3-ismir2021"
+            self.assertEqual(
+                {item.name for item in destination.iterdir()}, set(artifacts)
+            )
+            self.assertEqual(result["digest"], canonical)
+            self.assertEqual(list(root.glob(".bootstrap-mt3-*")), [])
 
     def test_ace_bootstrap_builds_atomic_minimal_composite_and_keeps_old_base(self):
         with tempfile.TemporaryDirectory() as directory:

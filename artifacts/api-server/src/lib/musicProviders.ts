@@ -332,9 +332,9 @@ export const MUSIC_PROVIDERS: MusicProviderDescriptor[] = [
     inputTypes: ["FULL_SONG", "INSTRUMENTAL", "VIDEO"],
     execution: "remote",
     status: remoteConfigured("MT3") ? "configured" : "unavailable",
-    license: "Apache-2.0",
+    license: "MT3 upstream: Apache-2.0; converted checkpoint: NOASSERTION",
     priority: 80,
-    notes: "Requires MT3_API_URL; consumes signed private source URLs.",
+    notes: "Requires MT3_API_URL, a signed promotion record, and the exact verified converted checkpoint; consumes signed private source URLs.",
   },
   {
     id: "ALL_IN_ONE",

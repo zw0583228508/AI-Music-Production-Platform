@@ -99,9 +99,19 @@ before(async () => {
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify({
         status: "ready",
+        provider: "METEOR",
         checkpointReady: true,
         runtimeReady: true,
-        modelVersion: "mock-meteor-v9",
+        gpuReady: true,
+        smokeTested: true,
+        modelVersion: "meteor",
+        checkpointSha256: "b".repeat(64),
+        revision: "meteor-test-r9",
+        modalImageId: "im-MeteorRecovery9",
+        sourceImageDigest: `sha256:${"c".repeat(64)}`,
+        cudaVersion: "12.4",
+        pytorchVersion: "2.5.1",
+        gpu: "NVIDIA L4",
       }));
       return;
     }
@@ -115,7 +125,16 @@ before(async () => {
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify({
         requestId: "mock-request-1",
-        modelVersion: "mock-meteor-v9",
+        provider: "METEOR",
+        modelVersion: "meteor",
+        checkpointSha256: "b".repeat(64),
+        smokeTested: true,
+        revision: "meteor-test-r9",
+        modalImageId: "im-MeteorRecovery9",
+        sourceImageDigest: `sha256:${"c".repeat(64)}`,
+        cudaVersion: "12.4",
+        pytorchVersion: "2.5.1",
+        gpu: "NVIDIA L4",
         candidates: [
           {
             label: "Second Choice",
@@ -143,6 +162,10 @@ before(async () => {
   const address = providerServer.address();
   process.env.MUSIC_PROVIDER_METEOR_URL =
     `http://127.0.0.1:${address.port}/generate`;
+  process.env.MUSIC_PROVIDER_METEOR_CHECKPOINT_SHA256 = "b".repeat(64);
+  process.env.MUSIC_PROVIDER_METEOR_MODAL_IMAGE_ID = "im-MeteorRecovery9";
+  process.env.MUSIC_PROVIDER_METEOR_SOURCE_IMAGE_DIGEST =
+    `sha256:${"c".repeat(64)}`;
 
   await db.insert(musicProjectsTable).values({
     id: ids.project,
@@ -257,6 +280,9 @@ before(async () => {
 after(async () => {
   stopRecovery?.();
   delete process.env.MUSIC_PROVIDER_METEOR_URL;
+  delete process.env.MUSIC_PROVIDER_METEOR_CHECKPOINT_SHA256;
+  delete process.env.MUSIC_PROVIDER_METEOR_MODAL_IMAGE_ID;
+  delete process.env.MUSIC_PROVIDER_METEOR_SOURCE_IMAGE_DIGEST;
   await db.delete(musicProjectsTable).where(eq(musicProjectsTable.id, ids.project));
   await new Promise((resolve) => providerServer.close(resolve));
   await unlink(harnessPath).catch(() => undefined);
@@ -277,7 +303,7 @@ test("recurring recovery reclaims a lease that expires after startup and persist
   assert.equal(candidates[0].label, "Second Choice");
   assert.equal(candidates[0].rank, 1);
   assert.equal(candidates[0].modelVersion, "meteor");
-  assert.equal(candidates[0].reportedModelVersion, "mock-meteor-v9");
+  assert.equal(candidates[0].reportedModelVersion, "meteor");
   assert.equal(candidates[0].seed, 4242);
   assert.equal(candidates[0].parameters.temperature, 0.4);
   assert.equal(candidates[0].parameters.providerScore, 0.71);

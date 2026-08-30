@@ -1,0 +1,49 @@
+{
+  "modalRunUrl": "https://modal.com/apps/windot100/main/ap-Q6bNMH6oxewUQE8793vjEq",
+  "proof": {
+    "backend": "mt3-infer",
+    "backendVersion": "0.1.3",
+    "checkpointLicense": "NOASSERTION",
+    "checkpointSha256": "33f6bc4c0410a1c7c1c426c5406566de0b7418af2dc3dfd798496f70cef85622",
+    "conversionSourceRevision": "kunato/mt3-pytorch@03a06ef7f288f64e7cd25f17c3f37bcf9fe111bc#tools/convert_weight.py",
+    "device": "cuda",
+    "modelVersion": "mt3-ismir2021",
+    "output": {
+      "notes": 48
+    },
+    "provenance": {
+      "backend": "mt3-infer",
+      "backendVersion": "0.1.3",
+      "checkpointLicense": "NOASSERTION",
+      "checkpointSha256": "33f6bc4c0410a1c7c1c426c5406566de0b7418af2dc3dfd798496f70cef85622",
+      "confidenceBasis": "midi-velocity/127",
+      "containerDigest": "sha256:5d93923a4cbfeb4ace29f35a88562741da156800578bd4c78cba6024f607d6c7",
+      "conversionSourceRevision": "kunato/mt3-pytorch@03a06ef7f288f64e7cd25f17c3f37bcf9fe111bc#tools/convert_weight.py",
+      "cudaVersion": "12.4",
+      "device": "cuda",
+      "gpu": "NVIDIA L4",
+      "imageId": "im-pHlhORTJDszOR707OWyWom",
+      "modalImageId": "im-pHlhORTJDszOR707OWyWom",
+      "modelVersion": "mt3-ismir2021",
+      "provider": "MT3",
+      "pytorchVersion": "2.5.1+cu124",
+      "revision": "kunato/mt3-pytorch@e203122fb40eefd3f9068dc6efd1870fe54ca57b#pretrained",
+      "sourceImageDigest": "sha256:5d93923a4cbfeb4ace29f35a88562741da156800578bd4c78cba6024f607d6c7",
+      "sourcePatch": "Dockerfile.mt3:checkpoint-import-relocation",
+      "sourceRevision": "openmirlab/mt3-infer@280a95817a67da0ae46987ddbb18c946963afffe",
+      "upstreamSourceRevision": "magenta/mt3@fa53e12321ac417d3baf01f43e6796a7d0775f55"
+    },
+    "provider": "MT3",
+    "revision": "kunato/mt3-pytorch@e203122fb40eefd3f9068dc6efd1870fe54ca57b#pretrained",
+    "smokeFixture": {
+      "durationSeconds": 32,
+      "id": "structured-click-track-32s",
+      "nonSilent": true
+    },
+    "smokeTested": true,
+    "sourcePatch": "Dockerfile.mt3:checkpoint-import-relocation",
+    "sourceRevision": "openmirlab/mt3-infer@280a95817a67da0ae46987ddbb18c946963afffe",
+    "upstreamSourceRevision": "magenta/mt3@fa53e12321ac417d3baf01f43e6796a7d0775f55",
+    "version": "mt3-ismir2021"
+  }
+}

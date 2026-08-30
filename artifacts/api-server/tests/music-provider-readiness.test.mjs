@@ -1,5 +1,6 @@
 import { strict as assert } from "node:assert";
 import { spawn } from "node:child_process";
+import { generateKeyPairSync, sign as signBytes } from "node:crypto";
 import { createServer } from "node:http";
 import { after, test } from "node:test";
 import { unlink } from "node:fs/promises";
@@ -12,6 +13,7 @@ await build({
   stdin: {
     contents: `
       export {
+         canonicalGpuPromotionJson,
         createProviderRegistry,
         providerCatalog,
         selectMusicProvider,
@@ -36,6 +38,7 @@ globalThis.require = __createRequire(import.meta.url);`,
 });
 
 const {
+  canonicalGpuPromotionJson,
   createProviderRegistry,
   createSession,
   deleteSession,
@@ -46,6 +49,23 @@ const {
   ListGenerationProvidersResponse,
 } = await import(pathToFileURL(harnessPath).href);
 
+const promotionKeys = generateKeyPairSync("ed25519");
+const promotionPublicKey = promotionKeys.publicKey.export({
+  type: "spki",
+  format: "pem",
+});
+const aceRuntimePins = {
+  python: "3.11.11",
+  cudaImage: "nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04",
+  cuda: "12.8.1",
+  pytorch: "2.10.0+cu128",
+  torchvision: "0.25.0+cu128",
+  torchaudio: "2.10.0+cu128",
+  torchIndexUrl: "https://download.pytorch.org/whl/cu128",
+  transformers: "4.57.6",
+  accelerate: "1.12.0",
+};
+
 after(async () => {
   delete process.env.MUSIC_PROVIDER_METEOR_URL;
   delete process.env.MUSIC_PROVIDER_METEOR_CHECKPOINT_SHA256;
@@ -53,6 +73,8 @@ after(async () => {
   delete process.env.MUSIC_PROVIDER_METEOR_MODAL_IMAGE_ID;
   delete process.env.MUSIC_PROVIDER_METEOR_HEALTH_URL;
   delete process.env.MUSIC_PROVIDER_HEALTH_TIMEOUT_MS;
+  delete process.env.MUSIC_PROVIDER_ACE_STEP_PROMOTION_BUNDLE;
+  delete process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY;
   delete process.env.DEMUCS_API_URL;
   await unlink(harnessPath).catch(() => undefined);
 });
@@ -128,8 +150,8 @@ function assertPromotedAceStep(catalog) {
     revision: "ace-step-1.5-base-r42",
     modalImageId: "im-AceStepPromoted42",
     sourceImageDigest: `sha256:${"c".repeat(64)}`,
-    cudaVersion: "12.4",
-    pytorchVersion: "2.5.1",
+    cudaVersion: aceRuntimePins.cuda,
+    pytorchVersion: aceRuntimePins.pytorch,
     gpu: "NVIDIA A100",
   });
   assert.equal(provider.lastHealth.status, "healthy");
@@ -242,13 +264,52 @@ test("authenticated ACE-Step catalog identity survives an API restart", async ()
       revision: "ace-step-1.5-base-r42",
       modalImageId: "im-AceStepPromoted42",
       sourceImageDigest: `sha256:${"c".repeat(64)}`,
-      cudaVersion: "12.4",
-      pytorchVersion: "2.5.1",
+      modalAppId: "ap-AceStep42",
+      modalDeploymentId: "dp-AceStep42",
+      modalFunctionId: "fu-AceStep42",
+      sourceRevision: "git-test-revision-42",
+      framework: {
+        python: aceRuntimePins.python,
+        cuda_image: aceRuntimePins.cudaImage,
+        cuda: aceRuntimePins.cuda,
+        pytorch: aceRuntimePins.pytorch,
+        torchvision: aceRuntimePins.torchvision,
+        torchaudio: aceRuntimePins.torchaudio,
+        torch_index_url: aceRuntimePins.torchIndexUrl,
+        transformers: aceRuntimePins.transformers,
+        accelerate: aceRuntimePins.accelerate,
+      },
+      runtime: {
+        pythonVersion: aceRuntimePins.python,
+      },
+      cudaVersion: aceRuntimePins.cuda,
+      pytorchVersion: aceRuntimePins.pytorch,
       gpu: "NVIDIA A100",
     }));
   });
   await listen(worker);
   const workerAddress = worker.address();
+  const workerOrigin = `http://127.0.0.1:${workerAddress.port}`;
+  const promotionRecord = {
+    schemaVersion: 1,
+    provider: "ACE_STEP",
+    modalAppId: "ap-AceStep42",
+    modalDeploymentId: "dp-AceStep42",
+    modalFunctionId: "fu-AceStep42",
+    modalImageId: "im-AceStepPromoted42",
+    endpointOrigin: workerOrigin,
+    modelVersion: "ace-step-1.5-base",
+    checkpointSha256: "a".repeat(64),
+    checkpointRevision: "ace-step-1.5-base-r42",
+    sourceRevision: "git-test-revision-42",
+    sourceImageDigest: `sha256:${"c".repeat(64)}`,
+    runtime: aceRuntimePins,
+  };
+  const promotionSignature = signBytes(
+    null,
+    Buffer.from(canonicalGpuPromotionJson(promotionRecord)),
+    promotionKeys.privateKey,
+  ).toString("base64");
   const childEnvironment = {
     ...process.env,
     NODE_ENV: "test",
@@ -258,6 +319,11 @@ test("authenticated ACE-Step catalog identity survives an API restart", async ()
     MUSIC_PROVIDER_ACE_STEP_CHECKPOINT_SHA256: "a".repeat(64),
     MUSIC_PROVIDER_ACE_STEP_MODAL_IMAGE_ID: "im-AceStepPromoted42",
     MUSIC_PROVIDER_ACE_STEP_SOURCE_IMAGE_DIGEST: `sha256:${"c".repeat(64)}`,
+    MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY: promotionPublicKey,
+    MUSIC_PROVIDER_ACE_STEP_PROMOTION_BUNDLE: JSON.stringify({
+      record: promotionRecord,
+      signature: promotionSignature,
+    }),
   };
   const startApi = async () => {
     const port = await availablePort();
