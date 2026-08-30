@@ -1,4 +1,5 @@
 import { strict as assert } from "node:assert";
+import { createHash } from "node:crypto";
 import { after, test } from "node:test";
 import { unlink } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
@@ -6,15 +7,31 @@ import { build } from "esbuild";
 
 const bundlePath = `/tmp/music-export-pipeline-test-${process.pid}.mjs`;
 await build({
-  entryPoints: [new URL("../src/lib/export-pipeline.ts", import.meta.url).pathname],
+  stdin: {
+    contents: `
+      export { createExportBundle, createTrackPerformance, tickToSeconds } from "./src/lib/export-pipeline";
+      export { createStyleSpec } from "./src/lib/musicEngines";
+      export { renderArrangementExport, rendererEvidenceTechnicalMetadata } from "./src/lib/exportEngine";
+    `,
+    resolveDir: new URL("..", import.meta.url).pathname,
+    sourcefile: "export-pipeline-harness.ts",
+  },
   bundle: true,
   platform: "node",
   format: "esm",
   outfile: bundlePath,
+  external: ["pg-native", "@google-cloud/*", "@google/*"],
+  banner: {
+    js: `import { createRequire as __createRequire } from "node:module";
+globalThis.require = __createRequire(import.meta.url);`,
+  },
 });
 const {
+  createStyleSpec,
   createExportBundle,
   createTrackPerformance,
+  renderArrangementExport,
+  rendererEvidenceTechnicalMetadata,
   tickToSeconds,
 } = await import(pathToFileURL(bundlePath).href);
 after(() => unlink(bundlePath).catch(() => undefined));
@@ -35,6 +52,184 @@ function openStoredZip(zip) {
   }
   return entries;
 }
+
+function sha256(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+test("persisted stem bytes match the checksum in authorized artifact metadata", async () => {
+  const provenance = {
+    model: "TEST",
+    version: "1",
+    parameters: {},
+    parentIds: ["track-model-artifact"],
+    createdBy: "test",
+  };
+  const instrumentDefinition = {
+    id: "piano",
+    family: "keys",
+    playableRange: { min: 21, max: 108 },
+    comfortableRange: { min: 36, max: 96 },
+    registers: [{ name: "full", min: 21, max: 108, character: "balanced" }],
+    polyphonic: true,
+    maxVoices: 10,
+    articulations: ["sustain"],
+    constraints: { maxLeap: 24, minNoteDuration: 0.05, maxSimultaneousNotes: 10 },
+    controls: { dynamics: [1], expression: [11], sustain: 64, pitchBend: false, aftertouch: true },
+  };
+  const trackModel = {
+    id: "stem-piano",
+    instrument: "piano",
+    instrumentDefinition,
+    role: "harmony",
+    notes: [{ id: "note-1", start: 0, duration: 1, pitch: 60, velocity: 96 }],
+    cc: [],
+    articulations: [],
+    automation: [],
+    source: "PERFORMANCE_ENGINE",
+    version: 1,
+    provenance,
+  };
+  const style = createStyleSpec("pop", {
+    energy: 0.6,
+    density: 0.5,
+    harmonyComplexity: 4,
+  });
+  const plan = {
+    id: "stem-plan",
+    version: 1,
+    sections: [{
+      section: "verse",
+      startBar: 1,
+      endBar: 2,
+      energy: 0.6,
+      density: 0.5,
+      tracks: { Piano: "main_harmony" },
+      operations: ["phrase"],
+    }],
+    style,
+    songModelVersion: 1,
+    parameters: {},
+    provenance,
+  };
+  const songModel = {
+    audio: {
+      name: "source.wav",
+      contentType: "audio/wav",
+      size: 1,
+      durationSeconds: 2,
+      sampleRate: 44_100,
+      channels: 2,
+    },
+    tempoMap: [{ time: 0, bpm: 120, confidence: 1 }],
+    meterMap: [{ bar: 1, meter: "4/4", confidence: 1 }],
+    keyMap: [{ time: 0, key: "C major", confidence: 1 }],
+    melody: [],
+    chords: [],
+    sections: [],
+    energy: [],
+    beats: [],
+    bars: [],
+    dynamics: [],
+    sourceStems: [],
+    lyrics: [],
+    confidenceByField: {},
+    provenance: [],
+  };
+  const tracks = [{
+    id: "stem-piano",
+    name: "Piano",
+    role: "harmony",
+    volume: -6,
+    muted: false,
+    solo: false,
+  }];
+  const renderedFiles = await renderArrangementExport({
+    projectName: "Stem Evidence",
+    bpm: 120,
+    key: "C major",
+    meter: "4/4",
+    arrangementName: "Evidence check",
+    arrangementVersion: 1,
+    masterProfile: "STREAMING",
+    energy: 0.6,
+    density: 0.5,
+    harmonyComplexity: 4,
+    sections: [{ name: "Verse", energy: 0.6, density: 0.5, tracks: ["Piano"] }],
+    tracks,
+    songModel,
+    plan,
+    trackModels: [trackModel],
+    styleSpec: style,
+    generationProvider: "TEST",
+    parentIds: ["track-model-artifact"],
+    planArtifactId: "plan-artifact",
+    planParentIds: ["song-model-artifact"],
+    trackModelArtifactIds: { "stem-piano": "track-model-artifact" },
+    includeStems: true,
+    includeMidi: false,
+  });
+  const project = {
+    id: "stem-evidence-project",
+    name: "Stem Evidence",
+    duration: "0:02",
+    bpm: 120,
+    meter: "4/4",
+    key: "C major",
+    sourceType: "PROMPT",
+    sections: [{ name: "Verse", startBar: 1, endBar: 2, energy: 0.6 }],
+    energy: [0.6],
+    providers: [],
+  };
+  const arrangement = {
+    id: "stem-evidence-arrangement",
+    projectId: project.id,
+    name: "Evidence check",
+    style: "Pop",
+    mode: "STUDIO",
+    version: 1,
+    harmonyComplexity: 4,
+    energy: 0.6,
+    density: 0.5,
+    orchestraSize: 0.5,
+    rhythmIntensity: 0.5,
+    sections: [{ name: "Verse", startBar: 1, endBar: 2, energy: 0.6, density: 0.5, tracks: ["Piano"] }],
+  };
+  const bundle = createExportBundle(
+    project,
+    arrangement,
+    [{
+      ...tracks[0],
+      kind: "midi",
+      performance: {
+        tempoMap: [{ tick: 0, bpm: 120 }],
+        meterMap: [{ tick: 0, numerator: 4, denominator: 4 }],
+        notes: [],
+        expression: [],
+        articulations: [],
+      },
+    }],
+    { includeStems: true, includeMidi: false, includeMix: false, includeMetadata: false },
+    1,
+    "",
+    "stem-evidence-export",
+    renderedFiles,
+  );
+  const stem = renderedFiles.find((file) => file.type === "STEM");
+  assert.ok(stem?.rendererEvidence);
+  const artifactMetadata = {
+    trackName: stem.rendererEvidence.trackName,
+    role: stem.rendererEvidence.role,
+    ...rendererEvidenceTechnicalMetadata(stem.rendererEvidence),
+  };
+  const persistedStem = openStoredZip(bundle.zip).get(stem.name);
+  assert.ok(persistedStem);
+  assert.equal(
+    sha256(persistedStem),
+    artifactMetadata.stemOutputSha256,
+    "authorized stem metadata must attest the exact persisted/downloadable WAV",
+  );
+});
 
 function readVariableLength(buffer, initialOffset) {
   let offset = initialOffset;

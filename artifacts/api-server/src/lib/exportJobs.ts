@@ -12,7 +12,10 @@ import {
   tracksTable,
 } from "@workspace/db";
 import { createExportBundle, persistExportBundle } from "./export-pipeline";
-import { renderArrangementExport } from "./exportEngine";
+import {
+  renderArrangementExport,
+  rendererEvidenceTechnicalMetadata,
+} from "./exportEngine";
 import { resolveExportSongModel } from "./exportLineage";
 import { applyArrangementEditorChanges } from "./musicEngines";
 import { validateCanonicalTrackModels } from "./musicProviders";
@@ -190,21 +193,9 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
           arrangementVersion: arrangement.version,
           exportId: input.exportId,
           ...(evidence ? {
-            rendererStatus: evidence.rendererStatus,
-            rendererProvider: evidence.rendererProvider,
             trackName: evidence.trackName,
             role: evidence.role,
-            ...(evidence.rendererProduct ? { rendererProduct: evidence.rendererProduct } : {}),
-            ...(evidence.nativeHost ? { nativeHost: evidence.nativeHost } : {}),
-            ...(evidence.licenseOwner ? { licenseOwner: evidence.licenseOwner } : {}),
-            ...(evidence.licenseReference ? { licenseReference: evidence.licenseReference } : {}),
-            ...(evidence.assetSha256 ? { assetSha256: evidence.assetSha256 } : {}),
-            ...(evidence.rendererSha256 ? { rendererSha256: evidence.rendererSha256 } : {}),
-            ...(evidence.smokeOutputSha256 ? { smokeOutputSha256: evidence.smokeOutputSha256 } : {}),
-            ...(evidence.trackModelSha256 ? { trackModelSha256: evidence.trackModelSha256 } : {}),
-            ...(evidence.rendererOutputSha256 ? { rendererOutputSha256: evidence.rendererOutputSha256 } : {}),
-            ...(evidence.stemOutputSha256 ? { stemOutputSha256: evidence.stemOutputSha256 } : {}),
-            ...(evidence.fallbackReason ? { fallbackReason: evidence.fallbackReason } : {}),
+            ...rendererEvidenceTechnicalMetadata(evidence),
           } : {}),
         },
       };

@@ -55,6 +55,27 @@ export type ExportRendererEvidence = {
   fallbackReason?: string;
 };
 
+export function rendererEvidenceTechnicalMetadata(
+  evidence?: ExportRendererEvidence,
+): Record<string, string> {
+  if (!evidence) return {};
+  return {
+    rendererStatus: evidence.rendererStatus,
+    rendererProvider: evidence.rendererProvider,
+    ...(evidence.rendererProduct ? { rendererProduct: evidence.rendererProduct } : {}),
+    ...(evidence.nativeHost ? { nativeHost: evidence.nativeHost } : {}),
+    ...(evidence.licenseOwner ? { licenseOwner: evidence.licenseOwner } : {}),
+    ...(evidence.licenseReference ? { licenseReference: evidence.licenseReference } : {}),
+    ...(evidence.assetSha256 ? { assetSha256: evidence.assetSha256 } : {}),
+    ...(evidence.rendererSha256 ? { rendererSha256: evidence.rendererSha256 } : {}),
+    ...(evidence.smokeOutputSha256 ? { smokeOutputSha256: evidence.smokeOutputSha256 } : {}),
+    ...(evidence.trackModelSha256 ? { trackModelSha256: evidence.trackModelSha256 } : {}),
+    ...(evidence.rendererOutputSha256 ? { rendererOutputSha256: evidence.rendererOutputSha256 } : {}),
+    ...(evidence.stemOutputSha256 ? { stemOutputSha256: evidence.stemOutputSha256 } : {}),
+    ...(evidence.fallbackReason ? { fallbackReason: evidence.fallbackReason } : {}),
+  };
+}
+
 const SAMPLE_RATE = 44_100;
 const CHANNELS = 2;
 const DURATION_SECONDS = 8;
