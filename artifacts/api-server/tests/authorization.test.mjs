@@ -1,6 +1,11 @@
 import { strict as assert } from "node:assert";
 import { spawn } from "node:child_process";
+import {
+  createServer as createHttpServer,
+  request as httpRequest,
+} from "node:http";
 import { createServer } from "node:net";
+import { Readable } from "node:stream";
 import { after, before, test } from "node:test";
 import {
   access,
@@ -72,6 +77,12 @@ let projectId;
 let arrangementId;
 let exportId;
 let raceHookDirectory;
+let instrumentWorker;
+let instrumentWorkerMode = "accept";
+let instrumentWorkerRequests = 0;
+let instrumentWorkerReceivedBytes = 0;
+let instrumentWorkerLargestChunk = 0;
+let instrumentWorkerDeclaredBytes = 0;
 
 function safeRaceSubject(subject) {
   return subject.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -137,7 +148,138 @@ function request(path, session, init = {}) {
   return fetch(`${baseUrl}${path}`, { ...init, headers, redirect: init.redirect ?? "manual" });
 }
 
+function instrumentPackMultipart(size) {
+  const boundary = `music-pack-${process.pid}`;
+  const fields = [
+    ["kind", "vst3"],
+    ["assetId", `large-pack-${process.pid}`],
+    ["identity", "Licensed Large Pack"],
+    ["licenseOwner", "Authorization Test Studio"],
+    ["licenseReference", "license-large-pack"],
+    ["rendererIdentity", "Approved Test Host"],
+  ];
+  const prefix = Buffer.from(
+    fields.map(([name, value]) =>
+      `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`,
+    ).join("") +
+      `--${boundary}\r\nContent-Disposition: form-data; name="assetFiles"; filename="large.vst3"\r\nContent-Type: application/octet-stream\r\n\r\n`,
+  );
+  const suffix = Buffer.from(
+    `\r\n--${boundary}\r\nContent-Disposition: form-data; name="rendererFile"; filename="host"\r\nContent-Type: application/octet-stream\r\n\r\n#!/bin/sh\nexit 0\n\r\n--${boundary}--\r\n`,
+  );
+  const body = Readable.from((async function* streamPack() {
+    yield prefix;
+    const block = Buffer.alloc(1024 * 1024, 0x5a);
+    for (let remaining = size; remaining > 0; remaining -= block.length) {
+      yield block.subarray(0, Math.min(block.length, remaining));
+    }
+    yield suffix;
+  })());
+  return {
+    body,
+    contentLength: prefix.length + size + suffix.length,
+    contentType: `multipart/form-data; boundary=${boundary}`,
+  };
+}
+
+async function uploadInstrumentPack(size) {
+  const multipart = instrumentPackMultipart(size);
+  return request("/api/instrument-packs/stage", ownerSession, {
+    method: "POST",
+    headers: {
+      "Content-Type": multipart.contentType,
+      "Content-Length": String(multipart.contentLength),
+    },
+    body: multipart.body,
+    duplex: "half",
+  });
+}
+
+function oversizedInstrumentPackRequest(contentLength) {
+  return new Promise((resolve, reject) => {
+    const target = new URL("/api/instrument-packs/stage", baseUrl);
+    const request = httpRequest(target, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ownerSession}`,
+        "Content-Type": "multipart/form-data; boundary=oversized",
+        "Content-Length": String(contentLength),
+      },
+    });
+    request.once("error", reject);
+    request.once("response", (response) => {
+      let body = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => { body += chunk; });
+      response.on("end", () => resolve({ status: response.statusCode, body }));
+    });
+    request.end();
+  });
+}
+
 before(async () => {
+  instrumentWorker = createHttpServer((request, response) => {
+    instrumentWorkerRequests += 1;
+    instrumentWorkerReceivedBytes = 0;
+    instrumentWorkerLargestChunk = 0;
+    instrumentWorkerDeclaredBytes = Number(request.headers["content-length"] ?? 0);
+    request.on("data", (chunk) => {
+      instrumentWorkerReceivedBytes += chunk.length;
+      instrumentWorkerLargestChunk = Math.max(instrumentWorkerLargestChunk, chunk.length);
+    });
+    request.on("end", () => {
+      if (instrumentWorkerMode === "timeout") {
+        const delayedResponse = setTimeout(() => {
+          if (!response.destroyed) {
+            response.writeHead(504, { "Content-Type": "application/json" });
+            response.end(JSON.stringify({ detail: "worker verification timed out" }));
+          }
+        }, 30_000);
+        delayedResponse.unref();
+        return;
+      }
+      if (instrumentWorkerMode === "truncated") {
+        response.writeHead(400, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ detail: "multipart instrument pack was truncated" }));
+        return;
+      }
+      response.writeHead(201, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({
+        candidateId: `candidate-${process.pid}-large-pack`,
+        kind: "vst3",
+        assetId: `large-pack-${process.pid}`,
+        identity: "Licensed Large Pack",
+        licenseOwner: "Authorization Test Studio",
+        licenseReference: "license-large-pack",
+        rendererIdentity: "Approved Test Host",
+        sha256: "a".repeat(64),
+        rendererSha256: "b".repeat(64),
+        status: "verified",
+        smokeEvidence: {
+          assetId: `large-pack-${process.pid}`,
+          sha256: "a".repeat(64),
+          rendererIdentity: "Approved Test Host",
+          rendererSha256: "b".repeat(64),
+          trackModelRendered: true,
+          audible: true,
+          canonicalSensitivity: true,
+          nativeHostAttested: true,
+          outputSha256: "c".repeat(64),
+          pitchVariantSha256: "d".repeat(64),
+          expressionVariantSha256: "e".repeat(64),
+          peak: 0.2,
+          sampleRate: 22050,
+          durationSeconds: 1,
+          format: "wav/pcm_s16le",
+        },
+      }));
+    });
+  });
+  await new Promise((resolve, reject) => {
+    instrumentWorker.once("error", reject);
+    instrumentWorker.listen(0, "127.0.0.1", resolve);
+  });
+  const instrumentWorkerPort = instrumentWorker.address().port;
   const port = await availablePort();
   baseUrl = `http://127.0.0.1:${port}`;
   raceHookDirectory = await mkdtemp(
@@ -150,6 +292,11 @@ before(async () => {
       NODE_ENV: "test",
       PORT: String(port),
       TEST_PROJECT_STORAGE_RACE_DIR: raceHookDirectory,
+      MUSIC_AI_WORKER_URL: `http://127.0.0.1:${instrumentWorkerPort}`,
+      MUSIC_AI_WORKER_TOKEN: "instrument-pack-test-token",
+      MUSIC_STUDIO_ADMIN_IDS: `export-owner-${process.pid}`,
+      MUSIC_STUDIO_MAX_INSTRUMENT_PACK_UPLOAD_BYTES: String(160 * 1024 * 1024),
+      MUSIC_STUDIO_INSTRUMENT_PACK_TIMEOUT_SECONDS: "10",
     },
     stdio: ["ignore", "ignore", "pipe"],
   });
@@ -242,10 +389,47 @@ after(async () => {
   if (ownerSession) await deleteSession(ownerSession);
   if (otherSession) await deleteSession(otherSession);
   if (server && !server.killed) server.kill("SIGTERM");
+  if (instrumentWorker) {
+    await new Promise((resolve) => instrumentWorker.close(resolve));
+  }
   await unlink(harnessPath).catch(() => undefined);
   if (raceHookDirectory) {
     await rm(raceHookDirectory, { recursive: true, force: true });
   }
+});
+
+test("admin route streams a production-sized multipart instrument pack without truncation", async () => {
+  instrumentWorkerMode = "accept";
+  const response = await uploadInstrumentPack(128 * 1024 * 1024);
+  assert.equal(response.status, 201);
+  const candidate = await response.json();
+  assert.equal(candidate.status, "verified");
+  assert.equal(candidate.sha256, "a".repeat(64));
+  assert.equal(instrumentWorkerReceivedBytes, instrumentWorkerDeclaredBytes);
+  assert.ok(instrumentWorkerLargestChunk <= 1024 * 1024);
+});
+
+test("admin route rejects oversized packs before contacting the worker", async () => {
+  const requestsBefore = instrumentWorkerRequests;
+  const response = await oversizedInstrumentPackRequest(161 * 1024 * 1024);
+  assert.equal(response.status, 413);
+  assert.match(response.body, /API streaming limit/);
+  assert.equal(instrumentWorkerRequests, requestsBefore);
+});
+
+test("admin route reports truncated worker uploads without activating anything", async () => {
+  instrumentWorkerMode = "truncated";
+  const response = await uploadInstrumentPack(1024);
+  assert.equal(response.status, 400);
+  assert.match(await response.text(), /truncated/);
+});
+
+test("admin route reports verification timeouts without activating anything", async () => {
+  instrumentWorkerMode = "timeout";
+  const response = await uploadInstrumentPack(1024);
+  assert.equal(response.status, 504);
+  assert.match(await response.text(), /active pack was not changed/);
+  instrumentWorkerMode = "accept";
 });
 
 async function createRaceUpload(label) {

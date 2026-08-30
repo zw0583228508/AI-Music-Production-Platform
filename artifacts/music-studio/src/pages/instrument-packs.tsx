@@ -437,6 +437,7 @@ function StageNewPackForm() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [kind, setKind] = useState<'vst3' | 'sfz'>('vst3');
+  const [selectedFiles, setSelectedFiles] = useState({ count: 0, bytes: 0 });
   
   const stageMutation = useStageLicensedInstrumentPack({
     mutation: {
@@ -447,11 +448,15 @@ function StageNewPackForm() {
         });
         queryClient.invalidateQueries({ queryKey: getListLicensedInstrumentPacksQueryKey() });
         (document.getElementById('stage-form') as HTMLFormElement | null)?.reset();
+        setSelectedFiles({ count: 0, bytes: 0 });
       },
-      onError: () => {
+      onError: (error) => {
+        const message = error instanceof Error ? error.message : "The upload could not be verified.";
         toast({
           title: "Staging Failed",
-          description: "The active instrument pack was not changed.",
+          description: message.includes("active pack was not changed")
+            ? message
+            : `${message} The active instrument pack was not changed.`,
           variant: "destructive"
         });
       }
@@ -473,6 +478,11 @@ function StageNewPackForm() {
     const rendererFile = rendererFileInput.files?.[0];
     const assetFiles = Array.from(assetFilesInput.files ?? []);
     if (!rendererFile || assetFiles.length === 0) {
+      toast({
+        title: "Files required",
+        description: "Choose the native host and at least one instrument file before staging.",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -488,6 +498,19 @@ function StageNewPackForm() {
       assetRelativePaths: assetFiles.map((file) => file.webkitRelativePath || file.name),
     };
     stageMutation.mutate({ data });
+  };
+
+  const updateSelectedFiles = (input: HTMLInputElement) => {
+    const files = Array.from(input.files ?? []);
+    setSelectedFiles({
+      count: files.length,
+      bytes: files.reduce((total, file) => total + file.size, 0),
+    });
+  };
+
+  const formatBytes = (bytes: number) => {
+    if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
   return (
@@ -509,7 +532,14 @@ function StageNewPackForm() {
             <div className="space-y-5">
               <div className="space-y-2">
                 <Label htmlFor="kind" className="font-semibold">Target Environment</Label>
-                <Select value={kind} onValueChange={(value) => setKind(value as 'vst3' | 'sfz')} name="kind">
+                <Select
+                  value={kind}
+                  onValueChange={(value) => {
+                    setKind(value as 'vst3' | 'sfz');
+                    setSelectedFiles({ count: 0, bytes: 0 });
+                  }}
+                  name="kind"
+                >
                   <SelectTrigger id="kind" className="bg-background">
                     <SelectValue placeholder="Select type" />
                   </SelectTrigger>
@@ -583,6 +613,7 @@ function StageNewPackForm() {
                     multiple
                     required
                     {...{ webkitdirectory: "", directory: "" } as Record<string, string>}
+                    onChange={(event) => updateSelectedFiles(event.currentTarget)}
                     className="bg-background cursor-pointer file:text-primary file:font-medium"
                   />
                 ) : (
@@ -592,6 +623,7 @@ function StageNewPackForm() {
                     name="assetFiles"
                     type="file"
                     required
+                    onChange={(event) => updateSelectedFiles(event.currentTarget)}
                     className="bg-background cursor-pointer file:text-primary file:font-medium"
                   />
                 )}
@@ -600,6 +632,12 @@ function StageNewPackForm() {
                     ? 'Select the complete library root so samples and SFZ definitions remain together.'
                     : 'Select the licensed VST3 plugin file. The worker verifies it can be loaded before activation.'}
                 </p>
+                {selectedFiles.count > 0 && (
+                  <p className="text-xs font-medium text-primary" data-testid="selected-pack-size">
+                    {selectedFiles.count} file{selectedFiles.count === 1 ? '' : 's'} selected · {formatBytes(selectedFiles.bytes)}.
+                    {' '}The pack is streamed to private storage; verification may take several minutes.
+                  </p>
+                )}
               </div>
             </div>
           </div>

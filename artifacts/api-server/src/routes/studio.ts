@@ -175,6 +175,31 @@ import { revisionSummary } from "../lib/arrangementRevisions";
 
 const router: IRouter = Router();
 const exportBundles = new Map<string, ExportBundle>();
+const DEFAULT_INSTRUMENT_PACK_UPLOAD_BYTES = 2 * 1024 ** 3 + 32 * 1024 ** 2;
+const DEFAULT_INSTRUMENT_PACK_TIMEOUT_MS = 30 * 60_000;
+
+function configuredPositiveNumber(name: string, fallback: number): number {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function instrumentPackUploadLimitBytes(): number {
+  return configuredPositiveNumber(
+    "MUSIC_STUDIO_MAX_INSTRUMENT_PACK_UPLOAD_BYTES",
+    DEFAULT_INSTRUMENT_PACK_UPLOAD_BYTES,
+  );
+}
+
+function instrumentPackTimeoutMs(): number {
+  return configuredPositiveNumber(
+    "MUSIC_STUDIO_INSTRUMENT_PACK_TIMEOUT_SECONDS",
+    DEFAULT_INSTRUMENT_PACK_TIMEOUT_MS / 1000,
+  ) * 1000;
+}
+
+function formatByteLimit(bytes: number): string {
+  return `${Math.ceil(bytes / (1024 * 1024))} MiB`;
+}
 
 function requireStudioAuth(req: Request, res: Response, next: NextFunction): void {
   if (!req.isAuthenticated()) {
@@ -273,19 +298,54 @@ router.post(
       res.status(411).json({ error: "Content-Length is required" });
       return;
     }
+    const declaredLength = Number(contentLength);
+    const maximumLength = instrumentPackUploadLimitBytes();
+    if (!Number.isSafeInteger(declaredLength) || declaredLength > maximumLength) {
+      res.status(413).json({
+        error: `instrument pack upload exceeds the API streaming limit of ${formatByteLimit(maximumLength)}`,
+      });
+      return;
+    }
     const worker = licensedInstrumentWorkerConfig();
-    const response = await fetch(new URL("/admin/assets/stage", worker.endpoint), {
-      method: "POST",
-      headers: {
-        ...worker.headers,
-        "Content-Type": contentType,
-        "Content-Length": contentLength,
-      },
-      body: req as never,
-      duplex: "half",
-      signal: AbortSignal.timeout(30 * 60_000),
-    } as RequestInit & { duplex: "half" });
-    const responseText = await response.text();
+    const clientAbort = new AbortController();
+    let clientAborted = false;
+    const abortForClient = (): void => {
+      clientAborted = true;
+      clientAbort.abort();
+    };
+    req.once("aborted", abortForClient);
+    const timeoutSignal = AbortSignal.timeout(instrumentPackTimeoutMs());
+    let response: globalThis.Response;
+    let responseText: string;
+    try {
+      response = await fetch(new URL("/admin/assets/stage", worker.endpoint), {
+        method: "POST",
+        headers: {
+          ...worker.headers,
+          "Content-Type": contentType,
+          "Content-Length": contentLength,
+        },
+        body: req as never,
+        duplex: "half",
+        signal: AbortSignal.any([clientAbort.signal, timeoutSignal]),
+      } as RequestInit & { duplex: "half" });
+      responseText = await response.text();
+    } catch (error) {
+      if (clientAborted || res.destroyed) return;
+      if (timeoutSignal.aborted) {
+        res.status(504).json({
+          error: "instrument pack verification timed out; the active pack was not changed",
+        });
+        return;
+      }
+      req.log.error({ err: error }, "licensed_instrument_pack_worker_unavailable");
+      res.status(502).json({
+        error: "licensed instrument worker could not accept the pack; the active pack was not changed",
+      });
+      return;
+    } finally {
+      req.off("aborted", abortForClient);
+    }
     let payload: unknown;
     try {
       payload = JSON.parse(responseText);

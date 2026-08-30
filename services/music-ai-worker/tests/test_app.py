@@ -133,6 +133,19 @@ Path(a.attestation).write_text(json.dumps({
 
 
 class WorkerTests(unittest.TestCase):
+    def test_file_checksum_is_streamed_in_bounded_chunks(self):
+        payload = (b"licensed-large-pack" * (2 * 1024 * 1024 // 19 + 1))[:2 * 1024 * 1024]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "large.vst3"
+            path.write_bytes(payload)
+            with unittest.mock.patch.object(
+                Path,
+                "read_bytes",
+                side_effect=AssertionError("large asset hashing must not read all bytes"),
+            ):
+                checksum = app._sha256(path)
+        self.assertEqual(checksum, hashlib.sha256(payload).hexdigest())
+
     def test_asset_upload_uses_its_own_large_request_limit(self):
         async def run_request(path: str, size: int):
             request = app.FastAPIRequest(
@@ -283,6 +296,57 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(candidate["status"], "verified")
         self.assertEqual(candidate["sha256"], plugin_checksum)
         smoke.assert_called_once()
+
+    def test_timed_out_pack_verification_preserves_active_manifest(self):
+        plugin_bytes = b"approved-large-plugin"
+        host_bytes = b"#!/bin/sh\nexit 0\n"
+        plugin_checksum = hashlib.sha256(plugin_bytes).hexdigest()
+        host_checksum = hashlib.sha256(host_bytes).hexdigest()
+        registries = {
+            "MUSIC_AI_APPROVED_NATIVE_HOSTS": json.dumps(
+                [{"kind": "vst3", "identity": "Approved MIDI Host", "sha256": host_checksum}]
+            ),
+            "MUSIC_AI_APPROVED_VST3_ASSETS": json.dumps(
+                [{"assetId": "timed-out-pack", "identity": "Timed Out Pack", "sha256": plugin_checksum}]
+            ),
+        }
+
+        async def stage():
+            return await app._stage_asset_candidate(
+                "vst3",
+                "timed-out-pack",
+                "Timed Out Pack",
+                "Test Studio",
+                "license-timeout",
+                "Approved MIDI Host",
+                [app.UploadFile(filename="pack.vst3", file=io.BytesIO(plugin_bytes))],
+                app.UploadFile(filename="host", file=io.BytesIO(host_bytes)),
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest_path = root / "licensed_assets.json"
+            active_manifest = {"vst3": {"id": "active-pack", "sha256": "a" * 64}}
+            manifest_path.write_text(json.dumps(active_manifest))
+            with (
+                unittest.mock.patch.object(app, "ASSET_ROOT", root),
+                unittest.mock.patch.object(app, "ASSET_MANIFEST_PATH", manifest_path),
+                unittest.mock.patch.dict(app.os.environ, registries),
+                unittest.mock.patch.object(
+                    app,
+                    "run_renderer_smoke",
+                    side_effect=HTTPException(
+                        504,
+                        "configured VST3 renderer timed out after 0.01 seconds",
+                    ),
+                ),
+                self.assertRaises(HTTPException) as error,
+            ):
+                asyncio.run(stage())
+
+            self.assertEqual(error.exception.status_code, 504)
+            self.assertIn("timed out", error.exception.detail)
+            self.assertEqual(json.loads(manifest_path.read_text()), active_manifest)
 
     def test_health_has_pinned_checksum(self):
         response = app.health("BASIC_PITCH")

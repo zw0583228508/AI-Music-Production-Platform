@@ -72,7 +72,12 @@ async def request_size_limit(request: FastAPIRequest, call_next):
                 else MAX_INPUT_BYTES * 2
             )
             if int(length) > maximum:
-                return JSONResponse({"detail": "request exceeds size limit"}, status_code=413)
+                detail = (
+                    "licensed asset upload exceeds the configured size limit"
+                    if is_asset_upload
+                    else "request exceeds size limit"
+                )
+                return JSONResponse({"detail": detail}, status_code=413)
         except ValueError:
             return JSONResponse({"detail": "invalid content-length"}, status_code=400)
     elif is_asset_upload:
@@ -354,13 +359,15 @@ def _safe_upload_name(value: str, label: str) -> Path:
 
 async def _write_upload(upload: UploadFile, destination: Path, remaining: list[int]) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with destination.open("wb") as handle:
-        while chunk := await upload.read(1024 * 1024):
-            remaining[0] -= len(chunk)
-            if remaining[0] < 0:
-                raise HTTPException(413, "licensed asset upload exceeds the configured size limit")
-            handle.write(chunk)
-    await upload.close()
+    try:
+        with destination.open("wb") as handle:
+            while chunk := await upload.read(1024 * 1024):
+                remaining[0] -= len(chunk)
+                if remaining[0] < 0:
+                    raise HTTPException(413, "licensed asset upload exceeds the configured size limit")
+                handle.write(chunk)
+    finally:
+        await upload.close()
 
 
 def _require_approved_native_host(
@@ -420,7 +427,11 @@ def _require_approved_vst3_asset(
 def _sha256(path: Path) -> str | None:
     if not path.is_file():
         return None
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while block := handle.read(1024 * 1024):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def _sha256_tree(path: Path) -> str | None:
@@ -916,7 +927,12 @@ def _render_native_track(
                 capture_output=True,
                 timeout=INFERENCE_TIMEOUT,
             )
-        except (OSError, subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
+        except subprocess.TimeoutExpired as exc:
+            raise HTTPException(
+                504,
+                f"configured {kind} renderer timed out after {INFERENCE_TIMEOUT:g} seconds",
+            ) from exc
+        except (OSError, subprocess.CalledProcessError) as exc:
             raise HTTPException(503, f"configured {kind} renderer could not render TrackModel") from exc
         if not output_path.is_file():
             raise HTTPException(503, f"native {kind} renderer did not produce a WAV")
