@@ -1290,11 +1290,20 @@ def render(payload: RenderRequest) -> dict:
         if payload.provider == "VST3"
         else _render_sfizz_track(track, payload.sample_rate, payload.duration_seconds)
     )
+    encoded_audio = wav_b64(audio.T, payload.sample_rate)
+    audio_bytes = base64.b64decode(encoded_audio, validate=True)
+    track_model_bytes = json.dumps(
+        payload.track_model,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
     return {
         "provider": payload.provider,
         "version": asset["id"],
         "asset": asset,
-        "audio_base64": wav_b64(audio.T, payload.sample_rate),
+        "audio_base64": encoded_audio,
+        "outputSha256": hashlib.sha256(audio_bytes).hexdigest(),
+        "trackModelSha256": hashlib.sha256(track_model_bytes).hexdigest(),
         "format": "wav",
         "encoding": "pcm_s16le",
         "trackModelId": track["id"],

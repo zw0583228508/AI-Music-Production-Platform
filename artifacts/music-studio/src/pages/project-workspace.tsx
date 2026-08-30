@@ -78,6 +78,7 @@ import { EditorConflictError } from "@/components/studio/editor-save-coordinator
 import type { CopilotEditorResult, EditorSelection } from "@/components/studio/editor-types";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ExportRenderEvidence, type RenderEvidence } from "@/components/studio/export-render-evidence";
 import {
   Dialog,
   DialogContent,
@@ -146,6 +147,39 @@ export default function ProjectWorkspace() {
       },
     },
   });
+  const latestReadyExport = [...(artifacts ?? [])]
+    .filter((artifact) => artifact.type === "EXPORT" && artifact.state === "ready")
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0];
+  const evidenceExportId = exportResult?.id ?? latestReadyExport?.id;
+  const exportEvidence: RenderEvidence[] = (artifacts ?? [])
+    .filter((artifact) =>
+      artifact.type === "STEM" &&
+      artifact.technicalMetadata.exportId === evidenceExportId &&
+      (artifact.technicalMetadata.rendererStatus === "licensed-native" ||
+        artifact.technicalMetadata.rendererStatus === "deterministic-fallback"),
+    )
+    .map((artifact) => {
+      const metadata = artifact.technicalMetadata;
+      const text = (key: string) =>
+        typeof metadata[key] === "string" ? metadata[key] as string : undefined;
+      return {
+        trackName: text("trackName") ?? artifact.label,
+        role: text("role") ?? "stem",
+        rendererStatus: metadata.rendererStatus as RenderEvidence["rendererStatus"],
+        rendererProvider: text("rendererProvider"),
+        rendererProduct: text("rendererProduct"),
+        nativeHost: text("nativeHost"),
+        licenseOwner: text("licenseOwner"),
+        licenseReference: text("licenseReference"),
+        assetSha256: text("assetSha256"),
+        rendererSha256: text("rendererSha256"),
+        smokeOutputSha256: text("smokeOutputSha256"),
+        trackModelSha256: text("trackModelSha256"),
+        rendererOutputSha256: text("rendererOutputSha256"),
+        stemOutputSha256: text("stemOutputSha256"),
+        fallbackReason: text("fallbackReason"),
+      };
+    });
 
   const [copilotCommand, setCopilotCommand] = useState("");
   const [editorSelection, setEditorSelection] = useState<EditorSelection>(null);
@@ -1279,7 +1313,7 @@ export default function ProjectWorkspace() {
             </div>
 
             {exportResult && (
-              <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/5 p-4">
+               <div className="space-y-5 rounded-lg border border-emerald-500/25 bg-emerald-500/5 p-4">
                 <div className="flex items-center gap-2 text-sm font-semibold text-emerald-700">
                   <Check className="h-4 w-4" />
                   Export ready
@@ -1300,8 +1334,22 @@ export default function ProjectWorkspace() {
                     </button>
                   ))}
                 </div>
+                 <div className="border-t border-emerald-500/15 pt-4">
+                   <ExportRenderEvidence evidence={exportEvidence} />
+                 </div>
               </div>
             )}
+             {!exportResult && latestReadyExport && (
+               <div className="space-y-4 rounded-lg border bg-muted/20 p-4">
+                 <div>
+                   <p className="text-sm font-semibold">Latest completed export</p>
+                   <p className="mt-1 text-xs text-muted-foreground">
+                     Renderer evidence remains available here after the project is reopened.
+                   </p>
+                 </div>
+                 <ExportRenderEvidence evidence={exportEvidence} />
+               </div>
+             )}
           </div>
 
           <DialogFooter>

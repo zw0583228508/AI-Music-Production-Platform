@@ -158,28 +158,62 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
     const storageObjectId = `${input.exportId}-${sha256(bundle.zip)}`;
     const storageObjectPath = `/api/storage/objects/exports/${storageObjectId}.zip`;
     await heartbeat("persisting", 85);
-    const artifactRows = bundle.package.files.map((file) => ({
-      id: fileArtifactIds[file.name], projectId: project.id, type: file.type, label: file.name, version: input.version,
-      size: file.size, format: file.format, url: bundle.package.url, hash: sha256(bundle.files.get(file.name) ?? file.name),
-      checksum: sha256(bundle.files.get(file.name) ?? file.name), parentIds: renderedFiles.find((item) => item.name === file.name)?.provenance.parentIds ?? [],
-      createdBy: "export-engine", modelVersion: "EXPORT_ENGINE@2.0.0",
-       parameters: {
-         arrangementId: arrangement.id,
-         exportId: input.exportId,
-         generationProvider: arrangement.generationProvenance?.provider ??
-           arrangement.generationProvider ?? "ARRANGEMENT_ENGINE",
-         generationModelVersion: arrangement.generationProvenance?.modelVersion ??
-           arrangement.modelVersion ?? "unknown",
-         generationCheckpointSha256:
-           arrangement.generationProvenance?.checkpointSha256 ?? "none",
-         generationCandidateId: arrangement.generationProvenance?.candidateId ??
-           arrangement.sourceCandidateId ?? "none",
-         seed: arrangement.seed ?? 0,
-       }, storageUri: bundle.package.url,
-      provider: arrangement.generationProvenance?.provider ?? arrangement.generationProvider ?? "ARRANGEMENT_ENGINE",
-      license: "Project-owned output", retentionPolicy: "project",
-      technicalMetadata: { mediaType: file.format, bytes: bundle.files.get(file.name)?.length ?? 0, arrangementVersion: arrangement.version },
-    }));
+    const artifactRows = bundle.package.files.map((file) => {
+      const renderedFile = renderedFiles.find((item) => item.name === file.name);
+      const evidence = renderedFile?.rendererEvidence;
+      return {
+        id: fileArtifactIds[file.name], projectId: project.id, type: file.type, label: file.name, version: input.version,
+        size: file.size, format: file.format, url: bundle.package.url, hash: sha256(bundle.files.get(file.name) ?? file.name),
+        checksum: sha256(bundle.files.get(file.name) ?? file.name), parentIds: renderedFile?.provenance.parentIds ?? [],
+        createdBy: "export-engine", modelVersion: "EXPORT_ENGINE@2.0.0",
+        parameters: {
+          arrangementId: arrangement.id,
+          exportId: input.exportId,
+          generationProvider: arrangement.generationProvenance?.provider ??
+            arrangement.generationProvider ?? "ARRANGEMENT_ENGINE",
+          generationModelVersion: arrangement.generationProvenance?.modelVersion ??
+            arrangement.modelVersion ?? "unknown",
+          generationCheckpointSha256:
+            arrangement.generationProvenance?.checkpointSha256 ?? "none",
+          generationCandidateId: arrangement.generationProvenance?.candidateId ??
+            arrangement.sourceCandidateId ?? "none",
+          seed: arrangement.seed ?? 0,
+        },
+        storageUri: bundle.package.url,
+        provider: arrangement.generationProvenance?.provider ??
+          arrangement.generationProvider ?? "ARRANGEMENT_ENGINE",
+        license: "Project-owned output",
+        retentionPolicy: "project",
+        technicalMetadata: {
+          mediaType: file.format,
+          bytes: bundle.files.get(file.name)?.length ?? 0,
+          arrangementVersion: arrangement.version,
+          exportId: input.exportId,
+          ...(evidence ? {
+            rendererStatus: evidence.rendererStatus,
+            rendererProvider: evidence.rendererProvider,
+            trackName: evidence.trackName,
+            role: evidence.role,
+            ...(evidence.rendererProduct ? { rendererProduct: evidence.rendererProduct } : {}),
+            ...(evidence.nativeHost ? { nativeHost: evidence.nativeHost } : {}),
+            ...(evidence.licenseOwner ? { licenseOwner: evidence.licenseOwner } : {}),
+            ...(evidence.licenseReference ? { licenseReference: evidence.licenseReference } : {}),
+            ...(evidence.assetSha256 ? { assetSha256: evidence.assetSha256 } : {}),
+            ...(evidence.rendererSha256 ? { rendererSha256: evidence.rendererSha256 } : {}),
+            ...(evidence.smokeOutputSha256 ? { smokeOutputSha256: evidence.smokeOutputSha256 } : {}),
+            ...(evidence.trackModelSha256 ? { trackModelSha256: evidence.trackModelSha256 } : {}),
+            ...(evidence.rendererOutputSha256 ? { rendererOutputSha256: evidence.rendererOutputSha256 } : {}),
+            ...(evidence.stemOutputSha256 ? { stemOutputSha256: evidence.stemOutputSha256 } : {}),
+            ...(evidence.fallbackReason ? { fallbackReason: evidence.fallbackReason } : {}),
+          } : {}),
+        },
+      };
+    });
+    const renderEvidence = renderedFiles
+      .map((file) => file.rendererEvidence)
+      .filter((evidence): evidence is NonNullable<typeof evidence> => Boolean(evidence));
+    const nativeStemCount = renderEvidence.filter((evidence) =>
+      evidence.rendererStatus === "licensed-native").length;
     await db.transaction(async (transaction) => {
       await transaction.execute(
         sql`select pg_advisory_xact_lock(hashtext(${project.id}))`,
@@ -222,7 +256,16 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
         storageUri: storageObjectPath,
         parentIds: Object.values(fileArtifactIds), provider: "EXPORT_PIPELINE", license: "Project-owned output",
         retentionPolicy: "project", immutable: true,
-        technicalMetadata: { mediaType: "application/zip", bytes: bundle.zip.length, fileCount: bundle.package.files.length, arrangementVersion: arrangement.version },
+         technicalMetadata: {
+           mediaType: "application/zip",
+           bytes: bundle.zip.length,
+           fileCount: bundle.package.files.length,
+           arrangementVersion: arrangement.version,
+           renderEvidenceVersion: "1.0.0",
+           stemCount: renderEvidence.length,
+           nativeStemCount,
+           fallbackStemCount: renderEvidence.length - nativeStemCount,
+         },
       }).where(eq(musicArtifactsTable.id, input.exportId));
       await transaction.update(musicProjectsTable).set({ status: "ready" }).where(eq(musicProjectsTable.id, project.id));
       await transaction.update(musicUsageLedgerTable).set({

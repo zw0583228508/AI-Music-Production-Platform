@@ -12,6 +12,7 @@ import type {
   ArticulationEvent,
   AutomationPoint,
 } from "@workspace/db";
+import { createHash } from "node:crypto";
 
 export type PerformanceNote = MusicalNote & {
   articulation: string;
@@ -31,6 +32,8 @@ export type RenderedTrack = {
   trackModel: TrackModel;
   samples: Float32Array;
   renderer: "LOCAL_EXPRESSIVE_SYNTH" | "SFIZZ_VSCO2_CE" | "PEDALBOARD_VST3";
+  rendererStatus?: "licensed-native" | "deterministic-fallback";
+  fallbackReason?: string;
   rendererAttestation?: NativeRendererAttestation;
 };
 
@@ -45,6 +48,8 @@ export type NativeRendererAttestation = {
   rendererIdentity: string;
   rendererSha256: string;
   smokeOutputSha256: string;
+  trackModelSha256: string;
+  rendererOutputSha256: string;
 };
 
 export type LicensedInstrumentSmokeEvidence = {
@@ -824,6 +829,9 @@ async function renderRemoteInstrument(input: {
   ) {
     throw new Error(`${input.provider} renderer is not backed by a healthy attested asset`);
   }
+  const trackModelSha256 = createHash("sha256")
+    .update(canonicalJson(input.track))
+    .digest("hex");
   const response = await fetch(new URL("/render", input.endpoint), {
     method: "POST",
     headers,
@@ -844,6 +852,8 @@ async function renderRemoteInstrument(input: {
   const payload = await response.json() as {
     provider?: string;
     trackModelId?: string;
+    trackModelSha256?: string;
+    outputSha256?: string;
     audio_base64?: string;
     asset?: {
       id?: string;
@@ -858,6 +868,8 @@ async function renderRemoteInstrument(input: {
   if (
     payload.provider !== input.provider ||
     payload.trackModelId !== input.track.id ||
+    payload.trackModelSha256 !== trackModelSha256 ||
+    typeof payload.outputSha256 !== "string" ||
     typeof payload.audio_base64 !== "string" ||
     payload.asset?.id !== asset.id ||
     payload.asset.identity !== asset.identity ||
@@ -876,6 +888,10 @@ async function renderRemoteInstrument(input: {
     throw new Error(`${input.provider} renderer returned invalid audio encoding`);
   }
   const audio = Buffer.from(payload.audio_base64, "base64");
+  const outputSha256 = createHash("sha256").update(audio).digest("hex");
+  if (payload.outputSha256 !== outputSha256) {
+    throw new Error(`${input.provider} renderer output checksum did not match returned audio`);
+  }
   return {
     samples: decodePcm16Wav(audio, input.sampleRate),
     attestation: {
@@ -889,10 +905,24 @@ async function renderRemoteInstrument(input: {
       rendererIdentity: asset.rendererIdentity,
       rendererSha256: asset.rendererSha256,
       smokeOutputSha256: smoke.outputSha256,
+      trackModelSha256,
+      rendererOutputSha256: outputSha256,
     },
   };
 }
 
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
 function decodePcm16Wav(buffer: Buffer, expectedSampleRate: number): Float32Array {
   if (
     buffer.length < 44 ||

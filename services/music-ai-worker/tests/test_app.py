@@ -352,7 +352,20 @@ class WorkerTests(unittest.TestCase):
             self.assertEqual(health["asset"]["identity"], "Test Vendor / Orchestra / 1.0")
             self.assertEqual(health["smokeEvidence"]["assetId"], "orchestra-vst3")
             self.assertEqual(response["trackModelId"], "renderer-smoke")
-            self.assertEqual(base64.b64decode(response["audio_base64"])[:4], b"RIFF")
+            rendered_audio = base64.b64decode(response["audio_base64"])
+            self.assertEqual(rendered_audio[:4], b"RIFF")
+            self.assertEqual(
+                response["outputSha256"],
+                hashlib.sha256(rendered_audio).hexdigest(),
+            )
+            self.assertEqual(
+                response["trackModelSha256"],
+                hashlib.sha256(json.dumps(
+                    app.canonical_render_smoke_track(),
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ).encode("utf-8")).hexdigest(),
+            )
 
     def test_sfizz_renderer_executes_attested_native_host(self):
         with tempfile.TemporaryDirectory() as tmp:

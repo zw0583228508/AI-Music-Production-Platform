@@ -1,4 +1,5 @@
 import { strict as assert } from "node:assert";
+import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { after, test } from "node:test";
 import { unlink } from "node:fs/promises";
@@ -56,6 +57,23 @@ function wavBase64(sampleRate, durationSeconds) {
     wav.writeInt16LE(value, 46 + frame * 4);
   }
   return wav.toString("base64");
+}
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function sha256(value) {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 const trackModel = {
@@ -130,13 +148,16 @@ test("VST3 adapter renders the exact canonical TrackModel with asset attestation
       assert.equal(payload.provider, "VST3");
       assert.equal(payload.trackModel.id, trackModel.id);
       assert.equal(payload.sampleRate, 8000);
+      const audio_base64 = wavBase64(8000, 1);
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify({
         provider: "VST3",
         trackModelId: trackModel.id,
+        trackModelSha256: sha256(canonicalJson(trackModel)),
+        outputSha256: sha256(Buffer.from(audio_base64, "base64")),
         version: "licensed-orchestra",
         asset,
-        audio_base64: wavBase64(8000, 1),
+        audio_base64,
       }));
     });
   }, async () => {
@@ -144,6 +165,10 @@ test("VST3 adapter renders the exact canonical TrackModel with asset attestation
     assert.equal(rendered.samples.length, 16000);
     assert.equal(rendered.attestation.assetIdentity, asset.identity);
     assert.equal(rendered.attestation.rendererIdentity, asset.rendererIdentity);
+    assert.equal(
+      rendered.attestation.rendererOutputSha256,
+      sha256(Buffer.from(wavBase64(8000, 1), "base64")),
+    );
     assert.deepEqual(validateNativeRenderSamples(rendered.samples, 16000), []);
   });
 });
@@ -169,6 +194,54 @@ test("renderer refuses audio whose attestation names another TrackModel", async 
       trackModelId: "another-track",
       asset,
       audio_base64: wavBase64(8000, 1),
+    }));
+  }, async () => {
+    await assert.rejects(
+      () => new PedalboardRenderer().render(trackModel, 8000, 1),
+      /incomplete attestation/,
+    );
+  });
+});
+
+test("renderer refuses an output checksum that does not match the returned WAV", async () => {
+  await withServer((request, response) => {
+    if (request.method === "GET") {
+      respondHealth(response);
+      return;
+    }
+    const audio_base64 = wavBase64(8000, 1);
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({
+      provider: "VST3",
+      trackModelId: trackModel.id,
+      trackModelSha256: sha256(canonicalJson(trackModel)),
+      outputSha256: "d".repeat(64),
+      asset,
+      audio_base64,
+    }));
+  }, async () => {
+    await assert.rejects(
+      () => new PedalboardRenderer().render(trackModel, 8000, 1),
+      /output checksum did not match/,
+    );
+  });
+});
+
+test("renderer refuses a TrackModel checksum that does not match the request", async () => {
+  await withServer((request, response) => {
+    if (request.method === "GET") {
+      respondHealth(response);
+      return;
+    }
+    const audio_base64 = wavBase64(8000, 1);
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({
+      provider: "VST3",
+      trackModelId: trackModel.id,
+      trackModelSha256: "e".repeat(64),
+      outputSha256: sha256(Buffer.from(audio_base64, "base64")),
+      asset,
+      audio_base64,
     }));
   }, async () => {
     await assert.rejects(

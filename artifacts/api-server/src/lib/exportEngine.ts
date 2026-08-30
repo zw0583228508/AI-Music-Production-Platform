@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { deflateRawSync } from "node:zlib";
 import type {
   ArrangementPlan,
@@ -33,6 +34,25 @@ export type GeneratedExportFile = {
   contentType: string;
   data: Buffer;
   provenance: ArtifactProvenance;
+  rendererEvidence?: ExportRendererEvidence;
+};
+
+export type ExportRendererEvidence = {
+  trackName: string;
+  role: string;
+  rendererStatus: "licensed-native" | "deterministic-fallback";
+  rendererProvider: string;
+  rendererProduct?: string;
+  nativeHost?: string;
+  licenseOwner?: string;
+  licenseReference?: string;
+  assetSha256?: string;
+  rendererSha256?: string;
+  smokeOutputSha256?: string;
+  trackModelSha256?: string;
+  rendererOutputSha256?: string;
+  stemOutputSha256?: string;
+  fallbackReason?: string;
 };
 
 const SAMPLE_RATE = 44_100;
@@ -564,18 +584,29 @@ export async function renderArrangementExport(input: {
   }
   const sfizzRenderer = new SfzRenderer();
   const pedalboardRenderer = new PedalboardRenderer();
-  if (sfizzRenderer.isConfigured() || pedalboardRenderer.isConfigured()) {
-    const remoteTracks: RenderedTrack[] = await Promise.all(pipeline.tracks.map(async (rendered): Promise<RenderedTrack> => {
+  const nativeRendererConfigured = sfizzRenderer.isConfigured() || pedalboardRenderer.isConfigured();
+  const remoteTracks: RenderedTrack[] = await Promise.all(pipeline.tracks.map(async (rendered): Promise<RenderedTrack> => {
+      const fallback = (reason: string): RenderedTrack => ({
+        ...rendered,
+        rendererStatus: "deterministic-fallback",
+        fallbackReason: reason,
+      });
       const usePedalboard = pedalboardRenderer.isConfigured();
       const useSfizz = !usePedalboard &&
         sfizzRenderer.isConfigured() &&
         ["strings", "brass"].includes(rendered.trackModel.instrumentDefinition.family);
-      if (!usePedalboard && !useSfizz) return rendered;
+      if (!usePedalboard && !useSfizz) {
+        return fallback(
+          nativeRendererConfigured
+            ? "The configured native renderer does not support this instrument family."
+            : "No healthy licensed native renderer was configured for this export.",
+        );
+      }
       if (
         !input.parentIds.length &&
         !input.trackModelArtifactIds?.[rendered.trackModel.id]
       ) {
-        return rendered;
+        return fallback("Render lineage was incomplete, so licensed native rendering was skipped.");
       }
       const renderer = usePedalboard ? pedalboardRenderer : sfizzRenderer;
       let samples: Float32Array;
@@ -592,11 +623,11 @@ export async function renderArrangementExport(input: {
         // A configured endpoint is not proof of a licensed, compatible asset.
         // Keep the already-rendered deterministic stem and do not attribute it
         // to a native provider that failed attestation or playback validation.
-        return rendered;
+        return fallback("The licensed native renderer was unavailable or failed attestation.");
       }
       const expectedLength = Math.ceil(SAMPLE_RATE * pipeline.durationSeconds) * CHANNELS;
       if (validateNativeRenderSamples(samples, expectedLength).length) {
-        return rendered;
+        return fallback("The licensed native renderer returned audio that failed validation.");
       }
       const volume = activeTracks.find((track) => track.id === rendered.trackModel.id)?.volume ?? 0;
       const gain = 10 ** (volume / 20);
@@ -607,67 +638,85 @@ export async function renderArrangementExport(input: {
         ...rendered,
         samples,
         renderer: renderer.providerId,
+        rendererStatus: "licensed-native",
         rendererAttestation,
       };
     }));
-    const mix = new MixGraph().mix(remoteTracks, input.styleSpec, Math.ceil(SAMPLE_RATE * pipeline.durationSeconds));
-    const mastered = new MasterEngine().process(mix, input.masterProfile);
-    const quality = new QualityEngine().assess(
-      remoteTracks.map((track) => track.trackModel),
+  const mix = new MixGraph().mix(remoteTracks, input.styleSpec, Math.ceil(SAMPLE_RATE * pipeline.durationSeconds));
+  const mastered = new MasterEngine().process(mix, input.masterProfile);
+  const quality = new QualityEngine().assess(
+    remoteTracks.map((track) => track.trackModel),
+    mix,
+    input.plan,
+    {
+      lineageComplete: pipeline.quality.lineageComplete,
+      renderArtifactIds: pipeline.quality.renderArtifactIds,
+      evaluatedAt: pipeline.quality.evaluatedAt,
+      bpm: input.bpm,
+      meter: input.meter,
+    },
+  );
+  const nativeTracks = remoteTracks.filter((track) =>
+    track.rendererStatus === "licensed-native");
+  const nativeQualityPassed =
+    quality.lineageComplete &&
+    quality.checks.silence >= 0.005 &&
+    quality.checks.clipping >= 0.999 &&
+    quality.checks.notePlayability >= 0.98;
+  if (nativeTracks.length && nativeQualityPassed) {
+    const hasLocalTracks = remoteTracks.some((track) =>
+      track.rendererStatus !== "licensed-native");
+    pipeline = {
+      ...pipeline,
+      tracks: remoteTracks,
       mix,
-      input.plan,
-      {
-        lineageComplete: pipeline.quality.lineageComplete,
-        renderArtifactIds: pipeline.quality.renderArtifactIds,
-        evaluatedAt: pipeline.quality.evaluatedAt,
-        bpm: input.bpm,
-        meter: input.meter,
-      },
-    );
-    const nativeTracks = remoteTracks.filter((track) =>
-      track.renderer !== "LOCAL_EXPRESSIVE_SYNTH");
-    const nativeQualityPassed =
-      quality.lineageComplete &&
-      quality.checks.silence >= 0.005 &&
-      quality.checks.clipping >= 0.999 &&
-      quality.checks.notePlayability >= 0.98;
-    if (nativeTracks.length && nativeQualityPassed) {
-      const hasLocalTracks = remoteTracks.some((track) =>
-        track.renderer === "LOCAL_EXPRESSIVE_SYNTH");
-      pipeline = {
-        ...pipeline,
-        tracks: remoteTracks,
-        mix,
-        premaster: mastered.premaster,
-        master: mastered.master,
-        quality,
-        provenance: [
-          ...pipeline.provenance.filter((item) =>
-            item.model !== "LOCAL_EXPRESSIVE_SYNTH" || hasLocalTracks),
-          ...nativeTracks.map((track) => ({
-            model: track.renderer,
-            version: "attested-native-asset",
-            parameters: {
-              sampleRate: SAMPLE_RATE,
-              durationSeconds: pipeline.durationSeconds,
-              trackModelId: track.trackModel.id,
-              assetId: track.rendererAttestation!.assetId,
-              assetIdentity: track.rendererAttestation!.assetIdentity,
-              assetSha256: track.rendererAttestation!.assetSha256,
-              licenseOwner: track.rendererAttestation!.licenseOwner,
-              licenseReference: track.rendererAttestation!.licenseReference,
-              rendererIdentity: track.rendererAttestation!.rendererIdentity,
-              rendererSha256: track.rendererAttestation!.rendererSha256,
-              smokeOutputSha256: track.rendererAttestation!.smokeOutputSha256,
-            },
-            parentIds: input.trackModelArtifactIds?.[track.trackModel.id]
-              ? [input.trackModelArtifactIds[track.trackModel.id]]
-              : input.parentIds,
-            createdBy: "renderer-adapter",
-          })),
-        ],
-      };
-    }
+      premaster: mastered.premaster,
+      master: mastered.master,
+      quality,
+      provenance: [
+        ...pipeline.provenance.filter((item) =>
+          item.model !== "LOCAL_EXPRESSIVE_SYNTH" || hasLocalTracks),
+        ...nativeTracks.map((track) => ({
+          model: track.renderer,
+          version: "attested-native-asset",
+          parameters: {
+            sampleRate: SAMPLE_RATE,
+            durationSeconds: pipeline.durationSeconds,
+            trackModelId: track.trackModel.id,
+            assetId: track.rendererAttestation!.assetId,
+            assetIdentity: track.rendererAttestation!.assetIdentity,
+            assetSha256: track.rendererAttestation!.assetSha256,
+            licenseOwner: track.rendererAttestation!.licenseOwner,
+            licenseReference: track.rendererAttestation!.licenseReference,
+            rendererIdentity: track.rendererAttestation!.rendererIdentity,
+            rendererSha256: track.rendererAttestation!.rendererSha256,
+            smokeOutputSha256: track.rendererAttestation!.smokeOutputSha256,
+            trackModelSha256: track.rendererAttestation!.trackModelSha256,
+            rendererOutputSha256: track.rendererAttestation!.rendererOutputSha256,
+          },
+          parentIds: input.trackModelArtifactIds?.[track.trackModel.id]
+            ? [input.trackModelArtifactIds[track.trackModel.id]]
+            : input.parentIds,
+          createdBy: "renderer-adapter",
+        })),
+      ],
+    };
+  } else {
+    pipeline = {
+      ...pipeline,
+      tracks: pipeline.tracks.map((track) => {
+        const attemptedTrack = remoteTracks.find((candidate) =>
+          candidate.trackModel.id === track.trackModel.id);
+        return {
+          ...track,
+          rendererStatus: "deterministic-fallback" as const,
+          fallbackReason: nativeTracks.length
+            ? "The attested native render did not pass export quality gates."
+            : attemptedTrack?.fallbackReason ??
+              "No attested licensed native renderer produced this stem.",
+        };
+      }),
+    };
   }
   const fileProvenance = (
     model: string,
@@ -705,12 +754,16 @@ export async function renderArrangementExport(input: {
 
   if (input.includeStems) {
     for (const [index, stem] of pipeline.tracks.entries()) {
+      const track = activeTracks.find((candidate) => candidate.id === stem.trackModel.id);
+      const attestation = stem.rendererAttestation;
+      const stemData = encodeWav(stem.samples);
+      const stemOutputSha256 = createHash("sha256").update(stemData).digest("hex");
       files.push({
         name: `stems/${String(index + 1).padStart(2, "0")}_${safeName(activeTracks[index]?.name || stem.trackModel.instrument)}.wav`,
         type: "STEM",
         format: "WAV",
         contentType: "audio/wav",
-        data: encodeWav(stem.samples),
+        data: stemData,
         provenance: fileProvenance(stem.renderer, "1.0.0", {
           instrument: stem.trackModel.instrument,
           trackModelVersion: stem.trackModel.version,
@@ -725,10 +778,33 @@ export async function renderArrangementExport(input: {
             rendererIdentity: stem.rendererAttestation.rendererIdentity,
             rendererSha256: stem.rendererAttestation.rendererSha256,
             smokeOutputSha256: stem.rendererAttestation.smokeOutputSha256,
+            trackModelSha256: stem.rendererAttestation.trackModelSha256,
+            rendererOutputSha256: stem.rendererAttestation.rendererOutputSha256,
+            stemOutputSha256,
           } : {}),
         }, input.trackModelArtifactIds?.[stem.trackModel.id]
           ? [input.trackModelArtifactIds[stem.trackModel.id]]
           : input.parentIds),
+        rendererEvidence: {
+          trackName: track?.name ?? stem.trackModel.instrument,
+          role: track?.role ?? stem.trackModel.role,
+          rendererStatus: stem.rendererStatus ?? "deterministic-fallback",
+          rendererProvider: attestation?.provider ?? stem.renderer,
+          ...(attestation ? {
+            rendererProduct: attestation.assetIdentity,
+            nativeHost: attestation.rendererIdentity,
+            licenseOwner: attestation.licenseOwner,
+            licenseReference: attestation.licenseReference,
+            assetSha256: attestation.assetSha256,
+            rendererSha256: attestation.rendererSha256,
+            smokeOutputSha256: attestation.smokeOutputSha256,
+            trackModelSha256: attestation.trackModelSha256,
+            rendererOutputSha256: attestation.rendererOutputSha256,
+            stemOutputSha256,
+          } : {}),
+          ...(!attestation ? { stemOutputSha256 } : {}),
+          ...(stem.fallbackReason ? { fallbackReason: stem.fallbackReason } : {}),
+        },
       });
     }
   }
@@ -806,13 +882,15 @@ export async function renderArrangementExport(input: {
     },
     sections: input.sections,
     tracks: activeTracks.map(({ id, name, role }) => ({ id, name, role })),
-    trackModels: pipeline.tracks.map(({ trackModel, renderer, rendererAttestation }) => ({
+    trackModels: pipeline.tracks.map(({ trackModel, renderer, rendererStatus, fallbackReason, rendererAttestation }) => ({
       ...trackModel,
       provenance: {
         ...trackModel.provenance,
         parentIds: trackModelParents,
       },
       renderer,
+      rendererStatus: rendererStatus ?? "deterministic-fallback",
+      ...(fallbackReason ? { fallbackReason } : {}),
       ...(rendererAttestation ? {
         rendererAttestation,
       } : {}),
