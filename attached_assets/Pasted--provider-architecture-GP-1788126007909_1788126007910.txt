@@ -1,0 +1,605 @@
+מהשלב הזה אני רוצה לשנות את סדר העדיפויות של הפיתוח.
+
+התשתית הכללית, ה-provider architecture, ה-GPU orchestration, ה-jobs, ה-versioning וה-lineage כבר מספיק מתקדמים. כרגע לא להתמקד בעוד abstractions, עוד contracts, עוד מסכי UI או עוד infrastructure שאינה נדרשת ישירות ליצירת מוזיקה אמיתית.
+
+המטרה המרכזית עכשיו היא להגיע מהר ככל האפשר ל-End-to-End production flow אמיתי שבו משתמש מעלה ווקאל או שיר, המערכת מנתחת אותו, בונה SongModel, יוצרת ArrangementPlan, מפיקה accompaniment אמיתי במודל GPU, מחזירה את התוצאה ל-Studio ומאפשרת Export.
+
+לבנות לפי הסדר הבא:
+
+1. להשלים קודם כל Flow מלא עם ACE-Step 1.5 שכבר עבר GPU smoke.
+
+ה-flow חייב להיות:
+
+Upload audio/vocal
+→ preprocess
+→ analysis
+→ SongModel
+→ StyleSpec
+→ ArrangementPlan
+→ ACE-Step provider
+→ Modal GPU inference
+→ generated accompaniment WAV
+→ artifact registration
+→ חזרה ל-project
+→ playback בתוך Studio
+→ export WAV
+
+לא להסתפק ב-smoke test. להעביר שיר אמיתי דרך כל המערכת מתחילתה ועד סופה.
+
+2. לבנות ACE-Step Production Integration מלאה.
+
+לממש בפועל:
+
+* COMPLETE
+* LEGO
+* REPAINT
+* COVER
+* EXTRACT
+
+לכל operation לבנות request schema קבוע, seed, model version, prompt/style parameters, source artifact references, output artifacts ו-lineage.
+
+ב-LEGO לאפשר יצירה של track בודד:
+
+* drums
+* bass
+* piano
+* guitar
+* strings
+* brass
+* synth
+* percussion
+* FX
+
+ב-REPAINT לאפשר:
+
+* בחירת אזור לפי bar/beat/time
+* regenerate רק את האזור
+* crossfade תקין
+* שמירת version חדש
+
+3. להפעיל BS-RoFormer בפועל.
+
+לא להמשיך עד שיש:
+
+* checkpoint מאומת
+* SHA256 קבוע
+* CUDA inference
+* smoke אמיתי
+* provider READY
+
+Output אמיתי:
+
+* vocals
+* drums
+* bass
+* guitar
+* piano
+* other
+
+בנוסף לבנות outputs נגזרים:
+
+* instrumental
+* all_vocals
+
+בהמשך להוסיף הפרדה בין lead vocal ל-backing vocals.
+
+4. להפעיל All-In-One בפועל.
+
+להוציא:
+
+* BPM
+* beats
+* downbeats
+* section boundaries
+* section labels
+
+ולהזין ישירות ל-SongModel.
+
+לבנות TempoMap אמיתי ולא BPM בודד.
+
+לבנות MeterMap אמיתי.
+
+לתמוך בשינויי tempo ובשינויי meter לאורך השיר.
+
+5. להפעיל MT3 בפועל.
+
+Audio/stems → multitrack symbolic transcription.
+
+לשמור notes, timing, velocity, program/instrument mapping ו-confidence.
+
+לא להכניס תוצאות גולמיות ישירות ל-arrangement.
+
+לבנות normalization layer שמנקה:
+
+* micro notes
+* false notes
+* octave jumps
+* overlapping notes
+* timing noise
+* impossible ranges
+
+6. להשלים Analysis Fusion Engine.
+
+לחבר יחד:
+
+* Basic Pitch
+* MT3
+* All-In-One
+* BS-RoFormer stems
+* chroma/HPCP
+* bass information
+* vocal melody
+* key detection
+
+להפיק SongModel אחד canonical.
+
+SongModel יהיה source of truth יחיד לכל שאר המערכת.
+
+לכל מידע לשמור:
+
+* source
+* confidence
+* version
+* evidence
+
+7. להתמקד חזק ב-Harmony Engine.
+
+זה אחד החלקים המרכזיים ביותר במוצר.
+
+לבנות:
+
+* key map
+* chord map
+* inversions
+* slash chords
+* sevenths
+* extensions
+* suspensions
+* alterations
+* secondary dominants
+* borrowed chords
+* modal interchange
+* diminished passing chords
+* chromatic approach
+* pedal points
+* cadence recognition
+* functional harmony
+
+לבנות Melody ↔ Chord Validation.
+
+המערכת צריכה לזהות ולתקן אקורד שמתנגש במלודיה.
+
+להוסיף Harmony Complexity 1–10.
+
+8. לשדרג משמעותית את Arrangement Director.
+
+לא להסתפק יותר ב:
+energy גבוה → brass
+energy נמוך → strings pad
+
+לבנות החלטות מוזיקליות לפי:
+
+* section role
+* previous section
+* next section
+* melody register
+* harmonic rhythm
+* cadence
+* energy curve
+* density
+* genre/style
+* instrumentation
+* song climax
+* contrast
+
+לכל section לקבוע:
+
+* active instruments
+* musical role לכל instrument
+* register
+* density
+* rhythmic activity
+* dynamics
+* articulation family
+* harmonic function
+* transition behavior
+
+9. לבנות Composition Engine אמיתי.
+
+לייצר:
+
+* intros
+* endings
+* fills
+* transitions
+* turnarounds
+* interludes
+* breaks
+* build-ups
+* drops
+* countermelodies
+* solos
+* call-and-response
+* motifs
+
+לא לייצר אותם כרעש/placeholder אלא כ-MIDI/symbolic material.
+
+10. לבנות Modulation Engine.
+
+לתמוך ב:
+
+* direct modulation
+* pivot chord
+* dominant preparation
+* common chord
+* common tone
+* chromatic sequence
+* circle of fifths
+* diminished bridge
+
+Input:
+current key
+target key
+style
+bars available
+melody
+harmony
+
+Output:
+complete transition harmony + MIDI parts.
+
+11. להוסיף SymphonyGen אחרי שה-SongModel וה-ArrangementPlan יציבים.
+
+להשתמש בו בעיקר ל:
+
+* orchestral
+* cinematic
+* classical
+* large ensemble
+
+Input:
+structured harmony/melody skeleton
+
+Output:
+multitrack orchestration MIDI.
+
+לא לתת לו לעקוף את Arrangement Director.
+
+12. להוסיף METEOR כ-Re-Orchestration Provider.
+
+Use case:
+קיים MIDI arrangement
+→ שינוי texture/orchestration
+→ שמירת melody/harmony
+→ יצירת גרסה חדשה.
+
+13. להוסיף AnyAccomp כ-alternate Vocal→Accompaniment Provider.
+
+לא כ-core architecture.
+
+להשתמש בו ל:
+
+* alternative candidate
+* fast accompaniment
+* A/B comparison
+
+14. לבנות Candidate Generation + Ranking אמיתי.
+
+ב-HQ mode לייצר לפחות 3 candidates.
+
+Candidate A/B/C.
+
+לכל אחד לחשב:
+
+* melody preservation
+* harmonic compatibility
+* rhythmic alignment
+* style adherence
+* structure adherence
+* masking
+* artifacts
+* dynamics
+* instrumental balance
+
+לבחור אוטומטית best candidate.
+
+15. לשדרג Instrument Intelligence.
+
+לכל instrument לבנות InstrumentDefinition מפורט.
+
+לדוגמה Violin:
+
+* playable range
+* comfortable range
+* legato
+* staccato
+* spiccato
+* pizzicato
+* tremolo
+* trills
+* harmonics
+* double stops
+* vibrato
+* bow logic
+
+Trumpet:
+
+* breath limits
+* tonguing
+* legato
+* marcato
+* falls
+* doits
+* shakes
+* mute types
+
+Guitar:
+
+* strings
+* frets
+* playable voicings
+* strumming
+* picking
+* slides
+* hammer-ons
+* pull-offs
+* palm mute
+
+Drums:
+
+* limb feasibility
+* ghost notes
+* fills
+* flams
+* hi-hat states
+* ride
+* tom movement
+* accents by meter
+
+16. לבנות Performance Engine ברמה הרבה יותר גבוהה.
+
+Input:
+TrackModel + InstrumentDefinition + Style + Section
+
+Output:
+
+* velocity
+* note length
+* timing offsets
+* CC1
+* CC11
+* CC64
+* pitch bend
+* aftertouch
+* keyswitches
+* articulations
+* phrase curves
+
+לא להשתמש ב-random humanization פשוט.
+
+לבנות humanization לפי כלי.
+
+17. לבנות Voice Leading Engine.
+
+לפני rendering:
+
+* minimize unnecessary jumps
+* prevent voice crossing
+* control spacing
+* preserve common tones
+* control contrary/parallel movement לפי style
+* prevent impossible voicings
+* prevent register collisions
+* preserve melody space
+
+18. לעבור ל-real sample rendering.
+
+שלב ראשון:
+sfizz + VSCO 2 CE.
+
+Pipeline:
+TrackModel
+→ Performance Engine
+→ articulation mapping
+→ SFZ patch
+→ sfizz render
+→ WAV stem
+
+לבנות LibraryAdapter אמיתי.
+
+Arrangement Director לא יכיר שמות של ספריות.
+
+הוא יגיד:
+Violin / Legato / mf
+
+וה-LibraryAdapter יחליט איזה patch לטעון.
+
+19. לאחר מכן להוסיף Pedalboard/VST3 rendering.
+
+לבנות renderer שמקבל:
+
+* MIDI
+* automation
+* articulation map
+* plugin
+* preset
+
+ומחזיר WAV.
+
+לבנות SoundLibraryRegistry עבור:
+
+* piano
+* strings
+* brass
+* woodwinds
+* guitars
+* bass
+* drums
+* percussion
+* choir
+* synths
+* world instruments
+
+20. לבנות Mix Engine אמיתי.
+
+לכל track:
+Gain
+→ EQ
+→ compression/dynamics
+→ optional saturation
+→ stereo
+→ sends
+
+לבנות buses:
+DRUM
+BASS
+GUITAR
+KEYS
+STRINGS
+BRASS
+WOODWIND
+VOCAL
+FX
+MUSIC
+MASTER
+
+לבנות arrangement-aware automation.
+
+21. לבנות Masking Engine.
+
+לטפל במיוחד ב:
+
+* vocal vs piano
+* vocal vs guitar
+* vocal vs brass
+* vocal vs strings
+* kick vs bass
+
+באמצעות:
+
+* dynamic EQ
+* sidechain
+* automation
+* spectral carving
+
+22. לבנות Spatial Engine.
+
+לכל כלי:
+
+* pan
+* width
+* depth
+* early reflections
+* reverb send
+* pre-delay
+
+לאורקסטרה לבנות StageLayout.
+
+23. לבנות Master Engine.
+
+Chain:
+tone balance
+→ dynamics
+→ stereo management
+→ optional saturation
+→ true peak limiter
+→ LUFS normalization
+
+Profiles:
+
+* Streaming
+* Dynamic
+* Classical
+* Pop
+* Loud
+* Film
+
+תמיד לשמור:
+premaster.wav
+master.wav
+
+24. להפוך את Copilot לפעולות מוזיקליות אמיתיות.
+
+הוראות כמו:
+"הורד את התופים בבית השני"
+"הוסף צ'לו בפזמון"
+"עשה פזמון אחרון גדול יותר"
+"החלף את הפסנתר בגיטרה אקוסטית"
+"הוסף counter melody לכינור"
+"עשה עליה של טון"
+
+יתורגמו ל-structured operations על ArrangementPlan/TrackModel.
+
+לא לערוך WAV ישירות אם אפשר לערוך את המקור הסימבולי.
+
+25. לבצע partial rerender.
+
+אם המשתמש שינה רק:
+bars 33–40 של strings
+
+לא ליצור מחדש את כל השיר.
+
+לחשב dependency graph ולרנדר רק:
+
+* tracks מושפעים
+* region מושפע
+* buses/master שנדרשים מחדש
+
+26. להגדיר שני מסלולי איכות ברורים.
+
+FAST:
+SongModel
+→ ArrangementPlan
+→ ACE-Step Complete
+→ quality
+→ master
+
+STUDIO:
+SongModel
+→ Harmony Engine
+→ Arrangement Director
+→ symbolic orchestration
+→ Voice Leading
+→ Performance
+→ SFZ/VST rendering
+→ multitrack mix
+→ master
+
+27. רק לאחר שכל זה עובד, לחזור להרחבת ה-UI.
+
+כרגע UI חדש הוא עדיפות נמוכה.
+
+ה-Studio הקיים צריך רק את מה שנדרש כדי לבדוק:
+
+* source
+* sections
+* chords
+* tracks
+* candidates
+* playback
+* regenerate
+* export
+
+28. היעד הבא שאני רוצה לראות לפני עוד הרחבות מערכת:
+
+משתמש מעלה ווקאל אמיתי.
+
+המערכת:
+
+1. מנתחת אותו.
+2. יוצרת SongModel.
+3. מזהה melody/key/tempo/structure.
+4. בונה harmony.
+5. יוצרת ArrangementPlan.
+6. מפעילה ACE-Step ב-GPU.
+7. מחזירה accompaniment אמיתי.
+8. מציגה אותו ב-Studio.
+9. מאפשרת regenerate.
+10. מייצאת WAV.
+
+אחרי שזה עובד בצורה מלאה, לבנות את אותו flow ב-STUDIO QUALITY עם MIDI + sfizz/VSCO.
+
+המיקוד מעכשיו:
+REAL MUSIC IN → REAL MUSICAL INTELLIGENCE → REAL ARRANGEMENT → REAL AUDIO OUT.
+
+לא להמשיך לבנות תשתית לשם תשתית.
