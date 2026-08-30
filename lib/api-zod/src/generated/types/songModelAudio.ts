@@ -5,6 +5,7 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { SongModelAudioAnalysisCoverage } from './songModelAudioAnalysisCoverage';
 
 export interface SongModelAudio {
   name: string;
@@ -17,4 +18,11 @@ export interface SongModelAudio {
   sampleRate: number;
   /** @minimum 1 */
   channels: number;
+  /** @nullable */
+  proxyObjectPath: string | null;
+  /** @nullable */
+  proxyContentType: string | null;
+  analysisStartSeconds: number;
+  analysisDurationSeconds: number;
+  analysisCoverage: SongModelAudioAnalysisCoverage;
 }

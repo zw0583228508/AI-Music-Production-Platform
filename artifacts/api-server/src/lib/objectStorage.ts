@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { pipeline } from "node:stream/promises";
 import { Storage, type File } from "@google-cloud/storage";
 
 const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
@@ -101,6 +103,27 @@ export async function getSourceObject(objectPath: string): Promise<File | null> 
   return getPrivateObject(objectPath.slice("/objects/".length));
 }
 
+export async function saveSourceProxyObject(
+  sourceId: string,
+  localPath: string,
+  contentType: string,
+): Promise<string> {
+  const safeSourceId = sourceId.replace(/[^a-zA-Z0-9_-]/g, "");
+  if (!safeSourceId) throw new Error("Invalid source id");
+  if (contentType !== "audio/flac") {
+    throw new Error("Source proxies must be lossless FLAC audio");
+  }
+  const relativePath = `proxies/${safeSourceId}.flac`;
+  const fullPath = `${privateObjectDir()}/${relativePath}`;
+  const { bucketName, objectName } = parseObjectPath(fullPath);
+  const destination = objectStorageClient.bucket(bucketName).file(objectName)
+    .createWriteStream({
+      resumable: true,
+      metadata: { contentType, cacheControl: "private, max-age=3600" },
+    });
+  await pipeline(createReadStream(localPath), destination);
+  return `/objects/${relativePath}`;
+}
 export async function saveExportObject(
   relativePath: string,
   data: Buffer,

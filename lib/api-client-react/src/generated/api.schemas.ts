@@ -215,6 +215,14 @@ export interface SongModelFusion {
   decisions: ProviderFusionDecision[];
 }
 
+export type SongModelAudioAnalysisCoverage = typeof SongModelAudioAnalysisCoverage[keyof typeof SongModelAudioAnalysisCoverage];
+
+
+export const SongModelAudioAnalysisCoverage = {
+  full: 'full',
+  representative: 'representative',
+} as const;
+
 export interface SongModelAudio {
   name: string;
   contentType: string;
@@ -226,6 +234,13 @@ export interface SongModelAudio {
   sampleRate: number;
   /** @minimum 1 */
   channels: number;
+  /** @nullable */
+  proxyObjectPath: string | null;
+  /** @nullable */
+  proxyContentType: string | null;
+  analysisStartSeconds: number;
+  analysisDurationSeconds: number;
+  analysisCoverage: SongModelAudioAnalysisCoverage;
 }
 
 export interface TempoEvent {
@@ -301,6 +316,19 @@ export interface Section {
   energy: number;
 }
 
+export interface SongModelStem {
+  name: string;
+  role: string;
+  source: string;
+  /** @minimum 1 */
+  channels: number;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  confidence: number;
+}
+
 export interface SourceStem {
   role: string;
   objectPath: string;
@@ -357,6 +385,18 @@ export interface SongModel {
   validation: SongModelValidation;
   fusion: SongModelFusion;
   audio: SongModelAudio;
+  /** @minimum 0 */
+  analysisStartSeconds: number;
+  /**
+     * @minimum 0
+     * @maximum 300
+     */
+  analysisDurationSeconds: number;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  analysisCoverage: number;
   tempoMap: TempoEvent[];
   meterMap: MeterEvent[];
   keyMap: KeyEvent[];
@@ -366,6 +406,8 @@ export interface SongModel {
   chords: ChordEvent[];
   sections: Section[];
   energy: number[];
+  waveform: number[];
+  stems: SongModelStem[];
   dynamics: number[];
   sourceStems: SourceStem[];
   lyrics: LyricEvent[];

@@ -295,6 +295,35 @@ export const GetProjectResponse = zod.object({
 
 
 /**
+ * Creates and awaits a durable analysis attempt for the authenticated project owner.
+ * @summary Analyze the latest imported source recording
+ */
+export const AnalyzeProjectParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+export const AnalyzeProjectBody = zod.object({
+  "provider": zod.enum(['BS_ROFORMER_SW', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'FUSION']).optional(),
+  "refresh": zod.boolean().optional()
+})
+
+export const AnalyzeProjectResponse = zod.object({
+  "bpm": zod.number(),
+  "meter": zod.string(),
+  "key": zod.string(),
+  "confidence": zod.number(),
+  "sections": zod.array(zod.object({
+  "name": zod.string(),
+  "startBar": zod.number(),
+  "endBar": zod.number(),
+  "energy": zod.number()
+})),
+  "energy": zod.array(zod.number()),
+  "providers": zod.array(zod.string())
+})
+
+
+/**
  * @summary List imported source recordings
  */
 export const ListProjectSourcesParams = zod.object({
@@ -390,6 +419,14 @@ export const getProjectSongModelResponseAudioDurationSecondsExclusiveMin = 0;
 
 
 
+export const getProjectSongModelResponseAnalysisStartSecondsMin = 0;
+
+export const getProjectSongModelResponseAnalysisDurationSecondsMin = 0;
+export const getProjectSongModelResponseAnalysisDurationSecondsMax = 300;
+
+export const getProjectSongModelResponseAnalysisCoverageMin = 0;
+export const getProjectSongModelResponseAnalysisCoverageMax = 1;
+
 export const getProjectSongModelResponseTempoMapItemBpmMin = 30;
 export const getProjectSongModelResponseTempoMapItemBpmMax = 300;
 
@@ -401,6 +438,10 @@ export const getProjectSongModelResponseMeterMapItemConfidenceMax = 1;
 
 export const getProjectSongModelResponseKeyMapItemConfidenceMin = 0;
 export const getProjectSongModelResponseKeyMapItemConfidenceMax = 1;
+
+
+export const getProjectSongModelResponseStemsItemConfidenceMin = 0;
+export const getProjectSongModelResponseStemsItemConfidenceMax = 1;
 
 export const getProjectSongModelResponseConfidenceMin = 0;
 export const getProjectSongModelResponseConfidenceMax = 1;
@@ -447,8 +488,16 @@ export const GetProjectSongModelResponse = zod.object({
   "size": zod.number().min(1),
   "durationSeconds": zod.number().gt(getProjectSongModelResponseAudioDurationSecondsExclusiveMin),
   "sampleRate": zod.number().min(1),
-  "channels": zod.number().min(1)
+  "channels": zod.number().min(1),
+  "proxyObjectPath": zod.string().nullable(),
+  "proxyContentType": zod.string().nullable(),
+  "analysisStartSeconds": zod.number(),
+  "analysisDurationSeconds": zod.number(),
+  "analysisCoverage": zod.enum(['full', 'representative'])
 }),
+  "analysisStartSeconds": zod.number().min(getProjectSongModelResponseAnalysisStartSecondsMin),
+  "analysisDurationSeconds": zod.number().min(getProjectSongModelResponseAnalysisDurationSecondsMin).max(getProjectSongModelResponseAnalysisDurationSecondsMax),
+  "analysisCoverage": zod.number().min(getProjectSongModelResponseAnalysisCoverageMin).max(getProjectSongModelResponseAnalysisCoverageMax),
   "tempoMap": zod.array(zod.object({
   "time": zod.number(),
   "bpm": zod.number().min(getProjectSongModelResponseTempoMapItemBpmMin).max(getProjectSongModelResponseTempoMapItemBpmMax),
@@ -499,6 +548,14 @@ export const GetProjectSongModelResponse = zod.object({
   "energy": zod.number()
 })),
   "energy": zod.array(zod.number()),
+  "waveform": zod.array(zod.number()),
+  "stems": zod.array(zod.object({
+  "name": zod.string(),
+  "role": zod.string(),
+  "source": zod.string(),
+  "channels": zod.number().min(1),
+  "confidence": zod.number().min(getProjectSongModelResponseStemsItemConfidenceMin).max(getProjectSongModelResponseStemsItemConfidenceMax)
+})),
   "dynamics": zod.array(zod.number()),
   "sourceStems": zod.array(zod.object({
   "role": zod.string(),
@@ -580,6 +637,14 @@ export const correctProjectSongModelResponseAudioDurationSecondsExclusiveMin = 0
 
 
 
+export const correctProjectSongModelResponseAnalysisStartSecondsMin = 0;
+
+export const correctProjectSongModelResponseAnalysisDurationSecondsMin = 0;
+export const correctProjectSongModelResponseAnalysisDurationSecondsMax = 300;
+
+export const correctProjectSongModelResponseAnalysisCoverageMin = 0;
+export const correctProjectSongModelResponseAnalysisCoverageMax = 1;
+
 export const correctProjectSongModelResponseTempoMapItemBpmMin = 30;
 export const correctProjectSongModelResponseTempoMapItemBpmMax = 300;
 
@@ -591,6 +656,10 @@ export const correctProjectSongModelResponseMeterMapItemConfidenceMax = 1;
 
 export const correctProjectSongModelResponseKeyMapItemConfidenceMin = 0;
 export const correctProjectSongModelResponseKeyMapItemConfidenceMax = 1;
+
+
+export const correctProjectSongModelResponseStemsItemConfidenceMin = 0;
+export const correctProjectSongModelResponseStemsItemConfidenceMax = 1;
 
 export const correctProjectSongModelResponseConfidenceMin = 0;
 export const correctProjectSongModelResponseConfidenceMax = 1;
@@ -637,8 +706,16 @@ export const CorrectProjectSongModelResponse = zod.object({
   "size": zod.number().min(1),
   "durationSeconds": zod.number().gt(correctProjectSongModelResponseAudioDurationSecondsExclusiveMin),
   "sampleRate": zod.number().min(1),
-  "channels": zod.number().min(1)
+  "channels": zod.number().min(1),
+  "proxyObjectPath": zod.string().nullable(),
+  "proxyContentType": zod.string().nullable(),
+  "analysisStartSeconds": zod.number(),
+  "analysisDurationSeconds": zod.number(),
+  "analysisCoverage": zod.enum(['full', 'representative'])
 }),
+  "analysisStartSeconds": zod.number().min(correctProjectSongModelResponseAnalysisStartSecondsMin),
+  "analysisDurationSeconds": zod.number().min(correctProjectSongModelResponseAnalysisDurationSecondsMin).max(correctProjectSongModelResponseAnalysisDurationSecondsMax),
+  "analysisCoverage": zod.number().min(correctProjectSongModelResponseAnalysisCoverageMin).max(correctProjectSongModelResponseAnalysisCoverageMax),
   "tempoMap": zod.array(zod.object({
   "time": zod.number(),
   "bpm": zod.number().min(correctProjectSongModelResponseTempoMapItemBpmMin).max(correctProjectSongModelResponseTempoMapItemBpmMax),
@@ -689,6 +766,14 @@ export const CorrectProjectSongModelResponse = zod.object({
   "energy": zod.number()
 })),
   "energy": zod.array(zod.number()),
+  "waveform": zod.array(zod.number()),
+  "stems": zod.array(zod.object({
+  "name": zod.string(),
+  "role": zod.string(),
+  "source": zod.string(),
+  "channels": zod.number().min(1),
+  "confidence": zod.number().min(correctProjectSongModelResponseStemsItemConfidenceMin).max(correctProjectSongModelResponseStemsItemConfidenceMax)
+})),
   "dynamics": zod.array(zod.number()),
   "sourceStems": zod.array(zod.object({
   "role": zod.string(),

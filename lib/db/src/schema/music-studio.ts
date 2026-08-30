@@ -74,6 +74,16 @@ export type SongModelData = SongModelCore & {
     confidence: number;
     decisions: ProviderFusionDecision[];
   };
+  audio: SongModelCore["audio"] & {
+    proxyObjectPath: string | null;
+    proxyContentType: string | null;
+    analysisStartSeconds: number;
+    analysisDurationSeconds: number;
+    analysisCoverage: "full" | "representative";
+  };
+  analysisStartSeconds: number;
+  analysisDurationSeconds: number;
+  analysisCoverage: number;
   beats: Array<{
     time: number;
     beat: number;
@@ -88,6 +98,14 @@ export type SongModelData = SongModelCore & {
     confidence: number;
   }>;
   dynamics: number[];
+  waveform: number[];
+  stems: Array<{
+    name: string;
+    role: string;
+    source: string;
+    channels: number;
+    confidence: number;
+  }>;
   sourceStems: Array<{
     role: string;
     objectPath: string;

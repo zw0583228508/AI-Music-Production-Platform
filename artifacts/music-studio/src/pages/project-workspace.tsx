@@ -10,6 +10,8 @@ import {
   useListArtifacts,
   useRunCopilot,
   useCreateProjectExport,
+  useGetProjectSongModel,
+  getGetProjectSongModelQueryKey,
   getListArtifactsQueryKey,
   ExportResult,
   GenerationResult,
@@ -60,7 +62,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-
 export default function ProjectWorkspace() {
   const [, params] = useRoute("/projects/:projectId");
   const projectId = params?.projectId || "";
@@ -68,6 +69,13 @@ export default function ProjectWorkspace() {
   const queryClient = useQueryClient();
 
   const { data: workspace, isLoading, error } = useGetProject(projectId);
+  const { data: songModel } = useGetProjectSongModel(projectId, {
+    query: {
+      queryKey: getGetProjectSongModelQueryKey(projectId),
+      enabled: workspace?.project.status === "ready",
+      retry: false,
+    },
+  });
   const { data: arrangements } = useListArrangements(projectId);
   const { data: tracks } = useListTracks(projectId);
   const { data: artifacts } = useListArtifacts(projectId);
@@ -315,6 +323,7 @@ export default function ProjectWorkspace() {
             sourceType={project.sourceType}
             onReady={() => {
               void queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(projectId) });
+              void queryClient.invalidateQueries({ queryKey: getGetProjectSongModelQueryKey(projectId) });
               void queryClient.invalidateQueries({ queryKey: getListArtifactsQueryKey(projectId) });
             }}
           />
@@ -367,16 +376,35 @@ export default function ProjectWorkspace() {
         {/* Center Panel: Arrangement & Timeline */}
         <main className="flex-1 flex flex-col min-w-0 bg-background z-0 relative">
           {/* Analysis Timeline Strip */}
-          <div className="h-32 border-b bg-card p-4 shrink-0 flex flex-col relative overflow-hidden">
+          <div className="h-44 border-b bg-card p-4 shrink-0 flex flex-col relative overflow-hidden">
             <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, black 1px, transparent 0)', backgroundSize: '16px 16px' }} />
             <div className="flex items-center justify-between mb-2 relative z-10">
               <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                 <Activity className="h-3.5 w-3.5" />
                 Structure Map
               </h3>
+              {songModel && (
+                <span className="font-mono text-[10px] text-muted-foreground">
+                  Song Model v{songModel.version}
+                </span>
+              )}
             </div>
-            
-            {/* Mock Timeline UI */}
+
+            {songModel?.waveform?.length ? (
+              <div
+                className="mb-2 flex h-10 items-center gap-px rounded border bg-muted/20 px-2"
+                aria-label="Measured source waveform"
+              >
+                {songModel.waveform.map((peak, index) => (
+                  <span
+                    key={index}
+                    className="min-w-px flex-1 rounded-full bg-primary/65"
+                    style={{ height: `${Math.max(8, peak * 100)}%` }}
+                  />
+                ))}
+              </div>
+            ) : null}
+
             <div className="flex-1 bg-muted/30 rounded-md border flex items-stretch p-1 gap-1 relative z-10">
               {analysis?.sections?.length ? analysis.sections.map((section, idx) => (
                 <div 

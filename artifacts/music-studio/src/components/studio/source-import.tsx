@@ -175,7 +175,7 @@ export function SourceImport({
   };
 
   const statusLabel = currentSource?.status === "preprocessing"
-    ? "Normalizing audio"
+    ? "Creating safe analysis proxy"
     : currentSource?.status === "analyzing"
       ? "Building Song Model"
       : currentSource?.status === "queued"
@@ -198,8 +198,9 @@ export function SourceImport({
         <DialogHeader>
           <DialogTitle>Import a real source recording</DialogTitle>
           <DialogDescription>
-            Upload {SUPPORTED_SOURCE_FORMAT_LABEL}. The studio will inspect,
-            normalize, and convert it into the canonical Song Model.
+            Upload {SUPPORTED_SOURCE_FORMAT_LABEL}. The original is preserved,
+            and a non-destructive analysis proxy is created before the
+            canonical Song Model.
           </DialogDescription>
         </DialogHeader>
 

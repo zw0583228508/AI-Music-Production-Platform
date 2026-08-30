@@ -20,6 +20,7 @@ import type { SongModelContractVersion } from './songModelContractVersion';
 import type { SongModelCorrection } from './songModelCorrection';
 import type { SongModelFusion } from './songModelFusion';
 import type { SongModelStatus } from './songModelStatus';
+import type { SongModelStem } from './songModelStem';
 import type { SongModelValidation } from './songModelValidation';
 import type { SourceStem } from './sourceStem';
 import type { TempoEvent } from './tempoEvent';
@@ -34,6 +35,18 @@ export interface SongModel {
   validation: SongModelValidation;
   fusion: SongModelFusion;
   audio: SongModelAudio;
+  /** @minimum 0 */
+  analysisStartSeconds: number;
+  /**
+     * @minimum 0
+     * @maximum 300
+     */
+  analysisDurationSeconds: number;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  analysisCoverage: number;
   tempoMap: TempoEvent[];
   meterMap: MeterEvent[];
   keyMap: KeyEvent[];
@@ -43,6 +56,8 @@ export interface SongModel {
   chords: ChordEvent[];
   sections: Section[];
   energy: number[];
+  waveform: number[];
+  stems: SongModelStem[];
   dynamics: number[];
   sourceStems: SourceStem[];
   lyrics: LyricEvent[];

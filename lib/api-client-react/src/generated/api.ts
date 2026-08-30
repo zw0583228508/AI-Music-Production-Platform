@@ -20,6 +20,8 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  Analysis,
+  AnalysisInput,
   AnalysisJob,
   Arrangement,
   ArrangementInput,
@@ -995,6 +997,79 @@ export function useGetProject<TData = Awaited<ReturnType<typeof getProject>>, TE
 
 
 
+
+export const getAnalyzeProjectUrl = (projectId: string,) => {
+
+
+
+
+  return `/api/projects/${projectId}/analyze`
+}
+
+/**
+ * Creates and awaits a durable analysis attempt for the authenticated project owner.
+ * @summary Analyze the latest imported source recording
+ */
+export const analyzeProject = async (projectId: string,
+    analysisInput?: AnalysisInput, options?: Parameters<typeof customFetch>[1]): Promise<Analysis> => {
+
+  return customFetch<Analysis>(getAnalyzeProjectUrl(projectId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(analysisInput)
+  }
+);}
+
+
+
+
+
+export const getAnalyzeProjectMutationOptions = <TError = ErrorType<void | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof analyzeProject>>, TError,{projectId: string;data?: BodyType<AnalysisInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof analyzeProject>>, TError,{projectId: string;data?: BodyType<AnalysisInput>}, TContext> => {
+
+const mutationKey = ['analyzeProject'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof analyzeProject>>, {projectId: string;data?: BodyType<AnalysisInput>}> = (props) => {
+          const {projectId,data} = props ?? {};
+
+          return  analyzeProject(projectId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AnalyzeProjectMutationResult = NonNullable<Awaited<ReturnType<typeof analyzeProject>>>
+    export type AnalyzeProjectMutationBody = BodyType<AnalysisInput> | undefined
+    export type AnalyzeProjectMutationError = ErrorType<void | NotFoundResponse>
+
+    /**
+ * @summary Analyze the latest imported source recording
+ */
+export const useAnalyzeProject = <TError = ErrorType<void | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof analyzeProject>>, TError,{projectId: string;data?: BodyType<AnalysisInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof analyzeProject>>,
+        TError,
+        {projectId: string;data?: BodyType<AnalysisInput>},
+        TContext
+      > => {
+      return useMutation(getAnalyzeProjectMutationOptions(options));
+    }
 
 export const getListProjectSourcesUrl = (projectId: string,) => {
 

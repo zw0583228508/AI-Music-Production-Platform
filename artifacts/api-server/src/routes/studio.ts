@@ -8,6 +8,9 @@ import {
 } from "express";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
+  AnalyzeProjectBody,
+  AnalyzeProjectParams,
+  AnalyzeProjectResponse,
   CreateArrangementBody,
   CreateArrangementParams,
   CreateArrangementResponse,
@@ -62,6 +65,7 @@ import {
   songModelsTable,
   studioActivitiesTable,
   tracksTable,
+  type SongModelData,
 } from "@workspace/db";
 import { analyzeProjectSource } from "../lib/sourceAnalyzer";
 import { validateSourceFileMetadata } from "../lib/sourceFormats";
@@ -229,11 +233,67 @@ const songModelResponse = (
   status: row.status,
   parentModelId: row.parentModelId,
   correction: row.correction,
-  ...row.model,
+  ...normalizeSongModel(row.model),
   providers: row.providers,
   confidence: row.confidence,
   createdAt: iso(row.createdAt),
 });
+
+/**
+ * Completed models live in JSONB and older rows predate newer analysis
+ * fields. Fill those fields at the API boundary without losing lineage or
+ * any rich model values already persisted on the row.
+ */
+function normalizeSongModel(model: typeof songModelsTable.$inferSelect["model"]) {
+  const legacy = model as Partial<SongModelData> & {
+    audio?: Partial<SongModelData["audio"]>;
+  };
+  const audio: Partial<SongModelData["audio"]> = legacy.audio ?? {
+    name: "",
+    contentType: "application/octet-stream",
+    size: 0,
+    durationSeconds: 0,
+    sampleRate: 0,
+    channels: 0,
+  };
+  const durationSeconds = audio.durationSeconds ?? 0;
+  const sourceStems = legacy.sourceStems ?? [];
+  return {
+    ...legacy,
+    audio: {
+      ...audio,
+      proxyObjectPath: audio.proxyObjectPath ?? null,
+      proxyContentType: audio.proxyContentType ?? null,
+      analysisStartSeconds:
+        audio.analysisStartSeconds ?? legacy.analysisStartSeconds ?? 0,
+      analysisDurationSeconds:
+        audio.analysisDurationSeconds ??
+        legacy.analysisDurationSeconds ??
+        durationSeconds,
+      analysisCoverage:
+        audio.analysisCoverage ??
+        ((legacy.analysisCoverage ?? 1) < 1 ? "representative" : "full"),
+    },
+    analysisStartSeconds: legacy.analysisStartSeconds ?? 0,
+    analysisDurationSeconds: legacy.analysisDurationSeconds ?? durationSeconds,
+    analysisCoverage: legacy.analysisCoverage ?? 1,
+    waveform: legacy.waveform ?? legacy.energy ?? [],
+    stems: legacy.stems ?? sourceStems.map((stem) => ({
+      name: stem.role,
+      role: stem.role,
+      source: stem.objectPath,
+      channels: 2,
+      confidence: stem.confidence,
+    })),
+    beats: legacy.beats ?? [],
+    bars: legacy.bars ?? [],
+    dynamics: legacy.dynamics ?? legacy.energy ?? [],
+    sourceStems,
+    lyrics: legacy.lyrics ?? [],
+    confidenceByField: legacy.confidenceByField ?? {},
+    provenance: legacy.provenance ?? [],
+  };
+}
 
 const analysisJobResponse = (
   job: typeof analysisJobsTable.$inferSelect,
@@ -582,6 +642,98 @@ router.get("/projects/:projectId", async (req, res): Promise<void> => {
     tracks,
     artifacts: artifacts.map(artifactResponse),
   }));
+});
+
+router.post("/projects/:projectId/analyze", async (req, res): Promise<void> => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const params = AnalyzeProjectParams.safeParse(req.params);
+  const body = AnalyzeProjectBody.safeParse(req.body ?? {});
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: "Invalid analysis request" });
+    return;
+  }
+  const [project] = await db
+    .select()
+    .from(musicProjectsTable)
+    .where(eq(musicProjectsTable.id, params.data.projectId))
+    .limit(1);
+  if (!project) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+  if (project.ownerId !== req.user.id) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+  const [source] = await db
+    .select()
+    .from(projectSourcesTable)
+    .where(and(
+      eq(projectSourcesTable.projectId, project.id),
+      eq(projectSourcesTable.ownerId, req.user.id),
+    ))
+    .orderBy(desc(projectSourcesTable.createdAt))
+    .limit(1);
+  if (!source) {
+    res.status(400).json({ error: "Import a source before analyzing the project" });
+    return;
+  }
+  const [latest] = await db
+    .select()
+    .from(analysisJobsTable)
+    .where(eq(analysisJobsTable.sourceId, source.id))
+    .orderBy(desc(analysisJobsTable.createdAt))
+    .limit(1);
+  if (latest?.status === "queued" || latest?.status === "running") {
+    res.status(409).json({ error: "Analysis is already running" });
+    return;
+  }
+  const [job] = await db.insert(analysisJobsTable).values({
+    id: randomUUID(),
+    projectId: project.id,
+    sourceId: source.id,
+    status: "queued",
+    stage: "queued",
+    progress: 4,
+    attempt: (latest?.attempt ?? 0) + 1,
+  }).onConflictDoNothing().returning();
+  if (!job) {
+    res.status(409).json({ error: "A new analysis attempt was already queued" });
+    return;
+  }
+  await db.transaction(async (tx) => {
+    await tx.update(projectSourcesTable)
+      .set({ status: "queued", progress: 4, error: null })
+      .where(eq(projectSourcesTable.id, source.id));
+    await tx.update(musicProjectsTable)
+      .set({ status: "analyzing", updatedAt: new Date() })
+      .where(eq(musicProjectsTable.id, project.id));
+  });
+  await analyzeProjectSource(source.id);
+  const [result] = await db
+    .select()
+    .from(analysisJobsTable)
+    .where(eq(analysisJobsTable.id, job.id))
+    .limit(1);
+  if (!result || result.status === "failed") {
+    res.status(422).json({
+      error: result?.error ?? "Source analysis failed",
+    });
+    return;
+  }
+  const [updatedProject] = await db
+    .select()
+    .from(musicProjectsTable)
+    .where(eq(musicProjectsTable.id, project.id))
+    .limit(1);
+  if (!updatedProject) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+  res.json(AnalyzeProjectResponse.parse(analysisResponse(updatedProject)));
 });
 
 router.get("/projects/:projectId/sources", async (req, res): Promise<void> => {
