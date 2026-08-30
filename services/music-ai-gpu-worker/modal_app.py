@@ -21,6 +21,7 @@ from modal_config import (
     MODEL_VOLUME_NAME,
     OUTPUT_MOUNT,
     OUTPUT_VOLUME_NAME,
+    promotion_secret_name,
     RUNTIME_SECRET_NAME,
     provider_image_build_args,
     worker_environment,
@@ -85,7 +86,10 @@ def _worker_options(provider: str) -> dict:
     return {
         "image": provider_images[provider],
         "gpu": deployment.gpu,
-        "secrets": [runtime_secret],
+        "secrets": [
+            runtime_secret,
+            modal.Secret.from_name(promotion_secret_name(provider)),
+        ],
         "volumes": volumes,
         "timeout": deployment.timeout_seconds,
         "scaledown_window": deployment.idle_timeout_seconds,

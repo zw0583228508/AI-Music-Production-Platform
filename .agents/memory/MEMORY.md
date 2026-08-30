@@ -11,4 +11,4 @@
 - [Project deletion storage fencing](project-deletion-storage-fencing.md) — private object writes must share a project fence with deletion; signed URL expiry is not terminal proof.
 - [Python music runtime compatibility](python-music-runtime-compatibility.md) — Basic Pitch, Demucs, and Pedalboard need specific Python/Nix compatibility pins before smoke inference succeeds.
 - [Licensed native render attestation](licensed-native-render-attestation.md) — native music readiness must bind TrackModel, asset, host, and output evidence before attribution.
-- [Modal GPU identity and model immutability](modal-gpu-identity.md) — promote runtime-injected Modal image IDs, and keep model-loader writes outside attested checkpoint trees.
+- [Modal GPU identity and model immutability](modal-gpu-identity.md) — use one CI-signed promotion bundle for Modal identity pins; keep loader writes outside checkpoints.

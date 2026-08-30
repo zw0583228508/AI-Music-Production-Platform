@@ -141,6 +141,71 @@ The legacy `containerDigest` field aliases this source digest for compatibility
 and must not be the sole trust anchor. `modalImageId`/`imageId` report Modal's
 strictly validated runtime-injected `MODAL_IMAGE_ID`.
 
+### Signed promotion
+
+Modal providers are not ready in the API until deployment CI publishes one
+versioned promotion bundle. The record binds the Modal app, deployment,
+function, and image IDs to the exact HTTPS endpoint origin, checkpoint digest,
+checkpoint revision, repository source revision, source-image digest, model
+version, and every runtime pin. CI signs the canonical record with an Ed25519
+private key. The API receives only the public key, so it can verify a promotion
+but cannot create one.
+
+Set `MUSIC_GPU_SOURCE_REVISION` to the immutable repository revision during the
+candidate deployment. Before the first deployment, create the provider-only
+identity Secret with non-empty placeholders; health remains fail-closed until
+CI replaces them with observed IDs:
+
+```sh
+modal secret create music-ai-gpu-promotion-ace-step-v1 \
+  MUSIC_GPU_MODAL_APP_ID=unpromoted \
+  MUSIC_GPU_MODAL_DEPLOYMENT_ID=unpromoted \
+  MUSIC_GPU_MODAL_FUNCTION_ID=unpromoted
+```
+
+After `modal deploy` returns the final Modal IDs, CI
+creates the signed bundle:
+
+```sh
+MUSIC_GPU_PROMOTION_PRIVATE_KEY_FILE='/ci/secrets/promotion-ed25519.pem' \
+python services/music-ai-gpu-worker/promote_modal.py \
+  --provider ACE_STEP \
+  --modal-app-id '<Modal app ID>' \
+  --modal-deployment-id '<Modal deployment ID>' \
+  --modal-function-id '<Modal function ID>' \
+  --modal-image-id '<Modal image ID>' \
+  --endpoint-origin 'https://workspace--music-ai-gpu-worker-ace-step.modal.run' \
+  --checkpoint-sha256 '<64 hex characters>' \
+  --source-revision '<immutable repository revision>' \
+  --output /ci/promotions/ace-step.json \
+  --worker-identity-output /ci/promotions/ace-step-worker-identity.json
+```
+
+The script writes one `{record,signature}` document through `os.replace`, so an
+image or checkpoint change cannot expose a mixed old/new pair. Publish that
+entire document as `MUSIC_PROVIDER_ACE_STEP_PROMOTION_BUNDLE` in the API
+environment, and provide the corresponding PEM public key to the API as
+`MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY`. The API verifies the signature and
+derives its expected image, checkpoint, and source-image pins from that one
+bundle before requiring live health evidence to match it and reporting `ready`.
+Changing the image, checkpoint, endpoint, source revision, or runtime pins
+requires a newly signed atomic bundle.
+
+Publish the generated worker identity JSON through the provider-only Modal
+Secret referenced by `modal_app.py`, then replace existing containers without
+changing code:
+
+```sh
+modal secret create music-ai-gpu-promotion-ace-step-v1 \
+  --from-json /ci/promotions/ace-step-worker-identity.json --force
+modal app rollover '<Modal app ID>' --strategy recreate
+```
+
+The worker reports those CI-observed app, deployment, and function IDs together
+with Modal's reserved `MODAL_IMAGE_ID`. The API requires exact equality with the
+signed record. Publish the API bundle only after the Secret update succeeds;
+during any partial rotation the provider remains configured but not ready.
+
 ```sh
 modal secret create music-ai-worker-runtime --from-dotenv .modal-worker.env
 modal deploy services/music-ai-gpu-worker/modal_app.py

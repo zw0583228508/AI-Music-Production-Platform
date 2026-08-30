@@ -257,6 +257,10 @@ def _provider_health(
     immutable_container = bool(re.fullmatch(r"sha256:[a-fA-F0-9]{64}", container_digest))
     modal_image_id = os.getenv("MODAL_IMAGE_ID", "").strip()
     immutable_modal_image = bool(re.fullmatch(r"im-[A-Za-z0-9]+", modal_image_id))
+    modal_app_id = os.getenv("MUSIC_GPU_MODAL_APP_ID", "").strip()
+    modal_deployment_id = os.getenv("MUSIC_GPU_MODAL_DEPLOYMENT_ID", "").strip()
+    modal_function_id = os.getenv("MUSIC_GPU_MODAL_FUNCTION_ID", "").strip()
+    source_revision = os.getenv("MUSIC_GPU_SOURCE_REVISION", "").strip()
     checksum_ready = bool(expected_hash and actual_hash and actual_hash.lower() == expected_hash.lower())
     runner = os.getenv(details["runner_env"], "").strip()
     smoke_command = os.getenv(details["smoke_env"], "").strip() or runner
@@ -328,6 +332,10 @@ def _provider_health(
         reasons.append("source image digest is not configured")
     if not immutable_modal_image:
         reasons.append("Modal image identity is not available")
+    if not modal_app_id or not modal_deployment_id or not modal_function_id:
+        reasons.append("Modal app, deployment, or function identity is not available")
+    if not source_revision:
+        reasons.append("source revision is not configured")
     if not smoke_tested:
         reasons.append(smoke_message)
     ready = not reasons
@@ -350,9 +358,13 @@ def _provider_health(
         "containerDigest": container_digest,
         "modalImageId": modal_image_id,
         "imageId": modal_image_id,
+        "modalAppId": modal_app_id,
+        "modalDeploymentId": modal_deployment_id,
+        "modalFunctionId": modal_function_id,
         "cudaVersion": cuda_version,
         "pytorchVersion": pytorch_version,
         "gpu": gpu_model,
+        "sourceRevision": source_revision,
         "runtime": {
             "revision": revision,
             "sourceImageDigest": container_digest,

@@ -1,4 +1,6 @@
 import importlib.util
+import json
+import subprocess
 import sys
 import tempfile
 import types
@@ -190,6 +192,64 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
         with mock.patch.dict(__import__("os").environ, {key: "https://evil/x"}):
             with self.assertRaisesRegex(ValueError, "HTTPS origin"):
                 modal_config.worker_environment(modal_config.DEPLOYMENTS["ACE_STEP"])
+
+    def test_signed_promotion_bundle_records_identity_and_rotates_atomically(self):
+        deployment = modal_config.DEPLOYMENTS["ACE_STEP"]
+        record = modal_config.build_promotion_record(
+            deployment,
+            modal_app_id="ap-TestApp",
+            modal_deployment_id="dp-TestDeployment",
+            modal_function_id="fu-TestFunction",
+            modal_image_id="im-TestImage123",
+            endpoint_origin="https://workspace--music-ai-gpu-worker-ace-step.modal.run",
+            checkpoint_sha256="A" * 64,
+            source_revision="git-source-revision-1",
+        )
+        self.assertEqual(record["checkpointSha256"], "a" * 64)
+        self.assertEqual(record["checkpointRevision"], deployment.source_revision)
+        self.assertEqual(record["runtime"]["pytorch"], deployment.pytorch)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "ace-step-promotion.json"
+            private_key = Path(directory) / "promotion-private.pem"
+            subprocess.run(
+                [
+                    "openssl", "genpkey", "-algorithm", "Ed25519",
+                    "-out", str(private_key),
+                ],
+                check=True,
+                capture_output=True,
+            )
+            first = modal_config.write_promotion_bundle(
+                path, record, private_key
+            )
+            rotated_record = {
+                **record,
+                "modalImageId": "im-TestImage456",
+                "checkpointSha256": "b" * 64,
+            }
+            second = modal_config.write_promotion_bundle(
+                path, rotated_record, private_key
+            )
+            identity_path = Path(directory) / "worker-identity.json"
+            identity = modal_config.write_worker_identity(identity_path, record)
+            self.assertNotEqual(first["signature"], second["signature"])
+            self.assertEqual(json.loads(path.read_text()), second)
+            self.assertEqual(json.loads(identity_path.read_text()), identity)
+            self.assertEqual(identity["MUSIC_GPU_MODAL_APP_ID"], "ap-TestApp")
+            self.assertEqual(list(Path(directory).glob(".*.tmp")), [])
+
+    def test_source_revision_is_passed_to_the_modal_worker(self):
+        with mock.patch.dict(
+            __import__("os").environ,
+            {"MUSIC_GPU_SOURCE_REVISION": "git-source-revision-1"},
+        ):
+            environment = modal_config.worker_environment(
+                modal_config.DEPLOYMENTS["ACE_STEP"]
+            )
+        self.assertEqual(
+            environment["MUSIC_GPU_SOURCE_REVISION"],
+            "git-source-revision-1",
+        )
 
     def test_bootstrap_digest_matches_worker_canonical_algorithm(self):
         with tempfile.TemporaryDirectory() as directory:

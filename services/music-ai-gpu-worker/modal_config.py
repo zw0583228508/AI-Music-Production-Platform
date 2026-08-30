@@ -6,9 +6,13 @@ definitions into Modal classes.
 """
 from __future__ import annotations
 
+import base64
 import json
 import hashlib
 import os
+import re
+import subprocess
+import tempfile
 from urllib.parse import urlsplit
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,6 +25,8 @@ MODEL_MOUNT = "/var/lib/music-ai-gpu/models"
 JOB_MOUNT = "/var/lib/music-ai-gpu/jobs"
 OUTPUT_MOUNT = "/var/lib/music-ai-gpu/outputs"
 RUNTIME_SECRET_NAME = "music-ai-worker-runtime"
+PROMOTION_SECRET_PREFIX = "music-ai-gpu-promotion"
+PROMOTION_SCHEMA_VERSION = 1
 MODEL_VOLUME_NAME = "music-ai-models-v1"
 JOB_VOLUME_NAME = "music-ai-jobs-v1"
 OUTPUT_VOLUME_NAME = "music-ai-outputs-v1"
@@ -36,6 +42,7 @@ class ProviderDeployment:
     timeout_seconds: int
     idle_timeout_seconds: int
     checkpoint_path: str
+    source_revision: str
     model_version: str
     requirements_file: str
     source_image_digest: str
@@ -52,7 +59,14 @@ class ProviderDeployment:
     def enabled_providers(self) -> str:
         return self.provider
 
-
+def _canonical_json(value: object) -> str:
+    """Serialize promotion records identically in CI and the API verifier."""
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
 def load_manifest(path: Path = MANIFEST_PATH) -> dict:
     """Load and minimally validate the checked-in, weight-free model manifest."""
     manifest = json.loads(path.read_text(encoding="utf-8"))
@@ -91,6 +105,11 @@ def provider_source_image_digest(provider: str, requirements_file: str) -> str:
         digest.update(path.read_bytes())
         digest.update(b"\0")
     return "sha256:" + digest.hexdigest()
+
+def promotion_secret_name(provider: str) -> str:
+    if provider not in DEPLOYMENTS:
+        raise ValueError(f"unknown Modal promotion provider: {provider}")
+    return f"{PROMOTION_SECRET_PREFIX}-{provider.lower().replace('_', '-')}-v1"
 
 # SQLite recovery and the in-process task registry are intentionally
 # single-container only. Scaling these HTTP workers horizontally would allow two
@@ -155,6 +174,9 @@ def worker_environment(deployment: ProviderDeployment) -> dict[str, str]:
         f"MUSIC_GPU_SMOKE_{deployment.provider}": command,
         "PYTHONUNBUFFERED": "1",
     }
+    source_revision = os.getenv("MUSIC_GPU_SOURCE_REVISION", "").strip()
+    if source_revision:
+        environment["MUSIC_GPU_SOURCE_REVISION"] = source_revision
     public_origin = os.getenv(
         f"MUSIC_GPU_PUBLIC_ORIGIN_{deployment.provider}", ""
     ).strip()
@@ -193,3 +215,141 @@ def provider_image_build_args(deployment: ProviderDeployment) -> dict[str, str]:
         "TRANSFORMERS_SPEC": f"transformers=={deployment.transformers}",
         "ACCELERATE_SPEC": f"accelerate=={deployment.accelerate}",
     }
+
+def _https_origin(value: str) -> str:
+    try:
+        parsed = urlsplit(value.strip())
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("promotion endpoint origin is invalid") from exc
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.path not in ("", "/")
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("promotion endpoint origin must be an HTTPS origin")
+    return (
+        f"https://{parsed.hostname.lower()}"
+        + (f":{port}" if port and port != 443 else "")
+    )
+
+def sign_promotion_record(record: dict, private_key_path: Path) -> str:
+    if not private_key_path.is_file():
+        raise ValueError("promotion private key file does not exist")
+    with tempfile.NamedTemporaryFile() as canonical:
+        canonical.write(canonical_promotion_record(record).encode("utf-8"))
+        canonical.flush()
+        result = subprocess.run(
+            [
+                "openssl", "pkeyutl", "-sign", "-rawin",
+                "-inkey", str(private_key_path), "-in", canonical.name,
+            ],
+            capture_output=True,
+            check=False,
+        )
+    if result.returncode != 0 or len(result.stdout) != 64:
+        raise RuntimeError("Ed25519 promotion signing failed")
+    return base64.b64encode(result.stdout).decode("ascii")
+
+def write_promotion_bundle(
+    path: Path,
+    record: dict,
+    private_key_path: Path,
+) -> dict:
+    """Atomically replace the signed promotion bundle used by deployment CI."""
+    signature = sign_promotion_record(record, private_key_path)
+    bundle = {"record": record, "signature": signature}
+    path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    encoded = (_canonical_json(bundle) + "\n").encode("utf-8")
+    try:
+        with temporary.open("wb") as handle:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        return bundle
+    finally:
+        temporary.unlink(missing_ok=True)
+
+def write_worker_identity(path: Path, record: dict) -> dict[str, str]:
+    """Atomically write CI-observed IDs for the provider-only Modal Secret."""
+    identity = {
+        "MUSIC_GPU_MODAL_APP_ID": str(record["modalAppId"]),
+        "MUSIC_GPU_MODAL_DEPLOYMENT_ID": str(record["modalDeploymentId"]),
+        "MUSIC_GPU_MODAL_FUNCTION_ID": str(record["modalFunctionId"]),
+    }
+    path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    encoded = (_canonical_json(identity) + "\n").encode("utf-8")
+    try:
+        with temporary.open("wb") as handle:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        return identity
+    finally:
+        temporary.unlink(missing_ok=True)
+
+def build_promotion_record(
+    deployment: ProviderDeployment,
+    *,
+    modal_app_id: str,
+    modal_deployment_id: str,
+    modal_function_id: str,
+    modal_image_id: str,
+    endpoint_origin: str,
+    checkpoint_sha256: str,
+    source_revision: str,
+) -> dict:
+    """Build the complete immutable identity recorded by deployment CI."""
+    identifiers = {
+        "modalAppId": modal_app_id,
+        "modalDeploymentId": modal_deployment_id,
+        "modalFunctionId": modal_function_id,
+        "modalImageId": modal_image_id,
+    }
+    if any(
+        not isinstance(value, str) or not value.strip()
+        for value in identifiers.values()
+    ):
+        raise ValueError("Modal promotion IDs must not be empty")
+    if not modal_image_id.startswith("im-"):
+        raise ValueError("Modal promotion image ID must start with im-")
+    if not re.fullmatch(r"[a-fA-F0-9]{64}", checkpoint_sha256):
+        raise ValueError("promotion checkpoint SHA-256 must be 64 hexadecimal characters")
+    if not source_revision.strip():
+        raise ValueError("promotion source revision must not be empty")
+    if not deployment.source_revision:
+        raise ValueError("promotion checkpoint revision must not be empty")
+    runtime = {
+        "python": MANIFEST["runtime"]["python"],
+        "cudaImage": deployment.cuda_image,
+        "cuda": deployment.cuda_runtime,
+        "pytorch": deployment.pytorch,
+        "torchvision": deployment.torchvision,
+        "torchaudio": deployment.torchaudio,
+        "torchIndexUrl": deployment.torch_index_url,
+        "transformers": deployment.transformers,
+        "accelerate": deployment.accelerate,
+    }
+    return {
+        "schemaVersion": PROMOTION_SCHEMA_VERSION,
+        "provider": deployment.provider,
+        **identifiers,
+        "endpointOrigin": _https_origin(endpoint_origin),
+        "modelVersion": deployment.model_version,
+        "checkpointSha256": checkpoint_sha256.lower(),
+        "checkpointRevision": deployment.source_revision,
+        "sourceRevision": source_revision.strip(),
+        "sourceImageDigest": deployment.source_image_digest,
+        "runtime": runtime,
+    }
+
+def canonical_promotion_record(record: dict) -> str:
+    return _canonical_json(record)

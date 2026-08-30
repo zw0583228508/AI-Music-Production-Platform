@@ -18,7 +18,11 @@ import {
   expectedGpuModalImageId,
   expectedGpuModelVersion,
   expectedGpuSourceImageDigest,
+  expectedGpuPromotionRecord,
+  gpuPromotionAttestationFailure,
+  canonicalGpuPromotionJson,
   isGpuAttestedProvider,
+  requiresGpuPromotionRecord,
 } from "./gpuProviderAttestation";
 export {
   anyAccompCommercialUseAuthorized,
@@ -27,7 +31,11 @@ export {
   expectedGpuModalImageId,
   expectedGpuModelVersion,
   expectedGpuSourceImageDigest,
+  expectedGpuPromotionRecord,
+  gpuPromotionAttestationFailure,
+  canonicalGpuPromotionJson,
   isGpuAttestedProvider,
+  requiresGpuPromotionRecord,
 } from "./gpuProviderAttestation";
 export type ProviderStatus = "ready" | "configured" | "unavailable";
 
@@ -1155,6 +1163,9 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
         runtime["gpuReady"] === true;
       const exactModel = expectedVersion !== null && reportedVersion === expectedVersion;
       const runtimeProvenance = parseRuntimeProvenance(payload, reportedVersion, reportedChecksum);
+      const promotionFailure = requiresGpuPromotionRecord(this.definition.id)
+        ? gpuPromotionAttestationFailure(this.definition.id, this.endpoint, payload)
+        : null;
       const strictAttestationReady = !strictGpuAttestation || (
         reportedProvider === this.definition.id &&
         exactModel &&
@@ -1165,6 +1176,7 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
         smokeTested &&
         gpuReady &&
         runtimeProvenance !== null &&
+        promotionFailure === null &&
         commercialUseAuthorized
       );
       const ready = healthy && checkpointReady && runtimeReady &&
@@ -1173,7 +1185,9 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
         ? strictGpuAttestation
           ? "GPU runtime, independently promoted Modal image, checkpoint checksum, model version, and smoke inference are verified."
           : "Checkpoint and provider runtime are ready."
-        : typeof payload["message"] === "string" && payload["message"].trim()
+            : promotionFailure
+              ? promotionFailure
+              : typeof payload["message"] === "string" && payload["message"].trim()
           ? payload["message"].trim()
           : strictGpuAttestation && reportedProvider !== this.definition.id
             ? "GPU worker health response identified the wrong provider."

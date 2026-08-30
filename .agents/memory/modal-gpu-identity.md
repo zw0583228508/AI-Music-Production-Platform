@@ -9,6 +9,18 @@ Use Modal's runtime-injected immutable image object ID as the deployed image ide
 
 **How to apply:** Require the promoted image ID, exact endpoint origin, checkpoint hash, runtime pins, GPU evidence, and real smoke inference to agree in health and completed-result provenance.
 
+Promote Modal workers with one versioned Ed25519-signed bundle. CI alone holds the private key; the API holds only the public key and derives image, checkpoint, and source-image expectations from the bundle rather than separately rotated environment pins.
+
+**Why:** A shared signing secret lets a compromised API forge promotions, while independently updated pins can expose mixed old/new deployment state.
+
+**How to apply:** Record the Modal app, deployment, function, and image IDs, exact endpoint origin, model/checkpoint revisions and digest, repository source revision, source-image digest, and all runtime pins. Atomically replace the complete record/signature envelope whenever any bound value changes.
+
+Deliver CI-observed app, deployment, and function IDs through a provider-only Modal Secret, refresh containers, and require worker health to repeat those IDs exactly before publishing the matching API bundle.
+
+**Why:** Modal reserves a runtime variable for image ID but does not expose equivalent app/deployment/function variables inside containers; an independently updated Secret keeps those identities out of image configuration.
+
+**How to apply:** Precreate the Secret with fail-closed placeholders for first deploy, replace it from CI after observing final IDs, roll over containers, then activate the signed API promotion bundle last.
+
 Treat mounted model snapshots as immutable. If an upstream loader syncs code, caches, or bytecode into its model directory, build a temporary runtime view outside the attested checkpoint and link only validated model bytes into it.
 
 **Why:** ACE-Step initialization overwrites model-adjacent Python files, which changes an otherwise canonical checkpoint digest after successful inference.
