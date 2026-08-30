@@ -6,4 +6,5 @@
 - [Background analysis leases](background-analysis-leases.md) — resumable workers must use expiring DB leases and lease-conditional writes, not process-local job guards.
 - [Song Model evidence gates](song-model-evidence-gates.md) — field confidence must come from musical evidence; absent evidence yields empty maps, never duration-based defaults.
 - [Versioned editor rehydration](versioned-editor-rehydration.md) — local DAW edits must clear “saving” only after acknowledgment and rehydrate from each accepted server revision.
+- [Private artifact publication](private-artifact-publication.md) — durable private outputs must coordinate publication with project deletion and keep storage identities cleanup-compatible.
 - [Project deletion storage fencing](project-deletion-storage-fencing.md) — private object writes must share a project fence with deletion; signed URL expiry is not terminal proof.

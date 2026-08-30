@@ -1,5 +1,5 @@
 import { createHash, randomInt, randomUUID } from "node:crypto";
-import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
 import {
   arrangementsTable,
   db,
@@ -15,6 +15,9 @@ import {
 } from "@workspace/db";
 import {
   createProviderRegistry,
+  cancelRemoteProviderJob,
+  ProviderCancellationAcknowledgedError,
+  ProviderCancellationUnconfirmedError,
   providerCatalog,
   selectMusicProvider,
   validateCanonicalTrackModels,
@@ -34,6 +37,7 @@ const sha256 = (value: string): string =>
 
 export type QueueGenerationInput = {
   candidates?: number;
+  idempotencyKey?: string;
   provider?: MusicProviderId;
   task?: MusicGenerationTask;
   hardware?: GenerationHardware;
@@ -62,6 +66,11 @@ export const generationJobResponse = (
   parameters: row.parameters,
   parentArtifactIds: row.parentArtifactIds,
   error: row.error,
+  errorCode: row.errorCode,
+  retryable: row.retryable,
+  attempt: row.attempt,
+  maxAttempts: row.maxAttempts,
+  cancelRequestedAt: row.cancelRequestedAt?.toISOString() ?? null,
   createdAt: row.createdAt.toISOString(),
   updatedAt: row.updatedAt.toISOString(),
   completedAt: row.completedAt?.toISOString() ?? null,
@@ -149,6 +158,24 @@ export async function queueArrangementGeneration(
     speed,
   });
   const count = Math.max(1, Math.min(3, Math.round(input.candidates ?? 3)));
+  const idempotencyKey = (input.idempotencyKey?.trim() ||
+    `arrangement:${arrangement.id}:v${arrangement.version}:${task}:${sha256(JSON.stringify({
+      candidates: count,
+      provider: input.provider ?? null,
+      hardware,
+      speed,
+      seed: input.seed ?? null,
+      parameters: input.parameters ?? {},
+    })).slice(0, 24)}`).slice(0, 200);
+  const [existingJob] = await db
+    .select()
+    .from(musicGenerationJobsTable)
+    .where(and(
+      eq(musicGenerationJobsTable.arrangementId, arrangement.id),
+      eq(musicGenerationJobsTable.idempotencyKey, idempotencyKey),
+    ))
+    .limit(1);
+  if (existingJob) return existingJob;
   const seed =
     input.seed === undefined
       ? randomInt(1, 2_147_483_647)
@@ -190,6 +217,9 @@ export async function queueArrangementGeneration(
       speed,
       progress: 0,
       stage: "queued",
+      idempotencyKey,
+      maxAttempts: 3,
+      retryable: true,
       requestedCandidates: count,
       seed,
       parameters: input.parameters ?? {},
@@ -216,7 +246,27 @@ export async function queueArrangementGeneration(
         })),
       },
     })
+    .onConflictDoNothing({
+      target: [
+        musicGenerationJobsTable.arrangementId,
+        musicGenerationJobsTable.idempotencyKey,
+      ],
+    })
     .returning();
+  if (!job) {
+    const [racedJob] = await db
+      .select()
+      .from(musicGenerationJobsTable)
+      .where(and(
+        eq(musicGenerationJobsTable.arrangementId, arrangement.id),
+        eq(musicGenerationJobsTable.idempotencyKey, idempotencyKey),
+      ))
+      .limit(1);
+    if (!racedJob) {
+      throw new Error("Generation job disappeared after idempotent queueing");
+    }
+    return racedJob;
+  }
   await db
     .update(arrangementsTable)
     .set({ status: "generating" })
@@ -237,6 +287,8 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
       progress: 12,
       stage: "preparing_inputs",
       workerId,
+      leaseVersion: sql`${musicGenerationJobsTable.leaseVersion} + 1`,
+      attempt: sql`${musicGenerationJobsTable.attempt} + 1`,
       heartbeatAt: new Date(),
       leaseExpiresAt: new Date(Date.now() + leaseDurationMs),
     })
@@ -248,8 +300,11 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
     )
     .returning();
   if (!job) return;
+  const leaseVersion = job.leaseVersion;
 
   let heartbeat: ReturnType<typeof setInterval> | undefined;
+  let cancellationWatcher: ReturnType<typeof setInterval> | undefined;
+  const abortController = new AbortController();
   try {
     const provider = createProviderRegistry().find(
       (candidate) => candidate.definition.id === job.provider,
@@ -264,7 +319,9 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
         and(
           eq(musicGenerationJobsTable.id, job.id),
           eq(musicGenerationJobsTable.workerId, workerId),
+          eq(musicGenerationJobsTable.leaseVersion, leaseVersion),
           eq(musicGenerationJobsTable.status, "running"),
+          gt(musicGenerationJobsTable.leaseExpiresAt, new Date()),
         ),
       )
       .returning({ id: musicGenerationJobsTable.id });
@@ -280,10 +337,29 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           and(
             eq(musicGenerationJobsTable.id, job.id),
             eq(musicGenerationJobsTable.workerId, workerId),
+            eq(musicGenerationJobsTable.leaseVersion, leaseVersion),
             eq(musicGenerationJobsTable.status, "running"),
+            gt(musicGenerationJobsTable.leaseExpiresAt, new Date()),
           ),
         );
     }, 30_000);
+    cancellationWatcher = setInterval(() => {
+      void db
+        .select({ status: musicGenerationJobsTable.status })
+        .from(musicGenerationJobsTable)
+        .where(and(
+          eq(musicGenerationJobsTable.id, job.id),
+          eq(musicGenerationJobsTable.workerId, workerId),
+          eq(musicGenerationJobsTable.leaseVersion, leaseVersion),
+          gt(musicGenerationJobsTable.leaseExpiresAt, new Date()),
+        ))
+        .limit(1)
+        .then(([current]) => {
+          if (!current || current.status === "cancel_requested") {
+            abortController.abort();
+          }
+        });
+    }, 1_000);
 
     const snapshot = job.inputSnapshot;
     const result = await provider.generate(
@@ -312,12 +388,13 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
         },
       },
       async (progress) => {
-        await db
+        const [progressOwner] = await db
           .update(musicGenerationJobsTable)
           .set({
             progress: progress.progress,
             stage: progress.stage,
             providerRequestId: progress.requestId,
+            providerCancelUrl: progress.cancelUrl,
             heartbeatAt: new Date(),
             leaseExpiresAt: new Date(Date.now() + leaseDurationMs),
           })
@@ -325,9 +402,15 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
             and(
               eq(musicGenerationJobsTable.id, job.id),
               eq(musicGenerationJobsTable.workerId, workerId),
+              eq(musicGenerationJobsTable.leaseVersion, leaseVersion),
+              eq(musicGenerationJobsTable.status, "running"),
+              gt(musicGenerationJobsTable.leaseExpiresAt, new Date()),
             ),
-          );
+          )
+          .returning({ id: musicGenerationJobsTable.id });
+        if (!progressOwner) abortController.abort();
       },
+      abortController.signal,
     );
     const [rankingOwner] = await db
       .update(musicGenerationJobsTable)
@@ -340,7 +423,9 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
         and(
           eq(musicGenerationJobsTable.id, job.id),
           eq(musicGenerationJobsTable.workerId, workerId),
+          eq(musicGenerationJobsTable.leaseVersion, leaseVersion),
           eq(musicGenerationJobsTable.status, "running"),
+          gt(musicGenerationJobsTable.leaseExpiresAt, new Date()),
         ),
       )
       .returning({ id: musicGenerationJobsTable.id });
@@ -364,7 +449,9 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           and(
             eq(musicGenerationJobsTable.id, job.id),
             eq(musicGenerationJobsTable.workerId, workerId),
+            eq(musicGenerationJobsTable.leaseVersion, leaseVersion),
             eq(musicGenerationJobsTable.status, "running"),
+            gt(musicGenerationJobsTable.leaseExpiresAt, now),
           ),
         )
         .returning({ id: musicGenerationJobsTable.id });
@@ -372,17 +459,28 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
       for (const [index, candidate] of ranked.entries()) {
         const artifactId = randomUUID();
         const candidateId = randomUUID();
+        const serializedPlan = JSON.stringify(candidate.plan);
+        const checksum = sha256(serializedPlan);
         await tx.insert(musicArtifactsTable).values({
           id: artifactId,
           projectId: job.projectId,
           type: "ARRANGEMENT_PLAN",
           label: `${candidate.label} · ${provider.definition.displayName}`,
           version: snapshot.arrangement.version,
-          size: `${Buffer.byteLength(JSON.stringify(candidate.plan))} B`,
+          size: `${Buffer.byteLength(serializedPlan)} B`,
           format: "JSON",
-           parentIds: job.parentArtifactIds,
-           createdBy: "arrangement-provider",
-           modelVersion: `${provider.definition.id}@${result.modelVersion}`,
+          hash: checksum,
+          checksum,
+          parentIds: job.parentArtifactIds,
+          createdBy: "arrangement-provider",
+          modelVersion: `${provider.definition.id}@${result.modelVersion}`,
+          provider: provider.definition.id,
+          retentionPolicy: "project",
+          technicalMetadata: {
+            mediaType: "application/json",
+            candidateRank: index + 1,
+            confidence: candidate.confidence,
+          },
         });
         await tx.insert(musicGenerationCandidatesTable).values({
           id: candidateId,
@@ -421,6 +519,14 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Generation failed";
+    const cancellationUnconfirmed =
+      error instanceof ProviderCancellationUnconfirmedError;
+    const cancelled =
+      error instanceof ProviderCancellationAcknowledgedError ||
+      (abortController.signal.aborted && !cancellationUnconfirmed);
+    const retryable = !cancelled && !cancellationUnconfirmed &&
+      !/invalid|unauthorized|forbidden|not configured|license/i.test(message);
+    const willRetry = retryable && job.attempt < job.maxAttempts;
     const originalStatus = job.inputSnapshot.arrangement.status === "ready"
       ? "ready"
       : "draft";
@@ -428,43 +534,148 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
       const [failed] = await tx
         .update(musicGenerationJobsTable)
         .set({
-          status: "failed",
-          progress: 100,
-          stage: "failed",
-          error: message,
-          completedAt: new Date(),
+          status: cancelled
+            ? "cancelled"
+            : cancellationUnconfirmed
+              ? "cancel_requested"
+              : willRetry
+                ? "queued"
+                : "failed",
+          progress: cancelled || (!willRetry && !cancellationUnconfirmed)
+            ? 100
+            : cancellationUnconfirmed
+              ? job.progress
+              : 5,
+          stage: cancelled
+            ? "cancelled"
+            : cancellationUnconfirmed
+              ? "cancellation_pending"
+              : willRetry
+                ? "retry_queued"
+                : "failed",
+          error: cancelled ? null : message,
+          errorCode: cancelled
+            ? "CANCELLED"
+            : cancellationUnconfirmed
+              ? "PROVIDER_CANCELLATION_UNCONFIRMED"
+              : "PROVIDER_EXECUTION_FAILED",
+          retryable,
+          workerId: willRetry || cancellationUnconfirmed ? null : workerId,
+          completedAt: cancelled || (!willRetry && !cancellationUnconfirmed)
+            ? new Date()
+            : null,
           leaseExpiresAt: null,
         })
         .where(
           and(
             eq(musicGenerationJobsTable.id, job.id),
             eq(musicGenerationJobsTable.workerId, workerId),
+            eq(musicGenerationJobsTable.leaseVersion, leaseVersion),
+            or(
+              eq(musicGenerationJobsTable.status, "running"),
+              eq(musicGenerationJobsTable.status, "cancel_requested"),
+            ),
+            gt(musicGenerationJobsTable.leaseExpiresAt, new Date()),
           ),
         )
         .returning({ id: musicGenerationJobsTable.id });
-      if (failed) {
+      if (failed && !willRetry) {
         await tx
           .update(arrangementsTable)
           .set({ status: originalStatus })
           .where(eq(arrangementsTable.id, job.arrangementId));
       }
     });
+    if (willRetry) {
+      setImmediate(() => {
+        void runArrangementGeneration(job.id);
+      });
+    }
   } finally {
     if (heartbeat) clearInterval(heartbeat);
+    if (cancellationWatcher) clearInterval(cancellationWatcher);
   }
 }
 
 export async function resumePendingGenerationJobs(): Promise<void> {
+  const now = new Date();
+  const pendingCancellations = await db
+    .select()
+    .from(musicGenerationJobsTable)
+    .where(and(
+      eq(musicGenerationJobsTable.status, "cancel_requested"),
+      or(
+        isNull(musicGenerationJobsTable.leaseExpiresAt),
+        lt(musicGenerationJobsTable.leaseExpiresAt, now),
+      ),
+    ));
+  for (const pending of pendingCancellations) {
+    let acknowledged = !pending.providerRequestId;
+    if (pending.providerCancelUrl) {
+      try {
+        await cancelRemoteProviderJob(pending.provider, pending.providerCancelUrl);
+        acknowledged = true;
+      } catch {
+        acknowledged = false;
+      }
+    }
+    if (!acknowledged) continue;
+    await db
+      .update(musicGenerationJobsTable)
+      .set({
+        status: "cancelled",
+        stage: "cancelled",
+        progress: 100,
+        error: null,
+        errorCode: "CANCELLED",
+        retryable: false,
+        providerCancellationAcknowledgedAt: now,
+        leaseExpiresAt: null,
+        completedAt: now,
+      })
+      .where(and(
+        eq(musicGenerationJobsTable.id, pending.id),
+        eq(musicGenerationJobsTable.status, "cancel_requested"),
+      ));
+  }
   await db
     .update(musicGenerationJobsTable)
-    .set({ status: "queued", stage: "recovered", progress: 5 })
+    .set({
+      status: "failed",
+      stage: "retries_exhausted",
+      progress: 100,
+      retryable: false,
+      errorCode: "RETRIES_EXHAUSTED",
+      error: "The generation worker stopped before completing all retry attempts.",
+      leaseExpiresAt: null,
+      completedAt: now,
+    })
+    .where(and(
+      eq(musicGenerationJobsTable.status, "running"),
+      or(
+        isNull(musicGenerationJobsTable.leaseExpiresAt),
+        lt(musicGenerationJobsTable.leaseExpiresAt, now),
+      ),
+      sql`${musicGenerationJobsTable.attempt} >= ${musicGenerationJobsTable.maxAttempts}`,
+    ));
+  await db
+    .update(musicGenerationJobsTable)
+    .set({
+      status: "queued",
+      stage: "recovered",
+      progress: 5,
+      workerId: null,
+      leaseExpiresAt: null,
+    })
     .where(
       and(
         eq(musicGenerationJobsTable.status, "running"),
         or(
           isNull(musicGenerationJobsTable.leaseExpiresAt),
-          lt(musicGenerationJobsTable.leaseExpiresAt, new Date()),
+          lt(musicGenerationJobsTable.leaseExpiresAt, now),
         ),
+        eq(musicGenerationJobsTable.retryable, true),
+        sql`${musicGenerationJobsTable.attempt} < ${musicGenerationJobsTable.maxAttempts}`,
       ),
     );
   const queued = await db
@@ -518,6 +729,116 @@ export async function getGenerationJobForOwner(
     .where(eq(musicProjectsTable.id, job.projectId))
     .limit(1);
   return project?.ownerId === ownerId ? job : null;
+}
+
+export async function cancelGenerationJob(
+  jobId: string,
+  ownerId: string,
+) {
+  const job = await getGenerationJobForOwner(jobId, ownerId);
+  if (!job) return null;
+  if (["succeeded", "failed", "cancelled"].includes(job.status)) return job;
+  const now = new Date();
+  const queued = job.status === "queued";
+  const [updated] = await db
+    .update(musicGenerationJobsTable)
+    .set({
+      status: queued ? "cancelled" : "cancel_requested",
+      stage: queued ? "cancelled" : job.stage,
+      progress: queued ? 100 : job.progress,
+      cancelRequestedAt: now,
+      completedAt: queued ? now : null,
+      leaseExpiresAt: queued ? null : job.leaseExpiresAt,
+      retryable: false,
+      errorCode: "CANCELLED",
+      error: null,
+    })
+    .where(and(
+      eq(musicGenerationJobsTable.id, job.id),
+      or(
+        eq(musicGenerationJobsTable.status, "queued"),
+        eq(musicGenerationJobsTable.status, "running"),
+      ),
+    ))
+    .returning();
+  if (!updated) return getGenerationJobForOwner(jobId, ownerId);
+  if (queued) {
+    await db.update(arrangementsTable)
+      .set({ status: job.inputSnapshot.arrangement.status === "ready" ? "ready" : "draft" })
+      .where(eq(arrangementsTable.id, job.arrangementId));
+  }
+  if (!queued && updated.providerCancelUrl) {
+    try {
+      await cancelRemoteProviderJob(updated.provider, updated.providerCancelUrl);
+      const [acknowledged] = await db
+        .update(musicGenerationJobsTable)
+        .set({
+          status: "cancelled",
+          stage: "cancelled",
+          progress: 100,
+          providerCancellationAcknowledgedAt: new Date(),
+          completedAt: new Date(),
+          leaseExpiresAt: null,
+        })
+        .where(and(
+          eq(musicGenerationJobsTable.id, updated.id),
+          eq(musicGenerationJobsTable.status, "cancel_requested"),
+        ))
+        .returning();
+      if (acknowledged) return acknowledged;
+    } catch {
+      await db.update(musicGenerationJobsTable).set({
+        errorCode: "PROVIDER_CANCELLATION_PENDING",
+        error: "Provider cancellation is pending acknowledgement.",
+      }).where(and(
+        eq(musicGenerationJobsTable.id, updated.id),
+        eq(musicGenerationJobsTable.status, "cancel_requested"),
+      ));
+    }
+  }
+  return getGenerationJobForOwner(jobId, ownerId);
+}
+
+export async function retryGenerationJob(
+  jobId: string,
+  ownerId: string,
+) {
+  const job = await getGenerationJobForOwner(jobId, ownerId);
+  if (
+    !job ||
+    job.status !== "failed" ||
+    !job.retryable ||
+    job.attempt >= job.maxAttempts
+  ) {
+    return null;
+  }
+  const [updated] = await db
+    .update(musicGenerationJobsTable)
+    .set({
+      status: "queued",
+      stage: "retry_queued",
+      progress: 0,
+      workerId: null,
+      leaseExpiresAt: null,
+      cancelRequestedAt: null,
+      error: null,
+      errorCode: null,
+      completedAt: null,
+    })
+    .where(and(
+      eq(musicGenerationJobsTable.id, job.id),
+      eq(musicGenerationJobsTable.status, "failed"),
+      eq(musicGenerationJobsTable.retryable, true),
+    ))
+    .returning();
+  if (!updated) return null;
+  await db.update(arrangementsTable)
+    .set({ status: "generating" })
+    .where(eq(arrangementsTable.id, job.arrangementId));
+  setImmediate(() => {
+    void runArrangementGeneration(job.id);
+  });
+  return updated;
 }
 
 export async function listGenerationCandidatesForOwner(
@@ -709,8 +1030,9 @@ export async function selectGenerationCandidate(
     if (playabilityErrors.length) {
       throw new Error(`Generated TrackModels are not playable: ${playabilityErrors.join("; ")}`);
     }
+    const selectedPlanArtifactId = randomUUID();
     const trackModelParents = candidate.artifactId
-      ? [candidate.artifactId]
+      ? [selectedPlanArtifactId]
       : candidate.parentArtifactIds;
     const trackModels = generatedTrackModels.map((trackModel) => ({
       ...trackModel,
@@ -753,7 +1075,7 @@ export async function selectGenerationCandidate(
           model: candidate.provider,
           version: candidate.modelVersion,
           parameters: engineParameters,
-          parentIds: candidate.artifactId ? [candidate.artifactId] : candidate.parentArtifactIds,
+          parentIds: candidate.artifactId ? [selectedPlanArtifactId] : candidate.parentArtifactIds,
           createdBy: "arrangement-provider",
         },
         generationProvenance: {
@@ -783,16 +1105,31 @@ export async function selectGenerationCandidate(
     }));
     if (candidate.artifactId) {
       const serializedPlan = JSON.stringify(plan);
-      await tx.update(musicArtifactsTable).set({
+      const checksum = sha256(serializedPlan);
+      await tx.insert(musicArtifactsTable).values({
+        id: selectedPlanArtifactId,
+        projectId: arrangement.projectId,
+        type: "ARRANGEMENT_PLAN",
         label: `${arrangement.name} · ${candidate.provider}`,
+        version: arrangement.version,
         size: `${Buffer.byteLength(serializedPlan)} B`,
-        hash: sha256(serializedPlan),
-        parentIds: job[0]?.parentArtifactIds ?? [],
+        format: "JSON",
+        hash: checksum,
+        checksum,
+        parentIds: [candidate.artifactId],
         createdBy: "arrangement-provider",
         modelVersion: `${candidate.provider}@${candidate.modelVersion}`,
+        provider: candidate.provider,
+        license: "Provider terms",
+        retentionPolicy: "project",
+        technicalMetadata: {
+          mediaType: "application/json",
+          bytes: Buffer.byteLength(serializedPlan),
+          selectedCandidateId: candidate.id,
+        },
         parameters: engineParameters,
         storageUri: `db://music_arrangements/${arrangement.id}`,
-      }).where(eq(musicArtifactsTable.id, candidate.artifactId));
+      });
       await tx.insert(musicArtifactsTable).values(trackModels.map((trackModel) => {
         const serialized = JSON.stringify(trackModel);
         return {
@@ -804,7 +1141,8 @@ export async function selectGenerationCandidate(
           size: `${Buffer.byteLength(serialized)} B`,
           format: "JSON",
           hash: sha256(serialized),
-          parentIds: [candidate.artifactId!],
+          checksum: sha256(serialized),
+          parentIds: [selectedPlanArtifactId],
           createdBy: "performance-engine",
           modelVersion: `${trackModel.provenance.model}@${trackModel.provenance.version}`,
           parameters: {

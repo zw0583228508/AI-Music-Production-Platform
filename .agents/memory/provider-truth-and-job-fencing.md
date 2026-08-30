@@ -32,3 +32,9 @@ Song Model version allocation must be serialized across every writer, including 
 **Why:** A correction and an analysis can finish at nearly the same time; reading the latest version before the transaction can cause a valid analysis to fail or produce duplicate revisions.
 
 **How to apply:** Use the shared project lock plus a database uniqueness constraint, and require UI writes to include the version they edited so stale writes return a conflict.
+
+Quota checks for durable music jobs must serialize reservation by owner and billing period, and every terminal recovery transition must update its reservation ledger in the same transaction.
+
+**Why:** Concurrent jobs can both pass an unlocked balance check, while crash-recovered cancellations or failures can otherwise leave users permanently charged for work that will never complete.
+
+**How to apply:** Lock owner plus period before checking and reserving usage; atomically mark the matching ledger completed, cancelled, or failed whenever the job reaches that terminal state.

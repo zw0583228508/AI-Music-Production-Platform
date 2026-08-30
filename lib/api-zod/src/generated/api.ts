@@ -13,7 +13,14 @@ import * as zod from 'zod';
  * @summary Health check
  */
 export const HealthCheckResponse = zod.object({
-  "status": zod.string()
+  "status": zod.enum(['ok', 'degraded']),
+  "database": zod.enum(['ok', 'unavailable']),
+  "providers": zod.object({
+  "configured": zod.number(),
+  "available": zod.number()
+}),
+  "queues": zod.record(zod.string(), zod.number()),
+  "timestamp": zod.string()
 })
 
 
@@ -377,14 +384,25 @@ export const GetProjectResponse = zod.object({
   "artifacts": zod.array(zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
-  "type": zod.enum(['SOURCE', 'NORMALIZED_AUDIO', 'STEM', 'ANALYSIS', 'SONG_MODEL', 'ARRANGEMENT_PLAN', 'MIDI', 'AUDIO_TRACK', 'MIX', 'MASTER', 'EXPORT']),
+  "type": zod.enum(['SOURCE', 'NORMALIZED_AUDIO', 'STEM', 'ANALYSIS', 'SONG_MODEL', 'ARRANGEMENT_PLAN', 'TRACK_MODEL', 'MIDI', 'AUDIO_TRACK', 'MIX', 'MASTER', 'EXPORT']),
   "label": zod.string(),
   "version": zod.number(),
   "size": zod.string(),
   "format": zod.string(),
-  "state": zod.enum(['rendering', 'ready', 'failed']),
+  "state": zod.enum(['rendering', 'ready', 'failed', 'expired']),
   "createdAt": zod.string(),
-  "url": zod.string().nullish()
+  "url": zod.string().nullish(),
+  "checksum": zod.string().nullish(),
+  "parentIds": zod.array(zod.string()),
+  "createdBy": zod.string().nullish(),
+  "modelVersion": zod.string().nullish(),
+  "storageUri": zod.string().nullish(),
+  "technicalMetadata": zod.record(zod.string(), zod.unknown()),
+  "provider": zod.string().nullish(),
+  "license": zod.string().nullish(),
+  "retentionPolicy": zod.string(),
+  "expiresAt": zod.string().nullish(),
+  "immutable": zod.boolean()
 }))
 })
 
@@ -2009,10 +2027,13 @@ export const GenerateArrangementParams = zod.object({
 
 export const generateArrangementBodyCandidatesMax = 3;
 
+export const generateArrangementBodyIdempotencyKeyMax = 200;
+
 
 
 export const GenerateArrangementBody = zod.object({
   "candidates": zod.number().min(1).max(generateArrangementBodyCandidatesMax).optional(),
+  "idempotencyKey": zod.string().min(1).max(generateArrangementBodyIdempotencyKeyMax).optional(),
   "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR', 'MIDI_SAG']).optional(),
   "task": zod.enum(['SEPARATION', 'TRANSCRIPTION', 'ACCOMPANIMENT', 'ORCHESTRATION', 'ARRANGEMENT']).optional(),
   "hardware": zod.enum(['AUTO', 'CPU', 'GPU']).optional(),
@@ -2024,6 +2045,9 @@ export const GenerateArrangementBody = zod.object({
 export const generateArrangementResponseProgressMin = 0;
 export const generateArrangementResponseProgressMax = 100;
 
+export const generateArrangementResponseAttemptMin = 0;
+
+
 
 
 export const GenerateArrangementResponse = zod.object({
@@ -2031,7 +2055,7 @@ export const GenerateArrangementResponse = zod.object({
   "projectId": zod.string(),
   "arrangementId": zod.string(),
   "task": zod.enum(['SEPARATION', 'TRANSCRIPTION', 'ACCOMPANIMENT', 'ORCHESTRATION', 'ARRANGEMENT']),
-  "status": zod.enum(['queued', 'running', 'succeeded', 'failed']),
+  "status": zod.enum(['queued', 'running', 'cancel_requested', 'cancelled', 'succeeded', 'failed']),
   "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR', 'MIDI_SAG']),
   "modelVersion": zod.string(),
   "hardware": zod.enum(['AUTO', 'CPU', 'GPU']),
@@ -2044,6 +2068,11 @@ export const GenerateArrangementResponse = zod.object({
   "parameters": zod.record(zod.string(), zod.unknown()),
   "parentArtifactIds": zod.array(zod.string()),
   "error": zod.string().nullish(),
+  "errorCode": zod.string().nullish(),
+  "retryable": zod.boolean(),
+  "attempt": zod.number().min(generateArrangementResponseAttemptMin),
+  "maxAttempts": zod.number().min(1),
+  "cancelRequestedAt": zod.string().nullish(),
   "createdAt": zod.string(),
   "updatedAt": zod.string(),
   "completedAt": zod.string().nullish()
@@ -2060,6 +2089,9 @@ export const GetGenerationJobParams = zod.object({
 export const getGenerationJobResponseProgressMin = 0;
 export const getGenerationJobResponseProgressMax = 100;
 
+export const getGenerationJobResponseAttemptMin = 0;
+
+
 
 
 export const GetGenerationJobResponse = zod.object({
@@ -2067,7 +2099,7 @@ export const GetGenerationJobResponse = zod.object({
   "projectId": zod.string(),
   "arrangementId": zod.string(),
   "task": zod.enum(['SEPARATION', 'TRANSCRIPTION', 'ACCOMPANIMENT', 'ORCHESTRATION', 'ARRANGEMENT']),
-  "status": zod.enum(['queued', 'running', 'succeeded', 'failed']),
+  "status": zod.enum(['queued', 'running', 'cancel_requested', 'cancelled', 'succeeded', 'failed']),
   "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR', 'MIDI_SAG']),
   "modelVersion": zod.string(),
   "hardware": zod.enum(['AUTO', 'CPU', 'GPU']),
@@ -2080,6 +2112,99 @@ export const GetGenerationJobResponse = zod.object({
   "parameters": zod.record(zod.string(), zod.unknown()),
   "parentArtifactIds": zod.array(zod.string()),
   "error": zod.string().nullish(),
+  "errorCode": zod.string().nullish(),
+  "retryable": zod.boolean(),
+  "attempt": zod.number().min(getGenerationJobResponseAttemptMin),
+  "maxAttempts": zod.number().min(1),
+  "cancelRequestedAt": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string(),
+  "completedAt": zod.string().nullish()
+})
+
+
+/**
+ * @summary Request cancellation of a queued or running generation job
+ */
+export const CancelGenerationJobParams = zod.object({
+  "jobId": zod.coerce.string()
+})
+
+export const cancelGenerationJobResponseProgressMin = 0;
+export const cancelGenerationJobResponseProgressMax = 100;
+
+export const cancelGenerationJobResponseAttemptMin = 0;
+
+
+
+
+export const CancelGenerationJobResponse = zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "arrangementId": zod.string(),
+  "task": zod.enum(['SEPARATION', 'TRANSCRIPTION', 'ACCOMPANIMENT', 'ORCHESTRATION', 'ARRANGEMENT']),
+  "status": zod.enum(['queued', 'running', 'cancel_requested', 'cancelled', 'succeeded', 'failed']),
+  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR', 'MIDI_SAG']),
+  "modelVersion": zod.string(),
+  "hardware": zod.enum(['AUTO', 'CPU', 'GPU']),
+  "speed": zod.enum(['FAST', 'BALANCED', 'QUALITY']),
+  "progress": zod.number().min(cancelGenerationJobResponseProgressMin).max(cancelGenerationJobResponseProgressMax),
+  "stage": zod.string(),
+  "providerRequestId": zod.string().nullish(),
+  "requestedCandidates": zod.number(),
+  "seed": zod.number(),
+  "parameters": zod.record(zod.string(), zod.unknown()),
+  "parentArtifactIds": zod.array(zod.string()),
+  "error": zod.string().nullish(),
+  "errorCode": zod.string().nullish(),
+  "retryable": zod.boolean(),
+  "attempt": zod.number().min(cancelGenerationJobResponseAttemptMin),
+  "maxAttempts": zod.number().min(1),
+  "cancelRequestedAt": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string(),
+  "completedAt": zod.string().nullish()
+})
+
+
+/**
+ * @summary Retry a recoverable failed generation job
+ */
+export const RetryGenerationJobParams = zod.object({
+  "jobId": zod.coerce.string()
+})
+
+export const retryGenerationJobResponseProgressMin = 0;
+export const retryGenerationJobResponseProgressMax = 100;
+
+export const retryGenerationJobResponseAttemptMin = 0;
+
+
+
+
+export const RetryGenerationJobResponse = zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "arrangementId": zod.string(),
+  "task": zod.enum(['SEPARATION', 'TRANSCRIPTION', 'ACCOMPANIMENT', 'ORCHESTRATION', 'ARRANGEMENT']),
+  "status": zod.enum(['queued', 'running', 'cancel_requested', 'cancelled', 'succeeded', 'failed']),
+  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR', 'MIDI_SAG']),
+  "modelVersion": zod.string(),
+  "hardware": zod.enum(['AUTO', 'CPU', 'GPU']),
+  "speed": zod.enum(['FAST', 'BALANCED', 'QUALITY']),
+  "progress": zod.number().min(retryGenerationJobResponseProgressMin).max(retryGenerationJobResponseProgressMax),
+  "stage": zod.string(),
+  "providerRequestId": zod.string().nullish(),
+  "requestedCandidates": zod.number(),
+  "seed": zod.number(),
+  "parameters": zod.record(zod.string(), zod.unknown()),
+  "parentArtifactIds": zod.array(zod.string()),
+  "error": zod.string().nullish(),
+  "errorCode": zod.string().nullish(),
+  "retryable": zod.boolean(),
+  "attempt": zod.number().min(retryGenerationJobResponseAttemptMin),
+  "maxAttempts": zod.number().min(1),
+  "cancelRequestedAt": zod.string().nullish(),
   "createdAt": zod.string(),
   "updatedAt": zod.string(),
   "completedAt": zod.string().nullish()
@@ -2435,7 +2560,12 @@ export const ExportArrangementParams = zod.object({
   "arrangementId": zod.coerce.string()
 })
 
+export const exportArrangementBodyIdempotencyKeyMax = 200;
+
+
+
 export const ExportArrangementBody = zod.object({
+  "idempotencyKey": zod.string().min(1).max(exportArrangementBodyIdempotencyKeyMax).optional(),
   "arrangementId": zod.string().nullish(),
   "includeStems": zod.boolean().optional(),
   "includeMidi": zod.boolean().optional(),
@@ -2521,26 +2651,42 @@ export const ListArtifactsParams = zod.object({
 export const ListArtifactsResponseItem = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
-  "type": zod.enum(['SOURCE', 'NORMALIZED_AUDIO', 'STEM', 'ANALYSIS', 'SONG_MODEL', 'ARRANGEMENT_PLAN', 'MIDI', 'AUDIO_TRACK', 'MIX', 'MASTER', 'EXPORT']),
+  "type": zod.enum(['SOURCE', 'NORMALIZED_AUDIO', 'STEM', 'ANALYSIS', 'SONG_MODEL', 'ARRANGEMENT_PLAN', 'TRACK_MODEL', 'MIDI', 'AUDIO_TRACK', 'MIX', 'MASTER', 'EXPORT']),
   "label": zod.string(),
   "version": zod.number(),
   "size": zod.string(),
   "format": zod.string(),
-  "state": zod.enum(['rendering', 'ready', 'failed']),
+  "state": zod.enum(['rendering', 'ready', 'failed', 'expired']),
   "createdAt": zod.string(),
-  "url": zod.string().nullish()
+  "url": zod.string().nullish(),
+  "checksum": zod.string().nullish(),
+  "parentIds": zod.array(zod.string()),
+  "createdBy": zod.string().nullish(),
+  "modelVersion": zod.string().nullish(),
+  "storageUri": zod.string().nullish(),
+  "technicalMetadata": zod.record(zod.string(), zod.unknown()),
+  "provider": zod.string().nullish(),
+  "license": zod.string().nullish(),
+  "retentionPolicy": zod.string(),
+  "expiresAt": zod.string().nullish(),
+  "immutable": zod.boolean()
 })
 export const ListArtifactsResponse = zod.array(ListArtifactsResponseItem)
 
 
 /**
- * @summary Render and package a versioned project export
+ * @summary Queue a versioned project export render
  */
 export const CreateProjectExportParams = zod.object({
   "projectId": zod.coerce.string()
 })
 
+export const createProjectExportBodyIdempotencyKeyMax = 200;
+
+
+
 export const CreateProjectExportBody = zod.object({
+  "idempotencyKey": zod.string().min(1).max(createProjectExportBodyIdempotencyKeyMax).optional(),
   "arrangementId": zod.string().nullish(),
   "includeStems": zod.boolean().optional(),
   "includeMidi": zod.boolean().optional(),
@@ -2552,19 +2698,109 @@ export const CreateProjectExportBody = zod.object({
 export const CreateProjectExportResponse = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
-  "version": zod.number(),
-  "status": zod.enum(['ready']),
-  "filename": zod.string(),
-  "size": zod.string(),
+  "kind": zod.enum(['analysis', 'separation', 'transcription', 'arrangement', 'rendering', 'mixing', 'mastering', 'quality', 'export']),
+  "status": zod.enum(['queued', 'running', 'succeeded', 'failed', 'cancel_requested', 'cancelled']),
+  "stage": zod.string(),
+  "progress": zod.number(),
+  "attempt": zod.number(),
+  "maxAttempts": zod.number(),
+  "retryable": zod.boolean(),
+  "error": zod.object({
+  "code": zod.string().optional(),
+  "message": zod.string().optional(),
+  "retryable": zod.boolean().optional()
+}).nullish(),
+  "outputArtifactIds": zod.array(zod.string()),
   "createdAt": zod.string(),
-  "url": zod.string(),
-  "files": zod.array(zod.object({
-  "name": zod.string(),
-  "type": zod.enum(['STEM', 'MIDI', 'MIX', 'PREMASTER', 'MASTER', 'METADATA', 'BUNDLE', 'SONG_MODEL', 'ARRANGEMENT_PLAN', 'EXPORT']),
-  "size": zod.string(),
-  "format": zod.string(),
-  "url": zod.string()
-}))
+  "updatedAt": zod.string(),
+  "completedAt": zod.string().nullish()
+})
+
+
+/**
+ * @summary Get an authenticated production job
+ */
+export const GetProductionJobParams = zod.object({
+  "jobId": zod.coerce.string()
+})
+
+export const GetProductionJobResponse = zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "kind": zod.enum(['analysis', 'separation', 'transcription', 'arrangement', 'rendering', 'mixing', 'mastering', 'quality', 'export']),
+  "status": zod.enum(['queued', 'running', 'succeeded', 'failed', 'cancel_requested', 'cancelled']),
+  "stage": zod.string(),
+  "progress": zod.number(),
+  "attempt": zod.number(),
+  "maxAttempts": zod.number(),
+  "retryable": zod.boolean(),
+  "error": zod.object({
+  "code": zod.string().optional(),
+  "message": zod.string().optional(),
+  "retryable": zod.boolean().optional()
+}).nullish(),
+  "outputArtifactIds": zod.array(zod.string()),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string(),
+  "completedAt": zod.string().nullish()
+})
+
+
+/**
+ * @summary Cancel a queued or running production job
+ */
+export const CancelProductionJobParams = zod.object({
+  "jobId": zod.coerce.string()
+})
+
+export const CancelProductionJobResponse = zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "kind": zod.enum(['analysis', 'separation', 'transcription', 'arrangement', 'rendering', 'mixing', 'mastering', 'quality', 'export']),
+  "status": zod.enum(['queued', 'running', 'succeeded', 'failed', 'cancel_requested', 'cancelled']),
+  "stage": zod.string(),
+  "progress": zod.number(),
+  "attempt": zod.number(),
+  "maxAttempts": zod.number(),
+  "retryable": zod.boolean(),
+  "error": zod.object({
+  "code": zod.string().optional(),
+  "message": zod.string().optional(),
+  "retryable": zod.boolean().optional()
+}).nullish(),
+  "outputArtifactIds": zod.array(zod.string()),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string(),
+  "completedAt": zod.string().nullish()
+})
+
+
+/**
+ * @summary Retry a recoverable failed production job
+ */
+export const RetryProductionJobParams = zod.object({
+  "jobId": zod.coerce.string()
+})
+
+export const RetryProductionJobResponse = zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "kind": zod.enum(['analysis', 'separation', 'transcription', 'arrangement', 'rendering', 'mixing', 'mastering', 'quality', 'export']),
+  "status": zod.enum(['queued', 'running', 'succeeded', 'failed', 'cancel_requested', 'cancelled']),
+  "stage": zod.string(),
+  "progress": zod.number(),
+  "attempt": zod.number(),
+  "maxAttempts": zod.number(),
+  "retryable": zod.boolean(),
+  "error": zod.object({
+  "code": zod.string().optional(),
+  "message": zod.string().optional(),
+  "retryable": zod.boolean().optional()
+}).nullish(),
+  "outputArtifactIds": zod.array(zod.string()),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string(),
+  "completedAt": zod.string().nullish()
 })
 
 

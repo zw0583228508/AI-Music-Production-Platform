@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ArtifactState } from './artifactState';
+import type { ArtifactTechnicalMetadata } from './artifactTechnicalMetadata';
 import type { ArtifactType } from './artifactType';
 
 export interface Artifact {
@@ -20,4 +21,22 @@ export interface Artifact {
   createdAt: string;
   /** @nullable */
   url?: string | null;
+  /** @nullable */
+  checksum?: string | null;
+  parentIds: string[];
+  /** @nullable */
+  createdBy?: string | null;
+  /** @nullable */
+  modelVersion?: string | null;
+  /** @nullable */
+  storageUri?: string | null;
+  technicalMetadata: ArtifactTechnicalMetadata;
+  /** @nullable */
+  provider?: string | null;
+  /** @nullable */
+  license?: string | null;
+  retentionPolicy: string;
+  /** @nullable */
+  expiresAt?: string | null;
+  immutable: boolean;
 }

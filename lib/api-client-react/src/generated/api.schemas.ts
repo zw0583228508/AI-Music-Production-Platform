@@ -611,8 +611,35 @@ export interface MusicProvider {
   notes: string;
 }
 
+export type HealthStatusStatus = typeof HealthStatusStatus[keyof typeof HealthStatusStatus];
+
+
+export const HealthStatusStatus = {
+  ok: 'ok',
+  degraded: 'degraded',
+} as const;
+
+export type HealthStatusDatabase = typeof HealthStatusDatabase[keyof typeof HealthStatusDatabase];
+
+
+export const HealthStatusDatabase = {
+  ok: 'ok',
+  unavailable: 'unavailable',
+} as const;
+
+export type HealthStatusProviders = {
+  configured: number;
+  available: number;
+};
+
+export type HealthStatusQueues = {[key: string]: number};
+
 export interface HealthStatus {
-  status: string;
+  status: HealthStatusStatus;
+  database: HealthStatusDatabase;
+  providers: HealthStatusProviders;
+  queues: HealthStatusQueues;
+  timestamp: string;
 }
 
 export interface Error {
@@ -984,6 +1011,7 @@ export const ArtifactType = {
   ANALYSIS: 'ANALYSIS',
   SONG_MODEL: 'SONG_MODEL',
   ARRANGEMENT_PLAN: 'ARRANGEMENT_PLAN',
+  TRACK_MODEL: 'TRACK_MODEL',
   MIDI: 'MIDI',
   AUDIO_TRACK: 'AUDIO_TRACK',
   MIX: 'MIX',
@@ -998,7 +1026,10 @@ export const ArtifactState = {
   rendering: 'rendering',
   ready: 'ready',
   failed: 'failed',
+  expired: 'expired',
 } as const;
+
+export type ArtifactTechnicalMetadata = { [key: string]: unknown };
 
 export interface Artifact {
   id: string;
@@ -1012,6 +1043,24 @@ export interface Artifact {
   createdAt: string;
   /** @nullable */
   url?: string | null;
+  /** @nullable */
+  checksum?: string | null;
+  parentIds: string[];
+  /** @nullable */
+  createdBy?: string | null;
+  /** @nullable */
+  modelVersion?: string | null;
+  /** @nullable */
+  storageUri?: string | null;
+  technicalMetadata: ArtifactTechnicalMetadata;
+  /** @nullable */
+  provider?: string | null;
+  /** @nullable */
+  license?: string | null;
+  retentionPolicy: string;
+  /** @nullable */
+  expiresAt?: string | null;
+  immutable: boolean;
 }
 
 export interface ProjectWorkspace {
@@ -1212,6 +1261,11 @@ export interface GenerationInput {
      * @maximum 3
      */
   candidates?: number;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  idempotencyKey?: string;
   provider?: GenerationInputProvider;
   task?: GenerationInputTask;
   hardware?: GenerationInputHardware;
@@ -1237,6 +1291,8 @@ export type GenerationJobStatus = typeof GenerationJobStatus[keyof typeof Genera
 export const GenerationJobStatus = {
   queued: 'queued',
   running: 'running',
+  cancel_requested: 'cancel_requested',
+  cancelled: 'cancelled',
   succeeded: 'succeeded',
   failed: 'failed',
 } as const;
@@ -1300,6 +1356,15 @@ export interface GenerationJob {
   parentArtifactIds: string[];
   /** @nullable */
   error?: string | null;
+  /** @nullable */
+  errorCode?: string | null;
+  retryable: boolean;
+  /** @minimum 0 */
+  attempt: number;
+  /** @minimum 1 */
+  maxAttempts: number;
+  /** @nullable */
+  cancelRequestedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   /** @nullable */
@@ -1550,6 +1615,11 @@ export const ExportInputMasterProfile = {
 } as const;
 
 export interface ExportInput {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  idempotencyKey?: string;
   /** @nullable */
   arrangementId?: string | null;
   includeStems?: boolean;
@@ -1557,6 +1627,61 @@ export interface ExportInput {
   includeMix?: boolean;
   includeMetadata?: boolean;
   masterProfile?: ExportInputMasterProfile;
+}
+
+export type ProductionJobKind = typeof ProductionJobKind[keyof typeof ProductionJobKind];
+
+
+export const ProductionJobKind = {
+  analysis: 'analysis',
+  separation: 'separation',
+  transcription: 'transcription',
+  arrangement: 'arrangement',
+  rendering: 'rendering',
+  mixing: 'mixing',
+  mastering: 'mastering',
+  quality: 'quality',
+  export: 'export',
+} as const;
+
+export type ProductionJobStatus = typeof ProductionJobStatus[keyof typeof ProductionJobStatus];
+
+
+export const ProductionJobStatus = {
+  queued: 'queued',
+  running: 'running',
+  succeeded: 'succeeded',
+  failed: 'failed',
+  cancel_requested: 'cancel_requested',
+  cancelled: 'cancelled',
+} as const;
+
+/**
+ * @nullable
+ */
+export type ProductionJobError = {
+  code?: string;
+  message?: string;
+  retryable?: boolean;
+} | null;
+
+export interface ProductionJob {
+  id: string;
+  projectId: string;
+  kind: ProductionJobKind;
+  status: ProductionJobStatus;
+  stage: string;
+  progress: number;
+  attempt: number;
+  maxAttempts: number;
+  retryable: boolean;
+  /** @nullable */
+  error?: ProductionJobError;
+  outputArtifactIds: string[];
+  createdAt: string;
+  updatedAt: string;
+  /** @nullable */
+  completedAt?: string | null;
 }
 
 export type ExportResultStatus = typeof ExportResultStatus[keyof typeof ExportResultStatus];

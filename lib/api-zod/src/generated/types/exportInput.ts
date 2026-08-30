@@ -8,6 +8,11 @@
 import type { ExportInputMasterProfile } from './exportInputMasterProfile';
 
 export interface ExportInput {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  idempotencyKey?: string;
   /** @nullable */
   arrangementId?: string | null;
   includeStems?: boolean;

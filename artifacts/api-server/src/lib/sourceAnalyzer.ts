@@ -1070,6 +1070,7 @@ export async function analyzeProjectSource(
     const objectStream = object.createReadStream();
     objectStream.setMaxListeners(20);
     await pipeline(objectStream, createWriteStream(inputPath));
+    const sourceChecksum = await fingerprintFile(inputPath);
     await updateOwnedStage("probing", 24);
 
     const isMidi = /\.(mid|midi)$/i.test(source.name) ||
@@ -1107,6 +1108,7 @@ export async function analyzeProjectSource(
     let samples = new Float32Array();
     let waveform: number[] = [];
     let normalizedObjectPath: string | null = null;
+    let normalizedChecksum: string | null = null;
     if (!midi) {
       const { stdout: pcmBuffer } = await execFileAsync("ffmpeg", [
         "-v", "error", "-ss", String(analysisStartSeconds), "-i", inputPath,
@@ -1119,6 +1121,7 @@ export async function analyzeProjectSource(
       waveform = await fullDurationEnergy(inputPath, durationSeconds);
       const normalizedPath = join(directory, "normalized.flac");
       await execFileAsync("ffmpeg", ["-v", "error", "-i", inputPath, "-map", "0:a:0", "-c:a", "flac", normalizedPath]);
+      normalizedChecksum = await fingerprintFile(normalizedPath);
       normalizedObjectPath = await withProjectStorageWrite(
         source.projectId,
         () => saveSourceProxyObject(source.id, normalizedPath, "audio/flac"),
@@ -1445,6 +1448,11 @@ export async function analyzeProjectSource(
     await updateOwnedStage("persisting_song_model", 88);
     const songModelId = randomUUID();
     const now = new Date();
+    const modelBytes = Buffer.from(JSON.stringify(model));
+    const modelChecksum = createHash("sha256").update(modelBytes).digest("hex");
+    const sourceArtifactId = randomUUID();
+    const songModelArtifactId = randomUUID();
+    const normalizedArtifactId = normalizedObjectPath ? randomUUID() : null;
 
     await db.transaction(async (tx) => {
       await tx.execute(
@@ -1503,25 +1511,53 @@ export async function analyzeProjectSource(
         .where(eq(musicProjectsTable.id, source.projectId));
       await tx.insert(musicArtifactsTable).values([
         {
-          id: randomUUID(),
+          id: sourceArtifactId,
           projectId: source.projectId,
           type: "SOURCE",
           label: source.name,
           version,
           size: `${(source.size / 1024 / 1024).toFixed(1)} MB`,
           format: suffix.slice(1).toUpperCase(),
+          hash: sourceChecksum,
+          checksum: sourceChecksum,
+          storageUri: source.objectPath,
+          createdBy: "source-ingestion",
+          modelVersion: "SOURCE_INGESTION@1.0.0",
+          license: "User-provided source",
+          retentionPolicy: "project",
+          technicalMetadata: {
+            mediaType: source.contentType,
+            bytes: source.size,
+            durationSeconds,
+            sampleRate: sourceSampleRate,
+            channels,
+          },
         },
         {
-          id: randomUUID(),
+          id: songModelArtifactId,
           projectId: source.projectId,
           type: "SONG_MODEL",
           label: "Canonical Song Model",
           version,
-          size: `${Math.max(1, Math.round(JSON.stringify(model).length / 1024))} KB`,
+          size: `${Math.max(1, Math.round(modelBytes.length / 1024))} KB`,
           format: "JSON",
+          hash: modelChecksum,
+          checksum: modelChecksum,
+          parentIds: [sourceArtifactId],
+          storageUri: `db://music_song_models/${songModelId}`,
+          createdBy: "analysis-fusion",
+          modelVersion: "SONG_MODEL@1.0",
+          provider: persistedProviders.join(","),
+          license: "Derived project data",
+          retentionPolicy: "project",
+          technicalMetadata: {
+            mediaType: "application/json",
+            bytes: modelBytes.length,
+            confidence: fusedConfidence,
+          },
         },
         ...(normalizedObjectPath ? [{
-          id: randomUUID(),
+          id: normalizedArtifactId!,
           projectId: source.projectId,
           type: "NORMALIZED_AUDIO",
           label: "Normalized analysis audio",
@@ -1529,6 +1565,20 @@ export async function analyzeProjectSource(
           size: "FLAC",
           format: "FLAC",
           url: normalizedObjectPath,
+          parentIds: [sourceArtifactId],
+          hash: normalizedChecksum,
+          checksum: normalizedChecksum,
+          storageUri: normalizedObjectPath,
+          createdBy: "source-normalizer",
+          modelVersion: "FFMPEG_FLAC@1",
+          license: "Derived from user-provided source",
+          retentionPolicy: "project",
+          technicalMetadata: {
+            mediaType: "audio/flac",
+            durationSeconds,
+            sampleRate: sourceSampleRate,
+            channels,
+          },
         }] : []),
         ...sourceStems
           .filter((stem) => stem.provider === "BS_ROFORMER")
@@ -1541,6 +1591,18 @@ export async function analyzeProjectSource(
             size: "Private audio",
             format: "AUDIO",
             url: stem.objectPath,
+            parentIds: [normalizedArtifactId ?? sourceArtifactId],
+            storageUri: stem.objectPath,
+            createdBy: "analysis-provider",
+            provider: stem.provider,
+            modelVersion: `${stem.provider}@configured`,
+            license: "Provider terms",
+            retentionPolicy: "project",
+            technicalMetadata: {
+              mediaType: "audio",
+              durationSeconds,
+              confidence: stem.confidence,
+            },
           })),
       ]);
       await tx.update(analysisAttemptsTable)

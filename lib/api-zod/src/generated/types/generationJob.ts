@@ -36,6 +36,15 @@ export interface GenerationJob {
   parentArtifactIds: string[];
   /** @nullable */
   error?: string | null;
+  /** @nullable */
+  errorCode?: string | null;
+  retryable: boolean;
+  /** @minimum 0 */
+  attempt: number;
+  /** @minimum 1 */
+  maxAttempts: number;
+  /** @nullable */
+  cancelRequestedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   /** @nullable */

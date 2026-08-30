@@ -78,6 +78,17 @@ export type MusicGenerationTask =
   | "ACCOMPANIMENT"
   | "ORCHESTRATION"
   | "ARRANGEMENT";
+
+export type ProductionJobKind =
+  | "analysis"
+  | "separation"
+  | "transcription"
+  | "arrangement"
+  | "rendering"
+  | "mixing"
+  | "mastering"
+  | "quality"
+  | "export";
 export type TrackPerformance = {
   tempoMap: Array<{ tick: number; bpm: number }>;
   meterMap: Array<{ tick: number; numerator: number; denominator: number }>;
@@ -451,9 +462,21 @@ export const musicGenerationJobsTable = pgTable("music_generation_jobs", {
   progress: integer("progress").notNull().default(0),
   stage: text("stage").notNull().default("queued"),
   providerRequestId: text("provider_request_id"),
+  providerCancelUrl: text("provider_cancel_url"),
+  providerCancellationAcknowledgedAt: timestamp(
+    "provider_cancellation_acknowledged_at",
+    { withTimezone: true },
+  ),
   workerId: text("worker_id"),
+  leaseVersion: integer("lease_version").notNull().default(0),
   heartbeatAt: timestamp("heartbeat_at", { withTimezone: true }),
   leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+  idempotencyKey: text("idempotency_key"),
+  attempt: integer("attempt").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(3),
+  retryable: boolean("retryable").notNull().default(true),
+  cancelRequestedAt: timestamp("cancel_requested_at", { withTimezone: true }),
+  errorCode: text("error_code"),
   requestedCandidates: integer("requested_candidates").notNull().default(1),
   seed: integer("seed").notNull(),
   parameters: jsonb("parameters")
@@ -474,7 +497,12 @@ export const musicGenerationJobsTable = pgTable("music_generation_jobs", {
     .defaultNow()
     .$onUpdate(() => new Date()),
   completedAt: timestamp("completed_at", { withTimezone: true }),
-});
+}, (table) => [
+  uniqueIndex("music_generation_jobs_arrangement_idempotency_unique").on(
+    table.arrangementId,
+    table.idempotencyKey,
+  ),
+]);
 const emptyTrackPerformance: TrackPerformance = {
   tempoMap: [],
   meterMap: [],
@@ -518,6 +546,7 @@ export const musicArtifactsTable = pgTable("music_artifacts", {
   url: text("url"),
   state: text("state").notNull().default("ready"),
   hash: text("hash"),
+  checksum: text("checksum"),
   parentIds: jsonb("parent_ids").$type<string[]>().notNull().default([]),
   createdBy: text("created_by"),
   modelVersion: text("model_version"),
@@ -525,9 +554,63 @@ export const musicArtifactsTable = pgTable("music_artifacts", {
     .notNull()
     .default({}),
   storageUri: text("storage_uri"),
+  technicalMetadata: jsonb("technical_metadata")
+    .$type<Record<string, string | number | boolean | null>>()
+    .notNull()
+    .default({}),
+  provider: text("provider"),
+  license: text("license"),
+  retentionPolicy: text("retention_policy").notNull().default("project"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  immutable: boolean("immutable").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * Provider-neutral queue contract for long-running work that is not represented
+ * by the legacy analysis or arrangement tables. A row is the source of truth
+ * for recovery; workers must fence every write with workerId + leaseVersion.
+ */
+export const productionJobsTable = pgTable("music_production_jobs", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id")
+    .notNull()
+    .references(() => musicProjectsTable.id, { onDelete: "cascade" }),
+  ownerId: text("owner_id").notNull(),
+  kind: text("kind").$type<ProductionJobKind>().notNull(),
+  status: text("status").$type<ProductionJobStatus>().notNull().default("queued"),
+  stage: text("stage").notNull().default("queued"),
+  progress: integer("progress").notNull().default(0),
+  attempt: integer("attempt").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(3),
+  idempotencyKey: text("idempotency_key").notNull(),
+  inputSnapshot: jsonb("input_snapshot").$type<Record<string, unknown>>().notNull(),
+  requiredCapabilities: jsonb("required_capabilities").$type<string[]>().notNull().default([]),
+  resourcePool: text("resource_pool").notNull().default("AUTO"),
+  provider: text("provider"),
+  modelVersion: text("model_version"),
+  workerId: text("worker_id"),
+  leaseVersion: integer("lease_version").notNull().default(0),
+  heartbeatAt: timestamp("heartbeat_at", { withTimezone: true }),
+  leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+  cancelRequestedAt: timestamp("cancel_requested_at", { withTimezone: true }),
+  retryable: boolean("retryable").notNull().default(true),
+  error: jsonb("error").$type<ProductionJobError | null>(),
+  outputArtifactIds: jsonb("output_artifact_ids").$type<string[]>().notNull().default([]),
+  estimatedCostUnits: integer("estimated_cost_units").notNull().default(0),
+  actualCostUnits: integer("actual_cost_units"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+}, (table) => [
+  uniqueIndex("music_production_jobs_project_idempotency_unique").on(
+    table.projectId,
+    table.idempotencyKey,
+  ),
+]);
 export const musicExportsTable = pgTable("music_exports", {
   id: text("id").primaryKey(),
   projectId: text("project_id")
@@ -556,6 +639,23 @@ export const studioActivitiesTable = pgTable("studio_activities", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const musicAuditEventsTable = pgTable("music_audit_events", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id").references(() => musicProjectsTable.id, {
+    onDelete: "cascade",
+  }),
+  actorId: text("actor_id"),
+  action: text("action").notNull(),
+  resourceType: text("resource_type").notNull(),
+  resourceId: text("resource_id"),
+  requestId: text("request_id"),
+  outcome: text("outcome").notNull().default("success"),
+  metadata: jsonb("metadata")
+    .$type<Record<string, string | number | boolean | null>>()
+    .notNull()
+    .default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
 export type GenerationInputSnapshot = {
   arrangement: {
     id: string;
@@ -790,3 +890,36 @@ export const projectUploadReservationsTable = pgTable("music_project_upload_rese
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export type ProductionJobStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancel_requested"
+  | "cancelled";
+
+export type ProductionJobError = {
+  code: string;
+  message: string;
+  retryable: boolean;
+  provider?: string;
+  details?: Record<string, string | number | boolean>;
+};
+
+export const musicUsageLedgerTable = pgTable("music_usage_ledger", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id")
+    .notNull()
+    .references(() => musicProjectsTable.id, { onDelete: "cascade" }),
+  ownerId: text("owner_id").notNull(),
+  jobId: text("job_id"),
+  kind: text("kind").notNull(),
+  units: integer("units").notNull().default(0),
+  estimatedCostCents: integer("estimated_cost_cents").notNull().default(0),
+  actualCostCents: integer("actual_cost_cents"),
+  status: text("status").notNull().default("reserved"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("music_usage_ledger_job_unique").on(table.jobId),
+]);

@@ -13,4 +13,5 @@ export const ArtifactState = {
   rendering: 'rendering',
   ready: 'ready',
   failed: 'failed',
+  expired: 'expired',
 } as const;

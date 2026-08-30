@@ -191,8 +191,11 @@ async function signedObjectUrl(
   return payload.signed_url;
 }
 
-export async function persistExportBundle(bundle: ExportBundle): Promise<void> {
-  const uploadUrl = await signedObjectUrl(bundle.package.id, "PUT");
+export async function persistExportBundle(
+  bundle: ExportBundle,
+  storageObjectId = bundle.package.id,
+): Promise<void> {
+  const uploadUrl = await signedObjectUrl(storageObjectId, "PUT");
   const response = await fetch(uploadUrl, {
     method: "PUT",
     headers: { "Content-Type": "application/zip" },

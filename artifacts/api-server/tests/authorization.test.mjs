@@ -20,6 +20,7 @@ await build({
   stdin: {
     contents: `
       export { createSession, deleteSession } from "./src/lib/auth";
+      export { loadExportZip, persistExportBundle } from "./src/lib/export-pipeline";
       export {
         arrangementsTable,
         db,
@@ -51,10 +52,12 @@ const {
   deleteSession,
   eq,
   getPrivateObject,
+  loadExportZip,
   musicArtifactsTable,
   musicProjectsTable,
   projectCleanupJobsTable,
   projectUploadReservationsTable,
+  persistExportBundle,
 } = await import(pathToFileURL(harnessPath).href);
 
 let server;
@@ -96,6 +99,8 @@ async function enableRaceGate(name, subject) {
 async function releaseRaceGate(name, subject) {
   await writeFile(raceHookPath("gate", name, subject, ".release"), "");
 }
+let exportStorageObjectId;
+let legacyExportStorageObjectId;
 
 function availablePort() {
   return new Promise((resolve, reject) => {
@@ -185,6 +190,8 @@ before(async () => {
   projectId = (await createResponse.json()).id;
   arrangementId = `auth-arrangement-${process.pid}`;
   exportId = `auth-export-${process.pid}`;
+  exportStorageObjectId = `${exportId}-content-addressed`;
+  legacyExportStorageObjectId = `${exportId}-legacy-content-addressed`;
   await db.insert(arrangementsTable).values({
     id: arrangementId,
     projectId,
@@ -202,8 +209,26 @@ before(async () => {
     size: "1 KB",
     format: "ZIP",
     state: "ready",
-    url: "/api/storage/objects/exports/private-test.zip",
+    url: `/api/projects/${projectId}/exports/${exportId}/download`,
+    storageUri: `/api/storage/objects/exports/${exportStorageObjectId}.zip`,
   });
+  await persistExportBundle({ zip: Buffer.from("private export bytes") }, exportStorageObjectId);
+  await db.insert(musicArtifactsTable).values({
+    id: `${exportId}-legacy`,
+    projectId,
+    type: "EXPORT",
+    label: "private-legacy.zip",
+    version: 1,
+    size: "1 KB",
+    format: "ZIP",
+    state: "ready",
+    url: `/api/projects/${projectId}/exports/${exportId}/download`,
+    storageUri: `export-object://${legacyExportStorageObjectId}`,
+  });
+  await persistExportBundle(
+    { zip: Buffer.from("legacy private export bytes") },
+    legacyExportStorageObjectId,
+  );
 });
 
 after(async () => {
@@ -503,6 +528,8 @@ test("project and export endpoints enforce owner authorization", async () => {
   assert.equal(deletedProject.length, 0);
   assert.equal(deletedArrangement.length, 0);
   assert.equal(deletedArtifact.length, 0);
+  assert.equal(await loadExportZip(exportStorageObjectId), null);
+  assert.equal(await loadExportZip(legacyExportStorageObjectId), null);
   assert.equal(
     (await request(
       `/api/storage/uploads/${pendingUploadPath.split("/").at(-1)}`,

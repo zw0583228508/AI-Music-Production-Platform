@@ -48,6 +48,7 @@ import type {
   MobileTokenExchangeSuccess,
   MusicProvider,
   NotFoundResponse,
+  ProductionJob,
   Project,
   ProjectDeletion,
   ProjectInput,
@@ -2343,6 +2344,148 @@ export function useGetGenerationJob<TData = Awaited<ReturnType<typeof getGenerat
 
 
 
+export const getCancelGenerationJobUrl = (jobId: string,) => {
+
+
+
+
+  return `/api/generation-jobs/${jobId}/cancel`
+}
+
+/**
+ * @summary Request cancellation of a queued or running generation job
+ */
+export const cancelGenerationJob = async (jobId: string, options?: Parameters<typeof customFetch>[1]): Promise<GenerationJob> => {
+
+  return customFetch<GenerationJob>(getCancelGenerationJobUrl(jobId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getCancelGenerationJobMutationOptions = <TError = ErrorType<NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelGenerationJob>>, TError,{jobId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof cancelGenerationJob>>, TError,{jobId: string}, TContext> => {
+
+const mutationKey = ['cancelGenerationJob'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cancelGenerationJob>>, {jobId: string}> = (props) => {
+          const {jobId} = props ?? {};
+
+          return  cancelGenerationJob(jobId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CancelGenerationJobMutationResult = NonNullable<Awaited<ReturnType<typeof cancelGenerationJob>>>
+
+    export type CancelGenerationJobMutationError = ErrorType<NotFoundResponse | void>
+
+    /**
+ * @summary Request cancellation of a queued or running generation job
+ */
+export const useCancelGenerationJob = <TError = ErrorType<NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelGenerationJob>>, TError,{jobId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof cancelGenerationJob>>,
+        TError,
+        {jobId: string},
+        TContext
+      > => {
+      return useMutation(getCancelGenerationJobMutationOptions(options));
+    }
+
+export const getRetryGenerationJobUrl = (jobId: string,) => {
+
+
+
+
+  return `/api/generation-jobs/${jobId}/retry`
+}
+
+/**
+ * @summary Retry a recoverable failed generation job
+ */
+export const retryGenerationJob = async (jobId: string, options?: Parameters<typeof customFetch>[1]): Promise<GenerationJob> => {
+
+  return customFetch<GenerationJob>(getRetryGenerationJobUrl(jobId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRetryGenerationJobMutationOptions = <TError = ErrorType<NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retryGenerationJob>>, TError,{jobId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof retryGenerationJob>>, TError,{jobId: string}, TContext> => {
+
+const mutationKey = ['retryGenerationJob'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof retryGenerationJob>>, {jobId: string}> = (props) => {
+          const {jobId} = props ?? {};
+
+          return  retryGenerationJob(jobId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RetryGenerationJobMutationResult = NonNullable<Awaited<ReturnType<typeof retryGenerationJob>>>
+
+    export type RetryGenerationJobMutationError = ErrorType<NotFoundResponse | void>
+
+    /**
+ * @summary Retry a recoverable failed generation job
+ */
+export const useRetryGenerationJob = <TError = ErrorType<NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retryGenerationJob>>, TError,{jobId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof retryGenerationJob>>,
+        TError,
+        {jobId: string},
+        TContext
+      > => {
+      return useMutation(getRetryGenerationJobMutationOptions(options));
+    }
+
 export const getListGenerationCandidatesUrl = (jobId: string,) => {
 
 
@@ -2805,12 +2948,12 @@ export const getCreateProjectExportUrl = (projectId: string,) => {
 }
 
 /**
- * @summary Render and package a versioned project export
+ * @summary Queue a versioned project export render
  */
 export const createProjectExport = async (projectId: string,
-    exportInput?: ExportInput, options?: Parameters<typeof customFetch>[1]): Promise<ExportPackage> => {
+    exportInput?: ExportInput, options?: Parameters<typeof customFetch>[1]): Promise<ProductionJob> => {
 
-  return customFetch<ExportPackage>(getCreateProjectExportUrl(projectId),
+  return customFetch<ProductionJob>(getCreateProjectExportUrl(projectId),
   {
     ...options,
     method: 'POST',
@@ -2855,7 +2998,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type CreateProjectExportMutationError = ErrorType<NotFoundResponse>
 
     /**
- * @summary Render and package a versioned project export
+ * @summary Queue a versioned project export render
  */
 export const useCreateProjectExport = <TError = ErrorType<NotFoundResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProjectExport>>, TError,{projectId: string;data?: BodyType<ExportInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -2866,6 +3009,225 @@ export const useCreateProjectExport = <TError = ErrorType<NotFoundResponse>,
         TContext
       > => {
       return useMutation(getCreateProjectExportMutationOptions(options));
+    }
+
+export const getGetProductionJobUrl = (jobId: string,) => {
+
+
+
+
+  return `/api/production-jobs/${jobId}`
+}
+
+/**
+ * @summary Get an authenticated production job
+ */
+export const getProductionJob = async (jobId: string, options?: Parameters<typeof customFetch>[1]): Promise<ProductionJob> => {
+
+  return customFetch<ProductionJob>(getGetProductionJobUrl(jobId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetProductionJobQueryKey = (jobId: string,) => {
+    return [
+    `/api/production-jobs/${jobId}`
+    ] as const;
+    }
+
+
+export const getGetProductionJobQueryOptions = <TData = Awaited<ReturnType<typeof getProductionJob>>, TError = ErrorType<NotFoundResponse>>(jobId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProductionJob>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetProductionJobQueryKey(jobId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getProductionJob>>> = ({ signal }) => getProductionJob(jobId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: jobId !== null && jobId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getProductionJob>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetProductionJobQueryResult = NonNullable<Awaited<ReturnType<typeof getProductionJob>>>
+export type GetProductionJobQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Get an authenticated production job
+ */
+
+export function useGetProductionJob<TData = Awaited<ReturnType<typeof getProductionJob>>, TError = ErrorType<NotFoundResponse>>(
+ jobId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProductionJob>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetProductionJobQueryOptions(jobId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCancelProductionJobUrl = (jobId: string,) => {
+
+
+
+
+  return `/api/production-jobs/${jobId}/cancel`
+}
+
+/**
+ * @summary Cancel a queued or running production job
+ */
+export const cancelProductionJob = async (jobId: string, options?: Parameters<typeof customFetch>[1]): Promise<ProductionJob> => {
+
+  return customFetch<ProductionJob>(getCancelProductionJobUrl(jobId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getCancelProductionJobMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelProductionJob>>, TError,{jobId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof cancelProductionJob>>, TError,{jobId: string}, TContext> => {
+
+const mutationKey = ['cancelProductionJob'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cancelProductionJob>>, {jobId: string}> = (props) => {
+          const {jobId} = props ?? {};
+
+          return  cancelProductionJob(jobId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CancelProductionJobMutationResult = NonNullable<Awaited<ReturnType<typeof cancelProductionJob>>>
+
+    export type CancelProductionJobMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Cancel a queued or running production job
+ */
+export const useCancelProductionJob = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelProductionJob>>, TError,{jobId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof cancelProductionJob>>,
+        TError,
+        {jobId: string},
+        TContext
+      > => {
+      return useMutation(getCancelProductionJobMutationOptions(options));
+    }
+
+export const getRetryProductionJobUrl = (jobId: string,) => {
+
+
+
+
+  return `/api/production-jobs/${jobId}/retry`
+}
+
+/**
+ * @summary Retry a recoverable failed production job
+ */
+export const retryProductionJob = async (jobId: string, options?: Parameters<typeof customFetch>[1]): Promise<ProductionJob> => {
+
+  return customFetch<ProductionJob>(getRetryProductionJobUrl(jobId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRetryProductionJobMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retryProductionJob>>, TError,{jobId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof retryProductionJob>>, TError,{jobId: string}, TContext> => {
+
+const mutationKey = ['retryProductionJob'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof retryProductionJob>>, {jobId: string}> = (props) => {
+          const {jobId} = props ?? {};
+
+          return  retryProductionJob(jobId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RetryProductionJobMutationResult = NonNullable<Awaited<ReturnType<typeof retryProductionJob>>>
+
+    export type RetryProductionJobMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Retry a recoverable failed production job
+ */
+export const useRetryProductionJob = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retryProductionJob>>, TError,{jobId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof retryProductionJob>>,
+        TError,
+        {jobId: string},
+        TContext
+      > => {
+      return useMutation(getRetryProductionJobMutationOptions(options));
     }
 
 export const getDownloadProjectExportUrl = (exportId: string,) => {

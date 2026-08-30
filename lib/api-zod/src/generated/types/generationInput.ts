@@ -17,6 +17,11 @@ export interface GenerationInput {
      * @maximum 3
      */
   candidates?: number;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  idempotencyKey?: string;
   provider?: GenerationInputProvider;
   task?: GenerationInputTask;
   hardware?: GenerationInputHardware;

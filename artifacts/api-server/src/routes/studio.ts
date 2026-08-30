@@ -11,6 +11,8 @@ import {
   AnalyzeProjectBody,
   AnalyzeProjectParams,
   AnalyzeProjectResponse,
+  CancelGenerationJobParams,
+  CancelGenerationJobResponse,
   CreateArrangementBody,
   CreateArrangementParams,
   CreateArrangementResponse,
@@ -68,6 +70,8 @@ import {
   RestoreArrangementRevisionResponse,
   RetryProjectDeletionParams,
   RetryProjectDeletionResponse,
+  RetryGenerationJobParams,
+  RetryGenerationJobResponse,
   UpdateArrangementBody,
   UpdateArrangementParams,
   UpdateArrangementResponse,
@@ -80,9 +84,11 @@ import {
   db,
   musicArtifactsTable,
   musicExportsTable,
+  musicAuditEventsTable,
   musicProjectsTable,
   projectCleanupJobsTable,
   projectUploadReservationsTable,
+  productionJobsTable,
   projectSourcesTable,
   songModelsTable,
   studioActivitiesTable,
@@ -93,6 +99,12 @@ import {
   type SongModelField,
   type SongModelFieldStatus,
 } from "@workspace/db";
+import {
+  queueProductionJob,
+  requestProductionJobCancellation,
+  retryProductionJob,
+} from "../lib/productionJobs";
+import { runExportProductionJob } from "../lib/exportJobs";
 import {
   createZip,
   formatBytes,
@@ -137,12 +149,14 @@ import {
   validateCanonicalSongModel,
 } from "../lib/songModelValidation";
 import {
+  cancelGenerationJob,
   generationCandidateResponse,
   generationJobResponse,
   getGenerationJobForOwner,
   listGenerationCandidatesForOwner,
   listProviderCatalog,
   queueArrangementGeneration,
+  retryGenerationJob,
   selectGenerationCandidate,
 } from "../lib/arrangementGeneration";
 
@@ -158,6 +172,26 @@ function requireStudioAuth(req: Request, res: Response, next: NextFunction): voi
 }
 
 router.use(requireStudioAuth);
+router.use((req, res, next): void => {
+  const requestId = String(req.id ?? randomUUID());
+  res.on("finish", () => {
+    void db.insert(musicAuditEventsTable).values({
+      id: randomUUID(),
+      actorId: req.user?.id ?? null,
+      action: `${req.method.toLowerCase()}:${req.path}`,
+      resourceType: "studio_api",
+      requestId,
+      outcome: res.statusCode >= 400 ? "failure" : "success",
+      metadata: {
+        statusCode: res.statusCode,
+        method: req.method,
+      },
+    }).catch((error) => {
+      req.log.warn({ err: error, requestId }, "music_audit_event_write_failed");
+    });
+  });
+  next();
+});
 
 router.param("projectId", async (req, res, next, projectId): Promise<void> => {
   try {
@@ -227,6 +261,22 @@ const iso = (value: Date) => value.toISOString();
 const nullableIso = (value: Date | null) => value ? iso(value) : null;
 const sha256 = (value: Buffer | string): string =>
   createHash("sha256").update(value).digest("hex");
+const productionJobResponse = (job: typeof productionJobsTable.$inferSelect) => ({
+  id: job.id,
+  projectId: job.projectId,
+  kind: job.kind,
+  status: job.status,
+  stage: job.stage,
+  progress: job.progress,
+  attempt: job.attempt,
+  maxAttempts: job.maxAttempts,
+  retryable: job.retryable,
+  error: job.error,
+  outputArtifactIds: job.outputArtifactIds,
+  createdAt: iso(job.createdAt),
+  updatedAt: iso(job.updatedAt),
+  completedAt: nullableIso(job.completedAt),
+});
 
 const projectResponse = (project: typeof musicProjectsTable.$inferSelect) => ({
   id: project.id,
@@ -390,6 +440,8 @@ const artifactResponse = (
   artifact: typeof musicArtifactsTable.$inferSelect,
 ) => ({
   ...artifact,
+  checksum: artifact.checksum ?? artifact.hash,
+  expiresAt: artifact.expiresAt ? iso(artifact.expiresAt) : null,
   createdAt: iso(artifact.createdAt),
 });
 
@@ -400,6 +452,13 @@ type ProjectCleanupPlan = {
 
 function collectPrivateObjectPaths(value: unknown, paths: Set<string>): void {
   if (typeof value === "string") {
+    if (value.startsWith("export-object://")) {
+      const storageObjectId = value.slice("export-object://".length);
+      if (/^[a-zA-Z0-9._-]+$/.test(storageObjectId)) {
+        paths.add(`/api/storage/objects/exports/${storageObjectId}.zip`);
+      }
+      return;
+    }
     if (
       value.startsWith("/objects/uploads/") ||
       value.startsWith("/objects/proxies/") ||
@@ -2170,6 +2229,58 @@ router.get("/generation-jobs/:jobId", async (req, res): Promise<void> => {
   res.json(GetGenerationJobResponse.parse(generationJobResponse(job)));
 });
 
+router.post("/generation-jobs/:jobId/cancel", async (req, res): Promise<void> => {
+  const params = CancelGenerationJobParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const current = await getGenerationJobForOwner(params.data.jobId, req.user!.id);
+  if (!current) {
+    res.status(404).json({ error: "Generation job not found" });
+    return;
+  }
+  if (["succeeded", "failed", "cancelled"].includes(current.status)) {
+    res.status(409).json({
+      error: `Generation job is already ${current.status}`,
+      code: "JOB_ALREADY_TERMINAL",
+      retryable: false,
+    });
+    return;
+  }
+  const job = await cancelGenerationJob(params.data.jobId, req.user!.id);
+  if (!job) {
+    res.status(409).json({ error: "Generation job changed before cancellation" });
+    return;
+  }
+  res.json(CancelGenerationJobResponse.parse(generationJobResponse(job)));
+});
+
+router.post("/generation-jobs/:jobId/retry", async (req, res): Promise<void> => {
+  const params = RetryGenerationJobParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const current = await getGenerationJobForOwner(params.data.jobId, req.user!.id);
+  if (!current) {
+    res.status(404).json({ error: "Generation job not found" });
+    return;
+  }
+  const job = await retryGenerationJob(params.data.jobId, req.user!.id);
+  if (!job) {
+    res.status(409).json({
+      error: "Generation job is not retryable or has exhausted its attempts",
+      code: "JOB_NOT_RETRYABLE",
+      retryable: false,
+    });
+    return;
+  }
+  res.status(202).json(
+    RetryGenerationJobResponse.parse(generationJobResponse(job)),
+  );
+});
+
 router.get(
   "/generation-jobs/:jobId/candidates",
   async (req, res): Promise<void> => {
@@ -2435,6 +2546,49 @@ router.post("/arrangements/:arrangementId/export", async (req, res): Promise<voi
   */
 });
 
+router.get("/production-jobs/:jobId", async (req, res): Promise<void> => {
+  const [job] = await db.select().from(productionJobsTable).where(and(
+    eq(productionJobsTable.id, req.params.jobId),
+    eq(productionJobsTable.ownerId, req.user!.id),
+  )).limit(1);
+  if (!job) {
+    res.status(404).json({ error: "Production job not found" });
+    return;
+  }
+  res.json(productionJobResponse(job));
+});
+
+router.post("/production-jobs/:jobId/cancel", async (req, res): Promise<void> => {
+  const result = await requestProductionJobCancellation(req.params.jobId, req.user!.id);
+  if (result === "not_found") {
+    res.status(404).json({ error: "Production job not found" });
+    return;
+  }
+  const [job] = await db.select().from(productionJobsTable).where(and(
+    eq(productionJobsTable.id, req.params.jobId), eq(productionJobsTable.ownerId, req.user!.id),
+  )).limit(1);
+  if (!job) {
+    res.status(404).json({ error: "Production job not found" });
+    return;
+  }
+  res.status(result === "terminal" ? 409 : 202).json(productionJobResponse(job));
+});
+
+router.post("/production-jobs/:jobId/retry", async (req, res): Promise<void> => {
+  const job = await retryProductionJob(req.params.jobId, req.user!.id);
+  if (!job) {
+    const [existing] = await db.select({ id: productionJobsTable.id }).from(productionJobsTable).where(and(
+      eq(productionJobsTable.id, req.params.jobId), eq(productionJobsTable.ownerId, req.user!.id),
+    )).limit(1);
+    res.status(existing ? 409 : 404).json({ error: existing
+      ? "Production job is not retryable or has exhausted its attempts"
+      : "Production job not found" });
+    return;
+  }
+  if (job.kind === "export") void runExportProductionJob(job.id);
+  res.status(202).json(productionJobResponse(job));
+});
+
 router.post("/projects/:projectId/export", async (req, res): Promise<void> => {
   await ensureSeeded();
   const params = CreateProjectExportParams.safeParse(req.params);
@@ -2443,7 +2597,85 @@ router.post("/projects/:projectId/export", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Invalid export request" });
     return;
   }
+  const [ownedProject] = await db.select({ id: musicProjectsTable.id })
+    .from(musicProjectsTable)
+    .where(and(
+      eq(musicProjectsTable.id, params.data.projectId),
+      eq(musicProjectsTable.ownerId, req.user!.id),
+    ))
+    .limit(1);
+  if (!ownedProject) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+  // Export rendering is deliberately outside the request lifecycle.  The job
+  // snapshot makes a retry render the exact requested arrangement/options.
+  const arrangementCandidates = await db.select().from(arrangementsTable)
+    .where(eq(arrangementsTable.projectId, params.data.projectId))
+    .orderBy(desc(arrangementsTable.version));
+  const requestedArrangement = body.data.arrangementId
+    ? arrangementCandidates.find((item) => item.id === body.data.arrangementId)
+    : arrangementCandidates[0];
+  if (!requestedArrangement) {
+    res.status(404).json({ error: "Arrangement not found" });
+    return;
+  }
+  const idempotencyKey = (body.data.idempotencyKey?.trim() ||
+    `export:${requestedArrangement.id}:v${requestedArrangement.version}:${sha256(
+      JSON.stringify({
+        includeStems: body.data.includeStems ?? true,
+        includeMidi: body.data.includeMidi ?? true,
+        includeMix: body.data.includeMix ?? true,
+        includeMetadata: body.data.includeMetadata ?? true,
+        masterProfile: body.data.masterProfile ?? "STREAMING",
+      }),
+    ).slice(0, 24)}`).slice(0, 200);
+  const { job, duplicate } = await db.transaction(async (transaction) => {
+    await transaction.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${`music-export-idempotency:${params.data.projectId}:${idempotencyKey}`}))`,
+    );
+    const [existingJob] = await transaction.select().from(productionJobsTable)
+      .where(and(
+        eq(productionJobsTable.projectId, params.data.projectId),
+        eq(productionJobsTable.idempotencyKey, idempotencyKey),
+      ))
+      .limit(1);
+    if (existingJob) return { job: existingJob, duplicate: true };
+    await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${`music-export:${params.data.projectId}`}))`);
+    const exportArtifacts = await transaction.select({ version: musicArtifactsTable.version })
+      .from(musicArtifactsTable)
+      .where(sql`${musicArtifactsTable.projectId} = ${params.data.projectId} and ${musicArtifactsTable.type} = 'EXPORT'`);
+    const version = Math.max(0, ...exportArtifacts.map((artifact) => artifact.version)) + 1;
+    const exportId = `export-${params.data.projectId}-${version}-${randomUUID().slice(0, 8)}`;
+    await transaction.insert(musicArtifactsTable).values({
+      id: exportId, projectId: params.data.projectId, type: "EXPORT",
+      label: `${requestedArrangement.name} v${version} export`, version, size: "Queued", format: "ZIP",
+      url: `/api/exports/${exportId}/download`, state: "rendering", parentIds: [],
+      createdBy: "export-pipeline", modelVersion: "EXPORT_PIPELINE@1.0.0",
+      parameters: { arrangementId: requestedArrangement.id, includeStems: body.data.includeStems ?? true, includeMidi: body.data.includeMidi ?? true },
+      storageUri: `db://music_exports/${exportId}`,
+      immutable: false,
+    });
+    const queued = await queueProductionJob({
+      projectId: params.data.projectId, ownerId: req.user!.id, kind: "export", idempotencyKey,
+      resourcePool: "STUDIO_RENDER", requiredCapabilities: ["export"],
+      estimatedCostUnits: 100,
+      inputSnapshot: {
+        ...body.data,
+        arrangementId: requestedArrangement.id,
+        exportId,
+        version,
+      },
+    }, transaction);
+    return { job: queued.job, duplicate: false };
+  });
+  // Starting immediately is an optimization only: recovery is the durable
+  // execution path if this process exits before or during rendering.
+  if (!duplicate) void runExportProductionJob(job.id);
+  res.status(202).json(productionJobResponse(job));
+  return;
 
+  /*
   const [project] = await db
     .select()
     .from(musicProjectsTable)
@@ -2625,11 +2857,21 @@ router.post("/projects/:projectId/export", async (req, res): Promise<void> => {
         format: file.format,
         url: bundle.package.url,
         hash: sha256(bundle.files.get(file.name) ?? file.name),
+        checksum: sha256(bundle.files.get(file.name) ?? file.name),
         parentIds: fileAllocations.get(file.name)!.parentIds,
         createdBy: "export-engine",
         modelVersion: "EXPORT_ENGINE@2.0.0",
         parameters: { arrangementId: arrangement.id, exportId: allocation.exportId },
         storageUri: bundle.package.url,
+        provider: arrangement.generationProvenance?.provider ??
+          arrangement.generationProvider ?? "ARRANGEMENT_ENGINE",
+        license: "Project-owned output",
+        retentionPolicy: "project",
+        technicalMetadata: {
+          mediaType: file.format,
+          bytes: bundle.files.get(file.name)?.length ?? 0,
+          arrangementVersion: arrangement.version,
+        },
       }));
     await db.transaction(async (transaction) => {
       await transaction.execute(
@@ -2653,8 +2895,18 @@ router.post("/projects/:projectId/export", async (req, res): Promise<void> => {
           url: bundle.package.url,
           state: "ready",
           hash: sha256(bundle.zip),
+          checksum: sha256(bundle.zip),
           storageUri: bundle.package.url,
           parentIds: [...fileAllocations.values()].map((file) => file.artifactId),
+          provider: "EXPORT_PIPELINE",
+          license: "Project-owned output",
+          retentionPolicy: "project",
+          technicalMetadata: {
+            mediaType: "application/zip",
+            bytes: bundle.zip.length,
+            fileCount: bundle.package.files.length,
+            arrangementVersion: arrangement.version,
+          },
         })
         .where(eq(musicArtifactsTable.id, allocation.exportId));
       await transaction
@@ -2692,6 +2944,7 @@ router.post("/projects/:projectId/export", async (req, res): Promise<void> => {
       .where(eq(musicArtifactsTable.id, allocation.exportId));
     throw error;
   }
+  */
 });
 
 router.get("/exports/:exportId/download", async (req, res): Promise<void> => {
@@ -2725,7 +2978,14 @@ router.get("/exports/:exportId/download", async (req, res): Promise<void> => {
     res.status(409).json({ error: `Export package is ${artifact.state}` });
     return;
   }
-  const zip = cachedBundle?.zip ?? await loadExportZip(params.data.exportId);
+  const storageObjectId = artifact.storageUri?.startsWith("export-object://")
+    ? artifact.storageUri.slice("export-object://".length)
+    : artifact.storageUri?.startsWith("/api/storage/objects/exports/")
+      ? artifact.storageUri
+          .slice("/api/storage/objects/exports/".length)
+          .replace(/\.zip$/, "")
+      : params.data.exportId;
+  const zip = cachedBundle?.zip ?? await loadExportZip(storageObjectId);
   if (!zip) {
     res.status(404).json({ error: "Export package not found or expired" });
     return;

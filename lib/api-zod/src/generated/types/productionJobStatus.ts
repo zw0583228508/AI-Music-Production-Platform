@@ -6,14 +6,14 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type GenerationJobStatus = typeof GenerationJobStatus[keyof typeof GenerationJobStatus];
+export type ProductionJobStatus = typeof ProductionJobStatus[keyof typeof ProductionJobStatus];
 
 
-export const GenerationJobStatus = {
+export const ProductionJobStatus = {
   queued: 'queued',
   running: 'running',
-  cancel_requested: 'cancel_requested',
-  cancelled: 'cancelled',
   succeeded: 'succeeded',
   failed: 'failed',
+  cancel_requested: 'cancel_requested',
+  cancelled: 'cancelled',
 } as const;

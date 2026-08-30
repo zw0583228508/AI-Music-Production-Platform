@@ -14,6 +14,8 @@ import {
   useListArtifacts,
   useRunCopilot,
   useCreateProjectExport,
+  useGetProductionJob,
+  getGetProductionJobQueryKey,
   useGetProjectSongModel,
   getGetProjectSongModelQueryKey,
   getListArtifactsQueryKey,
@@ -110,6 +112,17 @@ export default function ProjectWorkspace() {
   const [includeMidi, setIncludeMidi] = useState(true);
   const [masterProfile, setMasterProfile] = useState("STREAMING");
   const [exportResult, setExportResult] = useState<ExportResult | null>(null);
+  const [exportJobId, setExportJobId] = useState<string | null>(null);
+  const { data: exportJob } = useGetProductionJob(exportJobId ?? "", {
+    query: {
+      enabled: Boolean(exportJobId),
+      queryKey: getGetProductionJobQueryKey(exportJobId ?? ""),
+      refetchInterval: (query) => {
+        const status = query.state.data?.status;
+        return status === "queued" || status === "running" || status === "cancel_requested" ? 1500 : false;
+      },
+    },
+  });
 
   const [copilotCommand, setCopilotCommand] = useState("");
   const [editorSelection, setEditorSelection] = useState<EditorSelection>(null);
@@ -393,6 +406,7 @@ export default function ProjectWorkspace() {
     createExport.mutate({
       projectId,
       data: {
+        idempotencyKey: crypto.randomUUID(),
         arrangementId: activeArrangement.id,
         includeStems,
         includeMidi,
@@ -402,19 +416,11 @@ export default function ProjectWorkspace() {
       },
     }, {
       onSuccess: (result) => {
-        setExportResult({
-          id: result.id,
-          status: result.status,
-          files: result.files,
-          bundleUrl: result.url,
-          createdAt: result.createdAt,
-        });
-        queryClient.invalidateQueries({ queryKey: getListArtifactsQueryKey(projectId) });
+        setExportJobId(result.id);
         toast({
-          title: "Export package ready",
-          description: `${result.files.length} playable files were rendered and saved.`,
+          title: "Export queued",
+          description: "Rendering continues in the background. This dialog will download it when ready.",
         });
-        downloadFile(result.url);
       },
       onError: () => {
         toast({
@@ -425,6 +431,19 @@ export default function ProjectWorkspace() {
       },
     });
   };
+
+  useEffect(() => {
+    if (!exportJob || exportJob.status !== "succeeded" || exportResult) return;
+    const exportId = exportJob.outputArtifactIds[0];
+    if (!exportId) return;
+    const bundleUrl = `/api/exports/${exportId}/download`;
+    setExportResult({
+      id: exportId, status: "ready", files: [], bundleUrl, createdAt: exportJob.createdAt,
+    });
+    queryClient.invalidateQueries({ queryKey: getListArtifactsQueryKey(projectId) });
+    toast({ title: "Export package ready", description: "Your rendered export is ready to download." });
+    downloadFile(bundleUrl);
+  }, [exportJob, exportResult, projectId, queryClient, toast]);
 
   const handleCreateArrangement = () => {
     createArrangement.mutate({
@@ -1049,13 +1068,17 @@ export default function ProjectWorkspace() {
                 Download ZIP again
               </Button>
             ) : (
-              <Button onClick={handleExport} disabled={createExport.isPending}>
-                {createExport.isPending ? (
+              <Button onClick={handleExport} disabled={createExport.isPending || Boolean(exportJobId && exportJob?.status !== "failed")}>
+                {createExport.isPending || (exportJobId && exportJob?.status !== "failed") ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
                   <Download className="mr-2 h-4 w-4" />
                 )}
-                {createExport.isPending ? "Rendering files..." : "Render and download"}
+                {createExport.isPending
+                  ? "Queueing export..."
+                  : exportJobId && exportJob?.status !== "failed"
+                    ? `Rendering files${exportJob ? ` (${exportJob.progress}%)` : ""}...`
+                    : "Render and download"}
               </Button>
             )}
           </DialogFooter>

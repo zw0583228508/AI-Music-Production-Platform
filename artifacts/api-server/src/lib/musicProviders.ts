@@ -521,6 +521,39 @@ function remoteEnvironmentPrefix(providerId: string): string {
   return providerId === "ACE_STEP_BASE" ? "ACE_STEP" : providerId;
 }
 
+export async function cancelRemoteProviderJob(
+  providerId: string,
+  cancelUrlValue: string,
+): Promise<void> {
+  const prefix = remoteEnvironmentPrefix(providerId);
+  const endpoint = process.env[`${prefix}_API_URL`];
+  if (!endpoint) throw new Error(`${providerId} worker is not configured`);
+  const endpointUrl = new URL(endpoint);
+  const cancelUrl = new URL(cancelUrlValue, endpointUrl);
+  if (cancelUrl.origin !== endpointUrl.origin) {
+    throw new Error("Provider cancellation URL must use the configured worker origin");
+  }
+  const token = process.env[`${prefix}_API_TOKEN`];
+  let lastStatus = 0;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const response = await fetch(cancelUrl, {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      signal: AbortSignal.timeout(30_000),
+    });
+    lastStatus = response.status;
+    if (response.ok || response.status === 404) return;
+    await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+  }
+  throw new Error(`Provider cancellation was not acknowledged (HTTP ${lastStatus})`);
+}
+
+export class ProviderCancellationAcknowledgedError extends Error {}
+export class ProviderCancellationUnconfirmedError extends Error {}
+
 export async function runArrangementProvider(
   provider: MusicProviderDescriptor,
   input: ArrangementProviderInput,
@@ -743,6 +776,7 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
   async generate(
     input: ProviderGenerationInput,
     onProgress?: (progress: ProviderProgress) => Promise<void>,
+    signal?: AbortSignal,
   ): Promise<ProviderGenerationResult> {
     if (!this.endpoint) {
       throw new Error(`${this.definition.displayName} worker is not configured`);
@@ -758,7 +792,9 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
         modelVersion: this.definition.modelVersion,
         ...input,
       }),
-      signal: AbortSignal.timeout(10 * 60 * 1000),
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(10 * 60 * 1000)])
+        : AbortSignal.timeout(10 * 60 * 1000),
     });
     if (!response.ok && response.status !== 202) {
       throw new Error(
@@ -779,15 +815,40 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
     if (statusUrl.origin !== endpointUrl.origin) {
       throw new Error("Provider status URL must use the configured worker origin");
     }
+    const cancelUrl = new URL(
+      typeof payload["cancelUrl"] === "string"
+        ? payload["cancelUrl"]
+        : payload["statusUrl"],
+      endpointUrl,
+    );
+    if (cancelUrl.origin !== endpointUrl.origin) {
+      throw new Error("Provider cancellation URL must use the configured worker origin");
+    }
+    let cancellationDelivery: Promise<void> | null = null;
+    const cancelRemoteJob = () => {
+      cancellationDelivery ??= cancelRemoteProviderJob(
+        this.definition.id,
+        cancelUrl.toString(),
+      );
+    };
+    signal?.addEventListener("abort", cancelRemoteJob, { once: true });
     const requestId =
       typeof payload["requestId"] === "string" ? payload["requestId"] : undefined;
-    await onProgress?.({ progress: 35, stage: "provider_queued", requestId });
+    await onProgress?.({
+      progress: 35,
+      stage: "provider_queued",
+      requestId,
+      cancelUrl: cancelUrl.toString(),
+    });
     const deadline = Date.now() + 10 * 60 * 1000;
-    while (Date.now() < deadline) {
+    try {
+      while (Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 1_500));
       const statusResponse = await fetch(statusUrl, {
         headers: this.headers(),
-        signal: AbortSignal.timeout(30_000),
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])
+          : AbortSignal.timeout(30_000),
       });
       if (!statusResponse.ok) {
         throw new Error(
@@ -812,11 +873,33 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
             : `${this.definition.displayName} worker failed`,
         );
       }
-      if (statusPayload["status"] === "succeeded") {
-        return this.normalizeResult(statusPayload, input);
+        if (statusPayload["status"] === "succeeded") {
+          return this.normalizeResult(statusPayload, input);
+        }
       }
+      throw new Error(`${this.definition.displayName} worker timed out`);
+    } catch (error) {
+      if (signal?.aborted) {
+        try {
+          await (cancellationDelivery ?? cancelRemoteProviderJob(
+            this.definition.id,
+            cancelUrl.toString(),
+          ));
+        } catch (cancellationError) {
+          throw new ProviderCancellationUnconfirmedError(
+            cancellationError instanceof Error
+              ? cancellationError.message
+              : `${this.definition.displayName} cancellation was not acknowledged`,
+          );
+        }
+        throw new ProviderCancellationAcknowledgedError(
+          `${this.definition.displayName} cancellation acknowledged`,
+        );
+      }
+      throw error;
+    } finally {
+      signal?.removeEventListener("abort", cancelRemoteJob);
     }
-    throw new Error(`${this.definition.displayName} worker timed out`);
   }
 }
 
@@ -824,6 +907,7 @@ export type ProviderProgress = {
   progress: number;
   stage: string;
   requestId?: string;
+  cancelUrl?: string;
 };
 
 export interface MusicGenerationProvider {
@@ -832,6 +916,7 @@ export interface MusicGenerationProvider {
   generate(
     input: ProviderGenerationInput,
     onProgress?: (progress: ProviderProgress) => Promise<void>,
+    signal?: AbortSignal,
   ): Promise<ProviderGenerationResult>;
 }
 

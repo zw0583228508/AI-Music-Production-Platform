@@ -5,7 +5,15 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { HealthStatusDatabase } from './healthStatusDatabase';
+import type { HealthStatusProviders } from './healthStatusProviders';
+import type { HealthStatusQueues } from './healthStatusQueues';
+import type { HealthStatusStatus } from './healthStatusStatus';
 
 export interface HealthStatus {
-  status: string;
+  status: HealthStatusStatus;
+  database: HealthStatusDatabase;
+  providers: HealthStatusProviders;
+  queues: HealthStatusQueues;
+  timestamp: string;
 }

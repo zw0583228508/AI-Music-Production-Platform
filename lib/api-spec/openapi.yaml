@@ -595,6 +595,42 @@ paths:
                 $ref: "#/components/schemas/GenerationJob"
         "404":
           $ref: "#/components/responses/NotFound"
+  /generation-jobs/{jobId}/cancel:
+    post:
+      operationId: cancelGenerationJob
+      tags: [arrangements]
+      summary: Request cancellation of a queued or running generation job
+      parameters:
+        - $ref: "#/components/parameters/GenerationJobId"
+      responses:
+        "200":
+          description: Cancellation state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerationJob"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The job is already terminal
+  /generation-jobs/{jobId}/retry:
+    post:
+      operationId: retryGenerationJob
+      tags: [arrangements]
+      summary: Retry a recoverable failed generation job
+      parameters:
+        - $ref: "#/components/parameters/GenerationJobId"
+      responses:
+        "202":
+          description: Retry accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerationJob"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The job is not retryable or exhausted its attempts
   /generation-jobs/{jobId}/candidates:
     get:
       operationId: listGenerationCandidates
@@ -702,7 +738,7 @@ paths:
     post:
       operationId: createProjectExport
       tags: [studio]
-      summary: Render and package a versioned project export
+      summary: Queue a versioned project export render
       parameters:
         - $ref: "#/components/parameters/ProjectId"
       requestBody:
@@ -712,14 +748,58 @@ paths:
             schema:
               $ref: "#/components/schemas/ExportInput"
       responses:
-        "201":
-          description: Created export package
+        "202":
+          description: Export render queued
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ExportPackage"
+                $ref: "#/components/schemas/ProductionJob"
         "404":
           $ref: "#/components/responses/NotFound"
+  /production-jobs/{jobId}:
+    get:
+      operationId: getProductionJob
+      tags: [studio]
+      summary: Get an authenticated production job
+      parameters:
+        - $ref: "#/components/parameters/ProductionJobId"
+      responses:
+        "200":
+          description: Production job status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductionJob"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /production-jobs/{jobId}/cancel:
+    post:
+      operationId: cancelProductionJob
+      tags: [studio]
+      summary: Cancel a queued or running production job
+      parameters:
+        - $ref: "#/components/parameters/ProductionJobId"
+      responses:
+        "202":
+          description: Cancellation accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductionJob"
+  /production-jobs/{jobId}/retry:
+    post:
+      operationId: retryProductionJob
+      tags: [studio]
+      summary: Retry a recoverable failed production job
+      parameters:
+        - $ref: "#/components/parameters/ProductionJobId"
+      responses:
+        "202":
+          description: Retry accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductionJob"
   /exports/{exportId}/download:
     get:
       operationId: downloadProjectExport
@@ -784,6 +864,12 @@ components:
       schema:
         type: string
     GenerationJobId:
+      name: jobId
+      in: path
+      required: true
+      schema:
+        type: string
+    ProductionJobId:
       name: jobId
       in: path
       required: true
@@ -1292,8 +1378,28 @@ components:
       properties:
         status:
           type: string
+          enum: [ok, degraded]
+        database:
+          type: string
+          enum: [ok, unavailable]
+        providers:
+          type: object
+          required: [configured, available]
+          properties:
+            configured: { type: number }
+            available: { type: number }
+        queues:
+          type: object
+          additionalProperties:
+            type: number
+        timestamp:
+          type: string
       required:
         - status
+        - database
+        - providers
+        - queues
+        - timestamp
     Error:
       type: object
       properties:
@@ -1635,6 +1741,7 @@ components:
       type: object
       properties:
         candidates: { type: number, minimum: 1, maximum: 3 }
+        idempotencyKey: { type: string, minLength: 1, maxLength: 200 }
         provider:
           type: string
           enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, ANYACCOMP, SYMPHONYGEN, METEOR, MIDI_SAG]
@@ -1676,7 +1783,7 @@ components:
           items: { type: string }
     GenerationJob:
       type: object
-      required: [id, projectId, arrangementId, task, status, provider, modelVersion, hardware, speed, progress, stage, requestedCandidates, seed, parameters, parentArtifactIds, createdAt, updatedAt]
+      required: [id, projectId, arrangementId, task, status, provider, modelVersion, hardware, speed, progress, stage, requestedCandidates, seed, parameters, parentArtifactIds, retryable, attempt, maxAttempts, createdAt, updatedAt]
       properties:
         id: { type: string }
         projectId: { type: string }
@@ -1686,7 +1793,7 @@ components:
           enum: [SEPARATION, TRANSCRIPTION, ACCOMPANIMENT, ORCHESTRATION, ARRANGEMENT]
         status:
           type: string
-          enum: [queued, running, succeeded, failed]
+          enum: [queued, running, cancel_requested, cancelled, succeeded, failed]
         provider:
           type: string
           enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, ANYACCOMP, SYMPHONYGEN, METEOR, MIDI_SAG]
@@ -1710,6 +1817,13 @@ components:
           type: array
           items: { type: string }
         error:
+          type: [string, "null"]
+        errorCode:
+          type: [string, "null"]
+        retryable: { type: boolean }
+        attempt: { type: number, minimum: 0 }
+        maxAttempts: { type: number, minimum: 1 }
+        cancelRequestedAt:
           type: [string, "null"]
         createdAt: { type: string }
         updatedAt: { type: string }
@@ -1817,6 +1931,7 @@ components:
     ExportInput:
       type: object
       properties:
+        idempotencyKey: { type: string, minLength: 1, maxLength: 200 }
         arrangementId: { type: ["string", "null"] }
         includeStems: { type: boolean }
         includeMidi: { type: boolean }
@@ -1825,6 +1940,31 @@ components:
         masterProfile:
           type: string
           enum: [STREAMING, DYNAMIC, CLASSICAL, POP, LOUD, FILM]
+    ProductionJob:
+      type: object
+      required: [id, projectId, kind, status, stage, progress, attempt, maxAttempts, retryable, outputArtifactIds, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        projectId: { type: string }
+        kind: { type: string, enum: [analysis, separation, transcription, arrangement, rendering, mixing, mastering, quality, export] }
+        status: { type: string, enum: [queued, running, succeeded, failed, cancel_requested, cancelled] }
+        stage: { type: string }
+        progress: { type: number }
+        attempt: { type: number }
+        maxAttempts: { type: number }
+        retryable: { type: boolean }
+        error:
+          type: [object, "null"]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            retryable: { type: boolean }
+        outputArtifactIds:
+          type: array
+          items: { type: string }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+        completedAt: { type: ["string", "null"] }
     ExportResult:
       type: object
       required: [id, status, files, bundleUrl, createdAt]
@@ -1948,22 +2088,37 @@ components:
           $ref: "#/components/schemas/TrackPerformance"
     Artifact:
       type: object
-      required: [id, projectId, type, label, version, size, format, state, createdAt]
+      required: [id, projectId, type, label, version, size, format, state, parentIds, technicalMetadata, retentionPolicy, immutable, createdAt]
       properties:
         id: { type: string }
         projectId: { type: string }
         type:
           type: string
-          enum: [SOURCE, NORMALIZED_AUDIO, STEM, ANALYSIS, SONG_MODEL, ARRANGEMENT_PLAN, MIDI, AUDIO_TRACK, MIX, MASTER, EXPORT]
+          enum: [SOURCE, NORMALIZED_AUDIO, STEM, ANALYSIS, SONG_MODEL, ARRANGEMENT_PLAN, TRACK_MODEL, MIDI, AUDIO_TRACK, MIX, MASTER, EXPORT]
         label: { type: string }
         version: { type: number }
         size: { type: string }
         format: { type: string }
         state:
           type: string
-          enum: [rendering, ready, failed]
+          enum: [rendering, ready, failed, expired]
         createdAt: { type: string }
         url: { type: ["string", "null"] }
+        checksum: { type: ["string", "null"] }
+        parentIds:
+          type: array
+          items: { type: string }
+        createdBy: { type: ["string", "null"] }
+        modelVersion: { type: ["string", "null"] }
+        storageUri: { type: ["string", "null"] }
+        technicalMetadata:
+          type: object
+          additionalProperties: true
+        provider: { type: ["string", "null"] }
+        license: { type: ["string", "null"] }
+        retentionPolicy: { type: string }
+        expiresAt: { type: ["string", "null"] }
+        immutable: { type: boolean }
     CopilotInput:
       type: object
       required: [command]

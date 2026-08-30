@@ -3,6 +3,8 @@ import { logger } from "./lib/logger";
 import { syncModelRegistry } from "./lib/musicProviders";
 import { startGenerationRecoveryScheduler } from "./lib/arrangementGeneration";
 import { recoverInterruptedAnalyses } from "./lib/sourceAnalyzer";
+import { startArtifactRetentionScheduler } from "./lib/artifactLifecycle";
+import { recoverExportProductionJobs } from "./lib/exportJobs";
 
 const rawPort = process.env["PORT"];
 
@@ -39,6 +41,16 @@ app.listen(port, (err) => {
       startGenerationRecoveryScheduler(60_000, (error: unknown) => {
         logger.error({ err: error }, "Failed to recover pending generation jobs");
       });
+      const exportRecoveryTimer = setInterval(() => {
+        void recoverExportProductionJobs().catch((error) => {
+          logger.error({ err: error }, "Failed to recover pending export jobs");
+        });
+      }, 30_000);
+      exportRecoveryTimer.unref();
+      void recoverExportProductionJobs().catch((error) => {
+        logger.error({ err: error }, "Failed to recover pending export jobs");
+      });
+      startArtifactRetentionScheduler();
     })
     .catch((error: unknown) => {
       logger.error({ err: error }, "Failed to initialize music model registry and job recovery");
