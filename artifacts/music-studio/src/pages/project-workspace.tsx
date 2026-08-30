@@ -13,6 +13,7 @@ import {
   useUpdateArrangement,
   useListTracks,
   useListArtifacts,
+  useListProjectSources,
   useRunCopilot,
   useCreateProjectExport,
   useGetProductionJob,
@@ -67,6 +68,11 @@ import { cn } from "@/lib/utils";
 import { SourceImport } from "@/components/studio/source-import";
 import { SongModelInspector } from "@/components/studio/song-model-inspector";
 import { ArrangerEditor } from "@/components/studio/arranger-editor";
+import {
+  AudioTransportControls,
+  AudioTransportStatus,
+} from "@/components/studio/audio-transport";
+import { useAudioTransport } from "@/components/studio/use-audio-transport";
 import { EditorConflictError } from "@/components/studio/editor-save-coordinator";
 import type { CopilotEditorResult, EditorSelection } from "@/components/studio/editor-types";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -96,6 +102,7 @@ export default function ProjectWorkspace() {
   const { data: arrangements } = useListArrangements(projectId);
   const { data: tracks } = useListTracks(projectId);
   const { data: artifacts } = useListArtifacts(projectId);
+  const { data: sources } = useListProjectSources(projectId);
   const { data: generationProviders } = useListGenerationProviders({
     query: {
       queryKey: getListGenerationProvidersQueryKey(),
@@ -134,6 +141,27 @@ export default function ProjectWorkspace() {
   const [copilotCommand, setCopilotCommand] = useState("");
   const [editorSelection, setEditorSelection] = useState<EditorSelection>(null);
   const [copilotEditorResult, setCopilotEditorResult] = useState<CopilotEditorResult | null>(null);
+  const currentSource =
+    sources?.find((source) => source.id === songModel?.sourceId)
+    ?? sources?.[0];
+  const playbackUnavailableReason = !currentSource
+    ? "Import audio to enable playback"
+    : currentSource.status !== "ready"
+      ? "Audio is still being prepared"
+      : currentSource.sourceType === "MIDI" || currentSource.contentType === "audio/midi"
+        ? "MIDI has no audio; export a preview to listen"
+        : null;
+  const sourceReady = playbackUnavailableReason === null;
+  const durationHint =
+    currentSource?.durationSeconds
+    ?? songModel?.audio?.durationSeconds
+    ?? parseDuration(workspace?.project.duration);
+  const transport = useAudioTransport(
+    sourceReady && currentSource
+      ? `/api/projects/${projectId}/playback?sourceId=${encodeURIComponent(currentSource.id)}`
+      : null,
+    durationHint,
+  );
   const runCopilot = useRunCopilot();
   const [copilotMessages, setCopilotMessages] = useState<Array<{
     role: 'user'|'assistant';
@@ -522,7 +550,7 @@ export default function ProjectWorkspace() {
   return (
     <div className="flex flex-col h-full bg-background relative overflow-hidden">
       {/* Top Header / Transport */}
-      <header className="h-16 border-b bg-card flex items-center justify-between px-6 shrink-0 shadow-sm z-10 relative">
+      <header className="min-h-16 h-auto border-b bg-card flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2 shadow-sm z-10 relative md:px-6">
         <div className="flex items-center gap-4">
           <div className="flex flex-col">
             <h1 className="text-lg font-bold text-foreground leading-tight flex items-center gap-2">
@@ -548,6 +576,11 @@ export default function ProjectWorkspace() {
             <span className="text-muted-foreground text-xs uppercase">Time</span>
             {analysis?.meter || "—"}
           </div>
+        </div>
+
+        <div className="order-3 flex w-full min-w-0 items-center gap-2 md:order-none md:w-auto">
+          <AudioTransportControls transport={transport} compact />
+          <AudioTransportStatus transport={transport} unavailableReason={playbackUnavailableReason} />
         </div>
 
         <div className="flex items-center gap-2">
@@ -688,6 +721,9 @@ export default function ProjectWorkspace() {
                   onSelectionChange={setEditorSelection}
                   onSectionsChange={handleEditorSectionsChange}
                   onRevisionPreviewChange={setRevisionPreviewing}
+                  playheadSeconds={transport.currentTime}
+                  timelineDurationSeconds={transport.duration || durationHint}
+                  onSeek={transport.seek}
                 />
               ) : (
                 <EmptyState
@@ -1224,4 +1260,13 @@ function generationFailure(error: unknown): { title: string; description: string
       ? error.message
       : "The selected provider could not generate candidates.",
   };
+}
+
+function parseDuration(value: string | undefined): number {
+  if (!value) return 0;
+  const parts = value.split(":").map(Number);
+  if (parts.some((part) => !Number.isFinite(part))) return 0;
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return parts[0] || 0;
 }

@@ -67,6 +67,9 @@ type ArrangerEditorProps = {
   analysis?: Analysis;
   tracks: Track[];
   copilotResult?: CopilotEditorResult | null;
+  playheadSeconds?: number;
+  timelineDurationSeconds?: number;
+  onSeek?: (seconds: number) => void;
   onSelectionChange: (selection: EditorSelection) => void;
   onSectionsChange: (sections: ArrangementSection[]) => Promise<void>;
   onRevisionPreviewChange?: (previewing: boolean) => void;
@@ -205,6 +208,9 @@ export function ArrangerEditor({
   analysis,
   tracks,
   copilotResult,
+  playheadSeconds = 0,
+  timelineDurationSeconds = 0,
+  onSeek,
   onSelectionChange,
   onSectionsChange,
   onRevisionPreviewChange,
@@ -445,11 +451,24 @@ export function ArrangerEditor({
     setDirty(true);
   }, [copilotResult, previewRevisionId]);
 
-  const barCount = useMemo(
-    () => Math.max(88, ...sections.map((section) => section.endBar)),
-    [sections],
+  const beatsPerBar = Number(analysis?.meter?.split("/")[0]) || 4;
+  const bpm = analysis?.bpm || 120;
+  const audioBarCount = timelineDurationSeconds > 0
+    ? Math.max(1, Math.ceil(timelineDurationSeconds / ((60 / bpm) * beatsPerBar)))
+    : 1;
+  const arrangementBarCount = useMemo(
+    () => Math.max(audioBarCount, ...sections.map((section) => section.endBar)),
+    [audioBarCount, sections],
   );
+  const barCount = Math.max(88, arrangementBarCount);
   const timelineWidth = barCount * 42;
+  const playheadBar = timelineDurationSeconds > 0
+    ? 1 + Math.min(1, playheadSeconds / timelineDurationSeconds) * (arrangementBarCount - 1)
+    : 1;
+  const playheadPercent = ((playheadBar - 1) / barCount) * 100;
+  const activePlaybackSection = sections.find((section) =>
+    playheadBar >= section.startBar && playheadBar <= section.endBar
+  );
   const selectedSection = sections.find((section) => section.name === selectedSectionName) ?? sections[0];
   const selectedSectionBeatCount = selectedSection
     ? Math.max(4, (selectedSection.endBar - selectedSection.startBar + 1) * 4)
@@ -474,12 +493,19 @@ export function ArrangerEditor({
     setCcPoints(editor.cc);
   };
 
+  const seekToBar = (bar: number) => {
+    if (!onSeek || timelineDurationSeconds <= 0) return;
+    const ratio = Math.max(0, Math.min(1, (bar - 1) / arrangementBarCount));
+    onSeek(ratio * timelineDurationSeconds);
+  };
+
   const selectSection = (section: EditorSection) => {
     setSelectedSectionName(section.name);
     setSelectedChordId(null);
     setDetailPanel(null);
     loadTrackEditor(section, selectedTrackName);
     onSelectionChange({ kind: "section", sectionName: section.name, startBar: section.startBar, endBar: section.endBar });
+    seekToBar(section.startBar);
   };
 
   const selectChord = (section: EditorSection, chord: ChordEvent) => {
@@ -494,6 +520,14 @@ export function ArrangerEditor({
       startBar: section.startBar,
       endBar: section.endBar,
     });
+    seekToBar(section.startBar + chord.startBeat / 4);
+  };
+
+  const handleTimelineSeek = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!onSeek || timelineDurationSeconds <= 0) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    seekToBar(1 + ratio * barCount);
   };
 
   const updateSelectedSection = (updates: Partial<EditorSection>) => {
@@ -690,9 +724,11 @@ export function ArrangerEditor({
             ))}
           </div>
           <div className="hidden items-center gap-1.5 text-xs text-muted-foreground md:flex">
-            <span className="font-mono text-foreground">01:12:03</span>
+            <span className="font-mono text-foreground">Bar {Math.floor(playheadBar)}</span>
+            <span>·</span>
+            <span className="max-w-28 truncate">{activePlaybackSection?.name ?? "Timeline"}</span>
             <span>/</span>
-            <span>{barCount} bars</span>
+            <span>{arrangementBarCount} bars</span>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -784,8 +820,19 @@ export function ArrangerEditor({
 
             <div className="relative" style={{ minWidth: timelineWidth }}>
               <div
-                className="grid h-9 border-b bg-muted/20"
+                className="grid h-9 cursor-pointer border-b bg-muted/20"
                 style={{ gridTemplateColumns: `repeat(${barCount}, 42px)` }}
+                onClick={handleTimelineSeek}
+                role="slider"
+                aria-label="Arrangement playhead"
+                aria-valuemin={1}
+                aria-valuemax={arrangementBarCount}
+                aria-valuenow={Math.floor(playheadBar)}
+                tabIndex={0}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowLeft") seekToBar(playheadBar - 1);
+                  if (event.key === "ArrowRight") seekToBar(playheadBar + 1);
+                }}
               >
                 {Array.from({ length: barCount }, (_, index) => (
                   <div key={index} className={cn("border-r px-1 pt-2 font-mono text-[9px] text-muted-foreground", index % 4 === 0 && "border-r-foreground/20 font-bold text-foreground")}>
@@ -799,7 +846,14 @@ export function ArrangerEditor({
                     type="button"
                     key={section.name}
                     onClick={() => selectSection(section)}
-                    className={cn("absolute inset-y-1 rounded border px-2 text-left text-[10px] font-semibold transition-shadow hover:shadow-sm", selectedSectionName === section.name ? "border-primary ring-1 ring-primary/40" : "border-primary/20")}
+                    className={cn(
+                      "absolute inset-y-1 rounded border px-2 text-left text-[10px] font-semibold transition-shadow hover:shadow-sm",
+                      selectedSectionName === section.name
+                        ? "border-primary ring-1 ring-primary/40"
+                        : activePlaybackSection?.name === section.name
+                          ? "border-primary/70 ring-1 ring-primary/20"
+                          : "border-primary/20",
+                    )}
                     style={{ left: `${((section.startBar - 1) / barCount) * 100}%`, width: `${((section.endBar - section.startBar + 1) / barCount) * 100}%`, backgroundColor: `${SECTION_COLORS[index % SECTION_COLORS.length]}16` }}
                   >
                     {section.name}
@@ -821,6 +875,13 @@ export function ArrangerEditor({
                     {chord.symbol}{chord.inversion ? ` / ${chord.inversion}` : ""}
                   </button>
                 )))}
+              </div>
+              <div
+                className="pointer-events-none absolute inset-y-0 z-30 w-px bg-primary shadow-[0_0_0_1px_hsl(var(--primary)/0.2)]"
+                style={{ left: `${playheadPercent}%` }}
+                aria-hidden="true"
+              >
+                <span className="absolute -left-[4px] top-0 h-0 w-0 border-x-[4px] border-t-[6px] border-x-transparent border-t-primary" />
               </div>
               <div className="relative h-8 border-b bg-amber-500/[0.03]">
                 {sections.flatMap((section) => section.markers.map((marker) => (

@@ -114,6 +114,7 @@ import {
   deleteAnalysisObjects,
   deleteExportObject,
   deletePrivateObject,
+  getPrivateObject,
   isSourceObjectPath,
   saveExportObject,
 } from "../lib/objectStorage";
@@ -1367,6 +1368,113 @@ router.get("/projects/:projectId/sources", async (req, res): Promise<void> => {
   res.json(ListProjectSourcesResponse.parse(
     sources.map((source) => sourceResponse(source, attemptsBySource.get(source.id))),
   ));
+});
+
+router.get("/projects/:projectId/playback", async (req, res): Promise<void> => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const [project] = await db
+    .select()
+    .from(musicProjectsTable)
+    .where(and(
+      eq(musicProjectsTable.id, req.params.projectId),
+      eq(musicProjectsTable.ownerId, req.user.id),
+    ))
+    .limit(1);
+  if (!project) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+  const [source] = await db
+    .select()
+    .from(projectSourcesTable)
+    .where(and(
+      eq(projectSourcesTable.projectId, project.id),
+      typeof req.query.sourceId === "string"
+        ? eq(projectSourcesTable.id, req.query.sourceId)
+        : sql`true`,
+    ))
+    .orderBy(desc(projectSourcesTable.createdAt))
+    .limit(1);
+  if (!source || source.status !== "ready") {
+    res.status(409).json({
+      code: "PLAYBACK_UNAVAILABLE",
+      error: source
+        ? "The source is still being analyzed. Playback will be available when analysis is ready."
+        : "Import and analyze a source before starting playback.",
+    });
+    return;
+  }
+  if (source.sourceType === "MIDI" || source.contentType === "audio/midi") {
+    res.status(409).json({
+      code: "PLAYBACK_UNAVAILABLE",
+      error: "MIDI sources do not contain browser-playable audio. Export the arrangement to audition it.",
+    });
+    return;
+  }
+
+  // Proxies are named by source id, so this lookup cannot drift to a different
+  // upload when multiple analyses finish out of order.
+  const safeSourceId = source.id.replace(/[^a-zA-Z0-9_-]/g, "");
+  const proxyPath = safeSourceId ? `proxies/${safeSourceId}.flac` : null;
+  const proxyFile = proxyPath ? await getPrivateObject(proxyPath) : null;
+  const file = proxyFile
+    ?? await getPrivateObject(source.objectPath.slice("/objects/".length));
+  if (!file) {
+    res.status(404).json({ error: "The source audio is no longer available." });
+    return;
+  }
+  const [metadata] = await file.getMetadata();
+  const totalBytes = Number(metadata.size ?? 0);
+  if (!Number.isFinite(totalBytes) || totalBytes <= 0) {
+    res.status(404).json({ error: "The source audio has no playable content." });
+    return;
+  }
+  const contentType = proxyFile ? "audio/flac" : source.contentType;
+  const rangeHeader = req.headers.range;
+  let start = 0;
+  let end = totalBytes - 1;
+  if (rangeHeader) {
+    const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader);
+    if (!match || (!match[1] && !match[2])) {
+      res.status(416).setHeader("Content-Range", `bytes */${totalBytes}`).end();
+      return;
+    }
+    if (match[1]) {
+      start = Number(match[1]);
+      end = match[2] ? Number(match[2]) : totalBytes - 1;
+    } else {
+      const suffixLength = Number(match[2]);
+      start = Math.max(0, totalBytes - suffixLength);
+    }
+    if (
+      !Number.isSafeInteger(start) ||
+      !Number.isSafeInteger(end) ||
+      start < 0 ||
+      end < start ||
+      start >= totalBytes
+    ) {
+      res.status(416).setHeader("Content-Range", `bytes */${totalBytes}`).end();
+      return;
+    }
+    end = Math.min(end, totalBytes - 1);
+    res.status(206);
+    res.setHeader("Content-Range", `bytes ${start}-${end}/${totalBytes}`);
+  }
+  res.setHeader("Accept-Ranges", "bytes");
+  res.setHeader("Content-Type", contentType || "application/octet-stream");
+  res.setHeader("Content-Length", String(end - start + 1));
+  res.setHeader("Content-Disposition", "inline");
+  res.setHeader("Cache-Control", "private, no-store");
+  file.createReadStream(rangeHeader ? { start, end } : undefined)
+    .on("error", (error) => {
+      req.log.error({ err: error, projectId: project.id }, "Failed to stream playback audio");
+      if (!res.headersSent) res.status(500).end();
+      else res.destroy(error);
+    })
+    .pipe(res);
 });
 
 router.post("/projects/:projectId/sources", async (req, res): Promise<void> => {
