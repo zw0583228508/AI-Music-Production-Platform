@@ -19,16 +19,23 @@ import {
   GetDashboardResponse,
   GetProjectParams,
   GetProjectResponse,
+  GetProjectSongModelParams,
+  GetProjectSongModelResponse,
   ListArrangementsParams,
   ListArrangementsResponse,
   ListArtifactsParams,
   ListArtifactsResponse,
   ListProjectsResponse,
+  ListProjectSourcesParams,
+  ListProjectSourcesResponse,
   ListTracksParams,
   ListTracksResponse,
   RunCopilotBody,
   RunCopilotParams,
   RunCopilotResponse,
+  RegisterProjectSourceBody,
+  RegisterProjectSourceParams,
+  RegisterProjectSourceResponse,
   UpdateArrangementBody,
   UpdateArrangementParams,
   UpdateArrangementResponse,
@@ -39,6 +46,8 @@ import {
   musicArtifactsTable,
   musicExportsTable,
   musicProjectsTable,
+  projectSourcesTable,
+  songModelsTable,
   studioActivitiesTable,
   tracksTable,
 } from "@workspace/db";
@@ -48,6 +57,7 @@ import {
   renderArrangementExport,
 } from "../lib/exportEngine";
 import { deleteExportObject, saveExportObject } from "../lib/objectStorage";
+import { analyzeProjectSource } from "../lib/sourceAnalyzer";
 
 const router: IRouter = Router();
 
@@ -87,6 +97,38 @@ const artifactResponse = (
 ) => ({
   ...artifact,
   createdAt: iso(artifact.createdAt),
+});
+
+const sourceResponse = (
+  source: typeof projectSourcesTable.$inferSelect,
+) => ({
+  id: source.id,
+  projectId: source.projectId,
+  name: source.name,
+  size: source.size,
+  contentType: source.contentType,
+  sourceType: source.sourceType,
+  status: source.status,
+  progress: source.progress,
+  durationSeconds: source.durationSeconds,
+  sampleRate: source.sampleRate,
+  channels: source.channels,
+  error: source.error,
+  createdAt: iso(source.createdAt),
+});
+
+const songModelResponse = (
+  row: typeof songModelsTable.$inferSelect,
+) => ({
+  id: row.id,
+  projectId: row.projectId,
+  sourceId: row.sourceId,
+  version: row.version,
+  status: row.status,
+  ...row.model,
+  providers: row.providers,
+  confidence: row.confidence,
+  createdAt: iso(row.createdAt),
 });
 
 async function ensureSeeded(): Promise<void> {
@@ -230,6 +272,7 @@ router.post("/projects", async (req, res): Promise<void> => {
     name: body.data.name,
     sourceType: body.data.sourceType,
     sourceName: body.data.sourceName ?? null,
+    ownerId: req.isAuthenticated() ? req.user.id : null,
     status: "draft",
     coverColor: "#06b6d4",
   }).returning();
@@ -308,6 +351,102 @@ router.post("/projects/:projectId/analyze", async (req, res): Promise<void> => {
     format: "JSON",
   });
   res.json(AnalyzeProjectResponse.parse(analysisResponse(project)));
+});
+
+router.get("/projects/:projectId/sources", async (req, res): Promise<void> => {
+  const params = ListProjectSourcesParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const sources = await db
+    .select()
+    .from(projectSourcesTable)
+    .where(eq(projectSourcesTable.projectId, params.data.projectId))
+    .orderBy(desc(projectSourcesTable.createdAt));
+  res.json(ListProjectSourcesResponse.parse(sources.map(sourceResponse)));
+});
+
+router.post("/projects/:projectId/sources", async (req, res): Promise<void> => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const params = RegisterProjectSourceParams.safeParse(req.params);
+  const body = RegisterProjectSourceBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: "Invalid source metadata" });
+    return;
+  }
+  const [project] = await db
+    .select()
+    .from(musicProjectsTable)
+    .where(eq(musicProjectsTable.id, params.data.projectId))
+    .limit(1);
+  if (!project) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+  if (project.ownerId && project.ownerId !== req.user.id) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+  const allowed =
+    body.data.contentType.startsWith("audio/") ||
+    body.data.contentType.startsWith("video/") ||
+    /\.(mid|midi)$/i.test(body.data.name);
+  if (!allowed) {
+    res.status(415).json({ error: "Use WAV, MP3, M4A, MIDI, or a video file" });
+    return;
+  }
+  if (!body.data.objectPath.startsWith("/objects/uploads/")) {
+    res.status(400).json({ error: "Invalid uploaded object path" });
+    return;
+  }
+  const [source] = await db.insert(projectSourcesTable).values({
+    id: randomUUID(),
+    projectId: project.id,
+    ownerId: req.user.id,
+    objectPath: body.data.objectPath,
+    name: body.data.name,
+    size: body.data.size,
+    contentType: body.data.contentType,
+    sourceType: body.data.sourceType,
+    status: "queued",
+    progress: 4,
+  }).returning();
+  await db.update(musicProjectsTable)
+    .set({
+      ownerId: project.ownerId ?? req.user.id,
+      sourceName: body.data.name,
+      sourceType: body.data.sourceType,
+      status: "analyzing",
+      updatedAt: new Date(),
+    })
+    .where(eq(musicProjectsTable.id, project.id));
+  setImmediate(() => {
+    void analyzeProjectSource(source.id);
+  });
+  res.status(202).json(RegisterProjectSourceResponse.parse(sourceResponse(source)));
+});
+
+router.get("/projects/:projectId/song-model", async (req, res): Promise<void> => {
+  const params = GetProjectSongModelParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [songModel] = await db
+    .select()
+    .from(songModelsTable)
+    .where(eq(songModelsTable.projectId, params.data.projectId))
+    .orderBy(desc(songModelsTable.version))
+    .limit(1);
+  if (!songModel) {
+    res.status(404).json({ error: "Song Model not ready" });
+    return;
+  }
+  res.json(GetProjectSongModelResponse.parse(songModelResponse(songModel)));
 });
 
 router.get("/projects/:projectId/arrangements", async (req, res): Promise<void> => {

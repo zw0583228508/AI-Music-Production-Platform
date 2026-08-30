@@ -52,6 +52,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { SourceImport } from "@/components/studio/source-import";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -280,6 +281,14 @@ export default function ProjectWorkspace() {
         </div>
 
         <div className="flex items-center gap-2">
+          <SourceImport
+            projectId={projectId}
+            sourceType={project.sourceType}
+            onReady={() => {
+              void queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(projectId) });
+              void queryClient.invalidateQueries({ queryKey: getListArtifactsQueryKey(projectId) });
+            }}
+          />
           <Button variant="outline" size="sm" className="font-mono text-xs hidden sm:flex">
             <Layers className="h-3.5 w-3.5 mr-1.5" />
             Artifacts ({artifacts?.length ?? workspace.artifacts?.length ?? 0})

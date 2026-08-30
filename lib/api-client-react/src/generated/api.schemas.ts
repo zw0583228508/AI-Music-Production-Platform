@@ -5,6 +5,211 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+export interface AuthUser {
+  id: string;
+  /** @nullable */
+  email: string | null;
+  /** @nullable */
+  firstName: string | null;
+  /** @nullable */
+  lastName: string | null;
+  /** @nullable */
+  profileImageUrl: string | null;
+}
+
+export interface AuthUserEnvelope {
+  user: AuthUser | null;
+}
+
+export interface MobileTokenExchangeRequest {
+  /** @minLength 1 */
+  code: string;
+  /** @minLength 1 */
+  code_verifier: string;
+  /** @minLength 1 */
+  redirect_uri: string;
+  /** @minLength 1 */
+  state: string;
+  nonce?: string;
+}
+
+export interface MobileTokenExchangeSuccess {
+  token: string;
+}
+
+export interface LogoutSuccess {
+  success: boolean;
+}
+
+export interface UploadUrlRequest {
+  /** @minLength 1 */
+  name: string;
+  /**
+     * @minimum 1
+     * @maximum 524288000
+     */
+  size: number;
+  /** @minLength 1 */
+  contentType: string;
+}
+
+export interface UploadUrlResponse {
+  uploadURL: string;
+  objectPath: string;
+  metadata: UploadUrlRequest;
+}
+
+export type RegisterSourceInputSourceType = typeof RegisterSourceInputSourceType[keyof typeof RegisterSourceInputSourceType];
+
+
+export const RegisterSourceInputSourceType = {
+  FULL_SONG: 'FULL_SONG',
+  VOCAL_ONLY: 'VOCAL_ONLY',
+  SOLO_INSTRUMENT: 'SOLO_INSTRUMENT',
+  INSTRUMENTAL: 'INSTRUMENTAL',
+  MIDI: 'MIDI',
+  VIDEO: 'VIDEO',
+} as const;
+
+export interface RegisterSourceInput {
+  /** @minLength 1 */
+  objectPath: string;
+  /** @minLength 1 */
+  name: string;
+  /**
+     * @minimum 1
+     * @maximum 524288000
+     */
+  size: number;
+  /** @minLength 1 */
+  contentType: string;
+  sourceType: RegisterSourceInputSourceType;
+}
+
+export type ProjectSourceSourceType = typeof ProjectSourceSourceType[keyof typeof ProjectSourceSourceType];
+
+
+export const ProjectSourceSourceType = {
+  FULL_SONG: 'FULL_SONG',
+  VOCAL_ONLY: 'VOCAL_ONLY',
+  SOLO_INSTRUMENT: 'SOLO_INSTRUMENT',
+  INSTRUMENTAL: 'INSTRUMENTAL',
+  MIDI: 'MIDI',
+  VIDEO: 'VIDEO',
+} as const;
+
+export type ProjectSourceStatus = typeof ProjectSourceStatus[keyof typeof ProjectSourceStatus];
+
+
+export const ProjectSourceStatus = {
+  queued: 'queued',
+  preprocessing: 'preprocessing',
+  analyzing: 'analyzing',
+  ready: 'ready',
+  failed: 'failed',
+} as const;
+
+export interface ProjectSource {
+  id: string;
+  projectId: string;
+  name: string;
+  size: number;
+  contentType: string;
+  sourceType: ProjectSourceSourceType;
+  status: ProjectSourceStatus;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  progress: number;
+  /** @nullable */
+  durationSeconds?: number | null;
+  /** @nullable */
+  sampleRate?: number | null;
+  /** @nullable */
+  channels?: number | null;
+  /** @nullable */
+  error?: string | null;
+  createdAt: string;
+}
+
+export type SongModelStatus = typeof SongModelStatus[keyof typeof SongModelStatus];
+
+
+export const SongModelStatus = {
+  ready: 'ready',
+} as const;
+
+export interface SongModelAudio {
+  name: string;
+  contentType: string;
+  size: number;
+  durationSeconds: number;
+  sampleRate: number;
+  channels: number;
+}
+
+export interface TempoEvent {
+  time: number;
+  bpm: number;
+  confidence: number;
+}
+
+export interface MeterEvent {
+  bar: number;
+  meter: string;
+  confidence: number;
+}
+
+export interface KeyEvent {
+  time: number;
+  key: string;
+  confidence: number;
+}
+
+export interface NoteEvent {
+  start: number;
+  end: number;
+  pitch: number;
+  velocity: number;
+  confidence: number;
+  source: string;
+}
+
+export interface ChordEvent {
+  start: number;
+  end: number;
+  symbol: string;
+  roman: string;
+  confidence: number;
+}
+
+export interface Section {
+  name: string;
+  startBar: number;
+  endBar: number;
+  energy: number;
+}
+
+export interface SongModel {
+  id: string;
+  projectId: string;
+  sourceId: string;
+  version: number;
+  status: SongModelStatus;
+  audio: SongModelAudio;
+  tempoMap: TempoEvent[];
+  meterMap: MeterEvent[];
+  keyMap: KeyEvent[];
+  melody: NoteEvent[];
+  chords: ChordEvent[];
+  sections: Section[];
+  energy: number[];
+  providers: string[];
+  confidence: number;
+  createdAt: string;
+}
+
 export interface HealthStatus {
   status: string;
 }
@@ -90,13 +295,6 @@ export interface Project {
   key: string;
   bpm: number;
   coverColor?: string;
-}
-
-export interface Section {
-  name: string;
-  startBar: number;
-  endBar: number;
-  energy: number;
 }
 
 export interface Analysis {
@@ -393,4 +591,12 @@ export interface CopilotResult {
  * Resource not found
  */
 export type NotFoundResponse = Error;
+
+export type BeginBrowserLoginParams = {
+returnTo?: string;
+};
+
+export type LogoutBrowserSessionParams = {
+returnTo?: string;
+};
 

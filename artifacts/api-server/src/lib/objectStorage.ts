@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Storage, type File } from "@google-cloud/storage";
 
 const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
@@ -41,6 +42,51 @@ function privateObjectDir(): string {
     throw new Error("PRIVATE_OBJECT_DIR is not configured");
   }
   return value.replace(/\/$/, "");
+}
+
+async function signObjectUrl(
+  bucketName: string,
+  objectName: string,
+): Promise<string> {
+  const response = await fetch(
+    `${REPLIT_SIDECAR_ENDPOINT}/object-storage/signed-object-url`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        bucket_name: bucketName,
+        object_name: objectName,
+        method: "PUT",
+        expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+      }),
+      signal: AbortSignal.timeout(30_000),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Failed to create upload URL (${response.status})`);
+  }
+  const payload = await response.json() as { signed_url?: string };
+  if (!payload.signed_url) throw new Error("Upload URL response was invalid");
+  return payload.signed_url;
+}
+
+export async function createSourceUploadTarget(): Promise<{
+  uploadURL: string;
+  objectPath: string;
+}> {
+  const relativePath = `uploads/${randomUUID()}`;
+  const { bucketName, objectName } = parseObjectPath(
+    `${privateObjectDir()}/${relativePath}`,
+  );
+  return {
+    uploadURL: await signObjectUrl(bucketName, objectName),
+    objectPath: `/objects/${relativePath}`,
+  };
+}
+
+export async function getSourceObject(objectPath: string): Promise<File | null> {
+  if (!objectPath.startsWith("/objects/uploads/")) return null;
+  return getPrivateObject(objectPath.slice("/objects/".length));
 }
 
 export async function saveExportObject(

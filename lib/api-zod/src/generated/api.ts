@@ -35,6 +35,108 @@ export const GetDashboardResponse = zod.object({
 
 
 /**
+ * @summary Get the current authentication state
+ */
+export const GetCurrentAuthUserResponse = zod.object({
+  "user": zod.union([zod.object({
+  "id": zod.string(),
+  "email": zod.string().nullable(),
+  "firstName": zod.string().nullable(),
+  "lastName": zod.string().nullable(),
+  "profileImageUrl": zod.string().nullable()
+}),zod.null()])
+})
+
+
+/**
+ * @summary Start browser login
+ */
+export const BeginBrowserLoginQueryParams = zod.object({
+  "returnTo": zod.coerce.string().optional()
+})
+
+export const BeginBrowserLoginResponse = zod.void()
+
+
+/**
+ * @summary Complete browser login
+ */
+export const HandleBrowserLoginCallbackResponse = zod.void()
+
+
+/**
+ * @summary End browser session
+ */
+export const LogoutBrowserSessionQueryParams = zod.object({
+  "returnTo": zod.coerce.string().optional()
+})
+
+export const LogoutBrowserSessionResponse = zod.void()
+
+
+/**
+ * @summary Exchange a mobile authorization code
+ */
+
+
+
+
+
+
+export const ExchangeMobileAuthorizationCodeBody = zod.object({
+  "code": zod.string().min(1),
+  "code_verifier": zod.string().min(1),
+  "redirect_uri": zod.string().min(1),
+  "state": zod.string().min(1),
+  "nonce": zod.string().optional()
+})
+
+export const ExchangeMobileAuthorizationCodeResponse = zod.object({
+  "token": zod.string()
+})
+
+
+/**
+ * @summary Delete a mobile session
+ */
+export const LogoutMobileSessionResponse = zod.object({
+  "success": zod.boolean()
+})
+
+
+/**
+ * @summary Request a protected direct-upload URL
+ */
+
+export const requestSourceUploadUrlBodySizeMax = 524288000;
+
+
+
+
+export const RequestSourceUploadUrlBody = zod.object({
+  "name": zod.string().min(1),
+  "size": zod.number().min(1).max(requestSourceUploadUrlBodySizeMax),
+  "contentType": zod.string().min(1)
+})
+
+
+export const requestSourceUploadUrlResponseMetadataSizeMax = 524288000;
+
+
+
+
+export const RequestSourceUploadUrlResponse = zod.object({
+  "uploadURL": zod.string(),
+  "objectPath": zod.string(),
+  "metadata": zod.object({
+  "name": zod.string().min(1),
+  "size": zod.number().min(1).max(requestSourceUploadUrlResponseMetadataSizeMax),
+  "contentType": zod.string().min(1)
+})
+})
+
+
+/**
  * @summary List music projects
  */
 export const ListProjectsResponseItem = zod.object({
@@ -181,6 +283,144 @@ export const AnalyzeProjectResponse = zod.object({
 })),
   "energy": zod.array(zod.number()),
   "providers": zod.array(zod.string())
+})
+
+
+/**
+ * @summary List imported source recordings
+ */
+export const ListProjectSourcesParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+export const listProjectSourcesResponseProgressMin = 0;
+export const listProjectSourcesResponseProgressMax = 100;
+
+
+
+export const ListProjectSourcesResponseItem = zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "name": zod.string(),
+  "size": zod.number(),
+  "contentType": zod.string(),
+  "sourceType": zod.enum(['FULL_SONG', 'VOCAL_ONLY', 'SOLO_INSTRUMENT', 'INSTRUMENTAL', 'MIDI', 'VIDEO']),
+  "status": zod.enum(['queued', 'preprocessing', 'analyzing', 'ready', 'failed']),
+  "progress": zod.number().min(listProjectSourcesResponseProgressMin).max(listProjectSourcesResponseProgressMax),
+  "durationSeconds": zod.number().nullish(),
+  "sampleRate": zod.number().nullish(),
+  "channels": zod.number().nullish(),
+  "error": zod.string().nullish(),
+  "createdAt": zod.string()
+})
+export const ListProjectSourcesResponse = zod.array(ListProjectSourcesResponseItem)
+
+
+/**
+ * @summary Register an uploaded source and begin analysis
+ */
+export const RegisterProjectSourceParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+
+
+export const registerProjectSourceBodySizeMax = 524288000;
+
+
+
+
+export const RegisterProjectSourceBody = zod.object({
+  "objectPath": zod.string().min(1),
+  "name": zod.string().min(1),
+  "size": zod.number().min(1).max(registerProjectSourceBodySizeMax),
+  "contentType": zod.string().min(1),
+  "sourceType": zod.enum(['FULL_SONG', 'VOCAL_ONLY', 'SOLO_INSTRUMENT', 'INSTRUMENTAL', 'MIDI', 'VIDEO'])
+})
+
+export const registerProjectSourceResponseProgressMin = 0;
+export const registerProjectSourceResponseProgressMax = 100;
+
+
+
+export const RegisterProjectSourceResponse = zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "name": zod.string(),
+  "size": zod.number(),
+  "contentType": zod.string(),
+  "sourceType": zod.enum(['FULL_SONG', 'VOCAL_ONLY', 'SOLO_INSTRUMENT', 'INSTRUMENTAL', 'MIDI', 'VIDEO']),
+  "status": zod.enum(['queued', 'preprocessing', 'analyzing', 'ready', 'failed']),
+  "progress": zod.number().min(registerProjectSourceResponseProgressMin).max(registerProjectSourceResponseProgressMax),
+  "durationSeconds": zod.number().nullish(),
+  "sampleRate": zod.number().nullish(),
+  "channels": zod.number().nullish(),
+  "error": zod.string().nullish(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Get the latest canonical Song Model
+ */
+export const GetProjectSongModelParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+export const GetProjectSongModelResponse = zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "sourceId": zod.string(),
+  "version": zod.number(),
+  "status": zod.enum(['ready']),
+  "audio": zod.object({
+  "name": zod.string(),
+  "contentType": zod.string(),
+  "size": zod.number(),
+  "durationSeconds": zod.number(),
+  "sampleRate": zod.number(),
+  "channels": zod.number()
+}),
+  "tempoMap": zod.array(zod.object({
+  "time": zod.number(),
+  "bpm": zod.number(),
+  "confidence": zod.number()
+})),
+  "meterMap": zod.array(zod.object({
+  "bar": zod.number(),
+  "meter": zod.string(),
+  "confidence": zod.number()
+})),
+  "keyMap": zod.array(zod.object({
+  "time": zod.number(),
+  "key": zod.string(),
+  "confidence": zod.number()
+})),
+  "melody": zod.array(zod.object({
+  "start": zod.number(),
+  "end": zod.number(),
+  "pitch": zod.number(),
+  "velocity": zod.number(),
+  "confidence": zod.number(),
+  "source": zod.string()
+})),
+  "chords": zod.array(zod.object({
+  "start": zod.number(),
+  "end": zod.number(),
+  "symbol": zod.string(),
+  "roman": zod.string(),
+  "confidence": zod.number()
+})),
+  "sections": zod.array(zod.object({
+  "name": zod.string(),
+  "startBar": zod.number(),
+  "endBar": zod.number(),
+  "energy": zod.number()
+})),
+  "energy": zod.array(zod.number()),
+  "providers": zod.array(zod.string()),
+  "confidence": zod.number(),
+  "createdAt": zod.string()
 })
 
 

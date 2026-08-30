@@ -18,6 +18,10 @@ tags:
     description: Arrangement plans and generations
   - name: studio
     description: Tracks, artifacts, and copilot commands
+  - name: Auth
+    description: Browser authentication
+  - name: sources
+    description: Source upload, preprocessing, and Song Model generation
 paths:
   /healthz:
     get:
@@ -44,6 +48,99 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Dashboard"
+  /auth/user:
+    get:
+      tags: [Auth]
+      operationId: getCurrentAuthUser
+      summary: Get the current authentication state
+      responses:
+        "200":
+          description: Authentication state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUserEnvelope"
+  /login:
+    get:
+      tags: [Auth]
+      operationId: beginBrowserLogin
+      summary: Start browser login
+      parameters:
+        - name: returnTo
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "302": { description: Redirect to identity provider }
+  /callback:
+    get:
+      tags: [Auth]
+      operationId: handleBrowserLoginCallback
+      summary: Complete browser login
+      responses:
+        "302": { description: Redirect after login }
+  /logout:
+    get:
+      tags: [Auth]
+      operationId: logoutBrowserSession
+      summary: End browser session
+      parameters:
+        - name: returnTo
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "302": { description: Redirect after logout }
+  /mobile-auth/token-exchange:
+    post:
+      tags: [Auth]
+      operationId: exchangeMobileAuthorizationCode
+      summary: Exchange a mobile authorization code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MobileTokenExchangeRequest"
+      responses:
+        "200":
+          description: Session token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobileTokenExchangeSuccess"
+  /mobile-auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logoutMobileSession
+      summary: Delete a mobile session
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogoutSuccess"
+  /storage/uploads/request-url:
+    post:
+      tags: [sources]
+      operationId: requestSourceUploadUrl
+      summary: Request a protected direct-upload URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadUrlRequest"
+      responses:
+        "200":
+          description: Direct upload target
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadUrlResponse"
+        "401":
+          description: Login required
   /projects:
     get:
       operationId: listProjects
@@ -111,6 +208,61 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Analysis"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /projects/{projectId}/sources:
+    get:
+      operationId: listProjectSources
+      tags: [sources]
+      summary: List imported source recordings
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Source recordings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectSource"
+    post:
+      operationId: registerProjectSource
+      tags: [sources]
+      summary: Register an uploaded source and begin analysis
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterSourceInput"
+      responses:
+        "202":
+          description: Source accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectSource"
+        "401":
+          description: Login required
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /projects/{projectId}/song-model:
+    get:
+      operationId: getProjectSongModel
+      tags: [sources]
+      summary: Get the latest canonical Song Model
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Latest Song Model
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SongModel"
         "404":
           $ref: "#/components/responses/NotFound"
   /projects/{projectId}/arrangements:
@@ -288,6 +440,184 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
   schemas:
+    AuthUser:
+      type: object
+      required: [id, email, firstName, lastName, profileImageUrl]
+      properties:
+        id: { type: string }
+        email: { type: ["string", "null"] }
+        firstName: { type: ["string", "null"] }
+        lastName: { type: ["string", "null"] }
+        profileImageUrl: { type: ["string", "null"] }
+    AuthUserEnvelope:
+      type: object
+      required: [user]
+      properties:
+        user:
+          oneOf:
+            - $ref: "#/components/schemas/AuthUser"
+            - type: "null"
+    MobileTokenExchangeRequest:
+      type: object
+      required: [code, code_verifier, redirect_uri, state]
+      properties:
+        code: { type: string, minLength: 1 }
+        code_verifier: { type: string, minLength: 1 }
+        redirect_uri: { type: string, minLength: 1 }
+        state: { type: string, minLength: 1 }
+        nonce: { type: string }
+    MobileTokenExchangeSuccess:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string }
+    LogoutSuccess:
+      type: object
+      required: [success]
+      properties:
+        success: { type: boolean }
+    UploadUrlRequest:
+      type: object
+      required: [name, size, contentType]
+      properties:
+        name: { type: string, minLength: 1 }
+        size: { type: number, minimum: 1, maximum: 524288000 }
+        contentType: { type: string, minLength: 1 }
+    UploadUrlResponse:
+      type: object
+      required: [uploadURL, objectPath, metadata]
+      properties:
+        uploadURL: { type: string }
+        objectPath: { type: string }
+        metadata:
+          $ref: "#/components/schemas/UploadUrlRequest"
+    RegisterSourceInput:
+      type: object
+      required: [objectPath, name, size, contentType, sourceType]
+      properties:
+        objectPath: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1 }
+        size: { type: number, minimum: 1, maximum: 524288000 }
+        contentType: { type: string, minLength: 1 }
+        sourceType:
+          type: string
+          enum: [FULL_SONG, VOCAL_ONLY, SOLO_INSTRUMENT, INSTRUMENTAL, MIDI, VIDEO]
+    ProjectSource:
+      type: object
+      required: [id, projectId, name, size, contentType, sourceType, status, progress, createdAt]
+      properties:
+        id: { type: string }
+        projectId: { type: string }
+        name: { type: string }
+        size: { type: number }
+        contentType: { type: string }
+        sourceType:
+          type: string
+          enum: [FULL_SONG, VOCAL_ONLY, SOLO_INSTRUMENT, INSTRUMENTAL, MIDI, VIDEO]
+        status:
+          type: string
+          enum: [queued, preprocessing, analyzing, ready, failed]
+        progress: { type: number, minimum: 0, maximum: 100 }
+        durationSeconds: { type: ["number", "null"] }
+        sampleRate: { type: ["number", "null"] }
+        channels: { type: ["number", "null"] }
+        error: { type: ["string", "null"] }
+        createdAt: { type: string }
+    SongModel:
+      type: object
+      required: [id, projectId, sourceId, version, status, audio, tempoMap, meterMap, keyMap, melody, chords, sections, energy, providers, confidence, createdAt]
+      properties:
+        id: { type: string }
+        projectId: { type: string }
+        sourceId: { type: string }
+        version: { type: number }
+        status:
+          type: string
+          enum: [ready]
+        audio:
+          $ref: "#/components/schemas/SongModelAudio"
+        tempoMap:
+          type: array
+          items:
+            $ref: "#/components/schemas/TempoEvent"
+        meterMap:
+          type: array
+          items:
+            $ref: "#/components/schemas/MeterEvent"
+        keyMap:
+          type: array
+          items:
+            $ref: "#/components/schemas/KeyEvent"
+        melody:
+          type: array
+          items:
+            $ref: "#/components/schemas/NoteEvent"
+        chords:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChordEvent"
+        sections:
+          type: array
+          items:
+            $ref: "#/components/schemas/Section"
+        energy:
+          type: array
+          items: { type: number }
+        providers:
+          type: array
+          items: { type: string }
+        confidence: { type: number }
+        createdAt: { type: string }
+    SongModelAudio:
+      type: object
+      required: [name, contentType, size, durationSeconds, sampleRate, channels]
+      properties:
+        name: { type: string }
+        contentType: { type: string }
+        size: { type: number }
+        durationSeconds: { type: number }
+        sampleRate: { type: number }
+        channels: { type: number }
+    TempoEvent:
+      type: object
+      required: [time, bpm, confidence]
+      properties:
+        time: { type: number }
+        bpm: { type: number }
+        confidence: { type: number }
+    MeterEvent:
+      type: object
+      required: [bar, meter, confidence]
+      properties:
+        bar: { type: number }
+        meter: { type: string }
+        confidence: { type: number }
+    KeyEvent:
+      type: object
+      required: [time, key, confidence]
+      properties:
+        time: { type: number }
+        key: { type: string }
+        confidence: { type: number }
+    NoteEvent:
+      type: object
+      required: [start, end, pitch, velocity, confidence, source]
+      properties:
+        start: { type: number }
+        end: { type: number }
+        pitch: { type: number }
+        velocity: { type: number }
+        confidence: { type: number }
+        source: { type: string }
+    ChordEvent:
+      type: object
+      required: [start, end, symbol, roman, confidence]
+      properties:
+        start: { type: number }
+        end: { type: number }
+        symbol: { type: string }
+        roman: { type: string }
+        confidence: { type: number }
     HealthStatus:
       type: object
       properties:

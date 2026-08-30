@@ -1,0 +1,258 @@
+import { useEffect, useRef, useState } from "react";
+import {
+  getListProjectSourcesQueryKey,
+  ProjectSourceType,
+  useListProjectSources,
+  useRegisterProjectSource,
+  useRequestSourceUploadUrl,
+} from "@workspace/api-client-react";
+import { useAuth } from "@workspace/replit-auth-web";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  AlertCircle,
+  CheckCircle2,
+  FileAudio,
+  Loader2,
+  LogIn,
+  Upload,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { useToast } from "@/hooks/use-toast";
+
+const MAX_SIZE = 500 * 1024 * 1024;
+
+function uploadFile(
+  file: File,
+  uploadUrl: string,
+  onProgress: (value: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("PUT", uploadUrl);
+    request.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    };
+    request.onload = () => {
+      if (request.status >= 200 && request.status < 300) resolve();
+      else reject(new Error(`Upload failed (${request.status})`));
+    };
+    request.onerror = () => reject(new Error("The upload connection failed"));
+    request.send(file);
+  });
+}
+
+export function SourceImport({
+  projectId,
+  sourceType,
+  onReady,
+}: {
+  projectId: string;
+  sourceType: ProjectSourceType;
+  onReady: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
+  const readySourceRef = useRef<string | null>(null);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const auth = useAuth();
+  const requestUpload = useRequestSourceUploadUrl();
+  const registerSource = useRegisterProjectSource();
+  const { data: sources } = useListProjectSources(projectId, {
+    query: {
+      queryKey: getListProjectSourcesQueryKey(projectId),
+      refetchInterval: open ? 1_500 : false,
+    },
+  });
+  const currentSource = sources?.[0];
+
+  useEffect(() => {
+    if (
+      currentSource?.status === "ready" &&
+      readySourceRef.current !== currentSource.id
+    ) {
+      readySourceRef.current = currentSource.id;
+      onReady();
+      toast({
+        title: "Song Model ready",
+        description: `${currentSource.name} was analyzed successfully.`,
+      });
+    }
+  }, [currentSource, onReady, toast]);
+
+  const startImport = async () => {
+    if (!file) return;
+    if (file.size > MAX_SIZE) {
+      toast({
+        title: "File is too large",
+        description: "The current upload limit is 500 MB.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsUploading(true);
+    setUploadProgress(0);
+    try {
+      const contentType = file.type || (
+        /\.midi?$/i.test(file.name) ? "audio/midi" : "application/octet-stream"
+      );
+      const target = await requestUpload.mutateAsync({
+        data: { name: file.name, size: file.size, contentType },
+      });
+      await uploadFile(file, target.uploadURL, setUploadProgress);
+      await registerSource.mutateAsync({
+        projectId,
+        data: {
+          objectPath: target.objectPath,
+          name: file.name,
+          size: file.size,
+          contentType,
+          sourceType,
+        },
+      });
+      await queryClient.invalidateQueries({
+        queryKey: getListProjectSourcesQueryKey(projectId),
+      });
+      toast({
+        title: "Upload complete",
+        description: "Preprocessing and musical analysis have started.",
+      });
+    } catch (error) {
+      toast({
+        title: "Import failed",
+        description: error instanceof Error ? error.message : "Could not import source.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const statusLabel = currentSource?.status === "preprocessing"
+    ? "Normalizing audio"
+    : currentSource?.status === "analyzing"
+      ? "Building Song Model"
+      : currentSource?.status === "queued"
+        ? "Queued"
+        : currentSource?.status === "ready"
+          ? "Analysis complete"
+          : currentSource?.status === "failed"
+            ? "Analysis failed"
+            : null;
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          <Upload className="mr-1.5 h-3.5 w-3.5" />
+          Import Source
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Import a real source recording</DialogTitle>
+          <DialogDescription>
+            Upload WAV, MP3, M4A, MIDI, or video. The studio will inspect,
+            normalize, and convert it into the canonical Song Model.
+          </DialogDescription>
+        </DialogHeader>
+
+        {!auth.isLoading && !auth.isAuthenticated ? (
+          <div className="rounded-lg border bg-muted/30 p-5 text-center space-y-3">
+            <LogIn className="h-7 w-7 text-primary mx-auto" />
+            <div>
+              <p className="font-semibold">Log in to upload source files</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Upload URLs are private and tied to your session.
+              </p>
+            </div>
+            <Button onClick={auth.login}>Log in</Button>
+          </div>
+        ) : (
+          <div className="space-y-4 py-2">
+            <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-dashed p-4 hover:border-primary/60 hover:bg-muted/20 transition-colors">
+              <FileAudio className="h-7 w-7 text-primary shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="font-medium truncate">
+                  {file?.name || "Choose source file"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Up to 500 MB · audio, MIDI, or video
+                </p>
+              </div>
+              <Input
+                className="sr-only"
+                type="file"
+                accept=".wav,.mp3,.m4a,.aac,.flac,.mid,.midi,.mp4,.mov,.webm,audio/*,video/*"
+                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+              />
+            </label>
+
+            {isUploading && (
+              <div className="space-y-2">
+                <div className="flex justify-between text-xs font-mono">
+                  <span>Uploading</span>
+                  <span>{uploadProgress}%</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full bg-primary transition-all"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {currentSource && statusLabel && (
+              <div className="rounded-lg border bg-card p-3">
+                <div className="flex items-center gap-2">
+                  {currentSource.status === "ready" ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  ) : currentSource.status === "failed" ? (
+                    <AlertCircle className="h-4 w-4 text-destructive" />
+                  ) : (
+                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                  )}
+                  <span className="text-sm font-medium">{statusLabel}</span>
+                  <span className="ml-auto text-xs font-mono text-muted-foreground">
+                    {currentSource.progress}%
+                  </span>
+                </div>
+                {currentSource.error && (
+                  <p className="mt-2 text-xs text-destructive">{currentSource.error}</p>
+                )}
+              </div>
+            )}
+
+            <Button
+              className="w-full"
+              onClick={startImport}
+              disabled={!file || isUploading || auth.isLoading}
+            >
+              {isUploading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="mr-2 h-4 w-4" />
+              )}
+              {isUploading ? "Uploading…" : "Upload and analyze"}
+            </Button>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}

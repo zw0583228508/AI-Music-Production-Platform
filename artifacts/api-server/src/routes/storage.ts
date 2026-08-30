@@ -1,9 +1,31 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
+import {
+  RequestSourceUploadUrlBody,
+  RequestSourceUploadUrlResponse,
+} from "@workspace/api-zod";
 import { db, musicArtifactsTable } from "@workspace/db";
-import { getPrivateObject } from "../lib/objectStorage";
+import { createSourceUploadTarget, getPrivateObject } from "../lib/objectStorage";
 
 const router: IRouter = Router();
+
+router.post("/storage/uploads/request-url", async (req, res): Promise<void> => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const parsed = RequestSourceUploadUrlBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid upload metadata" });
+    return;
+  }
+  const { uploadURL, objectPath } = await createSourceUploadTarget();
+  res.json(RequestSourceUploadUrlResponse.parse({
+    uploadURL,
+    objectPath,
+    metadata: parsed.data,
+  }));
+});
 
 router.get("/storage/objects/*path", async (req, res): Promise<void> => {
   const rawPath = req.params.path;

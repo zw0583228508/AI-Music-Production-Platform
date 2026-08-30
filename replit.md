@@ -24,7 +24,8 @@ A versioned AI arrangement workspace that turns songs, vocals, and melodies into
 ## Where things live
 
 - `artifacts/music-studio/` — React studio interface
-- `artifacts/api-server/src/routes/studio.ts` — project, analysis, arrangement, track, artifact, generation, and copilot API
+- `artifacts/api-server/src/routes/studio.ts` — project, source-ingestion, analysis, arrangement, track, artifact, generation, and copilot API
+- `artifacts/api-server/src/lib/sourceAnalyzer.ts` — FFmpeg/FFprobe preprocessing and baseline signal analysis
 - `lib/api-spec/openapi.yaml` — source of truth for the API contract
 - `lib/db/src/schema/music-studio.ts` — persistent project and versioned artifact schema
 
@@ -33,12 +34,15 @@ A versioned AI arrangement workspace that turns songs, vocals, and melodies into
 - `SongModel`-style analysis data is the shared representation between model providers and the UI.
 - Arrangement plans are versioned separately from projects so regeneration never destroys earlier creative decisions.
 - Model-specific work stays behind provider identifiers; the product contract does not depend on one checkpoint.
-- The first vertical slice is operational with deterministic providers, while GPU inference, object storage, and audio rendering can replace them incrementally.
+- Real source uploads use authenticated presigned Object Storage URLs; raw objects remain private.
+- Song Models are persisted as immutable versions so a new source analysis does not overwrite prior model output.
+- The baseline analyzer uses FFmpeg/FFprobe plus local rhythm, key, energy, and section extraction; GPU providers can replace individual stages behind the same contract.
 
 ## Product
 
 - Dashboard and persistent music projects
-- Source-analysis model with tempo, meter, key, confidence, form, and energy
+- Authenticated WAV/MP3/M4A/MIDI/video source import with preprocessing jobs
+- Versioned Song Model with audio metadata, tempo, meter, key, form, energy, melody/chord slots, confidence, and provider provenance
 - Arrangement Director controls and version creation
 - Multitrack project view with generated/rendered status
 - Ranked generation candidates and versioned artifacts

@@ -30,11 +30,43 @@ export type ExportFileRecord = {
   url: string;
 };
 
+export type SongModelData = {
+  audio: {
+    name: string;
+    contentType: string;
+    size: number;
+    durationSeconds: number;
+    sampleRate: number;
+    channels: number;
+  };
+  tempoMap: Array<{ time: number; bpm: number; confidence: number }>;
+  meterMap: Array<{ bar: number; meter: string; confidence: number }>;
+  keyMap: Array<{ time: number; key: string; confidence: number }>;
+  melody: Array<{
+    start: number;
+    end: number;
+    pitch: number;
+    velocity: number;
+    confidence: number;
+    source: string;
+  }>;
+  chords: Array<{
+    start: number;
+    end: number;
+    symbol: string;
+    roman: string;
+    confidence: number;
+  }>;
+  sections: AnalysisSection[];
+  energy: number[];
+};
+
 export const musicProjectsTable = pgTable("music_projects", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   sourceType: text("source_type").notNull(),
   sourceName: text("source_name"),
+  ownerId: text("owner_id"),
   status: text("status").notNull().default("draft"),
   duration: text("duration").notNull().default("0:00"),
   key: text("key").notNull().default("—"),
@@ -50,6 +82,46 @@ export const musicProjectsTable = pgTable("music_projects", {
     .notNull()
     .defaultNow()
     .$onUpdate(() => new Date()),
+});
+
+export const projectSourcesTable = pgTable("music_project_sources", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id")
+    .notNull()
+    .references(() => musicProjectsTable.id, { onDelete: "cascade" }),
+  ownerId: text("owner_id").notNull(),
+  objectPath: text("object_path").notNull(),
+  name: text("name").notNull(),
+  size: integer("size").notNull(),
+  contentType: text("content_type").notNull(),
+  sourceType: text("source_type").notNull(),
+  status: text("status").notNull().default("queued"),
+  progress: integer("progress").notNull().default(0),
+  durationSeconds: doublePrecision("duration_seconds"),
+  sampleRate: integer("sample_rate"),
+  channels: integer("channels"),
+  error: text("error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
+
+export const songModelsTable = pgTable("music_song_models", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id")
+    .notNull()
+    .references(() => musicProjectsTable.id, { onDelete: "cascade" }),
+  sourceId: text("source_id")
+    .notNull()
+    .references(() => projectSourcesTable.id, { onDelete: "cascade" }),
+  version: integer("version").notNull().default(1),
+  status: text("status").notNull().default("ready"),
+  model: jsonb("model").$type<SongModelData>().notNull(),
+  providers: jsonb("providers").$type<string[]>().notNull().default([]),
+  confidence: doublePrecision("confidence").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const arrangementsTable = pgTable("music_arrangements", {
