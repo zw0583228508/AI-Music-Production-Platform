@@ -1,5 +1,9 @@
 import type { AnalysisSection, SongModelData } from "@workspace/db";
 import { attestAnalysisProviderHealth } from "./analysisProviderManifest";
+import {
+  gpuPromotionAttestationFailure,
+  requiresGpuPromotionRecord,
+} from "./gpuProviderAttestation";
 
 type ProviderProvenance = SongModelData["providerProvenance"][number];
 type MelodyNote = SongModelData["melody"][number];
@@ -306,7 +310,15 @@ async function attestProviderHealth(
   endpoint: string,
   token: string | undefined,
 ): Promise<void> {
-  const cacheKey = `${providerId}:${endpoint}`;
+  const promotionKey = providerId.replace(/[^A-Z0-9]/g, "_");
+  const promotionIdentity = requiresGpuPromotionRecord(providerId)
+    ? [
+        process.env[`MUSIC_PROVIDER_${promotionKey}_PROMOTION_BUNDLE`] ?? "",
+        process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY ??
+          process.env.MUSIC_GPU_PROMOTION_PUBLIC_KEY ?? "",
+      ].join(":")
+    : "";
+  const cacheKey = `${providerId}:${endpoint}:${promotionIdentity}`;
   const cached = analysisHealthCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     if (cached.error) throw cached.error;
@@ -322,6 +334,15 @@ async function attestProviderHealth(
     if (!response.ok) throw new Error(`health check returned HTTP ${response.status}`);
     const payload = await readProviderJson(providerId, response);
     attestAnalysisProviderHealth(providerId, payload);
+    if (requiresGpuPromotionRecord(providerId)) {
+      if (!isRecord(payload)) throw new Error("health response must be a JSON object");
+      const promotionFailure = gpuPromotionAttestationFailure(
+        providerId,
+        endpoint,
+        payload,
+      );
+      if (promotionFailure) throw new Error(promotionFailure);
+    }
     analysisHealthCache.set(cacheKey, {
       expiresAt: Date.now() + ANALYSIS_HEALTH_TTL_MS,
       error: null,

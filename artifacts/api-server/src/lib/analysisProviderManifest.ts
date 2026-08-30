@@ -1,3 +1,5 @@
+import { expectedGpuCheckpointSha256 } from "./gpuProviderAttestation";
+
 export type VerifiedLocalAnalysisProviderId = "BASIC_PITCH" | "DEMUCS";
 export type VerifiedGpuAnalysisProviderId = "BS_ROFORMER" | "ALL_IN_ONE" | "MT3";
 
@@ -27,7 +29,7 @@ export const VERIFIED_GPU_ANALYSIS_PROVIDERS: Readonly<
     version: "bs-roformer-viperx-v1",
   },
   ALL_IN_ONE: {
-    version: "all-in-one-infer",
+    version: "all-in-one-infer-3.1.0",
   },
   MT3: {
     version: "mt3-ismir2021",
@@ -84,9 +86,7 @@ export function attestAnalysisProviderHealth(
     requestedProvider as VerifiedGpuAnalysisProviderId
   ];
   if (gpuExpected) {
-    const expectedChecksum = process.env[
-      `${requestedProvider}_CHECKPOINT_SHA256`
-    ]?.trim().toLowerCase();
+    const expectedChecksum = expectedGpuCheckpointSha256(requestedProvider);
     const runtime = record(payload.runtime) ? payload.runtime : {};
     const requiredRuntimeProvenance = [
       payload.revision ?? payload.checkpointRevision ?? runtime.revision,

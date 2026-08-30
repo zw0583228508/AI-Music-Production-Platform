@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { generateKeyPairSync, sign } from "node:crypto";
 import { createServer } from "node:http";
 import test from "node:test";
 import {
@@ -6,6 +7,7 @@ import {
   parseSeparation,
   runAnalysisProviders,
 } from "./analysisProviders";
+import { canonicalGpuPromotionJson } from "./gpuProviderAttestation";
 
 test("parses valid harmony evidence and rejects out-of-range chords", () => {
   const result = parseHarmony("SHEETSAGE", {
@@ -62,7 +64,7 @@ test("accepts unique provider stem data and rejects duplicate roles", () => {
   }
 });
 
-test("prefers configured DEMUCS and records its actual separation provenance", async () => {
+test("prefers configured DEMUCS and rejects an unsigned GPU fallback", async () => {
   const server = createServer((request, response) => {
     response.setHeader("Content-Type", "application/json");
     if (request.method === "GET" && request.url?.startsWith("/health?")) {
@@ -123,7 +125,12 @@ test("prefers configured DEMUCS and records its actual separation provenance", a
       sourceType: "FULL_SONG",
       durationSeconds: 10,
     });
-    assert.equal(fallback.separation?.providerId, "BS_ROFORMER");
+    assert.equal(fallback.separation, null);
+    const fallbackProvenance = fallback.provenance.find(
+      (item) => item.provider === "BS_ROFORMER",
+    );
+    assert.equal(fallbackProvenance?.status, "failed");
+    assert.equal(fallbackProvenance?.errorCode, "health-attestation-failed");
   } finally {
     if (previousDemucs === undefined) delete process.env.DEMUCS_API_URL;
     else process.env.DEMUCS_API_URL = previousDemucs;
@@ -288,5 +295,174 @@ test("does not execute or record ready provenance after a failed local attestati
     if (previous === undefined) delete process.env.BASIC_PITCH_API_URL;
     else process.env.BASIC_PITCH_API_URL = previous;
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+test("requires signed exact Modal provenance before sending audio to ALL_IN_ONE", async () => {
+  const checkpointSha256 =
+    "4b8d00db3903c3b505cc5d2ec1a84787ccc2e1cc446f838118e03e9a356552e5";
+  const checkpointRevision =
+    "taejunkim/allinone@379e5fd010b3fdd0ee8381ff8cbcfa51d70b5c19;" +
+    "facebookresearch/demucs@ef66d254cd6d558e207eeff2c4b8d053db2e77dd";
+  const sourceRevision =
+    "openmirlab/all-in-one-infer@3c93b4ae389328544dd5955af7497030cb1bca3a";
+  const sourceImageDigest = `sha256:${"c".repeat(64)}`;
+  const runtime = {
+    python: "3.11.11",
+    cudaImage: "nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04",
+    cuda: "12.4.1",
+    pytorch: "torch==2.5.1+cu124",
+    torchvision: "torchvision==0.20.1+cu124",
+    torchaudio: "torchaudio==2.5.1+cu124",
+    torchIndexUrl: "https://download.pytorch.org/whl/cu124",
+    transformers: "transformers==4.48.3",
+    accelerate: "accelerate==1.3.0",
+  };
+  let expectedFunctionId = "fu-AllInOneFirst";
+  let reportedImageId = "im-AllInOneDrift";
+  let analysisRequests = 0;
+  const server = createServer((request, response) => {
+    response.setHeader("Content-Type", "application/json");
+    if (request.method === "GET" && request.url === "/health?provider=ALL_IN_ONE") {
+      response.end(JSON.stringify({
+        provider: "ALL_IN_ONE",
+        status: "ready",
+        checkpointReady: true,
+        runtimeReady: true,
+        smokeTested: true,
+        gpuReady: true,
+        modelVersion: "all-in-one-infer-3.1.0",
+        checksum: checkpointSha256,
+        checkpointSha256,
+        revision: checkpointRevision,
+        sourceRevision,
+        sourceImageDigest,
+        containerDigest: sourceImageDigest,
+        modalAppId: "ap-AllInOne",
+        modalDeploymentId: "dp-AllInOne",
+        modalFunctionId: expectedFunctionId,
+        modalImageId: reportedImageId,
+        runtime: { pythonVersion: runtime.python },
+        framework: {
+          cuda_image: runtime.cudaImage,
+          cuda: runtime.cuda,
+          pytorch: runtime.pytorch,
+          torchvision: runtime.torchvision,
+          torchaudio: runtime.torchaudio,
+          torch_index_url: runtime.torchIndexUrl,
+          transformers: runtime.transformers,
+          accelerate: runtime.accelerate,
+        },
+        cudaVersion: runtime.cuda,
+        pytorchVersion: runtime.pytorch,
+        gpu: "NVIDIA L4",
+      }));
+      return;
+    }
+    if (request.method === "POST" && request.url === "/analyze") {
+      analysisRequests += 1;
+      response.end(JSON.stringify({
+        version: "all-in-one-infer-3.1.0",
+        confidence: 1,
+        bpm: 120,
+        meter: "4/4",
+        tempoMap: [{ time: 0, bpm: 120, confidence: 1 }],
+        meterMap: [{ bar: 1, meter: "4/4", confidence: 1 }],
+        beats: [
+          { time: 0, bar: 1, beat: 1, confidence: 1 },
+          { time: 0.5, bar: 1, beat: 2, confidence: 1 },
+          { time: 1, bar: 1, beat: 3, confidence: 1 },
+          { time: 1.5, bar: 1, beat: 4, confidence: 1 },
+        ],
+        downbeats: [{ time: 0 }],
+        bars: [{ bar: 1, start: 0, end: 2, beats: 4, confidence: 1 }],
+        sections: [{ name: "intro", startBar: 1, endBar: 1, energy: 1 }],
+      }));
+      return;
+    }
+    response.writeHead(404);
+    response.end(JSON.stringify({ error: "not found" }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const endpointOrigin = `http://127.0.0.1:${address.port}`;
+  const keys = [
+    "ALL_IN_ONE_API_URL",
+    "MUSIC_PROVIDER_ALL_IN_ONE_PROMOTION_BUNDLE",
+    "MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY",
+    "MUSIC_GPU_PROMOTION_PUBLIC_KEY",
+    "MT3_API_URL",
+    "BS_ROFORMER_API_URL",
+    "BS_ROFORMER_SW_API_URL",
+    "SHEETSAGE_API_URL",
+    "SHEET_SAGE_API_URL",
+    "CHROMA_API_URL",
+    "BASS_API_URL",
+  ];
+  const previous = new Map(keys.map((key) => [key, process.env[key]]));
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const installBundle = (modalFunctionId: string) => {
+    const record = {
+      schemaVersion: 1,
+      provider: "ALL_IN_ONE",
+      modalAppId: "ap-AllInOne",
+      modalDeploymentId: "dp-AllInOne",
+      modalFunctionId,
+      modalImageId: "im-AllInOneVerified",
+      endpointOrigin,
+      modelVersion: "all-in-one-infer-3.1.0",
+      checkpointSha256,
+      checkpointRevision,
+      sourceRevision,
+      sourceImageDigest,
+      runtime,
+    };
+    process.env.MUSIC_PROVIDER_ALL_IN_ONE_PROMOTION_BUNDLE = JSON.stringify({
+      record,
+      signature: sign(
+        null,
+        Buffer.from(canonicalGpuPromotionJson(record)),
+        privateKey,
+      ).toString("base64"),
+    });
+  };
+  try {
+    for (const key of keys) delete process.env[key];
+    process.env.ALL_IN_ONE_API_URL = endpointOrigin;
+    process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY = publicKey.export({
+      type: "spki",
+      format: "pem",
+    }).toString();
+    installBundle(expectedFunctionId);
+    const rejected = await runAnalysisProviders({
+      sourceUrl: "https://storage.invalid/signed-source",
+      sourceType: "FULL_SONG",
+      durationSeconds: 2,
+    });
+    assert.equal(rejected.structure, null);
+    assert.equal(analysisRequests, 0);
+    assert.match(
+      rejected.provenance.find((item) => item.provider === "ALL_IN_ONE")?.errorMessage ?? "",
+      /runtime identity does not match the promoted deployment record/,
+    );
+
+    expectedFunctionId = "fu-AllInOneSecond";
+    reportedImageId = "im-AllInOneVerified";
+    installBundle(expectedFunctionId);
+    const accepted = await runAnalysisProviders({
+      sourceUrl: "https://storage.invalid/signed-source",
+      sourceType: "FULL_SONG",
+      durationSeconds: 2,
+    });
+    assert.equal(accepted.structure?.providerId, "ALL_IN_ONE");
+    assert.equal(analysisRequests, 1);
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => error ? reject(error) : resolve()));
   }
 });

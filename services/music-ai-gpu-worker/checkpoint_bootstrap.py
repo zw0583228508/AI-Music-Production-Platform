@@ -12,6 +12,8 @@ import math
 import os
 import shutil
 import struct
+import urllib.parse
+import urllib.request
 import uuid
 import wave
 from dataclasses import dataclass
@@ -21,7 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 MANIFEST = json.loads((ROOT / "model_manifest.json").read_text())
 MODEL_ROOT = Path(os.getenv("MUSIC_GPU_CHECKPOINT_ROOT", MANIFEST["checkpoint_root"]))
-SMOKE_FIXTURE = MODEL_ROOT / "_smoke" / "non-silent-440hz-1s.wav"
+SMOKE_FIXTURE = MODEL_ROOT / "_smoke" / "structured-click-track-32s.wav"
 
 
 @dataclass(frozen=True)
@@ -58,7 +60,6 @@ ACE_FORBIDDEN_PARTS = {"acestep-v15-turbo", "acestep-5Hz-lm-1.7B"}
 UNVERIFIED_SOURCES = {
     "BS_ROFORMER": "no unambiguous public Viperx-v1 checkpoint revision is pinned",
     "MT3": "the T5X checkpoint tree has no verified public snapshot pin",
-    "ALL_IN_ONE": "the adapter does not identify a verified public weight snapshot",
 }
 
 
@@ -82,16 +83,58 @@ def checkpoint_sha256(path: Path) -> str:
 
 
 def _write_smoke_fixture() -> None:
+    """Write deterministic rhythmic/harmonic audio that can yield structure evidence."""
     SMOKE_FIXTURE.parent.mkdir(parents=True, exist_ok=True)
     temporary = SMOKE_FIXTURE.with_name(f".{SMOKE_FIXTURE.name}.{uuid.uuid4().hex}")
+    sample_rate = 44_100
+    duration_seconds = 32
+    chord_frequencies = (
+        (130.81, 164.81, 196.00),  # C major
+        (110.00, 130.81, 164.81),  # A minor
+        (87.31, 130.81, 174.61),   # F major
+        (98.00, 123.47, 146.83),   # G major
+    )
     with wave.open(str(temporary), "wb") as output:
         output.setnchannels(1)
         output.setsampwidth(2)
-        output.setframerate(16_000)
-        output.writeframes(b"".join(
-            struct.pack("<h", int(8000 * math.sin(2 * math.pi * 440 * index / 16_000)))
-            for index in range(16_000)
-        ))
+        output.setframerate(sample_rate)
+        frames = bytearray()
+        for index in range(sample_rate * duration_seconds):
+            time = index / sample_rate
+            beat_phase = time % 0.5
+            eighth_phase = time % 0.25
+            snare_phase = (time - 0.5) % 1.0
+            beat_number = int(time / 0.5)
+            section = min(int(time / 8.0), len(chord_frequencies) - 1)
+            chord = chord_frequencies[section]
+            pad = sum(math.sin(2 * math.pi * frequency * time) for frequency in chord)
+            pulse = 0.45 + 0.55 * math.exp(-7 * beat_phase)
+            kick_gain = 1.35 if beat_number % 4 == 0 else 1.0
+            kick = kick_gain * math.exp(-18 * beat_phase) * math.sin(
+                2 * math.pi * (52 + 38 * math.exp(-24 * beat_phase)) * beat_phase
+            )
+            noise = sum(
+                math.sin(2 * math.pi * frequency * time)
+                for frequency in (1733, 2381, 3253, 4211)
+            ) / 4
+            snare = math.exp(-24 * snare_phase) * noise
+            hat = math.exp(-85 * eighth_phase) * math.sin(2 * math.pi * 6300 * time)
+            bass = math.exp(-5 * beat_phase) * math.sin(
+                2 * math.pi * chord[0] / 2 * time
+            )
+            sample = (
+                0.10 * pad * pulse
+                + 0.34 * kick
+                + 0.18 * snare
+                + 0.08 * hat
+                + 0.12 * bass
+            )
+            frames.extend(struct.pack("<h", int(max(-0.95, min(0.95, sample)) * 32767)))
+            if len(frames) >= 8192:
+                output.writeframesraw(frames)
+                frames.clear()
+        if frames:
+            output.writeframesraw(frames)
     os.replace(temporary, SMOKE_FIXTURE)
 
 
@@ -156,26 +199,113 @@ def _bootstrap_ace(destination: Path, stage: Path) -> None:
     os.replace(stage, destination)
 
 
+def _validated_asset(asset: object) -> dict[str, str | int]:
+    if not isinstance(asset, dict):
+        raise RuntimeError("checkpoint asset metadata is invalid")
+    required_text = (
+        "kind", "path", "url", "repository", "revision", "license", "sha256",
+    )
+    if any(not isinstance(asset.get(key), str) or not asset[key].strip()
+           for key in required_text):
+        raise RuntimeError("checkpoint asset metadata is incomplete")
+    relative = Path(str(asset["path"]))
+    if relative.is_absolute() or ".." in relative.parts:
+        raise RuntimeError("checkpoint asset path must stay inside the staged checkpoint")
+    parsed = urllib.parse.urlsplit(str(asset["url"]))
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        raise RuntimeError("checkpoint asset URL must be absolute HTTPS")
+    expected_hash = str(asset["sha256"]).lower()
+    if len(expected_hash) != 64 or any(char not in "0123456789abcdef" for char in expected_hash):
+        raise RuntimeError("checkpoint asset SHA-256 is invalid")
+    size = asset.get("size")
+    if isinstance(size, bool) or not isinstance(size, int) or size <= 0:
+        raise RuntimeError("checkpoint asset size is invalid")
+    return asset
+
+
+def _download_asset(asset: dict[str, str | int], destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    request = urllib.request.Request(
+        str(asset["url"]), headers={"User-Agent": "music-ai-checkpoint-bootstrap/1"},
+    )
+    digest = hashlib.sha256()
+    total = 0
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response, destination.open("xb") as output:
+            while True:
+                block = response.read(1024 * 1024)
+                if not block:
+                    break
+                total += len(block)
+                if total > int(asset["size"]):
+                    raise RuntimeError("checkpoint asset exceeds its pinned size")
+                digest.update(block)
+                output.write(block)
+    except Exception:
+        destination.unlink(missing_ok=True)
+        raise
+    if total != asset["size"] or digest.hexdigest() != asset["sha256"]:
+        destination.unlink(missing_ok=True)
+        raise RuntimeError("checkpoint asset does not match its pinned size and SHA-256")
+
+
+def _validate_all_in_one(path: Path) -> None:
+    details = MANIFEST["providers"]["ALL_IN_ONE"]
+    expected_paths: set[str] = set()
+    for raw_asset in details.get("assets", []):
+        asset = _validated_asset(raw_asset)
+        relative = str(asset["path"])
+        expected_paths.add(relative)
+        target = path / relative
+        if (not target.is_file() or target.stat().st_size != asset["size"]
+                or checkpoint_sha256(target) != asset["sha256"]):
+            raise RuntimeError(f"All-In-One asset is missing or mismatched: {relative}")
+    actual_paths = {
+        item.relative_to(path).as_posix()
+        for item in path.rglob("*")
+        if item.is_file()
+    }
+    if not expected_paths or actual_paths != expected_paths:
+        raise RuntimeError("All-In-One checkpoint set is incomplete or contains unexpected files")
+    if checkpoint_sha256(path) != details["checkpoint_sha256"]:
+        raise RuntimeError("All-In-One aggregate checkpoint SHA-256 is mismatched")
+
+
+def _bootstrap_all_in_one(destination: Path, stage: Path) -> None:
+    details = MANIFEST["providers"]["ALL_IN_ONE"]
+    for raw_asset in details.get("assets", []):
+        asset = _validated_asset(raw_asset)
+        _download_asset(asset, stage / str(asset["path"]))
+    _validate_all_in_one(stage)
+    if destination.exists():
+        raise RuntimeError("checkpoint destination appeared during bootstrap")
+    os.replace(stage, destination)
+
+
 def bootstrap_provider(provider: str) -> dict[str, str | int]:
     # This authentic generated fixture is independent of provider weights and
     # is safe to persist even when a provider source remains blocked.
     _write_smoke_fixture()
     if provider in UNVERIFIED_SOURCES:
         raise RuntimeError(f"{provider} bootstrap unavailable: {UNVERIFIED_SOURCES[provider]}")
-    source = PUBLIC_SNAPSHOTS.get(provider)
     details = MANIFEST["providers"].get(provider)
-    if not source or not details:
+    source = PUBLIC_SNAPSHOTS.get(provider)
+    if not details or (not source and provider != "ALL_IN_ONE"):
         raise RuntimeError(f"{provider} has no pinned public checkpoint source")
     destination = MODEL_ROOT / details["checkpoint_path"]
     if destination.exists():
         if provider == "ACE_STEP":
             _validate_ace_composite(destination)
+        elif provider == "ALL_IN_ONE":
+            _validate_all_in_one(destination)
         digest = checkpoint_sha256(destination)
     else:
         stage = MODEL_ROOT / f".bootstrap-{provider.lower()}-{uuid.uuid4().hex}"
         try:
             if provider == "ACE_STEP":
                 _bootstrap_ace(destination, stage)
+            elif provider == "ALL_IN_ONE":
+                _bootstrap_all_in_one(destination, stage)
             else:
                 raise RuntimeError(f"{provider} has no implemented snapshot builder")
         finally:
@@ -191,7 +321,7 @@ def bootstrap_provider(provider: str) -> dict[str, str | int]:
         "provider": provider,
         "path": str(destination.relative_to(MODEL_ROOT)),
         "digest": digest,
-        "revision": (
+        "revision": details["revision"] if provider == "ALL_IN_ONE" else (
             f"{source.repository}@{source.revision};"
             f"{ACE_BASE_REPOSITORY}@{ACE_BASE_REVISION}"
             if provider == "ACE_STEP" else source.revision

@@ -30,7 +30,7 @@ PROMOTION_SCHEMA_VERSION = 1
 MODEL_VOLUME_NAME = "music-ai-models-v1"
 JOB_VOLUME_NAME = "music-ai-jobs-v1"
 OUTPUT_VOLUME_NAME = "music-ai-outputs-v1"
-SMOKE_FIXTURE = f"{MODEL_MOUNT}/_smoke/non-silent-440hz-1s.wav"
+SMOKE_FIXTURE = f"{MODEL_MOUNT}/_smoke/structured-click-track-32s.wav"
 
 
 @dataclass(frozen=True)
@@ -132,6 +132,7 @@ DEPLOYMENTS = {
         timeout_seconds=_CAPACITY[provider][2],
         idle_timeout_seconds=_CAPACITY[provider][3],
         checkpoint_path=details["checkpoint_path"],
+        source_revision=details["revision"],
         model_version=details["model_version"],
         requirements_file=_CAPACITY[provider][4],
         source_image_digest=provider_source_image_digest(provider, _CAPACITY[provider][4]),
@@ -174,6 +175,14 @@ def worker_environment(deployment: ProviderDeployment) -> dict[str, str]:
         f"MUSIC_GPU_SMOKE_{deployment.provider}": command,
         "PYTHONUNBUFFERED": "1",
     }
+    details = MANIFEST["providers"][deployment.provider]
+    checkpoint_sha256 = details.get("checkpoint_sha256")
+    if checkpoint_sha256:
+        environment[
+            f"MUSIC_PROVIDER_{deployment.provider}_CHECKPOINT_SHA256"
+        ] = checkpoint_sha256
+    if details.get("revision"):
+        environment[f"MUSIC_PROVIDER_{deployment.provider}_REVISION"] = details["revision"]
     source_revision = os.getenv("MUSIC_GPU_SOURCE_REVISION", "").strip()
     if source_revision:
         environment["MUSIC_GPU_SOURCE_REVISION"] = source_revision

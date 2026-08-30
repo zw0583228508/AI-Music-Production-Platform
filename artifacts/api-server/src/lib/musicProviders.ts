@@ -343,9 +343,9 @@ export const MUSIC_PROVIDERS: MusicProviderDescriptor[] = [
     inputTypes: ["FULL_SONG", "INSTRUMENTAL", "VIDEO"],
     execution: "remote",
     status: remoteConfigured("ALL_IN_ONE") ? "configured" : "unavailable",
-    license: "Model-specific",
+    license: "CC-BY-NC-SA-4.0 (structure weights) + MIT (Demucs)",
     priority: 90,
-    notes: "Requires ALL_IN_ONE_API_URL; consumes signed private source URLs.",
+    notes: "Requires ALL_IN_ONE_API_URL and the verified eight-fold Harmonix ensemble plus HTDemucs checkpoint set; consumes signed private source URLs.",
   },
   {
     id: "BS_ROFORMER",
@@ -1553,7 +1553,7 @@ export const providerDefinitions: ProviderDefinition[] = [
   {
     id: "ALL_IN_ONE",
     displayName: "All-In-One",
-    modelVersion: "all-in-one-infer",
+    modelVersion: "all-in-one-infer-3.1.0",
     tasks: ["SEPARATION", "TRANSCRIPTION"],
     hardware: ["CPU", "GPU"],
     speeds: ["FAST", "BALANCED"],

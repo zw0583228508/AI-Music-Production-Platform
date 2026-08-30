@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import unittest
 import sys
+import tempfile
+import types
+import wave
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from runners.common import RunnerError
-from runners.all_in_one import normalize_structure
+from runners.all_in_one import _official_evidence, normalize_structure
 
 
 def evidence() -> dict[str, object]:
@@ -43,3 +46,27 @@ class AllInOneRunnerTests(unittest.TestCase):
     raw["downbeats"] = [0]
     with self.assertRaisesRegex(RunnerError, "downbeats"):
         normalize_structure(raw, 3)
+
+
+ def test_structure_discards_only_a_leading_partial_bar(self) -> None:
+    result = types.SimpleNamespace(
+        bpm=120,
+        beats=[0.25, 0.75, 1.25, 1.75, 2.25, 2.75],
+        beat_positions=[3, 4, 1, 2, 3, 4],
+        downbeats=[1.25],
+        segments=[
+            types.SimpleNamespace(start=0.0, end=3.0, label="intro"),
+        ],
+    )
+    with tempfile.TemporaryDirectory() as directory:
+        audio = Path(directory) / "fixture.wav"
+        with wave.open(str(audio), "wb") as output:
+            output.setnchannels(1)
+            output.setsampwidth(2)
+            output.setframerate(8_000)
+            output.writeframes(b"\x01\x00" * 32_000)
+        normalized = normalize_structure(_official_evidence(result, audio), 4.0)
+    self.assertEqual(normalized["beats"][0], {
+        "time": 1.25, "beat": 1, "bar": 1, "confidence": 1.0,
+    })
+    self.assertEqual(normalized["downbeats"], [{"time": 1.25}])

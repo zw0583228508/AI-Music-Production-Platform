@@ -1,4 +1,5 @@
 all-in-one-infer @ git+https://github.com/openmirlab/all-in-one-infer.git@3c93b4ae389328544dd5955af7497030cb1bca3a
+demucs-infer @ git+https://github.com/openmirlab/demucs-infer.git@4b79d5c756ce298503d90b0cca2abbc76c565416
 # Upstream lineage (MIT):
 # https://github.com/mir-aidj/all-in-one/tree/18e78903c0365147a2c5d4e5e57ebf88cb7d800e
 soundfile==0.13.1

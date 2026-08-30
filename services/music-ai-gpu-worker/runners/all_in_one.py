@@ -14,8 +14,8 @@ from typing import Any, Protocol
 
 from .common import (
     RunnerError, attest_checkpoint, durable_job_dir, emit, finite_number,
-    materialize_source, request_value, require_cuda, require_distribution_version,
-    runtime_provenance, validate_audio,
+    file_sha256, materialize_source, request_value, require_cuda,
+    require_distribution_version, runtime_provenance, validate_audio,
 )
 
 # This source revision is deliberately marked unverified until deployment
@@ -26,6 +26,19 @@ BACKEND_SOURCE_REVISION = "openmirlab/all-in-one-infer@3c93b4ae389328544dd5955af
 UPSTREAM_SOURCE_REVISION = "mir-aidj/all-in-one@18e78903c0365147a2c5d4e5e57ebf88cb7d800e"
 PROVIDER = "ALL_IN_ONE"
 MODEL_VERSION = "all-in-one-infer-3.1.0"
+ROOT = Path(__file__).resolve().parents[1]
+MANIFEST = json.loads((ROOT / "model_manifest.json").read_text())
+PROVIDER_MANIFEST = MANIFEST["providers"][PROVIDER]
+CHECKPOINT_REVISION = PROVIDER_MANIFEST["revision"]
+MODEL_NAME = PROVIDER_MANIFEST["model_name"]
+STRUCTURE_ASSETS = [
+    asset for asset in PROVIDER_MANIFEST["assets"]
+    if asset["kind"] == "structure-model"
+]
+DEMUCS_ASSET = next(
+    asset for asset in PROVIDER_MANIFEST["assets"]
+    if asset["kind"] == "source-separation-model"
+)
 
 
 class AllInOneBackend(Protocol):
@@ -42,25 +55,28 @@ class OfficialAllInOneBackend:
             from allin1_infer import AllInOneSession
         except ImportError as exc:  # pragma: no cover - deployment dependency
             raise RunnerError("all-in-one-infer==3.1.0 is not installed") from exc
-        model = os.getenv("ALL_IN_ONE_MODEL", "harmonix-fold0")
-        if not checkpoint.is_file():
-            raise RunnerError("All-In-One generic checkpoint override requires a checkpoint file")
-        demucs_root = Path(os.environ.get(
-            "MUSIC_PROVIDER_ALL_IN_ONE_DEMUCS_ROOT", ""
-        ))
-        if not demucs_root.is_dir():
-            raise RunnerError("mounted All-In-One Demucs cache root is required")
+        model = os.getenv("ALL_IN_ONE_MODEL", MODEL_NAME)
+        if model != MODEL_NAME or not checkpoint.is_dir():
+            raise RunnerError("All-In-One model selection does not match the mounted checkpoint set")
+        demucs_checkpoint = checkpoint / DEMUCS_ASSET["path"]
+        for asset in STRUCTURE_ASSETS:
+            structure_checkpoint = checkpoint / asset["path"]
+            if (not structure_checkpoint.is_file()
+                    or file_sha256(structure_checkpoint) != asset["sha256"]):
+                raise RunnerError(
+                    "mounted All-In-One structure checkpoint set is missing or mismatched"
+                )
+        if (not demucs_checkpoint.is_file()
+                or file_sha256(demucs_checkpoint) != DEMUCS_ASSET["sha256"]):
+            raise RunnerError("mounted All-In-One Demucs checkpoint is missing or mismatched")
+        demucs_root = checkpoint / "demucs"
+        structure_root = checkpoint / "structure"
         os.environ["TORCH_HOME"] = str(demucs_root.resolve())
         os.environ["HF_HUB_OFFLINE"] = "1"
         os.environ["TRANSFORMERS_OFFLINE"] = "1"
-        digest = attest_checkpoint(checkpoint, PROVIDER)
         try:
             with AllInOneSession(
-                model=model, device="cuda", cache_dir=checkpoint.parent,
-                checkpoint_overrides={
-                    "checkpoint_url": checkpoint.resolve().as_uri(),
-                    "checkpoint_sha256": digest,
-                },
+                model=model, device="cuda", cache_dir=structure_root,
             ) as session:
                 result = session.infer(str(audio))
         except Exception as exc:
@@ -82,8 +98,15 @@ def _official_evidence(result: Any, audio: Path) -> dict[str, Any]:
         segments = list(result.segments)
     except (AttributeError, TypeError, ValueError) as exc:
         raise RunnerError("All-In-One returned an invalid AnalysisResult") from exc
-    if len(beats) != len(positions) or not positions or positions[0] != 1:
+    if len(beats) != len(positions) or not positions or 1 not in positions:
         raise RunnerError("All-In-One beat positions are incomplete")
+    first_complete_bar = positions.index(1)
+    beats = beats[first_complete_bar:]
+    positions = positions[first_complete_bar:]
+    downbeats = [
+        value for value in downbeats
+        if value >= beats[0] - 0.05
+    ]
     meter_count = max(positions)
     canonical_beats, bar = [], 0
     for time, position in zip(beats, positions):
@@ -98,12 +121,17 @@ def _official_evidence(result: Any, audio: Path) -> dict[str, Any]:
         bars.append({"bar": number, "start": group[0]["time"], "end": next_start,
                      "beats": len(group), "confidence": 1.0})
     canonical_sections = []
+    last_section_end = 0
     for segment in segments:
         start_time, end_time = float(segment.start), float(segment.end)
         covered = [item["bar"] for item in canonical_beats if start_time <= item["time"] < end_time]
         if covered:
-            canonical_sections.append({"name": str(segment.label), "startBar": min(covered),
-                                       "endBar": max(covered), "energy": 1.0})
+            start_bar = max(min(covered), last_section_end + 1)
+            end_bar = max(covered)
+            if start_bar <= end_bar:
+                canonical_sections.append({"name": str(segment.label), "startBar": start_bar,
+                                           "endBar": end_bar, "energy": 1.0})
+                last_section_end = end_bar
     return {"confidence": 1.0, "tempo": {"bpm": bpm, "confidence": 1.0},
             "meter": {"meter": f"{meter_count}/4", "confidence": 1.0},
             "beats": canonical_beats, "downbeats": downbeats, "bars": bars,
@@ -224,16 +252,22 @@ def run_job(request: dict[str, Any], checkpoint: Path, backend: AllInOneBackend 
             *, smoke: bool = False) -> dict[str, Any]:
     require_cuda()
     digest = attest_checkpoint(checkpoint, PROVIDER)
-    duration = finite_number(request_value(request, "durationSeconds"), "durationSeconds", .001)
     work = durable_job_dir(request, PROVIDER)
     audio = materialize_source(request, work / "source.wav", checkpoint, smoke)
+    measured_duration = validate_audio(audio)["durationSeconds"]
+    requested_duration = request_value(request, "durationSeconds")
+    duration = (
+        measured_duration
+        if smoke and requested_duration is None
+        else finite_number(requested_duration, "durationSeconds", .001)
+    )
     active = backend or OfficialAllInOneBackend()
     output = normalize_structure(active.analyze(audio, checkpoint), duration)
     output.update({"version": MODEL_VERSION, "modelVersion": MODEL_VERSION,
                    "provenance": {"provider": PROVIDER, "modelVersion": MODEL_VERSION,
                                   "checkpointSha256": digest, "backend": active.name,
                                   "backendVersion": BACKEND_VERSION,
-                                  "revision": BACKEND_SOURCE_REVISION,
+                                   "revision": CHECKPOINT_REVISION,
                                   "sourceRevision": BACKEND_SOURCE_REVISION,
                                   "upstreamSourceRevision": UPSTREAM_SOURCE_REVISION,
                                   "confidenceBasis": "decoder-grid-validity",
@@ -258,10 +292,12 @@ def main(argv: list[str] | None = None) -> int:
               "version": args.model_version, "checkpointSha256": digest,
               "backend": OfficialAllInOneBackend.name,
               "backendVersion": BACKEND_VERSION,
+               "revision": CHECKPOINT_REVISION,
               "sourceRevision": BACKEND_SOURCE_REVISION,
               "upstreamSourceRevision": UPSTREAM_SOURCE_REVISION, "device": "cuda",
               "provenance": proof_provenance,
-              "output": {"beats": len(result["beats"]), "sections": len(result["sections"])}})
+               "output": {"bpm": result["bpm"], "bars": len(result["bars"]),
+                          "beats": len(result["beats"]), "sections": len(result["sections"])}})
     else:
         import sys
         emit(run_job(json.load(sys.stdin), checkpoint))

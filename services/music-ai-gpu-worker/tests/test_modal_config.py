@@ -271,7 +271,7 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             "SMOKE_FIXTURE",
             Path(directory) / "_smoke" / "non-silent-440hz-1s.wav",
         ):
-            for provider in ("BS_ROFORMER", "MT3", "ALL_IN_ONE"):
+            for provider in ("BS_ROFORMER", "MT3"):
                 with self.assertRaisesRegex(RuntimeError, "bootstrap unavailable"):
                     checkpoint_bootstrap.bootstrap_provider(provider)
             self.assertTrue(checkpoint_bootstrap.SMOKE_FIXTURE.is_file())
@@ -332,3 +332,57 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             self.assertIn("19671f406d603126926c1b7e2adc169acbcade22", result["revision"])
             self.assertIn("e432212fec32b8965a14ffa57ae653438d6abd14", result["revision"])
             self.assertEqual(result["digest"], checkpoint_bootstrap.checkpoint_sha256(composite))
+
+    def test_all_in_one_bootstrap_stages_every_verified_asset_atomically(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            details = checkpoint_bootstrap.MANIFEST["providers"]["ALL_IN_ONE"]
+
+            def download(asset, destination):
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                source = (
+                    b"structure"
+                    if asset["kind"] == "structure-model"
+                    else b"demucs"
+                )
+                destination.write_bytes(source)
+                asset["size"] = len(source)
+                asset["sha256"] = __import__("hashlib").sha256(source).hexdigest()
+
+            assets = [dict(asset) for asset in details["assets"]]
+            aggregate = __import__("hashlib").sha256()
+            for asset in sorted(assets, key=lambda item: item["path"]):
+                content = b"structure" if asset["kind"] == "structure-model" else b"demucs"
+                aggregate.update(asset["path"].encode())
+                aggregate.update(content)
+            test_details = {
+                **details,
+                "assets": assets,
+                "checkpoint_sha256": aggregate.hexdigest(),
+            }
+            manifest = {
+                **checkpoint_bootstrap.MANIFEST,
+                "providers": {
+                    **checkpoint_bootstrap.MANIFEST["providers"],
+                    "ALL_IN_ONE": test_details,
+                },
+            }
+            with mock.patch.object(checkpoint_bootstrap, "MODEL_ROOT", root), \
+                    mock.patch.object(
+                        checkpoint_bootstrap, "SMOKE_FIXTURE",
+                        root / "_smoke" / "non-silent-440hz-1s.wav",
+                    ), mock.patch.object(
+                        checkpoint_bootstrap, "MANIFEST", manifest,
+                    ), mock.patch.object(
+                        checkpoint_bootstrap, "_download_asset", side_effect=download,
+                    ):
+                result = checkpoint_bootstrap.bootstrap_provider("ALL_IN_ONE")
+            destination = root / "all-in-one"
+            self.assertTrue(destination.is_dir())
+            self.assertFalse(list(root.glob(".bootstrap-all_in_one-*")))
+            self.assertEqual(result["digest"], aggregate.hexdigest())
+            self.assertEqual(
+                {item.relative_to(destination).as_posix()
+                 for item in destination.rglob("*") if item.is_file()},
+                {asset["path"] for asset in assets},
+            )

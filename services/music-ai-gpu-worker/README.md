@@ -106,9 +106,9 @@ does not download weights or executable model code while serving a request.
 | ACE-Step 1.5 | L40S; CUDA 12.8.1; Torch 2.10.0+cu128 | Official ACE-Step source at `ca1e85fe9430179831e6bc6be790c332190a3866` | Composite checkpoint SHA verified; real GPU smoke passed | `ready` |
 | BS-RoFormer | L4; CUDA 12.4.1; Torch 2.5.1+cu124 | `bs-roformer-infer==0.1.5` | No unambiguous immutable Viperx-v1 checkpoint source; no real smoke | `configured`, blocked |
 | MT3 | L4; CUDA 12.4.1; Torch 2.5.1+cu124 | `mt3-infer` at `331519f1951d3d198aef01664bb0406512f97c77` | No verified public T5X/converted checkpoint snapshot; no real smoke | `configured`, blocked |
-| All-In-One | L4; CUDA 12.4.1; Torch 2.5.1+cu124 | `all-in-one-infer` at `3c93b4ae389328544dd5955af7497030cb1bca3a` | No verified immutable weight snapshot; no real smoke | `configured`, blocked |
+| All-In-One | L4; CUDA 12.4.1; Torch 2.5.1+cu124 | `all-in-one-infer` at `3c93b4ae389328544dd5955af7497030cb1bca3a`; `demucs-infer` 4.2.2 at `4b79d5c756ce298503d90b0cca2abbc76c565416` | All eight CC-BY-NC-SA-4.0 Harmonix folds and the MIT HTDemucs asset are revision/SHA pinned and atomically staged; readiness still requires real GPU smoke and a signed promotion | `configured` until smoke and promotion pass |
 
-`runtimeReady=true` for the three blocked providers proves their isolated image,
+`runtimeReady=true` for blocked providers proves their isolated image,
 CUDA/Torch stack, and adapter import are usable. It is not permission to route
 jobs: `checkpointReady=false`, `smokeTested=false`, and `healthy=false` keep
 them unavailable until immutable sources, licenses, revisions, SHA-256 values,
