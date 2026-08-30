@@ -102,17 +102,43 @@ export function AudioTransportStatus({
   unavailableReason?: string | null;
 }) {
   if (transport.status === "error") {
-    return <span className="text-[11px] text-destructive">{transport.error}</span>;
+    return (
+      <span
+        data-testid="transport-status"
+        className="block min-w-0 max-w-full truncate text-[11px] text-destructive"
+        title={transport.error ?? "Audio playback error"}
+      >
+        {transport.error ?? "Audio playback error"}
+      </span>
+    );
   }
   if (unavailableReason || transport.status === "unavailable") {
     return (
-      <span className="max-w-48 truncate text-[11px] text-muted-foreground" title={unavailableReason ?? "Audio unavailable"}>
+      <span
+        data-testid="transport-status"
+        className="block min-w-0 max-w-full truncate text-[11px] text-muted-foreground"
+        title={unavailableReason ?? "Audio unavailable"}
+      >
         {unavailableReason ?? "Audio unavailable"}
       </span>
     );
   }
   if (transport.status === "loading") {
-    return <span className="text-[11px] text-muted-foreground">Loading preview…</span>;
+    return (
+      <span
+        data-testid="transport-status"
+        className="block min-w-0 max-w-full truncate text-[11px] text-muted-foreground"
+      >
+        Loading preview…
+      </span>
+    );
   }
-  return <span className="text-[11px] text-muted-foreground">Arrangement preview</span>;
+  return (
+    <span
+      data-testid="transport-status"
+      className="block min-w-0 max-w-full truncate text-[11px] text-muted-foreground"
+    >
+      Arrangement preview
+    </span>
+  );
 }

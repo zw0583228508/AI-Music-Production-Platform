@@ -180,6 +180,19 @@ export default function ProjectWorkspace() {
   }, [arrangements, selectedArrangementId]);
 
   const activeArrangement = arrangements?.find(a => a.id === selectedArrangementId);
+  const playbackBeatsPerBar = Number(workspace?.analysis?.meter?.split("/")[0]) || 4;
+  const playbackBpm = workspace?.project.bpm || workspace?.analysis?.bpm || 120;
+  const playbackDuration = transport.duration || durationHint;
+  const durationBarCount = playbackDuration > 0
+    ? Math.max(1, Math.ceil(playbackDuration / ((60 / playbackBpm) * playbackBeatsPerBar)))
+    : 1;
+  const arrangementBarCount = Math.max(
+    durationBarCount,
+    ...(activeArrangement?.sections.map((section, index) => section.endBar ?? ((index + 1) * 8)) ?? [1]),
+  );
+  const currentPlaybackBar = playbackDuration > 0
+    ? 1 + Math.min(1, transport.currentTime / playbackDuration) * (arrangementBarCount - 1)
+    : 1;
   const handleEditorSectionsChange = useCallback(async (sections: ArrangementSection[]) => {
     if (!activeArrangement) return;
     try {
@@ -578,11 +591,20 @@ export default function ProjectWorkspace() {
           </div>
         </div>
 
-        <div className="order-3 flex w-full min-w-0 items-center gap-2 md:order-none md:w-auto">
+        <div className="order-3 flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-1 md:order-none md:w-auto md:flex-nowrap">
           <AudioTransportControls transport={transport} compact />
-          <div className="min-w-0 max-w-[120px] shrink sm:max-w-48">
+          <div className="min-w-0 max-w-[120px] flex-1 shrink overflow-hidden sm:max-w-48 sm:flex-none">
             <AudioTransportStatus transport={transport} unavailableReason={playbackUnavailableReason} />
           </div>
+          {activeArrangement && (
+            <div
+              data-testid="transport-mobile-bar-readout"
+              className="basis-full pl-[76px] font-mono text-[10px] tabular-nums text-muted-foreground md:hidden"
+              aria-label="Current arrangement bar"
+            >
+              Bar {Math.floor(currentPlaybackBar)} / {arrangementBarCount}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
