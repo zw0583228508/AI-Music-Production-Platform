@@ -64,7 +64,10 @@ export function AudioTransportControls({
         onChange={(event) => transport.seek(Number(event.currentTarget.value))}
         className="h-1.5 min-w-20 flex-1 cursor-pointer accent-primary disabled:cursor-not-allowed disabled:opacity-40 md:w-28 md:flex-none"
       />
-      <div className="hidden min-w-[92px] font-mono text-[11px] tabular-nums text-muted-foreground sm:block">
+      <div
+        data-testid="transport-time"
+        className="hidden min-w-[92px] font-mono text-[11px] tabular-nums text-muted-foreground sm:block"
+      >
         {formatTime(transport.currentTime)} / {formatTime(transport.duration)}
       </div>
       {transport.status === "error" && (

@@ -26,6 +26,7 @@ await build({
         db,
         musicArtifactsTable,
         musicProjectsTable,
+        projectSourcesTable,
         projectCleanupJobsTable,
         projectUploadReservationsTable,
       } from "@workspace/db";
@@ -55,6 +56,7 @@ const {
   loadExportZip,
   musicArtifactsTable,
   musicProjectsTable,
+  projectSourcesTable,
   projectCleanupJobsTable,
   projectUploadReservationsTable,
   persistExportBundle,
@@ -324,6 +326,54 @@ test("competing arrangement save and restore requests preserve one append-only s
   assert.deepEqual(history.map((revision) => revision.version), [2, 1]);
 });
 
+async function createPlaybackSource(
+  playbackProjectId,
+  sourceId,
+  label,
+  bytes,
+  sourceType = "FULL_SONG",
+  contentType = "audio/wav",
+) {
+  const reservationResponse = await request(
+    "/api/storage/uploads/request-url",
+    ownerSession,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectId: playbackProjectId,
+        name: `${label}.wav`,
+        contentType,
+        size: bytes.length,
+      }),
+    },
+  );
+  assert.equal(reservationResponse.status, 200);
+  const reservation = await reservationResponse.json();
+  const uploadResponse = await request(reservation.uploadURL, ownerSession, {
+    method: "PUT",
+    headers: {
+      "Content-Type": contentType,
+      "Content-Length": String(bytes.length),
+    },
+    body: bytes,
+  });
+  assert.equal(uploadResponse.status, 204);
+  await db.insert(projectSourcesTable).values({
+    id: sourceId,
+    projectId: playbackProjectId,
+    ownerId: `export-owner-${process.pid}`,
+    objectPath: reservation.objectPath,
+    name: `${label}.wav`,
+    size: bytes.length,
+    contentType,
+    sourceType,
+    status: "queued",
+    progress: 0,
+  });
+  return reservation.objectPath;
+}
+
 function putReservedSource(reservation) {
   return request(reservation.uploadURL, ownerSession, {
     method: "PUT",
@@ -433,6 +483,168 @@ test("an upload waiting behind project deletion is rejected before writing", asy
     raceProjectId,
     reservation.objectPath,
   );
+});
+
+test("source-qualified playback stays on the requested upload when analyses finish out of order", async () => {
+  const createResponse = await request("/api/projects", ownerSession, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: `Playback source identity ${process.pid}`,
+      sourceType: "FULL_SONG",
+    }),
+  });
+  assert.equal(createResponse.status, 201);
+  const playbackProjectId = (await createResponse.json()).id;
+  const firstSourceId = `playback-first-${process.pid}`;
+  const secondSourceId = `playback-second-${process.pid}`;
+  const missingObjectSourceId = `playback-missing-${process.pid}`;
+  const midiSourceId = `playback-midi-${process.pid}`;
+  const firstBytes = new TextEncoder().encode("first-upload-audio");
+  const secondBytes = new TextEncoder().encode("second-upload-audio");
+  try {
+    await createPlaybackSource(
+      playbackProjectId,
+      firstSourceId,
+      "first",
+      firstBytes,
+    );
+    await createPlaybackSource(
+      playbackProjectId,
+      secondSourceId,
+      "second",
+      secondBytes,
+    );
+    await db
+      .update(projectSourcesTable)
+      .set({ status: "ready", progress: 100 })
+      .where(eq(projectSourcesTable.id, secondSourceId));
+    await db
+      .update(projectSourcesTable)
+      .set({ status: "ready", progress: 100 })
+      .where(eq(projectSourcesTable.id, firstSourceId));
+
+    const firstPlayback = await request(
+      `/api/projects/${playbackProjectId}/playback?sourceId=${firstSourceId}`,
+      ownerSession,
+    );
+    assert.equal(firstPlayback.status, 200);
+    assert.equal(firstPlayback.headers.get("accept-ranges"), "bytes");
+    assert.equal(
+      Buffer.from(await firstPlayback.arrayBuffer()).toString(),
+      "first-upload-audio",
+    );
+
+    const secondPlayback = await request(
+      `/api/projects/${playbackProjectId}/playback?sourceId=${secondSourceId}`,
+      ownerSession,
+    );
+    assert.equal(secondPlayback.status, 200);
+    assert.equal(
+      Buffer.from(await secondPlayback.arrayBuffer()).toString(),
+      "second-upload-audio",
+    );
+
+    const rangedPlayback = await request(
+      `/api/projects/${playbackProjectId}/playback?sourceId=${firstSourceId}`,
+      ownerSession,
+      { headers: { Range: "bytes=6-10" } },
+    );
+    assert.equal(rangedPlayback.status, 206);
+    assert.equal(
+      rangedPlayback.headers.get("content-range"),
+      `bytes 6-10/${firstBytes.length}`,
+    );
+    assert.equal(
+      Buffer.from(await rangedPlayback.arrayBuffer()).toString(),
+      "uploa",
+    );
+
+    const suffixPlayback = await request(
+      `/api/projects/${playbackProjectId}/playback?sourceId=${secondSourceId}`,
+      ownerSession,
+      { headers: { Range: "bytes=-5" } },
+    );
+    assert.equal(suffixPlayback.status, 206);
+    assert.equal(
+      Buffer.from(await suffixPlayback.arrayBuffer()).toString(),
+      "audio",
+    );
+
+    const invalidRange = await request(
+      `/api/projects/${playbackProjectId}/playback?sourceId=${firstSourceId}`,
+      ownerSession,
+      { headers: { Range: "bytes=999-1000" } },
+    );
+    assert.equal(invalidRange.status, 416);
+    assert.equal(
+      invalidRange.headers.get("content-range"),
+      `bytes */${firstBytes.length}`,
+    );
+
+    assert.equal(
+      (
+        await request(
+          `/api/projects/${playbackProjectId}/playback?sourceId=${firstSourceId}`,
+          otherSession,
+        )
+      ).status,
+      404,
+    );
+    assert.equal(
+      (
+        await request(
+          `/api/projects/${playbackProjectId}/playback?sourceId=does-not-exist`,
+          ownerSession,
+        )
+      ).status,
+      409,
+    );
+
+    await db.insert(projectSourcesTable).values({
+      id: missingObjectSourceId,
+      projectId: playbackProjectId,
+      ownerId: `export-owner-${process.pid}`,
+      objectPath: "/objects/uploads/00000000-0000-4000-8000-000000000000",
+      name: "missing.wav",
+      size: 64,
+      contentType: "audio/wav",
+      sourceType: "FULL_SONG",
+      status: "ready",
+      progress: 100,
+    });
+    const missingObjectPlayback = await request(
+      `/api/projects/${playbackProjectId}/playback?sourceId=${missingObjectSourceId}`,
+      ownerSession,
+    );
+    assert.equal(missingObjectPlayback.status, 404);
+
+    await createPlaybackSource(
+      playbackProjectId,
+      midiSourceId,
+      "notes",
+      new TextEncoder().encode("midi-data"),
+      "MIDI",
+      "audio/midi",
+    );
+    await db
+      .update(projectSourcesTable)
+      .set({ status: "ready", progress: 100 })
+      .where(eq(projectSourcesTable.id, midiSourceId));
+    const midiPlayback = await request(
+      `/api/projects/${playbackProjectId}/playback?sourceId=${midiSourceId}`,
+      ownerSession,
+    );
+    assert.equal(midiPlayback.status, 409);
+    assert.equal((await midiPlayback.json()).code, "PLAYBACK_UNAVAILABLE");
+  } finally {
+    const cleanupResponse = await request(
+      `/api/projects/${playbackProjectId}`,
+      ownerSession,
+      { method: "DELETE" },
+    );
+    assert.ok([200, 202, 404].includes(cleanupResponse.status));
+  }
 });
 
 test("project and export endpoints enforce owner authorization", async () => {

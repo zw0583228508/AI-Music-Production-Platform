@@ -32,6 +32,7 @@ export function useAudioTransport(
 ): AudioTransport {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const frameRef = useRef<number | null>(null);
+  const playAttemptRef = useRef(0);
   const durationHintRef = useRef(durationHint);
   durationHintRef.current = durationHint;
   const [status, setStatus] = useState<AudioTransportStatus>(
@@ -112,6 +113,7 @@ export function useAudioTransport(
     audio.addEventListener("error", handleError);
 
     return () => {
+      playAttemptRef.current += 1;
       stopAnimation();
       audio.pause();
       audio.removeAttribute("src");
@@ -130,6 +132,7 @@ export function useAudioTransport(
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
+    playAttemptRef.current += 1;
     stopAnimation();
     audio.pause();
     audio.removeAttribute("src");
@@ -158,9 +161,11 @@ export function useAudioTransport(
     }
     setError(null);
     setStatus("loading");
+    const playAttempt = ++playAttemptRef.current;
     try {
       await audio.play();
     } catch (playError) {
+      if (playAttempt !== playAttemptRef.current) return;
       setStatus("error");
       setError(
         playError instanceof DOMException && playError.name === "NotAllowedError"
@@ -173,6 +178,7 @@ export function useAudioTransport(
   const pause = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
+    playAttemptRef.current += 1;
     stopAnimation();
     audio.pause();
     setCurrentTime(audio.currentTime);
@@ -186,6 +192,7 @@ export function useAudioTransport(
       return;
     }
     if (!audio.paused) {
+      playAttemptRef.current += 1;
       stopAnimation();
       audio.pause();
       setCurrentTime(audio.currentTime);
@@ -198,6 +205,8 @@ export function useAudioTransport(
   const stop = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
+    playAttemptRef.current += 1;
+    stopAnimation();
     audio.pause();
     audio.currentTime = 0;
     setCurrentTime(0);
@@ -215,6 +224,7 @@ export function useAudioTransport(
   const retry = useCallback(() => {
     const audio = audioRef.current;
     if (!audio || !src) return;
+    playAttemptRef.current += 1;
     setError(null);
     setStatus("loading");
     audio.load();

@@ -723,7 +723,10 @@ export function ArrangerEditor({
               </Button>
             ))}
           </div>
-          <div className="hidden items-center gap-1.5 text-xs text-muted-foreground md:flex">
+          <div
+            data-testid="transport-bar-readout"
+            className="hidden items-center gap-1.5 text-xs text-muted-foreground md:flex"
+          >
             <span className="font-mono text-foreground">Bar {Math.floor(playheadBar)}</span>
             <span>·</span>
             <span className="max-w-28 truncate">{activePlaybackSection?.name ?? "Timeline"}</span>
@@ -879,6 +882,8 @@ export function ArrangerEditor({
               <div
                 className="pointer-events-none absolute inset-y-0 z-30 w-px bg-primary shadow-[0_0_0_1px_hsl(var(--primary)/0.2)]"
                 style={{ left: `${playheadPercent}%` }}
+                data-testid="arrangement-playhead"
+                data-playhead-bar={playheadBar.toFixed(3)}
                 aria-hidden="true"
               >
                 <span className="absolute -left-[4px] top-0 h-0 w-0 border-x-[4px] border-t-[6px] border-x-transparent border-t-primary" />
