@@ -104,7 +104,7 @@ does not download weights or executable model code while serving a request.
 | Provider | Modal GPU/runtime | Installed adapter | Checkpoint and smoke status | API readiness |
 | --- | --- | --- | --- | --- |
 | ACE-Step 1.5 | L40S; CUDA 12.8.1; Torch 2.10.0+cu128 | Official ACE-Step source at `ca1e85fe9430179831e6bc6be790c332190a3866` | Composite checkpoint SHA verified; real GPU smoke passed | `ready` |
-| BS-RoFormer | L4; CUDA 12.4.1; Torch 2.5.1+cu124 | `bs-roformer-infer==0.1.5` | No unambiguous immutable Viperx-v1 checkpoint source; no real smoke | `configured`, blocked |
+| BS-RoFormer | L4; CUDA 12.4.1; Torch 2.5.1+cu124 | `bs-roformer-infer==0.1.5` | MIT Viperx snapshot `puar-playground/bs-roformer@b1361b816daca507f079d85e935c291bcb0a5351`; checkpoint SHA `5b84f37e8d444c8cb30c79d77f613a41c05868ff9c9ac6c7049c00aefae115aa`; real L4 smoke passed | `ready` with matching signed promotion |
 | MT3 | L4; CUDA 12.4.1; Torch 2.5.1+cu124; Transformers 4.38.2 | `mt3-infer==0.1.3` at `280a95817a67da0ae46987ddbb18c946963afffe` | Converted checkpoint snapshot and canonical SHA verified; real L4 smoke produced valid transcription; routing still requires the exact signed matching promotion | fail-closed pending signed matching promotion |
 | All-In-One | L4; CUDA 12.4.1; Torch 2.5.1+cu124 | `all-in-one-infer` at `3c93b4ae389328544dd5955af7497030cb1bca3a`; `demucs-infer` 4.2.2 at `4b79d5c756ce298503d90b0cca2abbc76c565416` | All eight CC-BY-NC-SA-4.0 Harmonix folds and the MIT HTDemucs asset are revision/SHA pinned and atomically staged; readiness still requires real GPU smoke and a signed promotion | `configured` until smoke and promotion pass |
 
@@ -242,6 +242,17 @@ configuration. It excludes the turbo and 1.7B thinking model. A prior verified
 `ace-step-1.5-base` is hardlinked (or copied) into staging when available and
 is never deleted; otherwise the base revision is downloaded. The final
 composite is independently canonical-hashed before its model Volume commit.
+BS-RoFormer bootstrap downloads only `bs_roformer.ckpt` and
+`bs_roformer.yaml` from the immutable MIT-labelled
+`puar-playground/bs-roformer@b1361b816daca507f079d85e935c291bcb0a5351`
+snapshot. It verifies the 639,331,213-byte checkpoint as
+`5b84f37e8d444c8cb30c79d77f613a41c05868ff9c9ac6c7049c00aefae115aa`
+and the config as
+`9df444dbc1a704e23858e0315a211ec5fa4c69f92ecefb173d05e8f721ed2b1f`
+before publishing the config and then the checkpoint readiness marker. The
+snapshot card carries an MIT license declaration and credits the Viperx
+checkpoint and upstream MIT BS-RoFormer implementations; this reviewed package,
+not the mutable third-party release URL, is the production source.
 MT3 stages only `config.json` and `mt3.pth` from `kunato/mt3-pytorch` commit
 `e203122fb40eefd3f9068dc6efd1870fe54ca57b`. Each file is bounded and
 SHA-256 verified before the directory is atomically published. The canonical
@@ -259,12 +270,8 @@ non-silent structured fixture produced 48 notes and matched the reviewed image
 and source digest. This evidence does not promote the provider or enable API
 routing; only a separately signed, exact matching promotion bundle can do that.
 
-The BS_ROFORMER bootstrap entrypoint intentionally fails before creating
-checkpoint files because its current adapter identity does not establish an
-unambiguous, immutable public checkpoint snapshot. Operators must review and
-pin that source rather than allowing an inference-time auto-download or a
-checkpoint-shaped placeholder. Successful bootstrap output contains only
-provider, relative path, digest, revision, and size.
+Successful bootstrap output contains only provider, relative path, digest,
+revision, and size.
 
 For a checkpoint upgrade, create new versioned volumes, update the pinned
 secret/checksum in a reviewed deployment, and wait for health smoke validation

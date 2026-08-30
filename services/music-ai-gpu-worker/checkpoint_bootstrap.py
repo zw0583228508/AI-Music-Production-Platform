@@ -41,6 +41,10 @@ PUBLIC_SNAPSHOTS: dict[str, PublicSnapshot] = {
         "kunato/mt3-pytorch",
         "e203122fb40eefd3f9068dc6efd1870fe54ca57b",
     ),
+    "BS_ROFORMER": PublicSnapshot(
+        "puar-playground/bs-roformer",
+        "b1361b816daca507f079d85e935c291bcb0a5351",
+    ),
 }
 ACE_BASE_REPOSITORY = "ACE-Step/acestep-v15-base"
 ACE_BASE_REVISION = "e432212fec32b8965a14ffa57ae653438d6abd14"
@@ -76,9 +80,13 @@ MT3_FILES = {
         "max_bytes": 192 * 1024 * 1024,
     },
 }
-UNVERIFIED_SOURCES = {
-    "BS_ROFORMER": "no unambiguous public Viperx-v1 checkpoint revision is pinned",
-}
+UNVERIFIED_SOURCES: dict[str, str] = {}
+BS_CHECKPOINT_FILENAME = "bs_roformer.ckpt"
+BS_CHECKPOINT_SHA256 = "5b84f37e8d444c8cb30c79d77f613a41c05868ff9c9ac6c7049c00aefae115aa"
+BS_CHECKPOINT_SIZE = 639_331_213
+BS_CONFIG_FILENAME = "bs_roformer.yaml"
+BS_CONFIG_SHA256 = "9df444dbc1a704e23858e0315a211ec5fa4c69f92ecefb173d05e8f721ed2b1f"
+BS_CONFIG_SIZE = 1_677
 
 
 def checkpoint_sha256(path: Path) -> str:
@@ -215,6 +223,60 @@ def _bootstrap_ace(destination: Path, stage: Path) -> None:
     if destination.exists():
         raise RuntimeError("checkpoint destination appeared during bootstrap")
     os.replace(stage, destination)
+
+
+def _validate_exact_file(path: Path, *, digest: str, size: int, label: str) -> None:
+    if not path.is_file() or path.stat().st_size != size:
+        raise RuntimeError(f"{label} is missing or has the wrong size")
+    if checkpoint_sha256(path) != digest:
+        raise RuntimeError(f"{label} SHA-256 does not match its immutable source")
+
+
+def _validate_bs_roformer(checkpoint: Path, config: Path) -> None:
+    _validate_exact_file(
+        checkpoint,
+        digest=BS_CHECKPOINT_SHA256,
+        size=BS_CHECKPOINT_SIZE,
+        label="BS-RoFormer checkpoint",
+    )
+    _validate_exact_file(
+        config,
+        digest=BS_CONFIG_SHA256,
+        size=BS_CONFIG_SIZE,
+        label="BS-RoFormer config",
+    )
+
+
+def _bootstrap_bs_roformer(destination: Path, stage: Path, config: Path) -> None:
+    from huggingface_hub import hf_hub_download
+
+    source = PUBLIC_SNAPSHOTS["BS_ROFORMER"]
+    stage.mkdir(mode=0o750)
+    staged_checkpoint = stage / destination.name
+    staged_config = stage / config.name
+    shutil.copyfile(
+        hf_hub_download(
+            repo_id=source.repository,
+            revision=source.revision,
+            filename=BS_CHECKPOINT_FILENAME,
+        ),
+        staged_checkpoint,
+    )
+    shutil.copyfile(
+        hf_hub_download(
+            repo_id=source.repository,
+            revision=source.revision,
+            filename=BS_CONFIG_FILENAME,
+        ),
+        staged_config,
+    )
+    _validate_bs_roformer(staged_checkpoint, staged_config)
+    if destination.exists():
+        raise RuntimeError("checkpoint destination appeared during bootstrap")
+    # Publish config first so the checkpoint readiness marker can never appear
+    # without its already-validated matching configuration.
+    os.replace(staged_config, config)
+    os.replace(staged_checkpoint, destination)
 
 
 def _file_sha256(path: Path) -> str:
@@ -378,9 +440,17 @@ def bootstrap_provider(provider: str) -> dict[str, str | int]:
     if not details or (not source and provider != "ALL_IN_ONE"):
         raise RuntimeError(f"{provider} has no pinned public checkpoint source")
     destination = MODEL_ROOT / details["checkpoint_path"]
+    config = (
+        MODEL_ROOT / details["config_path"]
+        if provider == "BS_ROFORMER"
+        else None
+    )
     if destination.exists():
         if provider == "ACE_STEP":
             _validate_ace_composite(destination)
+        elif provider == "BS_ROFORMER":
+            assert config is not None
+            _validate_bs_roformer(destination, config)
         elif provider == "MT3":
             _validate_mt3_snapshot(destination)
         elif provider == "ALL_IN_ONE":
@@ -391,6 +461,9 @@ def bootstrap_provider(provider: str) -> dict[str, str | int]:
         try:
             if provider == "ACE_STEP":
                 _bootstrap_ace(destination, stage)
+            elif provider == "BS_ROFORMER":
+                assert config is not None
+                _bootstrap_bs_roformer(destination, stage, config)
             elif provider == "MT3":
                 _bootstrap_mt3(destination, stage)
             elif provider == "ALL_IN_ONE":

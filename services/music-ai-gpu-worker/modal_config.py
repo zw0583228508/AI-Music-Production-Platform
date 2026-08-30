@@ -185,6 +185,13 @@ def worker_environment(deployment: ProviderDeployment) -> dict[str, str]:
         ] = checkpoint_sha256
     if details.get("revision"):
         environment[f"MUSIC_PROVIDER_{deployment.provider}_REVISION"] = details["revision"]
+    if details.get("config_path") and details.get("config_sha256"):
+        environment[
+            f"MUSIC_PROVIDER_{deployment.provider}_CONFIG_PATH"
+        ] = f"{MODEL_MOUNT}/{details['config_path']}"
+        environment[
+            f"MUSIC_PROVIDER_{deployment.provider}_CONFIG_SHA256"
+        ] = details["config_sha256"]
     source_revision = os.getenv("MUSIC_GPU_SOURCE_REVISION", "").strip()
     if source_revision:
         environment["MUSIC_GPU_SOURCE_REVISION"] = source_revision

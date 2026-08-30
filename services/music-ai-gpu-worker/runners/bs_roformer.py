@@ -18,10 +18,13 @@ MODEL_VERSION = "bs-roformer-viperx-v1"
 BACKEND_DISTRIBUTION = "bs-roformer-infer"
 BACKEND_VERSION = "0.1.5"
 BACKEND_SOURCE_REVISION = "openmirlab/bs-roformer-infer@b0f1386fcced25f559f3e61c9f08a73cd9bddf80"
+CHECKPOINT_SOURCE_REVISION = (
+    "puar-playground/bs-roformer@b1361b816daca507f079d85e935c291bcb0a5351"
+)
 
 
 class BSRoformerInferBackend:
-    """Official public session API with explicit local model/config paths."""
+    """Official folder API with explicit local model/config paths."""
     def __init__(self, checkpoint: Path, output_dir: Path) -> None:
         require_distribution_version(BACKEND_DISTRIBUTION, BACKEND_VERSION)
         config = Path(os.environ.get("MUSIC_PROVIDER_BS_ROFORMER_CONFIG_PATH", ""))
@@ -33,33 +36,31 @@ class BSRoformerInferBackend:
         if (len(expected_config) != 64 or file_sha256(config) != expected_config):
             raise RunnerError("mounted BS-RoFormer config SHA-256 is missing or mismatched")
         try:
-            from bs_roformer import BSRoformerSession
+            from bs_roformer.inference import proc_folder
         except ImportError as exc:
             raise RunnerError("bs-roformer-infer is not installed") from exc
-        try:
-            self.session = BSRoformerSession(
-                model_path=checkpoint, config_path=config, device="cuda",
-                backend="torch", progress=False,
-            ).load()
-        except Exception as exc:
-            raise RunnerError(f"unable to load mounted BS-RoFormer checkpoint: {type(exc).__name__}") from exc
+        self.checkpoint = checkpoint
+        self.config = config
+        self.proc_folder = proc_folder
         self.output_dir = output_dir
 
     def separate(self, source: Path) -> list[Path]:
         try:
-            manifest = self.session.infer(
-                source.parent, store_dir=self.output_dir, output_format="flac16"
-            )
+            self.proc_folder([
+                "--model_type", "bs_roformer",
+                "--model_path", str(self.checkpoint),
+                "--config_path", str(self.config),
+                "--input_folder", str(source.parent),
+                "--store_dir", str(self.output_dir),
+                "--device", "cuda",
+            ])
         except Exception as exc:
             raise RunnerError(f"BS-RoFormer inference failed: {type(exc).__name__}") from exc
-        outputs = {
-            item.output_id: Path(item.output_path)
-            for item in manifest.outputs
-            if Path(item.input_path).resolve() == source.resolve()
-        }
-        if set(outputs) != {"vocals", "instrumental"}:
+        vocals = self.output_dir / f"{source.stem}_vocals.wav"
+        instrumental = self.output_dir / f"{source.stem}_instrumental.wav"
+        if not vocals.is_file() or not instrumental.is_file():
             raise RunnerError("mounted BS-RoFormer config is not a two-stem model")
-        return [outputs["vocals"], outputs["instrumental"]]
+        return [vocals, instrumental]
 
 
 def run_job(request: dict[str, Any], checkpoint: Path, backend_cls=BSRoformerInferBackend,
@@ -100,7 +101,8 @@ def provenance(digest: str) -> dict[str, str]:
     return {"provider": PROVIDER, "modelVersion": MODEL_VERSION,
             "checkpointSha256": digest,
             "backend": BACKEND_DISTRIBUTION, "backendVersion": BACKEND_VERSION,
-            "revision": BACKEND_SOURCE_REVISION, "sourceRevision": BACKEND_SOURCE_REVISION,
+            "revision": CHECKPOINT_SOURCE_REVISION,
+            "backendSourceRevision": BACKEND_SOURCE_REVISION,
             "model": MODEL_VERSION, "device": "cuda", **runtime_provenance()}
 
 

@@ -73,6 +73,38 @@ class GpuWorkerContractTests(unittest.TestCase):
         self.assertFalse(result["smokeTested"])
         self.assertIn("CUDA GPU is not available", result["message"])
 
+    def test_bs_roformer_config_change_invalidates_checkpoint_and_smoke(self):
+        checkpoint = worker.CHECKPOINT_ROOT / "test-bs-roformer.ckpt"
+        config = worker.CHECKPOINT_ROOT / "test-bs-roformer.yaml"
+        checkpoint.write_bytes(b"checkpoint")
+        config.write_bytes(b"config-v1")
+        checkpoint_hash = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+        config_hash = hashlib.sha256(config.read_bytes()).hexdigest()
+        details = {
+            **worker.PROVIDERS["BS_ROFORMER"],
+            "checkpoint_path": checkpoint.name,
+            "checkpoint_sha256": checkpoint_hash,
+            "config_path": config.name,
+            "config_sha256": config_hash,
+        }
+        smoke_identity = f"{checkpoint_hash}:{config_hash}"
+        worker.SMOKE_ATTESTATIONS["BS_ROFORMER"] = smoke_identity
+        with mock.patch.dict(
+            worker.PROVIDERS, {"BS_ROFORMER": details}
+        ), mock.patch.object(
+            worker, "ENABLED", {"BS_ROFORMER"}
+        ), mock.patch.object(
+            worker, "_gpu_runtime", return_value=(True, "ready")
+        ):
+            first = worker._provider_health("BS_ROFORMER", run_smoke=False)
+            self.assertTrue(first["checkpointReady"])
+            self.assertTrue(first["smokeTested"])
+            config.write_bytes(b"config-v2")
+            second = worker._provider_health("BS_ROFORMER", run_smoke=False)
+        self.assertFalse(second["checkpointReady"])
+        self.assertFalse(second["smokeTested"])
+        self.assertNotEqual(second["configSha256"], config_hash)
+
     def test_provider_qualified_health_returns_the_direct_contract(self):
         os.environ["MUSIC_AI_WORKER_TOKEN"] = "health-test-token"
 

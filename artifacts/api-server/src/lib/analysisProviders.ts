@@ -1,9 +1,6 @@
 import type { AnalysisSection, SongModelData } from "@workspace/db";
 import { attestAnalysisProviderHealth } from "./analysisProviderManifest";
-import {
-  gpuPromotionAttestationFailure,
-  requiresGpuPromotionRecord,
-} from "./gpuProviderAttestation";
+import { requiresGpuPromotionRecord } from "./gpuProviderAttestation";
 
 type ProviderProvenance = SongModelData["providerProvenance"][number];
 type MelodyNote = SongModelData["melody"][number];
@@ -120,7 +117,11 @@ const analysisHealthCache = new Map<string, {
 
 export const configuredAnalysisProviderEndpoint = (providerId: AnalysisProviderId): string | null => {
   const aliases = providerId === "BS_ROFORMER"
-    ? ["BS_ROFORMER_API_URL", "BS_ROFORMER_SW_API_URL"]
+    ? [
+        "MUSIC_PROVIDER_BS_ROFORMER_ENDPOINT",
+        "BS_ROFORMER_API_URL",
+        "BS_ROFORMER_SW_API_URL",
+      ]
     : providerId === "SHEETSAGE"
       ? ["SHEETSAGE_API_URL", "SHEET_SAGE_API_URL"]
       : [`${providerId}_API_URL`];
@@ -131,7 +132,9 @@ export const configuredAnalysisProviderEndpoint = (providerId: AnalysisProviderI
 
 const providerToken = (providerId: AnalysisProviderId): string | undefined => {
   if (providerId === "BS_ROFORMER") {
-    return process.env.BS_ROFORMER_API_TOKEN ?? process.env.BS_ROFORMER_SW_API_TOKEN;
+    return process.env.BS_ROFORMER_API_TOKEN ??
+      process.env.BS_ROFORMER_SW_API_TOKEN ??
+      process.env.MUSIC_AI_WORKER_TOKEN;
   }
   if (providerId === "SHEETSAGE") {
     return process.env.SHEETSAGE_API_TOKEN ?? process.env.SHEET_SAGE_API_TOKEN;
@@ -333,16 +336,7 @@ async function attestProviderHealth(
     });
     if (!response.ok) throw new Error(`health check returned HTTP ${response.status}`);
     const payload = await readProviderJson(providerId, response);
-    attestAnalysisProviderHealth(providerId, payload);
-    if (requiresGpuPromotionRecord(providerId)) {
-      if (!isRecord(payload)) throw new Error("health response must be a JSON object");
-      const promotionFailure = gpuPromotionAttestationFailure(
-        providerId,
-        endpoint,
-        payload,
-      );
-      if (promotionFailure) throw new Error(promotionFailure);
-    }
+    attestAnalysisProviderHealth(providerId, payload, endpoint);
     analysisHealthCache.set(cacheKey, {
       expiresAt: Date.now() + ANALYSIS_HEALTH_TTL_MS,
       error: null,

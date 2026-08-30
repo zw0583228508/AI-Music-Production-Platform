@@ -241,6 +241,18 @@ def _provider_health(
         or details.get("checkpoint_sha256")
     )
     actual_hash = _checkpoint_digest(checkpoint)
+    config_path_value = str(details.get("config_path", "")).strip()
+    config = CHECKPOINT_ROOT / config_path_value if config_path_value else None
+    expected_config_hash = str(details.get("config_sha256", "") or "").strip()
+    actual_config_hash = _checkpoint_digest(config) if config else ""
+    config_ready = (
+        not config_path_value
+        or bool(
+            expected_config_hash
+            and actual_config_hash
+            and actual_config_hash.lower() == expected_config_hash.lower()
+        )
+    )
     expected_runtime = _expected_runtime(details)
     runtime_ready, runtime_message = _gpu_runtime(details)
     try:
@@ -261,10 +273,23 @@ def _provider_health(
     modal_deployment_id = os.getenv("MUSIC_GPU_MODAL_DEPLOYMENT_ID", "").strip()
     modal_function_id = os.getenv("MUSIC_GPU_MODAL_FUNCTION_ID", "").strip()
     source_revision = os.getenv("MUSIC_GPU_SOURCE_REVISION", "").strip()
-    checksum_ready = bool(expected_hash and actual_hash and actual_hash.lower() == expected_hash.lower())
+    checksum_ready = bool(
+        expected_hash
+        and actual_hash
+        and actual_hash.lower() == expected_hash.lower()
+        and config_ready
+    )
     runner = os.getenv(details["runner_env"], "").strip()
     smoke_command = os.getenv(details["smoke_env"], "").strip() or runner
-    smoke_tested = bool(actual_hash and SMOKE_ATTESTATIONS.get(provider) == actual_hash)
+    smoke_identity = (
+        f"{actual_hash}:{actual_config_hash}"
+        if config_path_value
+        else actual_hash
+    )
+    smoke_tested = bool(
+        smoke_identity
+        and SMOKE_ATTESTATIONS.get(provider) == smoke_identity
+    )
     smoke_message = (
         "Real GPU smoke inference verified"
         if smoke_tested
@@ -306,8 +331,8 @@ def _provider_health(
                     )
                     and bool(proof.get("output"))
                 )
-                if smoke_tested and actual_hash:
-                    SMOKE_ATTESTATIONS[provider] = actual_hash
+                if smoke_tested and smoke_identity:
+                    SMOKE_ATTESTATIONS[provider] = smoke_identity
                 smoke_message = "Real GPU smoke inference verified" if smoke_tested else "Smoke proof did not match the loaded model"
             except (json.JSONDecodeError, IndexError):
                 smoke_message = "Smoke runner did not return a valid proof"
@@ -326,6 +351,8 @@ def _provider_health(
         reasons.append("checkpoint SHA-256 is not pinned in the manifest")
     elif not checksum_ready:
         reasons.append("checkpoint SHA-256 does not match the manifest")
+    if config_path_value and not config_ready:
+        reasons.append("model config SHA-256 does not match the manifest")
     if not runner:
         reasons.append("model runner is not configured")
     if not immutable_container:
@@ -350,6 +377,8 @@ def _provider_health(
         "version": version,
         "checksum": actual_hash,
         "checkpointSha256": actual_hash,
+        "configReady": config_ready,
+        "configSha256": actual_config_hash,
         "smokeTested": smoke_tested,
         "framework": expected_runtime,
         "expectedRuntime": expected_runtime,

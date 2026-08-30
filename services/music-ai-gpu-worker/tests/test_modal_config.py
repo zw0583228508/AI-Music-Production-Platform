@@ -63,6 +63,21 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
                 environment[f"MUSIC_GPU_SMOKE_{deployment.provider}"],
                 f"python -m runners.{module}",
             )
+        bs_environment = modal_config.worker_environment(
+            modal_config.DEPLOYMENTS["BS_ROFORMER"]
+        )
+        self.assertEqual(
+            bs_environment["MUSIC_PROVIDER_BS_ROFORMER_CHECKPOINT_SHA256"],
+            checkpoint_bootstrap.BS_CHECKPOINT_SHA256,
+        )
+        self.assertEqual(
+            bs_environment["MUSIC_PROVIDER_BS_ROFORMER_CONFIG_SHA256"],
+            checkpoint_bootstrap.BS_CONFIG_SHA256,
+        )
+        self.assertEqual(
+            bs_environment["MUSIC_PROVIDER_BS_ROFORMER_CONFIG_PATH"],
+            f"{modal_config.MODEL_MOUNT}/bs-roformer-viperx-v1.yaml",
+        )
 
     def test_image_build_args_only_contain_dependency_inputs(self):
         for deployment in modal_config.DEPLOYMENTS.values():
@@ -271,21 +286,6 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
                 ).hexdigest(),
             )
 
-    def test_uncertain_bootstrap_source_fails_without_creating_weights(self):
-        with tempfile.TemporaryDirectory() as directory, mock.patch.object(
-            checkpoint_bootstrap, "MODEL_ROOT", Path(directory)
-        ), mock.patch.object(
-            checkpoint_bootstrap,
-            "SMOKE_FIXTURE",
-            Path(directory) / "_smoke" / "non-silent-440hz-1s.wav",
-        ):
-            with self.assertRaisesRegex(RuntimeError, "bootstrap unavailable"):
-                checkpoint_bootstrap.bootstrap_provider("BS_ROFORMER")
-            self.assertTrue(checkpoint_bootstrap.SMOKE_FIXTURE.is_file())
-            self.assertEqual(
-                list(Path(directory).glob("bs-roformer-viperx-v1.ckpt")), []
-            )
-
     def test_reviewed_manifest_checkpoint_hash_is_passed_to_mt3(self):
         environment = modal_config.worker_environment(
             modal_config.DEPLOYMENTS["MT3"]
@@ -397,6 +397,60 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             )
             self.assertEqual(result["digest"], canonical)
             self.assertEqual(list(root.glob(".bootstrap-mt3-*")), [])
+
+    def test_bs_roformer_bootstrap_pins_and_atomically_publishes_weights_and_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache = root / "cache"
+            cache.mkdir()
+            weights = b"verified-viperx-weights"
+            config = b"verified-viperx-config"
+            (cache / checkpoint_bootstrap.BS_CHECKPOINT_FILENAME).write_bytes(weights)
+            (cache / checkpoint_bootstrap.BS_CONFIG_FILENAME).write_bytes(config)
+
+            def hf_hub_download(**kwargs):
+                self.assertEqual(
+                    kwargs["repo_id"], "puar-playground/bs-roformer"
+                )
+                self.assertEqual(
+                    kwargs["revision"],
+                    "b1361b816daca507f079d85e935c291bcb0a5351",
+                )
+                return str(cache / kwargs["filename"])
+
+            fake_hub = types.SimpleNamespace(hf_hub_download=hf_hub_download)
+            with mock.patch.object(
+                checkpoint_bootstrap, "MODEL_ROOT", root
+            ), mock.patch.object(
+                checkpoint_bootstrap,
+                "SMOKE_FIXTURE",
+                root / "_smoke" / "structured-click-track-32s.wav",
+            ), mock.patch.object(
+                checkpoint_bootstrap,
+                "BS_CHECKPOINT_SHA256",
+                __import__("hashlib").sha256(weights).hexdigest(),
+            ), mock.patch.object(
+                checkpoint_bootstrap, "BS_CHECKPOINT_SIZE", len(weights)
+            ), mock.patch.object(
+                checkpoint_bootstrap,
+                "BS_CONFIG_SHA256",
+                __import__("hashlib").sha256(config).hexdigest(),
+            ), mock.patch.object(
+                checkpoint_bootstrap, "BS_CONFIG_SIZE", len(config)
+            ), mock.patch.dict(sys.modules, {"huggingface_hub": fake_hub}):
+                result = checkpoint_bootstrap.bootstrap_provider("BS_ROFORMER")
+
+            self.assertEqual(
+                (root / "bs-roformer-viperx-v1.ckpt").read_bytes(), weights
+            )
+            self.assertEqual(
+                (root / "bs-roformer-viperx-v1.yaml").read_bytes(), config
+            )
+            self.assertEqual(
+                result["revision"],
+                "b1361b816daca507f079d85e935c291bcb0a5351",
+            )
+            self.assertEqual(list(root.glob(".bootstrap-bs_roformer-*")), [])
 
     def test_ace_bootstrap_builds_atomic_minimal_composite_and_keeps_old_base(self):
         with tempfile.TemporaryDirectory() as directory:

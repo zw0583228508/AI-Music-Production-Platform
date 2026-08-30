@@ -1,4 +1,4 @@
-import { expectedGpuCheckpointSha256 } from "./gpuProviderAttestation";
+import { gpuPromotionAttestationFailure } from "./gpuProviderAttestation";
 
 export type VerifiedLocalAnalysisProviderId = "BASIC_PITCH" | "DEMUCS";
 export type VerifiedGpuAnalysisProviderId = "BS_ROFORMER" | "ALL_IN_ONE" | "MT3";
@@ -53,6 +53,7 @@ function record(value: unknown): value is Record<string, unknown> {
 export function attestAnalysisProviderHealth(
   requestedProvider: string,
   payload: unknown,
+  endpoint?: string,
 ): AnalysisProviderHealthAttestation {
   if (!record(payload)) throw new Error("health response must be a JSON object");
   const provider = typeof payload.provider === "string" ? payload.provider.trim() : "";
@@ -86,27 +87,19 @@ export function attestAnalysisProviderHealth(
     requestedProvider as VerifiedGpuAnalysisProviderId
   ];
   if (gpuExpected) {
-    const expectedChecksum = expectedGpuCheckpointSha256(requestedProvider);
-    const runtime = record(payload.runtime) ? payload.runtime : {};
-    const requiredRuntimeProvenance = [
-      payload.revision ?? payload.checkpointRevision ?? runtime.revision,
-      payload.containerDigest ?? runtime.containerDigest,
-      payload.cudaVersion ?? runtime.cudaVersion,
-      payload.pytorchVersion ?? payload.torchVersion ?? runtime.pytorchVersion ?? runtime.torchVersion,
-      payload.gpu ?? payload.gpuModel ?? runtime.gpu ?? runtime.gpuModel,
-    ].every((value) =>
-      typeof value === "string" && value.trim().length > 0 && value.trim().length <= 256
-    );
+    const promotionFailure = endpoint
+      ? gpuPromotionAttestationFailure(requestedProvider, endpoint, payload)
+      : "GPU provider endpoint is required for promotion attestation.";
     if (
       version !== gpuExpected.version ||
       !/^[a-f0-9]{64}$/i.test(checksum) ||
-      !expectedChecksum ||
-      checksum.toLowerCase() !== expectedChecksum ||
       payload.gpuReady !== true ||
-      !requiredRuntimeProvenance
+      promotionFailure
     ) {
       throw new Error(
-        `health response does not match the verified GPU ${requestedProvider} identity`,
+        `health response does not match the verified GPU ${requestedProvider} identity: ${
+          promotionFailure ?? "model readiness is invalid"
+        }`,
       );
     }
   }

@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
 import { createServer } from "node:http";
 import test from "node:test";
+import { canonicalGpuPromotionJson, type GpuPromotionRecord } from "./gpuProviderAttestation";
 import {
   parseHarmony,
   parseSeparation,
   runAnalysisProviders,
 } from "./analysisProviders";
-import { canonicalGpuPromotionJson } from "./gpuProviderAttestation";
 
 test("parses valid harmony evidence and rejects out-of-range chords", () => {
   const result = parseHarmony("SHEETSAGE", {
@@ -103,10 +103,11 @@ test("prefers configured DEMUCS and rejects an unsigned GPU fallback", async () 
   assert.ok(address && typeof address !== "string");
   const previousDemucs = process.env.DEMUCS_API_URL;
   const previousBsRoformer = process.env.BS_ROFORMER_API_URL;
-  const previousBsRoformerChecksum = process.env.BS_ROFORMER_CHECKPOINT_SHA256;
+  const previousPromotedBsRoformer =
+    process.env.MUSIC_PROVIDER_BS_ROFORMER_ENDPOINT;
   process.env.DEMUCS_API_URL = `http://127.0.0.1:${address.port}`;
   process.env.BS_ROFORMER_API_URL = "http://127.0.0.1:1";
-  process.env.BS_ROFORMER_CHECKPOINT_SHA256 = "a".repeat(64);
+  delete process.env.MUSIC_PROVIDER_BS_ROFORMER_ENDPOINT;
   try {
     const result = await runAnalysisProviders({
       sourceUrl: "https://storage.invalid/signed-source",
@@ -136,10 +137,132 @@ test("prefers configured DEMUCS and rejects an unsigned GPU fallback", async () 
     else process.env.DEMUCS_API_URL = previousDemucs;
     if (previousBsRoformer === undefined) delete process.env.BS_ROFORMER_API_URL;
     else process.env.BS_ROFORMER_API_URL = previousBsRoformer;
-    if (previousBsRoformerChecksum === undefined) {
-      delete process.env.BS_ROFORMER_CHECKPOINT_SHA256;
+    if (previousPromotedBsRoformer === undefined) {
+      delete process.env.MUSIC_PROVIDER_BS_ROFORMER_ENDPOINT;
     } else {
-      process.env.BS_ROFORMER_CHECKPOINT_SHA256 = previousBsRoformerChecksum;
+      process.env.MUSIC_PROVIDER_BS_ROFORMER_ENDPOINT =
+        previousPromotedBsRoformer;
+    }
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    });
+  }
+});
+
+test("routes BS-RoFormer separation only after signed deployment attestation", async () => {
+  let health: Record<string, unknown> = {};
+  const server = createServer((request, response) => {
+    response.setHeader("Content-Type", "application/json");
+    if (request.method === "GET" && request.url?.startsWith("/health?")) {
+      response.end(JSON.stringify(health));
+      return;
+    }
+    assert.equal(request.method, "POST");
+    assert.equal(request.url, "/separate");
+    response.end(JSON.stringify({
+      version: "bs-roformer-viperx-v1",
+      confidence: 0.95,
+      stems: [
+        { role: "vocals", contentBase64: "UklGRg==", confidence: 0.95 },
+        { role: "instrumental", contentBase64: "UklGRg==", confidence: 0.94 },
+      ],
+    }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const endpoint = `http://127.0.0.1:${address.port}`;
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const record: GpuPromotionRecord = {
+    schemaVersion: 1,
+    provider: "BS_ROFORMER",
+    modalAppId: "ap-Test",
+    modalDeploymentId: "v20",
+    modalFunctionId: "fu-Test",
+    modalImageId: "im-Test",
+    endpointOrigin: endpoint,
+    modelVersion: "bs-roformer-viperx-v1",
+    checkpointSha256: "a".repeat(64),
+    checkpointRevision: "repo/checkpoint@immutable",
+    sourceRevision: "a".repeat(40),
+    sourceImageDigest: `sha256:${"b".repeat(64)}`,
+    runtime: {
+      python: "3.11.11",
+      cudaImage: "cuda-image",
+      cuda: "12.4",
+      pytorch: "2.5.1",
+      torchvision: "0.20.1",
+      torchaudio: "2.5.1",
+      torchIndexUrl: "https://download.pytorch.org/whl/cu124",
+      transformers: "4.48.3",
+      accelerate: "1.3.0",
+    },
+  };
+  health = {
+    status: "ready",
+    healthy: true,
+    provider: record.provider,
+    checkpointReady: true,
+    runtimeReady: true,
+    gpuReady: true,
+    smokeTested: true,
+    modelVersion: record.modelVersion,
+    checksum: record.checkpointSha256,
+    checkpointSha256: record.checkpointSha256,
+    revision: record.checkpointRevision,
+    sourceRevision: record.sourceRevision,
+    sourceImageDigest: record.sourceImageDigest,
+    modalAppId: record.modalAppId,
+    modalDeploymentId: record.modalDeploymentId,
+    modalFunctionId: record.modalFunctionId,
+    modalImageId: record.modalImageId,
+    runtime: { pythonVersion: record.runtime.python },
+    framework: {
+      cuda_image: record.runtime.cudaImage,
+      cuda: record.runtime.cuda,
+      pytorch: record.runtime.pytorch,
+      torchvision: record.runtime.torchvision,
+      torchaudio: record.runtime.torchaudio,
+      torch_index_url: record.runtime.torchIndexUrl,
+      transformers: record.runtime.transformers,
+      accelerate: record.runtime.accelerate,
+    },
+  };
+  const signature = sign(
+    null,
+    Buffer.from(canonicalGpuPromotionJson(record)),
+    privateKey,
+  ).toString("base64");
+  const keys = [
+    "MUSIC_PROVIDER_BS_ROFORMER_ENDPOINT",
+    "MUSIC_PROVIDER_BS_ROFORMER_PROMOTION_BUNDLE",
+    "MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY",
+    "BS_ROFORMER_API_URL",
+    "DEMUCS_API_URL",
+  ];
+  const previous = new Map(keys.map((key) => [key, process.env[key]]));
+  process.env.MUSIC_PROVIDER_BS_ROFORMER_ENDPOINT = endpoint;
+  process.env.MUSIC_PROVIDER_BS_ROFORMER_PROMOTION_BUNDLE = JSON.stringify({
+    record,
+    signature,
+  });
+  process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY = publicKey.export({
+    type: "spki",
+    format: "pem",
+  }).toString();
+  delete process.env.BS_ROFORMER_API_URL;
+  delete process.env.DEMUCS_API_URL;
+  try {
+    const result = await runAnalysisProviders({
+      sourceUrl: "https://storage.invalid/signed-source",
+      sourceType: "FULL_SONG",
+      durationSeconds: 10,
+    });
+    assert.equal(result.separation?.providerId, "BS_ROFORMER");
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
     }
     await new Promise<void>((resolve, reject) => {
       server.close((error) => error ? reject(error) : resolve());
@@ -153,6 +276,7 @@ test("keeps absent providers explicit without fabricating analysis results", asy
     "MT3_API_URL",
     "BS_ROFORMER_API_URL",
     "BS_ROFORMER_SW_API_URL",
+    "MUSIC_PROVIDER_BS_ROFORMER_ENDPOINT",
     "DEMUCS_API_URL",
     "SHEETSAGE_API_URL",
     "SHEET_SAGE_API_URL",

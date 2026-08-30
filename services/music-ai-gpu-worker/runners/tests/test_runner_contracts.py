@@ -210,6 +210,88 @@ class RunnerContractTests(unittest.TestCase):
                 with self.assertRaisesRegex(RunnerError, "exactly two"):
                     bs_roformer.run_job({"sourceUrl": "https://example.test/a.wav"}, checkpoint, OneStem)
 
+    def test_bs_backend_uses_explicit_local_assets_with_documented_api(self) -> None:
+        calls = {}
+
+        def proc_folder(args):
+            calls["args"] = args
+            source_dir = Path(args[args.index("--input_folder") + 1])
+            output_dir = Path(args[args.index("--store_dir") + 1])
+            output_dir.mkdir(parents=True, exist_ok=True)
+            (output_dir / f"{next(source_dir.glob('*.wav')).stem}_vocals.wav").write_bytes(
+                b"vocals"
+            )
+            (
+                output_dir
+                / f"{next(source_dir.glob('*.wav')).stem}_instrumental.wav"
+            ).write_bytes(b"instrumental")
+
+        package = types.ModuleType("bs_roformer")
+        package.__path__ = []
+        inference = types.ModuleType("bs_roformer.inference")
+        inference.proc_folder = proc_folder
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            checkpoint = root / "model.ckpt"
+            checkpoint.write_bytes(b"weights")
+            config = root / "config.yaml"
+            config.write_bytes(b"config")
+            source = root / "source.wav"
+            source.write_bytes(b"audio")
+            with patch.dict(
+                os.environ,
+                {
+                    "MUSIC_PROVIDER_BS_ROFORMER_CONFIG_PATH": str(config),
+                    "MUSIC_PROVIDER_BS_ROFORMER_CONFIG_SHA256": common.file_sha256(
+                        config
+                    ),
+                },
+            ), patch.dict(
+                sys.modules,
+                {"bs_roformer": package, "bs_roformer.inference": inference},
+            ), patch.object(
+                bs_roformer, "require_distribution_version"
+            ):
+                outputs = bs_roformer.BSRoformerInferBackend(
+                    checkpoint, root / "outputs"
+                ).separate(source)
+
+        self.assertEqual(
+            outputs,
+            [Path(raw) / "outputs/source_vocals.wav",
+             Path(raw) / "outputs/source_instrumental.wav"],
+        )
+        self.assertEqual(
+            calls["args"][calls["args"].index("--model_path") + 1],
+            str(checkpoint),
+        )
+        self.assertEqual(
+            calls["args"][calls["args"].index("--config_path") + 1],
+            str(config),
+        )
+        self.assertNotIn("--model", calls["args"])
+
+    def test_bs_provenance_separates_checkpoint_and_backend_revisions(self) -> None:
+        with patch.object(
+            bs_roformer,
+            "runtime_provenance",
+            return_value={
+                "sourceImageDigest": "sha256:" + "b" * 64,
+                "modalImageId": "im-Test",
+                "cudaVersion": "12.4",
+                "pytorchVersion": "2.5.1+cu124",
+                "gpu": "NVIDIA L4",
+            },
+        ):
+            provenance = bs_roformer.provenance("a" * 64)
+        self.assertEqual(
+            provenance["revision"], bs_roformer.CHECKPOINT_SOURCE_REVISION
+        )
+        self.assertEqual(
+            provenance["backendSourceRevision"],
+            bs_roformer.BACKEND_SOURCE_REVISION,
+        )
+
     def test_ace_fails_when_fake_backend_returns_wrong_count(self) -> None:
         class OneCandidate:
             def __init__(self, *_args): pass
