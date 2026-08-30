@@ -22,6 +22,7 @@ from modal_config import (
     OUTPUT_MOUNT,
     OUTPUT_VOLUME_NAME,
     RUNTIME_SECRET_NAME,
+    provider_image_build_args,
     selected_deployments,
     worker_environment,
 )
@@ -47,18 +48,8 @@ provider_images = {
     provider: modal.Image.from_dockerfile(
         DOCKERFILE,
         context_dir=REPOSITORY_ROOT,
-        build_args={
-            "PROVIDER_REQUIREMENTS": deployment.requirements_file,
-            "MUSIC_GPU_SOURCE_IMAGE_DIGEST": deployment.source_image_digest,
-            "CUDA_IMAGE": deployment.cuda_image,
-            "CUDA_RUNTIME": deployment.cuda_runtime,
-            "PYTORCH_SPEC": f"torch=={deployment.pytorch}",
-            "TORCHVISION_SPEC": f"torchvision=={deployment.torchvision}",
-            "TORCHAUDIO_SPEC": f"torchaudio=={deployment.torchaudio}",
-            "TORCH_INDEX_URL": deployment.torch_index_url,
-            "TRANSFORMERS_SPEC": f"transformers=={deployment.transformers}",
-            "ACCELERATE_SPEC": f"accelerate=={deployment.accelerate}",
-        },
+        # Source identity is runtime provenance, not a Docker cache input.
+        build_args=provider_image_build_args(deployment),
     )
     for provider, deployment in SELECTED_DEPLOYMENTS.items()
 }

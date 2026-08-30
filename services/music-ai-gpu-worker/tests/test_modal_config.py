@@ -62,6 +62,38 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
                 f"python -m runners.{module}",
             )
 
+    def test_image_build_args_only_contain_dependency_inputs(self):
+        for deployment in modal_config.DEPLOYMENTS.values():
+            build_args = modal_config.provider_image_build_args(deployment)
+            self.assertEqual(
+                set(build_args),
+                {
+                    "PROVIDER_REQUIREMENTS",
+                    "CUDA_IMAGE",
+                    "CUDA_RUNTIME",
+                    "PYTORCH_SPEC",
+                    "TORCHVISION_SPEC",
+                    "TORCHAUDIO_SPEC",
+                    "TORCH_INDEX_URL",
+                    "TRANSFORMERS_SPEC",
+                    "ACCELERATE_SPEC",
+                },
+            )
+            self.assertNotIn("MUSIC_GPU_SOURCE_IMAGE_DIGEST", build_args)
+
+    def test_source_identity_is_runtime_only(self):
+        dockerfile = (ROOT / "Dockerfile").read_text()
+        modal_app = (ROOT / "modal_app.py").read_text()
+        self.assertNotIn("MUSIC_GPU_SOURCE_IMAGE_DIGEST", dockerfile)
+        self.assertNotIn("MUSIC_GPU_SOURCE_IMAGE_DIGEST", modal_app)
+        for deployment in modal_config.DEPLOYMENTS.values():
+            self.assertEqual(
+                modal_config.worker_environment(deployment)[
+                    "MUSIC_GPU_CONTAINER_DIGEST"
+                ],
+                deployment.source_image_digest,
+            )
+
     def test_secret_and_volume_names_are_explicitly_versioned(self):
         self.assertEqual(modal_config.RUNTIME_SECRET_NAME, "music-ai-worker-runtime")
         self.assertTrue(modal_config.MODEL_VOLUME_NAME.endswith("-v1"))

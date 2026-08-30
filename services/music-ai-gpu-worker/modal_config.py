@@ -141,7 +141,7 @@ def selected_deployments(value: str | None = None) -> dict[str, ProviderDeployme
 
 
 def worker_environment(deployment: ProviderDeployment) -> dict[str, str]:
-    """Return only non-secret environment values for one isolated provider."""
+    """Return runtime identity and non-secret environment for one provider."""
     module = deployment.provider.lower()
     command = f"python -m runners.{module}"
     environment = {
@@ -181,3 +181,23 @@ def worker_environment(deployment: ProviderDeployment) -> dict[str, str]:
             + (f":{parsed.port}" if parsed.port and parsed.port != 443 else "")
         )
     return environment
+
+
+def provider_image_build_args(deployment: ProviderDeployment) -> dict[str, str]:
+    """Return only dependency inputs that are allowed to affect image layers.
+
+    The source-build digest is deliberately absent. It changes whenever worker
+    application code changes and is injected through ``worker_environment`` at
+    runtime instead, so unchanged dependency layers remain cacheable.
+    """
+    return {
+        "PROVIDER_REQUIREMENTS": deployment.requirements_file,
+        "CUDA_IMAGE": deployment.cuda_image,
+        "CUDA_RUNTIME": deployment.cuda_runtime,
+        "PYTORCH_SPEC": f"torch=={deployment.pytorch}",
+        "TORCHVISION_SPEC": f"torchvision=={deployment.torchvision}",
+        "TORCHAUDIO_SPEC": f"torchaudio=={deployment.torchaudio}",
+        "TORCH_INDEX_URL": deployment.torch_index_url,
+        "TRANSFORMERS_SPEC": f"transformers=={deployment.transformers}",
+        "ACCELERATE_SPEC": f"accelerate=={deployment.accelerate}",
+    }

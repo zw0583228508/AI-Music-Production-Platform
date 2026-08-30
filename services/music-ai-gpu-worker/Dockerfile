@@ -9,6 +9,9 @@ ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu124
 ARG TRANSFORMERS_SPEC=transformers==4.48.3
 ARG ACCELERATE_SPEC=accelerate==1.3.0
 
+# Keep source-build identity out of Docker build arguments. Modal includes
+# build-argument values in its image cache identity, while source identity is
+# supplied as runtime provenance by modal_config.worker_environment().
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     MUSIC_GPU_CHECKPOINT_ROOT=/var/lib/music-ai-gpu/models \
@@ -35,8 +38,6 @@ RUN test -z "$PROVIDER_REQUIREMENTS" || \
     uv pip install --python /opt/music-ai-venv/bin/python \
       -r "/tmp/runner-requirements/${PROVIDER_REQUIREMENTS}"
 COPY services/music-ai-gpu-worker /app
-ARG MUSIC_GPU_SOURCE_IMAGE_DIGEST=""
-ENV MUSIC_GPU_CONTAINER_DIGEST=${MUSIC_GPU_SOURCE_IMAGE_DIGEST}
 RUN groupadd --system music-ai && useradd --system --gid music-ai --home /app music-ai \
     && mkdir -p /var/lib/music-ai-gpu/models \
     && chown -R music-ai:music-ai /app /var/lib/music-ai-gpu
