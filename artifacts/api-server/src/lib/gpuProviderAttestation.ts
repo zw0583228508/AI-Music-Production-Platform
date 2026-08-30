@@ -150,8 +150,10 @@ export function expectedGpuPromotionRecord(providerId: string): GpuPromotionReco
   return promotionBundle(providerId)?.record ?? null;
 }
 
-function promotionPublicKey(): string | null {
+function promotionPublicKey(providerId: string): string | null {
+  const providerKey = promotionEnvKey(providerId);
   const publicKey = (
+    process.env[`MUSIC_PROVIDER_${providerKey}_PROMOTION_PUBLIC_KEY`] ??
     process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY ??
     process.env.MUSIC_GPU_PROMOTION_PUBLIC_KEY
   )?.trim();
@@ -159,7 +161,7 @@ function promotionPublicKey(): string | null {
 }
 
 function validPromotionSignature(record: GpuPromotionRecord, signature: string): boolean {
-  const publicKey = promotionPublicKey();
+  const publicKey = promotionPublicKey(record.provider);
   if (!publicKey || !/^[A-Za-z0-9+/]{86}==$/.test(signature)) return false;
   try {
     return verify(

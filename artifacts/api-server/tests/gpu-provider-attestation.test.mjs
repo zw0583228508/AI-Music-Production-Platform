@@ -71,6 +71,7 @@ after(async () => {
   delete process.env.MUSIC_PROVIDER_ACE_STEP_SOURCE_IMAGE_DIGEST;
   delete process.env.MUSIC_PROVIDER_ACE_STEP_MODAL_IMAGE_ID;
   delete process.env.MUSIC_PROVIDER_ACE_STEP_PROMOTION_BUNDLE;
+  delete process.env.MUSIC_PROVIDER_ACE_STEP_PROMOTION_PUBLIC_KEY;
   delete process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY;
   delete process.env.MUSIC_PROVIDER_ACE_STEP_TOKEN;
   delete process.env.MUSIC_AI_WORKER_TOKEN;
@@ -120,6 +121,7 @@ async function withWorker(health, run) {
     delete process.env.MUSIC_PROVIDER_ACE_STEP_SOURCE_IMAGE_DIGEST;
     delete process.env.MUSIC_PROVIDER_ACE_STEP_MODAL_IMAGE_ID;
     delete process.env.MUSIC_PROVIDER_ACE_STEP_PROMOTION_BUNDLE;
+    delete process.env.MUSIC_PROVIDER_ACE_STEP_PROMOTION_PUBLIC_KEY;
     delete process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY;
     await new Promise((resolve) => server.close(resolve));
   }
@@ -245,6 +247,26 @@ test("GPU promotion records require a valid signature and rotate as one identity
     assert.equal(providerCatalog([provider])[0].status, "configured");
     assert.match(provider.readiness.message, /promotion signature/i);
   });
+});
+
+test("provider-specific promotion keys override the legacy global trust root", async () => {
+  const wrongKeys = generateKeyPairSync("ed25519");
+  const wrongPublicKey = wrongKeys.publicKey.export({
+    type: "spki",
+    format: "pem",
+  });
+  const promotion = configureAcePromotion("https://ace.example.test");
+  process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY = wrongPublicKey;
+  process.env.MUSIC_PROVIDER_ACE_STEP_PROMOTION_PUBLIC_KEY = promotionPublicKey;
+
+  assert.equal(
+    gpuPromotionAttestationFailure(
+      "ACE_STEP",
+      "https://ace.example.test/generate",
+      withAcePromotion(attestedHealth, promotion),
+    ),
+    null,
+  );
 });
 
 test("Python promotion output verifies in Node and rejects live identity drift", async () => {
