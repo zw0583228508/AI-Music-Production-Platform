@@ -22,7 +22,7 @@ export function AudioTransportControls({
   const canPlay = transport.status !== "unavailable";
 
   return (
-    <div className={cn("flex min-w-0 items-center gap-2", compact && "gap-1")}>
+    <div className={cn("flex min-w-0 items-center gap-2", compact && "flex-1 gap-1 sm:flex-none")}>
       <Button
         type="button"
         variant="outline"
@@ -66,9 +66,24 @@ export function AudioTransportControls({
       />
       <div
         data-testid="transport-time"
-        className="hidden min-w-[92px] font-mono text-[11px] tabular-nums text-muted-foreground sm:block"
+        aria-label="Current playback position"
+        className={cn(
+          "shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground",
+          compact
+            ? "min-w-[60px] text-center sm:min-w-[92px] sm:text-left"
+            : "hidden min-w-[92px] sm:block",
+        )}
       >
-        {formatTime(transport.currentTime)} / {formatTime(transport.duration)}
+        {compact ? (
+          <>
+            <span className="sm:hidden">{formatTime(transport.currentTime)}</span>
+            <span className="hidden sm:inline">
+              {formatTime(transport.currentTime)} / {formatTime(transport.duration)}
+            </span>
+          </>
+        ) : (
+          `${formatTime(transport.currentTime)} / ${formatTime(transport.duration)}`
+        )}
       </div>
       {transport.status === "error" && (
         <Button type="button" variant="ghost" size="icon" className="h-8 w-8" aria-label="Retry audio" title="Retry audio" onClick={transport.retry}>

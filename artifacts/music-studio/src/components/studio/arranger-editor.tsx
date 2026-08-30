@@ -725,13 +725,18 @@ export function ArrangerEditor({
           </div>
           <div
             data-testid="transport-bar-readout"
-            className="hidden items-center gap-1.5 text-xs text-muted-foreground md:flex"
+            className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground"
           >
-            <span className="font-mono text-foreground">Bar {Math.floor(playheadBar)}</span>
-            <span>·</span>
-            <span className="max-w-28 truncate">{activePlaybackSection?.name ?? "Timeline"}</span>
-            <span>/</span>
-            <span>{arrangementBarCount} bars</span>
+            <span className="font-mono text-foreground md:hidden">
+              Bar {Math.floor(playheadBar)} / {arrangementBarCount}
+            </span>
+            <span className="hidden items-center gap-1.5 md:flex">
+              <span className="font-mono text-foreground">Bar {Math.floor(playheadBar)}</span>
+              <span>·</span>
+              <span className="max-w-28 truncate">{activePlaybackSection?.name ?? "Timeline"}</span>
+              <span>/</span>
+              <span>{arrangementBarCount} bars</span>
+            </span>
           </div>
         </div>
         <div className="flex items-center gap-2">

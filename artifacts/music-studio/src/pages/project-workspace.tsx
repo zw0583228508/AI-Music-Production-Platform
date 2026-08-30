@@ -580,7 +580,9 @@ export default function ProjectWorkspace() {
 
         <div className="order-3 flex w-full min-w-0 items-center gap-2 md:order-none md:w-auto">
           <AudioTransportControls transport={transport} compact />
-          <AudioTransportStatus transport={transport} unavailableReason={playbackUnavailableReason} />
+          <div className="min-w-0 max-w-[120px] shrink sm:max-w-48">
+            <AudioTransportStatus transport={transport} unavailableReason={playbackUnavailableReason} />
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
