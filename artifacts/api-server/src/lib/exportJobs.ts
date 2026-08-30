@@ -75,6 +75,13 @@ async function selectedProviderAudioExport(
   ) {
     throw new Error("Selected provider audio failed export verification");
   }
+  const provider = arrangement.generationProvenance?.provider ?? artifact.provider;
+  const modelVersion =
+    arrangement.generationProvenance?.modelVersion ?? artifact.modelVersion;
+  const candidateId = arrangement.generationProvenance?.candidateId;
+  if (!provider || !modelVersion || !candidateId) {
+    throw new Error("Selected provider audio is missing required generation lineage");
+  }
   return [{
     name: "mix/generated-accompaniment.wav",
     type: "MIX",
@@ -82,11 +89,10 @@ async function selectedProviderAudioExport(
     contentType: "audio/wav",
     data: wav,
     provenance: {
-      model: arrangement.generationProvenance?.provider ?? artifact.provider,
-      version: arrangement.generationProvenance?.modelVersion ??
-        artifact.modelVersion,
+      model: provider,
+      version: modelVersion,
       parameters: {
-        candidateId: arrangement.generationProvenance?.candidateId,
+        candidateId,
         sourceArtifactId: artifact.id,
         checksum,
       },

@@ -1944,6 +1944,30 @@ components:
       properties:
         candidates: { type: number, minimum: 1, maximum: 3 }
         idempotencyKey: { type: string, minLength: 1, maxLength: 200 }
+        operation:
+          type: string
+          enum: [COMPLETE, LEGO, REPAINT, COVER, EXTRACT]
+          description: Explicit ACE-Step operation. Supplying it selects ACE-Step.
+        sourceArtifactId:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Project-owned source artifact used by source-conditioned ACE-Step operations.
+        instrument:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Focused instrument family required by LEGO and EXTRACT.
+        region:
+          type: object
+          required: [unit, start, end]
+          properties:
+            unit:
+              type: string
+              enum: [bar, beat, time]
+            start: { type: number, minimum: 0 }
+            end: { type: number, exclusiveMinimum: 0 }
+            crossfadeSeconds: { type: number, minimum: 0, maximum: 10, default: 0.25 }
         provider:
           type: string
           enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, MUSICGEN, ANYACCOMP, SYMPHONYGEN, METEOR, MIDI_SAG]

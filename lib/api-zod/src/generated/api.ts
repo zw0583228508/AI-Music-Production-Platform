@@ -2491,11 +2491,32 @@ export const generateArrangementBodyCandidatesMax = 3;
 
 export const generateArrangementBodyIdempotencyKeyMax = 200;
 
+export const generateArrangementBodySourceArtifactIdMax = 200;
+
+export const generateArrangementBodyInstrumentMax = 64;
+
+export const generateArrangementBodyRegionStartMin = 0;
+
+export const generateArrangementBodyRegionEndExclusiveMin = 0;
+
+export const generateArrangementBodyRegionCrossfadeSecondsDefault = 0.25;
+export const generateArrangementBodyRegionCrossfadeSecondsMin = 0;
+export const generateArrangementBodyRegionCrossfadeSecondsMax = 10;
+
 
 
 export const GenerateArrangementBody = zod.object({
   "candidates": zod.number().min(1).max(generateArrangementBodyCandidatesMax).optional(),
   "idempotencyKey": zod.string().min(1).max(generateArrangementBodyIdempotencyKeyMax).optional(),
+  "operation": zod.enum(['COMPLETE', 'LEGO', 'REPAINT', 'COVER', 'EXTRACT']).optional().describe('Explicit ACE-Step operation. Supplying it selects ACE-Step.'),
+  "sourceArtifactId": zod.string().min(1).max(generateArrangementBodySourceArtifactIdMax).optional().describe('Project-owned source artifact used by source-conditioned ACE-Step operations.'),
+  "instrument": zod.string().min(1).max(generateArrangementBodyInstrumentMax).optional().describe('Focused instrument family required by LEGO and EXTRACT.'),
+  "region": zod.object({
+  "unit": zod.enum(['bar', 'beat', 'time']),
+  "start": zod.number().min(generateArrangementBodyRegionStartMin),
+  "end": zod.number().gt(generateArrangementBodyRegionEndExclusiveMin),
+  "crossfadeSeconds": zod.number().min(generateArrangementBodyRegionCrossfadeSecondsMin).max(generateArrangementBodyRegionCrossfadeSecondsMax).default(generateArrangementBodyRegionCrossfadeSecondsDefault)
+}).optional(),
   "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'MUSICGEN', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR', 'MIDI_SAG']).optional(),
   "task": zod.enum(['SEPARATION', 'TRANSCRIPTION', 'ACCOMPANIMENT', 'ORCHESTRATION', 'ARRANGEMENT']).optional(),
   "hardware": zod.enum(['AUTO', 'CPU', 'GPU']).optional(),

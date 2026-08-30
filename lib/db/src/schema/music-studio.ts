@@ -79,6 +79,20 @@ export type MusicGenerationTask =
   | "ORCHESTRATION"
   | "ARRANGEMENT";
 
+export type AceStepOperation =
+  | "COMPLETE"
+  | "LEGO"
+  | "REPAINT"
+  | "COVER"
+  | "EXTRACT";
+
+export type AceStepRegion = {
+  unit: "bar" | "beat" | "time";
+  start: number;
+  end: number;
+  crossfadeSeconds: number;
+};
+
 export type ProductionJobKind =
   | "analysis"
   | "separation"
@@ -706,6 +720,10 @@ export const musicAuditEventsTable = pgTable("music_audit_events", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 export type GenerationInputSnapshot = {
+  operation: AceStepOperation | null;
+  sourceArtifactId: string | null;
+  instrument: string | null;
+  region: AceStepRegion | null;
   arrangement: {
     id: string;
     version: number;

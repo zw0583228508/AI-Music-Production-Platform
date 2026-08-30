@@ -1371,6 +1371,42 @@ export interface RestoreArrangementRevisionInput {
   expectedVersion: number;
 }
 
+/**
+ * Explicit ACE-Step operation. Supplying it selects ACE-Step.
+ */
+export type GenerationInputOperation = typeof GenerationInputOperation[keyof typeof GenerationInputOperation];
+
+
+export const GenerationInputOperation = {
+  COMPLETE: 'COMPLETE',
+  LEGO: 'LEGO',
+  REPAINT: 'REPAINT',
+  COVER: 'COVER',
+  EXTRACT: 'EXTRACT',
+} as const;
+
+export type GenerationInputRegionUnit = typeof GenerationInputRegionUnit[keyof typeof GenerationInputRegionUnit];
+
+
+export const GenerationInputRegionUnit = {
+  bar: 'bar',
+  beat: 'beat',
+  time: 'time',
+} as const;
+
+export type GenerationInputRegion = {
+  unit: GenerationInputRegionUnit;
+  /** @minimum 0 */
+  start: number;
+  /** @exclusiveMinimum 0 */
+  end: number;
+  /**
+     * @minimum 0
+     * @maximum 10
+     */
+  crossfadeSeconds?: number;
+};
+
 export type GenerationInputProvider = typeof GenerationInputProvider[keyof typeof GenerationInputProvider];
 
 
@@ -1429,6 +1465,21 @@ export interface GenerationInput {
      * @maxLength 200
      */
   idempotencyKey?: string;
+  /** Explicit ACE-Step operation. Supplying it selects ACE-Step. */
+  operation?: GenerationInputOperation;
+  /**
+     * Project-owned source artifact used by source-conditioned ACE-Step operations.
+     * @minLength 1
+     * @maxLength 200
+     */
+  sourceArtifactId?: string;
+  /**
+     * Focused instrument family required by LEGO and EXTRACT.
+     * @minLength 1
+     * @maxLength 64
+     */
+  instrument?: string;
+  region?: GenerationInputRegion;
   provider?: GenerationInputProvider;
   task?: GenerationInputTask;
   hardware?: GenerationInputHardware;

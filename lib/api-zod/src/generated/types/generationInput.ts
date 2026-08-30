@@ -6,8 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { GenerationInputHardware } from './generationInputHardware';
+import type { GenerationInputOperation } from './generationInputOperation';
 import type { GenerationInputParameters } from './generationInputParameters';
 import type { GenerationInputProvider } from './generationInputProvider';
+import type { GenerationInputRegion } from './generationInputRegion';
 import type { GenerationInputSpeed } from './generationInputSpeed';
 import type { GenerationInputTask } from './generationInputTask';
 
@@ -22,6 +24,21 @@ export interface GenerationInput {
      * @maxLength 200
      */
   idempotencyKey?: string;
+  /** Explicit ACE-Step operation. Supplying it selects ACE-Step. */
+  operation?: GenerationInputOperation;
+  /**
+     * Project-owned source artifact used by source-conditioned ACE-Step operations.
+     * @minLength 1
+     * @maxLength 200
+     */
+  sourceArtifactId?: string;
+  /**
+     * Focused instrument family required by LEGO and EXTRACT.
+     * @minLength 1
+     * @maxLength 64
+     */
+  instrument?: string;
+  region?: GenerationInputRegion;
   provider?: GenerationInputProvider;
   task?: GenerationInputTask;
   hardware?: GenerationInputHardware;

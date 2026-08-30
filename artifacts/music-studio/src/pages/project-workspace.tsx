@@ -131,6 +131,11 @@ export default function ProjectWorkspace() {
   const [revisionPreviewing, setRevisionPreviewing] = useState(false);
   const [selectedArrangementId, setSelectedArrangementId] = useState<string | null>(null);
   const [generationJobId, setGenerationJobId] = useState<string | null>(null);
+  const [candidatePreview, setCandidatePreview] = useState<{
+    id: string;
+    label: string;
+    url: string;
+  } | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [includeStems, setIncludeStems] = useState(true);
   const [includeMidi, setIncludeMidi] = useState(true);
@@ -191,7 +196,9 @@ export default function ProjectWorkspace() {
   const currentSource =
     sources?.find((source) => source.id === songModel?.sourceId)
     ?? sources?.[0];
-  const playbackUnavailableReason = !currentSource
+  const playbackUnavailableReason = candidatePreview
+    ? null
+    : !currentSource
     ? "Import audio to enable playback"
     : currentSource.status !== "ready"
       ? "Audio is still being prepared"
@@ -204,9 +211,10 @@ export default function ProjectWorkspace() {
     ?? songModel?.audio?.durationSeconds
     ?? parseDuration(workspace?.project.duration);
   const transport = useAudioTransport(
-    sourceReady && currentSource
-      ? `/api/projects/${projectId}/playback?sourceId=${encodeURIComponent(currentSource.id)}`
-      : null,
+    candidatePreview?.url ??
+      (sourceReady && currentSource
+        ? `/api/projects/${projectId}/playback?sourceId=${encodeURIComponent(currentSource.id)}`
+        : null),
     durationHint,
   );
   const runCopilot = useRunCopilot();
@@ -286,7 +294,11 @@ export default function ProjectWorkspace() {
   const compatibleArrangementProviders = generationProviders?.filter(
     (provider) =>
       provider.tasks.includes(requestedGenerationTask) &&
-      provider.speeds.includes(requestedGenerationSpeed),
+      provider.speeds.includes(requestedGenerationSpeed) &&
+      (
+        activeArrangement?.mode === "PRO_SCORE" ||
+        provider.id === "ACE_STEP"
+      ),
   );
   const availableArrangementProviders = compatibleArrangementProviders?.filter(
     (provider) => provider.status === "ready" && provider.available,
@@ -427,10 +439,17 @@ export default function ProjectWorkspace() {
         task: requestedGenerationTask,
         hardware: "AUTO",
         speed: requestedGenerationSpeed,
+        ...(activeArrangement.mode === "PRO_SCORE"
+          ? {}
+          : {
+              provider: "ACE_STEP" as const,
+              operation: "COMPLETE" as const,
+            }),
       }
     }, {
       onSuccess: (job) => {
         setGenerationJobId(job.id);
+        setCandidatePreview(null);
         window.sessionStorage.setItem(
           `music-studio:generation-job:${activeArrangement.id}`,
           job.id,
@@ -743,7 +762,27 @@ export default function ProjectWorkspace() {
         <div className="order-3 flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-1 md:order-none md:w-auto md:flex-nowrap">
           <AudioTransportControls transport={transport} compact />
           <div className="min-w-0 max-w-[120px] flex-1 shrink overflow-hidden sm:max-w-48 sm:flex-none">
-            <AudioTransportStatus transport={transport} unavailableReason={playbackUnavailableReason} />
+            {candidatePreview ? (
+              <div className="flex min-w-0 items-center gap-1">
+                <span
+                  className="truncate text-[11px] text-primary"
+                  title={`Candidate preview: ${candidatePreview.label}`}
+                >
+                  Candidate: {candidatePreview.label}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 shrink-0 px-1.5 text-[10px]"
+                  onClick={() => setCandidatePreview(null)}
+                >
+                  Source
+                </Button>
+              </div>
+            ) : (
+              <AudioTransportStatus transport={transport} unavailableReason={playbackUnavailableReason} />
+            )}
           </div>
           {activeArrangement && (
             <div
@@ -1186,17 +1225,48 @@ export default function ProjectWorkspace() {
                                     </div>
                                   </div>
                                 </div>
-                                <Button
-                                  size="sm"
-                                  disabled={
-                                    candidate.status !== "validated" ||
-                                    !evaluated ||
-                                    selectGenerationCandidate.isPending
-                                  }
-                                  onClick={() => handleSelectCandidate(candidate)}
-                                >
-                                  {candidate.status === "selected" ? "Selected" : "Select"}
-                                </Button>
+                                <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+                                  <Button
+                                    size="sm"
+                                    variant={
+                                      candidatePreview?.id === candidate.id
+                                        ? "secondary"
+                                        : "outline"
+                                    }
+                                    disabled={!candidate.evaluation.artifacts.some(
+                                      (artifact) => artifact.type === "AUDIO_TRACK",
+                                    )}
+                                    onClick={() => {
+                                      const audio = candidate.evaluation.artifacts.find(
+                                        (artifact) => artifact.type === "AUDIO_TRACK",
+                                      );
+                                      if (!audio) return;
+                                      transport.stop();
+                                      setCandidatePreview({
+                                        id: candidate.id,
+                                        label: candidate.label,
+                                        url: audio.url,
+                                      });
+                                      toast({
+                                        title: `${candidate.label} loaded`,
+                                        description: "Use the main transport to play and seek this provider render.",
+                                      });
+                                    }}
+                                  >
+                                    {candidatePreview?.id === candidate.id ? "In transport" : "Preview"}
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    disabled={
+                                      candidate.status !== "validated" ||
+                                      !evaluated ||
+                                      selectGenerationCandidate.isPending
+                                    }
+                                    onClick={() => handleSelectCandidate(candidate)}
+                                  >
+                                    {candidate.status === "selected" ? "Selected" : "Select"}
+                                  </Button>
+                                </div>
                               </div>
                               {evaluated ? (
                                 <div className="grid gap-3 border-t pt-3 text-xs sm:grid-cols-2">

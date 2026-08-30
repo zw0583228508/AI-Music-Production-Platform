@@ -8,6 +8,8 @@ import type {
   ProviderRuntimeSnapshot,
   SongModelData,
   TrackModel,
+  AceStepOperation,
+  AceStepRegion,
 } from "@workspace/db";
 import { db, modelRegistryTable } from "@workspace/db";
 import { attestAnalysisProviderHealth } from "./analysisProviderManifest";
@@ -1346,7 +1348,11 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
     if (!this.endpoint) {
       throw new Error(`${this.definition.displayName} worker is not configured`);
     }
-    const requestUrl = providerGenerationUrl(this.endpoint, input.task);
+    const requestUrl = providerGenerationUrl(
+      this.endpoint,
+      input.task,
+      input.operation,
+    );
     const response = await fetch(requestUrl, {
       method: "POST",
       headers: {
@@ -1732,6 +1738,13 @@ export type ProviderGenerationInput = {
   candidates: number;
   seed: number;
   parameters: GenerationParameters;
+  operation?: AceStepOperation;
+  sourceAudio?: {
+    artifactId: string;
+    url: string;
+  };
+  instrument?: string;
+  region?: AceStepRegion;
   parentArtifactIds: string[];
   songModel: unknown;
   tracks: Array<{ id: string; name: string; role: string; instrument: string }>;
@@ -1748,13 +1761,19 @@ export type ProviderGenerationInput = {
 function providerGenerationUrl(
   endpoint: string,
   task: MusicGenerationTask,
+  operation?: AceStepOperation,
 ): string {
   const url = new URL(endpoint);
   if (
     (url.pathname === "/" || url.pathname === "") &&
     url.hostname.endsWith(".modal.run")
   ) {
-    url.pathname = task === "ARRANGEMENT" ? "/arrange" : "/generate";
+    url.pathname =
+      operation && operation !== "COMPLETE"
+        ? "/arrange"
+        : task === "ARRANGEMENT"
+          ? "/arrange"
+          : "/generate";
   }
   return url.toString();
 }
@@ -1770,9 +1789,17 @@ function providerGenerationDuration(songModelValue: unknown): number {
 }
 
 function providerGenerationPrompt(input: ProviderGenerationInput): string {
-  const task = input.task === "ACCOMPANIMENT"
-    ? "instrumental accompaniment"
-    : "complete instrumental arrangement";
+  const task = input.operation === "LEGO"
+    ? `focused ${input.instrument} accompaniment part`
+    : input.operation === "REPAINT"
+      ? `repaint only the requested ${input.region?.unit} region`
+      : input.operation === "COVER"
+        ? "instrumental cover preserving the source composition"
+        : input.operation === "EXTRACT"
+          ? "extract a source-conditioned instrumental part"
+          : input.task === "ACCOMPANIMENT"
+            ? "instrumental accompaniment"
+            : "complete instrumental arrangement";
   const trackNames = input.tracks
     .map((track) => track.instrument || track.name)
     .filter(Boolean)
@@ -1780,6 +1807,11 @@ function providerGenerationPrompt(input: ProviderGenerationInput): string {
     .join(", ");
   return [
     task,
+    input.operation ? `operation: ${input.operation}` : "",
+    input.instrument ? `focused instrument: ${input.instrument}` : "",
+    input.region
+      ? `region: ${input.region.unit} ${input.region.start}-${input.region.end}; crossfade ${input.region.crossfadeSeconds}s`
+      : "",
     `style: ${input.style}`,
     `energy: ${input.arrangement.energy.toFixed(2)}`,
     `density: ${input.arrangement.density.toFixed(2)}`,
@@ -2041,7 +2073,18 @@ function providerFallbackPlan(input: ProviderGenerationInput): Record<string, un
   const sections = Array.isArray(songModel["sections"])
     ? songModel["sections"].filter(isRecord)
     : [];
-  const enabledTracks = input.tracks.map((track) => track.id);
+  const focusedInstrument = input.instrument?.toLowerCase();
+  const enabledTracks =
+    input.operation === "LEGO" || input.operation === "EXTRACT"
+      ? input.tracks
+          .filter((track) =>
+            [track.name, track.role, track.instrument]
+              .join(" ")
+              .toLowerCase()
+              .includes(focusedInstrument ?? "\u0000"),
+          )
+          .map((track) => track.id)
+      : input.tracks.map((track) => track.id);
   return {
     sections: sections.length
       ? sections.map((section, index) => ({

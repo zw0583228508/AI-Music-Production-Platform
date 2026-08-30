@@ -15,6 +15,8 @@ import {
   songModelsTable,
   studioActivitiesTable,
   tracksTable,
+  type AceStepOperation,
+  type AceStepRegion,
   type ArrangementPlan,
   type CandidateEvaluation,
   type GenerationParameters,
@@ -47,7 +49,12 @@ import {
   renderMusicPipeline,
 } from "./musicEngines";
 import { createPerformanceMidi, encodeWav } from "./exportEngine";
-import { deleteExportObject, saveExportObject } from "./objectStorage";
+import {
+  createSourceDownloadUrl,
+  deleteExportObject,
+  isSourceObjectPath,
+  saveExportObject,
+} from "./objectStorage";
 import {
   hasCompleteQualityEvidence,
   isSelectableCandidate,
@@ -128,7 +135,62 @@ export type QueueGenerationInput = {
   speed?: GenerationSpeed;
   seed?: number;
   parameters?: GenerationParameters;
+  operation?: AceStepOperation;
+  sourceArtifactId?: string;
+  instrument?: string;
+  region?: Partial<AceStepRegion> & Pick<AceStepRegion, "unit" | "start" | "end">;
 };
+
+const LEGO_INSTRUMENT_FAMILIES = new Map([
+  ["drum", "drums"],
+  ["drums", "drums"],
+  ["percussion", "percussion"],
+  ["bass", "bass"],
+  ["guitar", "guitar"],
+  ["piano", "piano"],
+  ["keys", "keys"],
+  ["keyboard", "keys"],
+  ["strings", "strings"],
+  ["brass", "brass"],
+  ["synth", "synth"],
+  ["orchestral", "orchestral"],
+  ["harmony", "harmony"],
+  ["melody", "melody"],
+]);
+
+function normalizeAceStepRegion(
+  operation: AceStepOperation | null,
+  value: QueueGenerationInput["region"],
+): AceStepRegion | null {
+  if (operation !== "REPAINT") {
+    if (value) throw new Error("A generation region is only valid for REPAINT");
+    return null;
+  }
+  if (!value) throw new Error("REPAINT requires a bar, beat, or time region");
+  if (
+    !["bar", "beat", "time"].includes(value.unit) ||
+    !Number.isFinite(value.start) ||
+    !Number.isFinite(value.end) ||
+    value.start < (value.unit === "bar" ? 1 : 0) ||
+    value.end <= value.start
+  ) {
+    throw new Error("REPAINT region must have a valid unit and increasing start/end");
+  }
+  const crossfadeSeconds = value.crossfadeSeconds ?? 0.25;
+  if (
+    !Number.isFinite(crossfadeSeconds) ||
+    crossfadeSeconds < 0 ||
+    crossfadeSeconds > 10
+  ) {
+    throw new Error("REPAINT crossfadeSeconds must be between 0 and 10");
+  }
+  return {
+    unit: value.unit,
+    start: value.start,
+    end: value.end,
+    crossfadeSeconds,
+  };
+}
 
 export const generationJobResponse = (
   row: typeof musicGenerationJobsTable.$inferSelect,
@@ -403,6 +465,29 @@ export async function queueArrangementGeneration(
   if (!projectRow || projectRow.ownerId !== ownerId) return null;
 
   const task = input.task ?? "ARRANGEMENT";
+  const operation = input.operation ?? null;
+  if (
+    operation &&
+    task !== "ARRANGEMENT" &&
+    task !== "ACCOMPANIMENT"
+  ) {
+    throw new Error("ACE-Step operations require ARRANGEMENT or ACCOMPANIMENT");
+  }
+  const region = normalizeAceStepRegion(operation, input.region);
+  const rawInstrument = input.instrument?.trim().toLowerCase() ?? null;
+  const instrument = rawInstrument
+    ? LEGO_INSTRUMENT_FAMILIES.get(rawInstrument) ?? null
+    : null;
+  if ((operation === "LEGO" || operation === "EXTRACT") && !instrument) {
+    throw new Error(
+      `${operation} requires one supported instrument family: ${[
+        ...new Set(LEGO_INSTRUMENT_FAMILIES.values()),
+      ].join(", ")}`,
+    );
+  }
+  if (operation !== "LEGO" && operation !== "EXTRACT" && rawInstrument) {
+    throw new Error("A focused instrument is only valid for LEGO or EXTRACT");
+  }
   const hardware = input.hardware ?? "AUTO";
   const speed =
     input.speed ??
@@ -413,27 +498,50 @@ export async function queueArrangementGeneration(
         : "BALANCED");
   const registry = await verifyProviderRegistry(createProviderRegistry(), true);
   const provider = selectMusicProvider(registry, {
-    requestedProvider: input.provider,
+    requestedProvider: operation ? "ACE_STEP" : input.provider,
     task,
     style: arrangement.style,
     hardware,
     speed,
   });
   const count = Math.max(1, Math.min(3, Math.round(input.candidates ?? 3)));
+  const sourceRequired = operation !== null;
+  const requestedSourceArtifactId = input.sourceArtifactId?.trim() || null;
+  const sourceArtifact = requestedSourceArtifactId
+    ? artifacts.find((artifact) => artifact.id === requestedSourceArtifactId)
+    : sourceRequired
+      ? artifacts.find((artifact) =>
+          ["SOURCE", "NORMALIZED_AUDIO", "STEM", "AUDIO_TRACK"].includes(
+            artifact.type,
+          ))
+      : null;
+  if (requestedSourceArtifactId && !sourceArtifact) {
+    throw new Error("The requested ACE-Step source artifact is not part of this project");
+  }
+  if (sourceRequired && !sourceArtifact) {
+    throw new Error(`${operation} requires a project-owned source audio artifact`);
+  }
+  const sourceArtifactId = sourceArtifact?.id ?? requestedSourceArtifactId;
+  const normalizedParameters: GenerationParameters = {
+    ...(input.parameters ?? {}),
+    ...(operation ? { operation } : {}),
+    ...(sourceArtifactId ? { sourceArtifactId } : {}),
+    ...(instrument ? { instrument } : {}),
+    ...(region ? { region } : {}),
+  };
   const idempotencyKey = (input.idempotencyKey?.trim() ||
     `arrangement:${arrangement.id}:v${arrangement.version}:${task}:${sha256(JSON.stringify({
       candidates: count,
-      provider: input.provider ?? null,
+      provider: operation ? "ACE_STEP" : input.provider ?? null,
       hardware,
       speed,
       seed: input.seed ?? null,
-      parameters: input.parameters ?? {},
+      parameters: normalizedParameters,
     })).slice(0, 24)}`).slice(0, 200);
   // A caller supplied idempotency key is a reservation for one exact paid
   // request, not a general-purpose "return my last job" key.  In particular,
   // never let a changed provider, task, seed, or parameters silently reuse a
   // request that may already have reached a provider.
-  const normalizedParameters = input.parameters ?? {};
   const normalizedSeed = input.seed === undefined
     ? null
     : Math.max(0, Math.min(2_147_483_647, Math.trunc(input.seed)));
@@ -513,6 +621,10 @@ export async function queueArrangementGeneration(
       parameters: normalizedParameters,
       parentArtifactIds,
       inputSnapshot: {
+        operation,
+        sourceArtifactId: sourceArtifactId ?? null,
+        instrument,
+        region,
         arrangement: {
           id: arrangement.id,
           version: arrangement.version,
@@ -683,6 +795,30 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
 
     const snapshot = job.inputSnapshot;
     const evaluationSongModel = normalizeSongModelSnapshot(snapshot.songModel);
+    let sourceAudio: {
+      artifactId: string;
+      url: string;
+    } | undefined;
+    if (snapshot.sourceArtifactId) {
+      const [sourceArtifact] = await db
+        .select()
+        .from(musicArtifactsTable)
+        .where(and(
+          eq(musicArtifactsTable.id, snapshot.sourceArtifactId),
+          eq(musicArtifactsTable.projectId, job.projectId),
+        ))
+        .limit(1);
+      if (
+        !sourceArtifact?.storageUri ||
+        !isSourceObjectPath(sourceArtifact.storageUri)
+      ) {
+        throw new Error("ACE-Step source artifact is unavailable or has an invalid storage location");
+      }
+      sourceAudio = {
+        artifactId: sourceArtifact.id,
+        url: await createSourceDownloadUrl(sourceArtifact.storageUri),
+      };
+    }
     // Check ownership immediately before the non-transactional provider call.
     // Provider calls cannot be rolled back, so a recovered worker must not
     // issue one after a newer lease has fenced it out.
@@ -713,6 +849,10 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
         candidates: job.requestedCandidates,
         seed: job.seed,
         parameters: job.parameters,
+        operation: snapshot.operation ?? undefined,
+        sourceAudio,
+        instrument: snapshot.instrument ?? undefined,
+        region: snapshot.region ?? undefined,
         parentArtifactIds: job.parentArtifactIds,
         songModel: snapshot.songModel,
         tracks: snapshot.tracks,

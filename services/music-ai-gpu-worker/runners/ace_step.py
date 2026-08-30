@@ -6,9 +6,11 @@ import json
 import os
 import sys
 import tempfile
+import urllib.request
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from .common import (RunnerError, artifact_descriptor, attest_checkpoint, cached_result,
                      durable_job_dir, emit, require_cuda, runtime_provenance, save_result)
@@ -29,6 +31,9 @@ REQUIRED_BASE_FILES = ("config.json", "model.safetensors", "silence_latent.pt")
 SMOKE_PROMPT = "instrumental piano and acoustic guitar, steady pulse, no vocals"
 MAX_CANDIDATES = 4
 MAX_SECONDS = 120
+MAX_SOURCE_BYTES = 500 * 1024 * 1024
+OPERATIONS = {"COMPLETE", "LEGO", "REPAINT", "COVER", "EXTRACT"}
+FOCUSED_OPERATIONS = {"LEGO", "EXTRACT"}
 TORCH_VERSION = "2.10.0+cu128"
 TORCHVISION_VERSION = "0.25.0+cu128"
 TORCHAUDIO_VERSION = "2.10.0+cu128"
@@ -177,13 +182,36 @@ class OfficialAceStepBackend:
         self.generate_music = generate_music
 
     def generate(self, *, prompt: str, seed: int, duration_seconds: float,
-                 candidates: int, output_dir: Path) -> list[dict[str, Any]]:
+                 candidates: int, output_dir: Path,
+                 operation: dict[str, Any] | None = None,
+                 source_path: Path | None = None) -> list[dict[str, Any]]:
         try:
             try:
-                params = self.GenerationParams(
-                    task_type="text2music", caption=prompt, duration=duration_seconds,
-                    thinking=False,
-                )
+                operation = operation or {"operation": None, "task_type": "text2music"}
+                params_kwargs: dict[str, Any] = {
+                    "task_type": operation["task_type"],
+                    "caption": prompt,
+                    "duration": duration_seconds,
+                    "thinking": False,
+                }
+                if operation["operation"]:
+                    if source_path is None:
+                        raise RunnerError(f"{operation['operation']} source audio is unavailable")
+                    params_kwargs["src_audio"] = str(source_path)
+                if operation["operation"] in FOCUSED_OPERATIONS:
+                    params_kwargs["caption"] = (
+                        f"Isolated {operation['instrument']} instrumental part only. "
+                        "Do not add unrelated instrument stems."
+                    )
+                    params_kwargs["global_caption"] = prompt
+                if operation["operation"] == "REPAINT":
+                    params_kwargs.update({
+                        "repainting_start": operation["repainting_start"],
+                        "repainting_end": operation["repainting_end"],
+                        "chunk_mask_mode": "explicit",
+                        "repaint_wav_crossfade_sec": operation["crossfade_seconds"],
+                    })
+                params = self.GenerationParams(**params_kwargs)
                 config = self.GenerationConfig(
                     batch_size=candidates, audio_format="flac", use_random_seed=False,
                     seeds=[seed + index for index in range(candidates)],
@@ -223,6 +251,133 @@ def _parameters(request: dict[str, Any]) -> tuple[str, int, float, int]:
     return prompt.strip(), seed, float(duration), count
 
 
+def _operation_parameters(request: dict[str, Any]) -> dict[str, Any]:
+    raw_operation = request.get("operation")
+    if raw_operation is None:
+        return {"operation": None, "task_type": "text2music"}
+    operation = str(raw_operation).strip().upper()
+    if operation not in OPERATIONS:
+        raise RunnerError(f"unsupported ACE-Step operation: {raw_operation}")
+    source_audio = request.get("sourceAudio")
+    if not isinstance(source_audio, dict):
+        raise RunnerError(f"{operation} requires sourceAudio")
+    artifact_id = str(source_audio.get("artifactId") or "").strip()
+    source_url = str(source_audio.get("url") or "").strip()
+    parsed = urlsplit(source_url)
+    if (
+        not artifact_id
+        or parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+    ):
+        raise RunnerError(f"{operation} sourceAudio is invalid")
+    instrument = str(request.get("instrument") or "").strip().lower()
+    if operation in FOCUSED_OPERATIONS and not instrument:
+        raise RunnerError(f"{operation} requires a focused instrument")
+    region = request.get("region")
+    if operation == "REPAINT":
+        if not isinstance(region, dict):
+            raise RunnerError("REPAINT requires a region")
+        unit = str(region.get("unit") or "")
+        start = region.get("start")
+        end = region.get("end")
+        crossfade = region.get("crossfadeSeconds", 0.25)
+        if (
+            unit not in {"bar", "beat", "time"}
+            or not isinstance(start, (int, float))
+            or not isinstance(end, (int, float))
+            or not isinstance(crossfade, (int, float))
+            or start < (1 if unit == "bar" else 0)
+            or end <= start
+            or crossfade < 0
+            or crossfade > 10
+        ):
+            raise RunnerError("REPAINT region is invalid")
+    elif region is not None:
+        raise RunnerError("region is only valid for REPAINT")
+    return {
+        "operation": operation,
+        "task_type": operation.lower(),
+        "source_url": source_url,
+        "source_artifact_id": artifact_id,
+        "instrument": instrument or None,
+        "region": region,
+    }
+
+
+def _download_source(url: str, destination: Path) -> None:
+    request = urllib.request.Request(
+        url,
+        headers={"User-Agent": "music-ai-gpu-worker/1.0"},
+    )
+    total = 0
+    try:
+        with urllib.request.urlopen(request, timeout=90) as response:
+            declared = response.headers.get("Content-Length")
+            if declared and int(declared) > MAX_SOURCE_BYTES:
+                raise RunnerError("source audio exceeds the worker size limit")
+            with destination.open("wb") as output:
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > MAX_SOURCE_BYTES:
+                        raise RunnerError("source audio exceeds the worker size limit")
+                    output.write(chunk)
+    except RunnerError:
+        destination.unlink(missing_ok=True)
+        raise
+    except Exception as exc:
+        destination.unlink(missing_ok=True)
+        raise RunnerError(f"source audio download failed: {exc}") from exc
+    if total <= 0:
+        destination.unlink(missing_ok=True)
+        raise RunnerError("source audio download was empty")
+
+
+def _region_seconds(
+    request: dict[str, Any], region: dict[str, Any]
+) -> tuple[float, float]:
+    start = float(region["start"])
+    end = float(region["end"])
+    unit = str(region["unit"])
+    if unit == "time":
+        return start, end
+    song = request.get("songModel")
+    if not isinstance(song, dict):
+        raise RunnerError(f"{unit} REPAINT requires SongModel tempo evidence")
+    bpm = None
+    tempo_map = song.get("tempoMap")
+    if isinstance(tempo_map, list):
+        for entry in tempo_map:
+            if isinstance(entry, dict) and isinstance(entry.get("bpm"), (int, float)):
+                candidate = float(entry["bpm"])
+                if 30 <= candidate <= 300:
+                    bpm = candidate
+                    break
+    if bpm is None:
+        raise RunnerError(f"{unit} REPAINT requires a verified tempo")
+    seconds_per_beat = 60.0 / bpm
+    if unit == "beat":
+        return start * seconds_per_beat, end * seconds_per_beat
+    beats_per_bar = 4
+    meter_map = song.get("meterMap")
+    if isinstance(meter_map, list):
+        for entry in meter_map:
+            if not isinstance(entry, dict):
+                continue
+            numerator = str(entry.get("meter") or "").partition("/")[0]
+            if numerator.isdigit() and 1 <= int(numerator) <= 16:
+                beats_per_bar = int(numerator)
+                break
+    return (
+        (start - 1) * beats_per_bar * seconds_per_beat,
+        (end - 1) * beats_per_bar * seconds_per_beat,
+    )
+
+
 def provenance(digest: str) -> dict[str, str]:
     return {"provider": PROVIDER, "modelVersion": MODEL_VERSION,
             "checkpointSha256": digest,
@@ -237,16 +392,40 @@ def provenance(digest: str) -> dict[str, str]:
 def run_job(request: dict[str, Any], checkpoint: Path,
             backend_cls=OfficialAceStepBackend) -> dict[str, Any]:
     prompt, seed, duration, count = _parameters(request)
+    operation = _operation_parameters(request)
     digest = attest_checkpoint(checkpoint, PROVIDER)
     work = durable_job_dir(request, PROVIDER)
     prior = cached_result(work)
     if prior is not None:
         return prior
     require_cuda()
-    audios = backend_cls(checkpoint).generate(
-        prompt=prompt, seed=seed, duration_seconds=duration, candidates=count,
-        output_dir=work,
-    )
+    source_path = None
+    if operation["operation"]:
+        source_path = work / "source-audio"
+        _download_source(operation["source_url"], source_path)
+    if operation["operation"] == "REPAINT":
+        repainting_start, repainting_end = _region_seconds(
+            request, operation["region"]
+        )
+        operation = {
+            **operation,
+            "repainting_start": repainting_start,
+            "repainting_end": repainting_end,
+            "crossfade_seconds": float(operation["region"]["crossfadeSeconds"]),
+        }
+    generate_kwargs: dict[str, Any] = {
+        "prompt": prompt,
+        "seed": seed,
+        "duration_seconds": duration,
+        "candidates": count,
+        "output_dir": work,
+    }
+    if operation["operation"]:
+        generate_kwargs.update({
+            "operation": operation,
+            "source_path": source_path,
+        })
+    audios = backend_cls(checkpoint).generate(**generate_kwargs)
     if len(audios) != count:
         raise RunnerError("ACE-Step returned a different number of candidates")
     candidates = []
@@ -259,6 +438,21 @@ def run_job(request: dict[str, Any], checkpoint: Path,
         for track in tracks
         if isinstance(track, dict) and isinstance(track.get("id"), str)
     ]
+    if operation["operation"] in FOCUSED_OPERATIONS:
+        focused = str(operation["instrument"]).lower()
+        enabled_tracks = [
+            str(track.get("id"))
+            for track in tracks
+            if (
+                isinstance(track, dict)
+                and isinstance(track.get("id"), str)
+                and focused in " ".join([
+                    str(track.get("name") or ""),
+                    str(track.get("role") or ""),
+                    str(track.get("instrument") or ""),
+                ]).lower()
+            )
+        ]
     plan_sections = []
     for index, section in enumerate(source_sections):
         if not isinstance(section, dict):
@@ -286,11 +480,20 @@ def run_job(request: dict[str, Any], checkpoint: Path,
             raise RunnerError("ACE-Step output escaped the durable job directory")
         artifact = artifact_descriptor(artifact_path, PROVIDER, work.name)
         candidates.append({"id": f"candidate-{number + 1}",
-                           "label": f"Candidate {chr(65 + number)}",
+                           "label": f"{operation['operation'] or 'Candidate'} {chr(65 + number)}",
                            "score": 0.5, "confidence": 0.5,
-                           "summary": "ACE-Step generated accompaniment; independent quality analysis is pending.",
+                           "summary": (
+                               f"ACE-Step {operation['operation'] or 'text2music'} "
+                               "audio; independent quality analysis is pending."
+                           ),
                            "plan": {"sections": plan_sections},
                            "seed": seed + number,
+                           "parameters": {
+                               "operation": operation["operation"],
+                               "sourceArtifactId": operation.get("source_artifact_id"),
+                               "instrument": operation.get("instrument"),
+                               "region": operation.get("region"),
+                           },
                            "artifact": artifact, "artifacts": [artifact],
                            "provenance": provenance(digest)})
     result = {"candidates": candidates, "provenance": provenance(digest)}
