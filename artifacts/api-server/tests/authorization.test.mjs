@@ -32,6 +32,7 @@ await build({
       } from "@workspace/db";
       export { getPrivateObject } from "./src/lib/objectStorage";
       export { eq } from "drizzle-orm";
+      export { ListGenerationProvidersResponse } from "@workspace/api-zod";
     `,
     resolveDir: apiDirectory,
     sourcefile: "authorization-harness.ts",
@@ -53,6 +54,7 @@ const {
   deleteSession,
   eq,
   getPrivateObject,
+  ListGenerationProvidersResponse,
   loadExportZip,
   musicArtifactsTable,
   musicProjectsTable,
@@ -869,4 +871,13 @@ test("project and export endpoints enforce owner authorization", async () => {
     .where(eq(projectCleanupJobsTable.id, staleCleanupId));
   assert.equal(reclaimedJob.attempts, 2);
   assert.equal(reclaimedJob.leaseId, null);
+});
+
+test("authenticated provider catalog requests return a schema-valid MusicGen entry", async () => {
+  const response = await request("/api/music-providers", ownerSession);
+  assert.equal(response.status, 200);
+
+  const providers = ListGenerationProvidersResponse.parse(await response.json());
+  const musicGen = providers.find((provider) => provider.id === "MUSICGEN");
+  assert.ok(musicGen);
 });
