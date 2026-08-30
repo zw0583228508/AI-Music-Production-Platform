@@ -470,6 +470,7 @@ export async function renderArrangementExport(input: {
   seed?: number;
   generationProvider: string;
   generationModelVersion?: string;
+  generationCheckpointSha256?: string;
   candidateId?: string;
   providerRequestId?: string;
   parentIds: string[];
@@ -602,6 +603,9 @@ export async function renderArrangementExport(input: {
       ...parameters,
       generationProvider: input.generationProvider,
       generationModelVersion: input.generationModelVersion ?? "unknown",
+      ...(input.generationCheckpointSha256
+        ? { generationCheckpointSha256: input.generationCheckpointSha256 }
+        : {}),
       seed: input.seed ?? 0,
       ...(input.candidateId ? { candidateId: input.candidateId } : {}),
       ...(input.providerRequestId ? { providerRequestId: input.providerRequestId } : {}),
@@ -750,6 +754,9 @@ export async function renderArrangementExport(input: {
     generation: {
       provider: input.generationProvider,
       modelVersion: input.generationModelVersion ?? null,
+      ...(input.generationCheckpointSha256
+        ? { checkpointSha256: input.generationCheckpointSha256 }
+        : {}),
       candidateId: input.candidateId ?? null,
       providerRequestId: input.providerRequestId ?? null,
       seed: input.seed ?? null,

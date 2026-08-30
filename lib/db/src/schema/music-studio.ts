@@ -241,6 +241,7 @@ export type ProviderRuntimeSnapshot = {
   latencyMs: number | null;
   message: string | null;
   reportedVersion: string | null;
+  reportedChecksum?: string | null;
 };
 
 export const musicProjectsTable = pgTable("music_projects", {
@@ -768,6 +769,7 @@ export type ArrangementGenerationProvenance = {
   provider: string;
   modelVersion: string;
   reportedModelVersion: string | null;
+  checkpointSha256: string | null;
   providerRequestId: string | null;
   songModelVersion: number | null;
   seed: number;
@@ -810,6 +812,7 @@ export const musicGenerationCandidatesTable = pgTable(
     artifactId: text("artifact_id"),
     providerRequestId: text("provider_request_id"),
     reportedModelVersion: text("reported_model_version"),
+    checkpointSha256: text("checkpoint_sha256"),
     provider: text("provider").notNull(),
     modelVersion: text("model_version").notNull(),
     seed: integer("seed").notNull(),

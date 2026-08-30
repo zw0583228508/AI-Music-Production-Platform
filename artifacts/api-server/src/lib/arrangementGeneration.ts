@@ -100,6 +100,7 @@ export const generationCandidateResponse = (
   provider: row.provider,
   modelVersion: row.modelVersion,
   reportedModelVersion: row.reportedModelVersion,
+  checkpointSha256: row.checkpointSha256,
   providerRequestId: row.providerRequestId,
   seed: row.seed,
   rank: row.rank,
@@ -743,6 +744,9 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           providerOrdinal: providerIndex + 1,
           providerScore: candidate.score,
           confidence: candidate.confidence,
+          ...(result.checkpointSha256
+            ? { checkpointSha256: result.checkpointSha256 }
+            : {}),
         },
         storageUri: `db://music_generation_candidates/${candidateId}`,
       });
@@ -847,6 +851,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           provider: provider.definition.id,
           modelVersion: job.modelVersion,
           reportedModelVersion: result.modelVersion,
+          checkpointSha256: result.checkpointSha256,
           providerRequestId: candidate.providerRequestId ?? result.requestId,
           seed: job.seed,
           providerScore: candidate.score,
@@ -896,6 +901,9 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
               bytes: wav.byteLength,
               durationSeconds: pipeline.durationSeconds,
               candidateId,
+              ...(result.checkpointSha256
+                ? { checkpointSha256: result.checkpointSha256 }
+                : {}),
             },
           },
           {
@@ -919,6 +927,9 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
               bytes: midi.byteLength,
               durationSeconds: pipeline.durationSeconds,
               candidateId,
+              ...(result.checkpointSha256
+                ? { checkpointSha256: result.checkpointSha256 }
+                : {}),
             },
           },
           {
@@ -942,6 +953,9 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
               bytes: qualityData.byteLength,
               qualityScore: pipeline.quality.score,
               candidateId,
+              ...(result.checkpointSha256
+                ? { checkpointSha256: result.checkpointSha256 }
+                : {}),
             },
           },
         );
@@ -971,6 +985,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
         provider: provider.definition.id,
         modelVersion: job.modelVersion,
         reportedModelVersion: result.modelVersion,
+        checkpointSha256: result.checkpointSha256,
         seed: job.seed,
         rank: null,
         label: candidate.label,
@@ -1552,6 +1567,7 @@ export async function selectGenerationCandidate(
           provider: candidate.provider,
           modelVersion: candidate.modelVersion,
           reportedModelVersion: candidate.reportedModelVersion,
+          checkpointSha256: candidate.checkpointSha256,
           providerRequestId: candidate.providerRequestId,
           songModelVersion: generationJob.songModelVersion,
           seed: candidate.seed,
@@ -1595,6 +1611,9 @@ export async function selectGenerationCandidate(
           mediaType: "application/json",
           bytes: Buffer.byteLength(serializedPlan),
           selectedCandidateId: candidate.id,
+          ...(candidate.checkpointSha256
+            ? { checkpointSha256: candidate.checkpointSha256 }
+            : {}),
         },
         parameters: engineParameters,
         storageUri: `db://music_arrangements/${arrangement.id}`,
@@ -1618,6 +1637,9 @@ export async function selectGenerationCandidate(
             ...trackModel.provenance.parameters,
             trackId: trackModel.id,
             arrangementId: arrangement.id,
+            ...(candidate.checkpointSha256
+              ? { checkpointSha256: candidate.checkpointSha256 }
+              : {}),
           },
           storageUri: `db://music_arrangements/${arrangement.id}/tracks/${trackModel.id}`,
         };

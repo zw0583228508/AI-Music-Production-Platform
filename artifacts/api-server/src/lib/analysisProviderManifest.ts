@@ -1,4 +1,5 @@
 export type VerifiedLocalAnalysisProviderId = "BASIC_PITCH" | "DEMUCS";
+export type VerifiedGpuAnalysisProviderId = "BS_ROFORMER" | "MT3";
 
 export type AnalysisProviderManifestEntry = {
   version: string;
@@ -16,6 +17,17 @@ export const VERIFIED_LOCAL_ANALYSIS_PROVIDERS: Readonly<
   DEMUCS: {
     version: "4.0.1",
     checksum: "8726e21a993978c7ba086d3872e7608d7d5bfca646ca4aca459ffda844faa8b4",
+  },
+};
+
+export const VERIFIED_GPU_ANALYSIS_PROVIDERS: Readonly<
+  Record<VerifiedGpuAnalysisProviderId, Pick<AnalysisProviderManifestEntry, "version">>
+> = {
+  BS_ROFORMER: {
+    version: "bs-roformer-viperx-v1",
+  },
+  MT3: {
+    version: "mt3-ismir2021",
   },
 };
 
@@ -64,6 +76,25 @@ export function attestAnalysisProviderHealth(
   ];
   if (expected && (version !== expected.version || checksum !== expected.checksum)) {
     throw new Error(`health response does not match the verified ${requestedProvider} identity`);
+  }
+  const gpuExpected = VERIFIED_GPU_ANALYSIS_PROVIDERS[
+    requestedProvider as VerifiedGpuAnalysisProviderId
+  ];
+  if (gpuExpected) {
+    const expectedChecksum = process.env[
+      `${requestedProvider}_CHECKPOINT_SHA256`
+    ]?.trim().toLowerCase();
+    if (
+      version !== gpuExpected.version ||
+      !/^[a-f0-9]{64}$/i.test(checksum) ||
+      !expectedChecksum ||
+      checksum.toLowerCase() !== expectedChecksum ||
+      payload.gpuReady !== true
+    ) {
+      throw new Error(
+        `health response does not match the verified GPU ${requestedProvider} identity`,
+      );
+    }
   }
   return { provider, version, checksum };
 }

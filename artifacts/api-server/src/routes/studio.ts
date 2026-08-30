@@ -2885,6 +2885,8 @@ router.post("/projects/:projectId/export", async (req, res): Promise<void> => {
         arrangement.generationProvider ?? "ARRANGEMENT_ENGINE",
       generationModelVersion: arrangement.generationProvenance?.modelVersion ??
         arrangement.modelVersion ?? undefined,
+      generationCheckpointSha256:
+        arrangement.generationProvenance?.checkpointSha256 ?? undefined,
       candidateId: arrangement.generationProvenance?.candidateId ??
         arrangement.sourceCandidateId ?? undefined,
       providerRequestId: arrangement.generationProvenance?.providerRequestId ??
@@ -2939,6 +2941,8 @@ router.post("/projects/:projectId/export", async (req, res): Promise<void> => {
             arrangement.generationProvider ?? "ARRANGEMENT_ENGINE",
           generationModelVersion: arrangement.generationProvenance?.modelVersion ??
             arrangement.modelVersion ?? "unknown",
+          generationCheckpointSha256:
+            arrangement.generationProvenance?.checkpointSha256 ?? "none",
           generationCandidateId: arrangement.generationProvenance?.candidateId ??
             arrangement.sourceCandidateId ?? "none",
           seed: arrangement.seed ?? 0,

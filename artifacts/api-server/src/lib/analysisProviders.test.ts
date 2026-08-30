@@ -73,10 +73,11 @@ test("prefers configured DEMUCS and records its actual separation provenance", a
         checkpointReady: true,
         runtimeReady: true,
         smokeTested: true,
-        modelVersion: provider === "DEMUCS" ? "4.0.1" : "1.0.0",
+        modelVersion: provider === "DEMUCS" ? "4.0.1" : "bs-roformer-viperx-v1",
+        gpuReady: provider === "BS_ROFORMER",
         checksum: provider === "DEMUCS"
           ? "8726e21a993978c7ba086d3872e7608d7d5bfca646ca4aca459ffda844faa8b4"
-          : "verified-bs-roformer",
+          : "a".repeat(64),
       }));
       return;
     }
@@ -95,8 +96,10 @@ test("prefers configured DEMUCS and records its actual separation provenance", a
   assert.ok(address && typeof address !== "string");
   const previousDemucs = process.env.DEMUCS_API_URL;
   const previousBsRoformer = process.env.BS_ROFORMER_API_URL;
+  const previousBsRoformerChecksum = process.env.BS_ROFORMER_CHECKPOINT_SHA256;
   process.env.DEMUCS_API_URL = `http://127.0.0.1:${address.port}`;
   process.env.BS_ROFORMER_API_URL = "http://127.0.0.1:1";
+  process.env.BS_ROFORMER_CHECKPOINT_SHA256 = "a".repeat(64);
   try {
     const result = await runAnalysisProviders({
       sourceUrl: "https://storage.invalid/signed-source",
@@ -121,6 +124,11 @@ test("prefers configured DEMUCS and records its actual separation provenance", a
     else process.env.DEMUCS_API_URL = previousDemucs;
     if (previousBsRoformer === undefined) delete process.env.BS_ROFORMER_API_URL;
     else process.env.BS_ROFORMER_API_URL = previousBsRoformer;
+    if (previousBsRoformerChecksum === undefined) {
+      delete process.env.BS_ROFORMER_CHECKPOINT_SHA256;
+    } else {
+      process.env.BS_ROFORMER_CHECKPOINT_SHA256 = previousBsRoformerChecksum;
+    }
     await new Promise<void>((resolve, reject) => {
       server.close((error) => error ? reject(error) : resolve());
     });
@@ -166,6 +174,7 @@ test("keeps absent providers explicit without fabricating analysis results", asy
 
 test("polls an asynchronous provider job and returns its completed result", async () => {
   let polls = 0;
+  let idempotencyKey: string | undefined;
   const server = createServer((request, response) => {
     response.setHeader("Content-Type", "application/json");
     if (request.method === "GET" && request.url === "/health?provider=BASIC_PITCH") {
@@ -181,6 +190,8 @@ test("polls an asynchronous provider job and returns its completed result", asyn
       return;
     }
     if (request.method === "POST" && request.url === "/analyze") {
+      const header = request.headers["idempotency-key"];
+      idempotencyKey = Array.isArray(header) ? header[0] : header;
       response.writeHead(202);
       response.end(JSON.stringify({ jobId: "transcription-1", status: "queued" }));
       return;
@@ -216,8 +227,10 @@ test("polls an asynchronous provider job and returns its completed result", asyn
       sourceUrl: "https://storage.invalid/signed-source",
       sourceType: "VOCAL_ONLY",
       durationSeconds: 10,
+      idempotencyKey: "active-analysis-job-1",
     });
     assert.equal(result.transcriptions[0]?.providerId, "BASIC_PITCH");
+    assert.equal(idempotencyKey, "active-analysis-job-1:BASIC_PITCH");
     assert.equal(result.transcriptions[0]?.notes[0]?.pitch, 60);
     assert.equal(polls, 1);
   } finally {

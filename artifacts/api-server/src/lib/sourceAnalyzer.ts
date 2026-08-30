@@ -696,6 +696,7 @@ async function analyzeProjectSourceBeforeTask1(sourceId: string): Promise<void> 
       sourceUrl,
       sourceType: source.sourceType,
       durationSeconds,
+      idempotencyKey: job.id,
     });
     const primaryTranscription = providerResults.transcriptions[0] ?? null;
     if (providerResults.structure) {
@@ -1182,6 +1183,7 @@ export async function analyzeProjectSource(
       sourceUrl,
       sourceType: source.sourceType,
       durationSeconds,
+      idempotencyKey: job.id,
     });
     let sourceStems: SongModelData["sourceStems"] =
       midi?.sourceStems.map((stem) => ({

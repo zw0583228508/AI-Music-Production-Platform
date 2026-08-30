@@ -15,6 +15,12 @@ A configured endpoint is not an executable music model. Route work only after a 
 
 **How to apply:** Expose configured-but-unhealthy separately from ready and unavailable. Recheck before queueing and execution, persist the fresh result under the job fence before failing, retry transport/runtime outages, and make confirmed missing checkpoints explicit.
 
+GPU checkpoint trust must be pinned independently at the API boundary and revalidated through export, not inferred from a worker-reported or merely well-formed hash. Provider submission idempotency and execution claims must each be atomic.
+
+**Why:** A compromised or stale worker can report a different valid-looking checksum, old arrangements can outlive a deployment pin, and concurrent requests can race before a durable job exists.
+
+**How to apply:** Require exact deployment-pin equality for health, completed results, and GPU-backed exports; preserve the checksum on candidates, artifacts, arrangements, and manifests. Use transactional insert-or-fetch for idempotency plus a separate conditional claim before launching expensive work.
+
 Provider trust boundaries start before JSON parsing and continue through artifact persistence: bound response bytes, validate copied media locally, and never treat provider-reported object paths as ownership proof. Fusion provenance requires independent corroborating evidence.
 
 **Why:** A syntactically plausible payload can still exhaust a worker, reference another job's private data, contain invalid media, or make one provider look like a multi-provider consensus.

@@ -2,6 +2,10 @@ import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { SFZ_SAMPLE_LIBRARY } from "./sfz-sample-library";
 import type { GeneratedExportFile } from "./exportEngine";
+import {
+  expectedGpuCheckpointSha256,
+  isGpuAttestedProvider,
+} from "./gpuProviderAttestation";
 
 type Project = {
   id: string;
@@ -28,6 +32,16 @@ type Arrangement = {
   density: number;
   orchestraSize: number;
   rhythmIntensity: number;
+  generationProvenance?: {
+    provider: string;
+    modelVersion: string;
+    reportedModelVersion: string | null;
+    checkpointSha256: string | null;
+    candidateId: string;
+    providerRequestId: string | null;
+    seed: number;
+    parentArtifactIds: string[];
+  } | null;
   sections: Array<{
     name: string;
     energy: number;
@@ -803,6 +817,22 @@ export function createExportBundle(
   renderedFiles?: GeneratedExportFile[],
   artifactGraph?: Record<string, ExportArtifactGraphEntry>,
 ): ExportBundle {
+  const generation = arrangement.generationProvenance;
+  const expectedCheckpoint = generation && isGpuAttestedProvider(generation.provider)
+    ? expectedGpuCheckpointSha256(generation.provider)
+    : null;
+  if (
+    generation &&
+    isGpuAttestedProvider(generation.provider) &&
+    (
+      !expectedCheckpoint ||
+      generation.checkpointSha256?.toLowerCase() !== expectedCheckpoint
+    )
+  ) {
+    throw new Error(
+      "GPU-backed arrangement checkpoint provenance does not match the deployment pin",
+    );
+  }
   const id = exportId ?? `export-${project.id}-${version}-${randomUUID().slice(0, 8)}`;
   const filename = `${safeName(project.name)}-v${version}-export.zip`;
   const timelineSeconds = exportTimelineSeconds(project, arrangement, tracks);
@@ -909,6 +939,18 @@ export function createExportBundle(
     projectName: project.name,
     arrangementId: arrangement.id,
     arrangementVersion: arrangement.version,
+    generation: generation
+      ? {
+          provider: generation.provider,
+          modelVersion: generation.modelVersion,
+          reportedModelVersion: generation.reportedModelVersion,
+          checkpointSha256: generation.checkpointSha256,
+          candidateId: generation.candidateId,
+          providerRequestId: generation.providerRequestId,
+          seed: generation.seed,
+          parentArtifactIds: generation.parentArtifactIds,
+        }
+      : null,
     files: packageFileRecords,
     artifactGraph: packageFileRecords.map((file) => ({
       file: file.name,

@@ -11,6 +11,14 @@ import type {
 } from "@workspace/db";
 import { db, modelRegistryTable } from "@workspace/db";
 import { attestAnalysisProviderHealth } from "./analysisProviderManifest";
+import {
+  expectedGpuCheckpointSha256,
+  isGpuAttestedProvider,
+} from "./gpuProviderAttestation";
+export {
+  expectedGpuCheckpointSha256,
+  isGpuAttestedProvider,
+} from "./gpuProviderAttestation";
 export type ProviderStatus = "ready" | "configured" | "unavailable";
 
 export type MusicProviderDescriptor = {
@@ -169,6 +177,19 @@ export const MUSIC_PROVIDERS: MusicProviderDescriptor[] = [
     license: "Provider terms",
     priority: 32,
     notes: "Requires ACE_STEP_LEGO_API_URL; adds a focused audio part.",
+  },
+  {
+    id: "MUSICGEN",
+    name: "MusicGen",
+    provider: "Meta AudioCraft",
+    version: "configured-endpoint",
+    capabilities: ["arrangement", "audio_generation"],
+    inputTypes: ["FULL_SONG", "VOCAL_ONLY", "INSTRUMENTAL", "MIDI"],
+    execution: "remote",
+    status: remoteConfigured("MUSICGEN") ? "configured" : "unavailable",
+    license: "Model-specific",
+    priority: 35,
+    notes: "Requires MUSICGEN_API_URL and a verified GPU worker checkpoint.",
   },
   {
     id: "ANYACCOMP",
@@ -714,14 +735,21 @@ export async function cancelRemoteProviderJob(
   cancelUrlValue: string,
 ): Promise<void> {
   const prefix = remoteEnvironmentPrefix(providerId);
-  const endpoint = process.env[`${prefix}_API_URL`];
+  const key = providerId.replace(/[^A-Z0-9]/g, "_");
+  const endpoint =
+    process.env[`MUSIC_PROVIDER_${key}_URL`] ??
+    process.env["MUSIC_PROVIDER_GATEWAY_URL"] ??
+    process.env[`${prefix}_API_URL`];
   if (!endpoint) throw new Error(`${providerId} worker is not configured`);
   const endpointUrl = new URL(endpoint);
   const cancelUrl = new URL(cancelUrlValue, endpointUrl);
   if (cancelUrl.origin !== endpointUrl.origin) {
     throw new Error("Provider cancellation URL must use the configured worker origin");
   }
-  const token = process.env[`${prefix}_API_TOKEN`];
+  const token =
+    process.env[`MUSIC_PROVIDER_${key}_TOKEN`] ??
+    process.env["MUSIC_PROVIDER_GATEWAY_TOKEN"] ??
+    process.env[`${prefix}_API_TOKEN`];
   let lastStatus = 0;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const response = await fetch(cancelUrl, {
@@ -986,6 +1014,7 @@ export const musicProviderIds = [
   "BS_ROFORMER",
   "ALL_IN_ONE",
   "MT3",
+  "MUSICGEN",
   "BASIC_PITCH",
   "ACE_STEP",
   "ANYACCOMP",
@@ -996,6 +1025,7 @@ export const musicProviderIds = [
 
 class HttpMusicGenerationProvider implements MusicGenerationProvider {
   readiness: ProviderRuntimeSnapshot;
+  private attestedChecksum: string | null = null;
 
   constructor(
     readonly definition: ProviderDefinition,
@@ -1070,12 +1100,50 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
       ].find((value): value is string =>
         typeof value === "string" && Boolean(value.trim())
       )?.trim() ?? null;
+      const strictGpuAttestation = isGpuAttestedProvider(this.definition.id);
+      const expectedChecksum = strictGpuAttestation
+        ? expectedGpuCheckpointSha256(this.definition.id)
+        : null;
+      const reportedProvider = typeof payload["provider"] === "string"
+        ? payload["provider"].trim()
+        : null;
+      const reportedChecksum = payload["checkpointSha256"] ??
+        payload["checksum"] ??
+        checkpoint["sha256"];
+      const smokeTested = payload["smokeTested"] === true;
+      const gpuReady = payload["gpuReady"] === true ||
+        runtime["gpuReady"] === true;
+      const exactModel = reportedVersion === this.definition.modelVersion;
+      const strictAttestationReady = !strictGpuAttestation || (
+        reportedProvider === this.definition.id &&
+        exactModel &&
+        isSha256(reportedChecksum) &&
+        reportedChecksum.toLowerCase() === expectedChecksum &&
+        smokeTested &&
+        gpuReady
+      );
       const ready = healthy && checkpointReady && runtimeReady &&
-        Boolean(reportedVersion);
+        Boolean(reportedVersion) && strictAttestationReady;
       const message = ready
-        ? "Checkpoint and provider runtime are ready."
+        ? strictGpuAttestation
+          ? "GPU runtime, checkpoint checksum, model version, and smoke inference are verified."
+          : "Checkpoint and provider runtime are ready."
         : typeof payload["message"] === "string" && payload["message"].trim()
           ? payload["message"].trim()
+          : strictGpuAttestation && reportedProvider !== this.definition.id
+            ? "GPU worker health response identified the wrong provider."
+            : strictGpuAttestation && !exactModel
+              ? `GPU worker model version does not match ${this.definition.modelVersion}.`
+              : strictGpuAttestation && (
+                  !expectedChecksum ||
+                  !isSha256(reportedChecksum) ||
+                  reportedChecksum.toLowerCase() !== expectedChecksum
+                )
+                ? "GPU worker checkpoint SHA-256 does not match the deployment pin."
+                : strictGpuAttestation && !smokeTested
+                  ? "GPU worker has not completed a real smoke inference."
+                  : strictGpuAttestation && !gpuReady
+                    ? "GPU worker did not attest an available GPU runtime."
           : !checkpointReady
             ? "Configured worker has not verified its model checkpoint."
             : !runtimeReady
@@ -1093,8 +1161,15 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
         latencyMs: Math.max(0, Date.now() - startedAt),
         message,
         reportedVersion,
+        reportedChecksum: isSha256(reportedChecksum)
+          ? reportedChecksum.toLowerCase()
+          : null,
       };
+      this.attestedChecksum = ready && isSha256(reportedChecksum)
+        ? reportedChecksum.toLowerCase()
+        : null;
     } catch (error) {
+      this.attestedChecksum = null;
       this.readiness = {
         availability: "configured",
         configurationReady: true,
@@ -1107,6 +1182,7 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
           ? `Provider health check failed: ${error.message}`
           : "Provider health check failed.",
         reportedVersion: null,
+        reportedChecksum: null,
       };
     }
     providerHealthCache.set(cacheKey, {
@@ -1123,6 +1199,23 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
     if (!isRecord(payload) || !Array.isArray(payload["candidates"])) {
       throw new Error(`${this.definition.displayName} worker response is invalid`);
     }
+    if (isGpuAttestedProvider(this.definition.id)) {
+      const provider = payload["provider"];
+      const modelVersion = payload["modelVersion"];
+      const checkpointSha256 = payload["checkpointSha256"] ??
+        payload["checksum"];
+      if (
+        provider !== this.definition.id ||
+        modelVersion !== this.definition.modelVersion ||
+        !isSha256(checkpointSha256) ||
+        checkpointSha256.toLowerCase() !== this.attestedChecksum ||
+        payload["smokeTested"] !== true
+      ) {
+        throw new Error(
+          `${this.definition.displayName} worker result failed GPU provenance attestation`,
+        );
+      }
+    }
     const sharedTrackModels = payload["trackModels"];
     const candidates = payload["candidates"]
       .slice(0, input.candidates)
@@ -1137,6 +1230,11 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
         typeof payload["modelVersion"] === "string"
           ? payload["modelVersion"]
           : this.definition.modelVersion,
+      checkpointSha256: isSha256(
+          payload["checkpointSha256"] ?? payload["checksum"],
+        )
+        ? String(payload["checkpointSha256"] ?? payload["checksum"]).toLowerCase()
+        : null,
       candidates,
     };
   }
@@ -1241,8 +1339,11 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
             : `${this.definition.displayName} worker failed`,
         );
       }
-        if (statusPayload["status"] === "succeeded") {
-          return this.normalizeResult(statusPayload, input);
+        if (
+          statusPayload["status"] === "succeeded" ||
+          statusPayload["status"] === "completed"
+        ) {
+          return this.normalizeResult(statusPayload["result"] ?? statusPayload, input);
         }
       }
       throw new Error(`${this.definition.displayName} worker timed out`);
@@ -1349,7 +1450,7 @@ export const providerDefinitions: ProviderDefinition[] = [
   {
     id: "BS_ROFORMER",
     displayName: "BS-RoFormer",
-    modelVersion: "bs-roformer-sw",
+    modelVersion: "bs-roformer-viperx-v1",
     tasks: ["SEPARATION"],
     hardware: ["GPU"],
     speeds: ["BALANCED", "QUALITY"],
@@ -1367,11 +1468,20 @@ export const providerDefinitions: ProviderDefinition[] = [
   {
     id: "MT3",
     displayName: "MT3",
-    modelVersion: "mt3-infer",
+    modelVersion: "mt3-ismir2021",
     tasks: ["TRANSCRIPTION"],
     hardware: ["GPU"],
     speeds: ["BALANCED", "QUALITY"],
     styles: [],
+  },
+  {
+    id: "MUSICGEN",
+    displayName: "MusicGen",
+    modelVersion: "musicgen-large",
+    tasks: ["ACCOMPANIMENT", "ARRANGEMENT"],
+    hardware: ["GPU"],
+    speeds: ["FAST", "BALANCED", "QUALITY"],
+    styles: ["pop", "electronic", "ambient", "cinematic"],
   },
   {
     id: "BASIC_PITCH",
@@ -1471,6 +1581,7 @@ function initialProviderReadiness(configured: boolean): ProviderRuntimeSnapshot 
       ? "Configured endpoint has not passed a runtime health check."
       : "Provider endpoint is not configured.",
     reportedVersion: null,
+    reportedChecksum: null,
   };
 }
 
@@ -1483,7 +1594,7 @@ function providerHealthUrl(
   const url = configured
     ? new URL(configured)
     : new URL("/health", endpoint);
-  if (!configured && process.env["MUSIC_PROVIDER_GATEWAY_URL"]) {
+  if (!configured) {
     url.searchParams.set("provider", providerId);
   }
   return url;
@@ -1539,8 +1650,13 @@ export type GenerationHardware = "AUTO" | "CPU" | "GPU";
 export type ProviderGenerationResult = {
   requestId: string | null;
   modelVersion: string;
+  checkpointSha256: string | null;
   candidates: ProviderCandidate[];
 };
+
+function isSha256(value: unknown): value is string {
+  return typeof value === "string" && /^[a-f0-9]{64}$/i.test(value.trim());
+}
 
 export function providerCatalog(registry: MusicGenerationProvider[]) {
   return registry.map((provider) => ({
@@ -1556,6 +1672,7 @@ export function providerCatalog(registry: MusicGenerationProvider[]) {
     checkpointReady: provider.readiness.checkpointReady,
     runtimeReady: provider.readiness.runtimeReady,
     reportedVersion: provider.readiness.reportedVersion,
+    reportedChecksum: provider.readiness.reportedChecksum ?? null,
     lastHealth: {
       status: provider.readiness.healthStatus,
       checkedAt: provider.readiness.checkedAt,

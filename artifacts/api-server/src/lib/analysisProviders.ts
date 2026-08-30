@@ -92,6 +92,7 @@ type AnalysisProviderInput = {
   sourceUrl: string | null;
   sourceType: string;
   durationSeconds: number;
+  idempotencyKey?: string;
 };
 
 class ProviderRequestError extends Error {
@@ -376,6 +377,9 @@ async function requestProvider(
           headers: {
             "Content-Type": "application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...(input.idempotencyKey
+              ? { "Idempotency-Key": `${input.idempotencyKey}:${providerId}` }
+              : {}),
           },
           body: JSON.stringify({
             provider: providerId,

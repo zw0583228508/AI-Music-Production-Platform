@@ -139,6 +139,7 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
       plan: arrangement.plan, trackModels: exportTrackModels, styleSpec: arrangement.styleSpec, seed: arrangement.seed ?? undefined,
       generationProvider: arrangement.generationProvenance?.provider ?? arrangement.generationProvider ?? "ARRANGEMENT_ENGINE",
       generationModelVersion: arrangement.generationProvenance?.modelVersion ?? arrangement.modelVersion ?? undefined,
+      generationCheckpointSha256: arrangement.generationProvenance?.checkpointSha256 ?? undefined,
       candidateId: arrangement.generationProvenance?.candidateId ?? arrangement.sourceCandidateId ?? undefined,
       providerRequestId: arrangement.generationProvenance?.providerRequestId ?? undefined,
       parentIds: Object.values(trackModelArtifactIds).length ? Object.values(trackModelArtifactIds) : [planArtifact.id],
@@ -169,6 +170,8 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
            arrangement.generationProvider ?? "ARRANGEMENT_ENGINE",
          generationModelVersion: arrangement.generationProvenance?.modelVersion ??
            arrangement.modelVersion ?? "unknown",
+         generationCheckpointSha256:
+           arrangement.generationProvenance?.checkpointSha256 ?? "none",
          generationCandidateId: arrangement.generationProvenance?.candidateId ??
            arrangement.sourceCandidateId ?? "none",
          seed: arrangement.seed ?? 0,

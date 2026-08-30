@@ -26,10 +26,10 @@ Git.
 | --- | --- | --- |
 | Pedalboard VST3 | Blocked | A compatible, licensed VST3 binary and an explicit plugin path. Pedalboard built-ins do not make the VST3 provider ready. |
 | sfizz / VSCO2 CE | Blocked | The sfizz native renderer plus a verified SFZ library path and the applicable sample-library license. |
-| ACE-Step base / complete | Blocked | A GPU worker, pinned model checkpoint, sufficient GPU memory, and a successful worker smoke inference. |
-| MusicGen | Blocked | A GPU worker, pinned AudioCraft/model versions, checkpoint storage, and a successful worker smoke inference. |
-| BS-RoFormer | Blocked | A verified BS-RoFormer checkpoint and GPU-capable worker. Demucs is registered under its own provider identity and never impersonates BS-RoFormer. |
-| MT3 | Blocked | A compatible checkpoint/runtime endpoint and real inference proof. Basic Pitch remains a separate provider. |
+| ACE-Step base / complete | GPU worker implemented; deployment blocked | Pin and mount the licensed/approved checkpoint SHA-256, install the ACE-Step runner, allocate CUDA hardware, enable the provider, and pass real smoke inference. |
+| MusicGen | GPU worker implemented; deployment blocked | Pin and mount the AudioCraft checkpoint SHA-256, install the MusicGen runner, allocate CUDA hardware, enable the provider, and pass real smoke inference. |
+| BS-RoFormer | GPU worker implemented; deployment blocked | Pin and mount the BS-RoFormer checkpoint SHA-256, install the separation runner, allocate CUDA hardware, enable the provider, and pass real smoke inference. Demucs never impersonates this identity. |
+| MT3 | GPU worker implemented; deployment blocked | Pin and mount the MT3 checkpoint SHA-256, install the transcription runner, allocate CUDA hardware, enable the provider, and pass real smoke inference. Basic Pitch remains separate. |
 
 ## External or provider-owned models
 

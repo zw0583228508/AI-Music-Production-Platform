@@ -1,0 +1,40 @@
+{
+  "runtime": {
+    "python": "3.11.11",
+    "cuda": "12.4.1",
+    "pytorch": "2.5.1+cu124",
+    "transformers": "4.48.3",
+    "accelerate": "1.3.0"
+  },
+  "checkpoint_root": "/var/lib/music-ai-gpu/models",
+  "providers": {
+    "ACE_STEP": {
+      "model_version": "ace-step-1.5-base",
+      "checkpoint_path": "ace-step-1.5-base",
+      "checkpoint_sha256": null,
+      "runner_env": "MUSIC_GPU_RUNNER_ACE_STEP",
+      "smoke_env": "MUSIC_GPU_SMOKE_ACE_STEP"
+    },
+    "MUSICGEN": {
+      "model_version": "musicgen-large",
+      "checkpoint_path": "musicgen-large",
+      "checkpoint_sha256": null,
+      "runner_env": "MUSIC_GPU_RUNNER_MUSICGEN",
+      "smoke_env": "MUSIC_GPU_SMOKE_MUSICGEN"
+    },
+    "BS_ROFORMER": {
+      "model_version": "bs-roformer-viperx-v1",
+      "checkpoint_path": "bs-roformer-viperx-v1.ckpt",
+      "checkpoint_sha256": null,
+      "runner_env": "MUSIC_GPU_RUNNER_BS_ROFORMER",
+      "smoke_env": "MUSIC_GPU_SMOKE_BS_ROFORMER"
+    },
+    "MT3": {
+      "model_version": "mt3-ismir2021",
+      "checkpoint_path": "mt3-ismir2021",
+      "checkpoint_sha256": null,
+      "runner_env": "MUSIC_GPU_RUNNER_MT3",
+      "smoke_env": "MUSIC_GPU_SMOKE_MT3"
+    }
+  }
+}
