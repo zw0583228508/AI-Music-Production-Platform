@@ -3,6 +3,7 @@ import { createReadStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import type { Readable } from "node:stream";
 import { Storage, type File } from "@google-cloud/storage";
+import { waitForProjectStorageRaceGate } from "./projectStorageRaceTestHook";
 
 const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
 
@@ -110,6 +111,7 @@ export async function saveSourceUploadStream(
       resumable: true,
       metadata: { contentType, cacheControl: "private, no-store" },
     });
+  await waitForProjectStorageRaceGate("source-upload-write", objectPath);
   await pipeline(input, destination);
 }
 

@@ -16,6 +16,7 @@ import {
   isSourceObjectPath,
   saveSourceUploadStream,
 } from "../lib/objectStorage";
+import { signalProjectStorageRaceEvent } from "../lib/projectStorageRaceTestHook";
 
 const router: IRouter = Router();
 
@@ -87,6 +88,7 @@ router.put("/storage/uploads/:uploadId", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Upload target not found or expired" });
     return;
   }
+  await signalProjectStorageRaceEvent("source-upload-requested", objectPath);
   const contentLength = Number(req.headers["content-length"] ?? 0);
   if (contentLength !== reservation.size) {
     res.status(400).json({ error: "Upload size does not match the reservation" });

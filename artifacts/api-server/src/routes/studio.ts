@@ -106,6 +106,10 @@ import {
   saveExportObject,
 } from "../lib/objectStorage";
 import { logger } from "../lib/logger";
+import {
+  signalProjectStorageRaceEvent,
+  waitForProjectStorageRaceGate,
+} from "../lib/projectStorageRaceTestHook";
 import { queueProjectSourceAnalysis } from "../lib/sourceAnalyzer";
 import { validateSourceFileMetadata } from "../lib/sourceFormats";
 import { interpretCopilotCommand } from "../lib/copilotInterpreter";
@@ -1022,6 +1026,10 @@ router.post("/projects", async (req, res): Promise<void> => {
 });
 
 router.delete("/projects/:projectId", async (req, res): Promise<void> => {
+  await signalProjectStorageRaceEvent(
+    "project-delete-requested",
+    req.params.projectId,
+  );
   const cleanupJob = await db.transaction(async (tx) => {
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtext(${req.params.projectId}))`,
@@ -1035,6 +1043,7 @@ router.delete("/projects/:projectId", async (req, res): Promise<void> => {
       ))
       .limit(1);
     if (!project) return null;
+    await waitForProjectStorageRaceGate("project-delete", project.id);
 
     const sources = await tx
       .select()

@@ -2,12 +2,20 @@ import { strict as assert } from "node:assert";
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { after, before, test } from "node:test";
-import { unlink } from "node:fs/promises";
+import {
+  access,
+  mkdtemp,
+  rm,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
 
 const apiDirectory = new URL("..", import.meta.url).pathname;
-const harnessPath = `/tmp/music-export-auth-harness-${process.pid}.mjs`;
+const harnessPath = `${apiDirectory}/.music-export-auth-harness-${process.pid}.mjs`;
 await build({
   stdin: {
     contents: `
@@ -20,6 +28,7 @@ await build({
         projectCleanupJobsTable,
         projectUploadReservationsTable,
       } from "@workspace/db";
+      export { getPrivateObject } from "./src/lib/objectStorage";
       export { eq } from "drizzle-orm";
     `,
     resolveDir: apiDirectory,
@@ -41,6 +50,7 @@ const {
   db,
   deleteSession,
   eq,
+  getPrivateObject,
   musicArtifactsTable,
   musicProjectsTable,
   projectCleanupJobsTable,
@@ -54,6 +64,38 @@ let otherSession;
 let projectId;
 let arrangementId;
 let exportId;
+let raceHookDirectory;
+
+function safeRaceSubject(subject) {
+  return subject.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
+function raceHookPath(kind, name, subject, suffix = "") {
+  return join(
+    raceHookDirectory,
+    `${kind}-${name}-${safeRaceSubject(subject)}${suffix}`,
+  );
+}
+
+async function waitForRaceHook(path) {
+  for (let attempt = 0; attempt < 1_000; attempt += 1) {
+    try {
+      await access(path);
+      return;
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+  throw new Error(`Timed out waiting for race hook: ${path}`);
+}
+
+async function enableRaceGate(name, subject) {
+  await writeFile(raceHookPath("gate", name, subject, ".enabled"), "");
+}
+
+async function releaseRaceGate(name, subject) {
+  await writeFile(raceHookPath("gate", name, subject, ".release"), "");
+}
 
 function availablePort() {
   return new Promise((resolve, reject) => {
@@ -89,9 +131,17 @@ function request(path, session, init = {}) {
 before(async () => {
   const port = await availablePort();
   baseUrl = `http://127.0.0.1:${port}`;
+  raceHookDirectory = await mkdtemp(
+    join(tmpdir(), "music-project-storage-race-"),
+  );
   server = spawn(process.execPath, ["--enable-source-maps", "./dist/index.mjs"], {
     cwd: apiDirectory,
-    env: { ...process.env, NODE_ENV: "test", PORT: String(port) },
+    env: {
+      ...process.env,
+      NODE_ENV: "test",
+      PORT: String(port),
+      TEST_PROJECT_STORAGE_RACE_DIR: raceHookDirectory,
+    },
     stdio: ["ignore", "ignore", "pipe"],
   });
   let serverError = "";
@@ -164,6 +214,151 @@ after(async () => {
   if (otherSession) await deleteSession(otherSession);
   if (server && !server.killed) server.kill("SIGTERM");
   await unlink(harnessPath).catch(() => undefined);
+  if (raceHookDirectory) {
+    await rm(raceHookDirectory, { recursive: true, force: true });
+  }
+});
+
+async function createRaceUpload(label) {
+  const createResponse = await request("/api/projects", ownerSession, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: label,
+      sourceType: "FULL_SONG",
+    }),
+  });
+  assert.equal(createResponse.status, 201);
+  const raceProjectId = (await createResponse.json()).id;
+
+  const reservationResponse = await request(
+    "/api/storage/uploads/request-url",
+    ownerSession,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectId: raceProjectId,
+        name: `${label}.wav`,
+        contentType: "audio/wav",
+        size: 32,
+      }),
+    },
+  );
+  assert.equal(reservationResponse.status, 200);
+  const reservation = await reservationResponse.json();
+  return { raceProjectId, reservation };
+}
+
+function putReservedSource(reservation) {
+  return request(reservation.uploadURL, ownerSession, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "audio/wav",
+      "Content-Length": "32",
+    },
+    body: new Uint8Array(32),
+  });
+}
+
+async function assertCompletedCleanup(
+  deleteResponse,
+  raceProjectId,
+  objectPath,
+) {
+  assert.equal(deleteResponse.status, 200);
+  const deletion = await deleteResponse.json();
+  assert.equal(deletion.projectId, raceProjectId);
+  assert.equal(deletion.status, "completed");
+  assert.equal(deletion.pendingObjectCount, 0);
+
+  const [cleanupJob] = await db
+    .select()
+    .from(projectCleanupJobsTable)
+    .where(eq(projectCleanupJobsTable.id, deletion.id));
+  assert.ok(cleanupJob);
+  assert.equal(cleanupJob.status, "completed");
+  assert.deepEqual(cleanupJob.objectPaths, []);
+
+  const object = await getPrivateObject(
+    objectPath.slice("/objects/".length),
+  );
+  assert.equal(object, null);
+}
+
+test("project deletion cleans an upload already holding the project fence", async () => {
+  const { raceProjectId, reservation } = await createRaceUpload(
+    "Upload owns fence",
+  );
+  await enableRaceGate("source-upload-write", reservation.objectPath);
+
+  const uploadPromise = putReservedSource(reservation);
+  await waitForRaceHook(
+    raceHookPath(
+      "gate",
+      "source-upload-write",
+      reservation.objectPath,
+      ".entered",
+    ),
+  );
+
+  const deletePromise = request(
+    `/api/projects/${raceProjectId}`,
+    ownerSession,
+    { method: "DELETE" },
+  );
+  await waitForRaceHook(
+    raceHookPath("event", "project-delete-requested", raceProjectId),
+  );
+  await releaseRaceGate("source-upload-write", reservation.objectPath);
+
+  const [uploadResponse, deleteResponse] = await Promise.all([
+    uploadPromise,
+    deletePromise,
+  ]);
+  assert.equal(uploadResponse.status, 204);
+  await assertCompletedCleanup(
+    deleteResponse,
+    raceProjectId,
+    reservation.objectPath,
+  );
+});
+
+test("an upload waiting behind project deletion is rejected before writing", async () => {
+  const { raceProjectId, reservation } = await createRaceUpload(
+    "Delete owns fence",
+  );
+  await enableRaceGate("project-delete", raceProjectId);
+
+  const deletePromise = request(
+    `/api/projects/${raceProjectId}`,
+    ownerSession,
+    { method: "DELETE" },
+  );
+  await waitForRaceHook(
+    raceHookPath("gate", "project-delete", raceProjectId, ".entered"),
+  );
+
+  const uploadPromise = putReservedSource(reservation);
+  await waitForRaceHook(
+    raceHookPath(
+      "event",
+      "source-upload-requested",
+      reservation.objectPath,
+    ),
+  );
+  await releaseRaceGate("project-delete", raceProjectId);
+
+  const [deleteResponse, uploadResponse] = await Promise.all([
+    deletePromise,
+    uploadPromise,
+  ]);
+  assert.equal(uploadResponse.status, 404);
+  await assertCompletedCleanup(
+    deleteResponse,
+    raceProjectId,
+    reservation.objectPath,
+  );
 });
 
 test("project and export endpoints enforce owner authorization", async () => {
