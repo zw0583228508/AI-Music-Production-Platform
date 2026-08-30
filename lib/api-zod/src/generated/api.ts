@@ -434,7 +434,143 @@ export const GetProjectSongModelResponse = zod.object({
 })),
   "providers": zod.array(zod.string()),
   "confidence": zod.number(),
-  "createdAt": zod.string()
+  "createdAt": zod.string(),
+  "parentModelId": zod.string().nullish(),
+  "correction": zod.union([zod.object({
+  "correctedBy": zod.string(),
+  "correctedAt": zod.string(),
+  "fields": zod.array(zod.enum(['bpm', 'key', 'meter', 'sections']))
+}),zod.null()]).optional()
+})
+
+
+/**
+ * Creates an auditable immutable revision of the latest Song Model and updates the project analysis summary atomically. Omitted fields remain unchanged.
+ * @summary Create a corrected Song Model version
+ */
+export const CorrectProjectSongModelParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+
+export const correctProjectSongModelBodyBpmMin = 20;
+export const correctProjectSongModelBodyBpmMax = 400;
+
+export const correctProjectSongModelBodyKeyMax = 80;
+
+export const correctProjectSongModelBodyMeterRegExp = new RegExp('^[1-9][0-9]*/[1-9][0-9]*$');
+export const correctProjectSongModelBodySectionsItemNameMax = 120;
+
+
+
+
+
+
+export const CorrectProjectSongModelBody = zod.object({
+  "baseVersion": zod.number().min(1),
+  "bpm": zod.number().min(correctProjectSongModelBodyBpmMin).max(correctProjectSongModelBodyBpmMax).optional(),
+  "key": zod.string().min(1).max(correctProjectSongModelBodyKeyMax).optional(),
+  "meter": zod.string().regex(correctProjectSongModelBodyMeterRegExp).optional(),
+  "sections": zod.array(zod.object({
+  "name": zod.string().min(1).max(correctProjectSongModelBodySectionsItemNameMax),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1)
+})).min(1).optional()
+})
+
+export const CorrectProjectSongModelResponse = zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "sourceId": zod.string(),
+  "version": zod.number(),
+  "status": zod.enum(['ready']),
+  "audio": zod.object({
+  "name": zod.string(),
+  "contentType": zod.string(),
+  "size": zod.number(),
+  "durationSeconds": zod.number(),
+  "sampleRate": zod.number(),
+  "channels": zod.number()
+}),
+  "tempoMap": zod.array(zod.object({
+  "time": zod.number(),
+  "bpm": zod.number(),
+  "confidence": zod.number()
+})),
+  "meterMap": zod.array(zod.object({
+  "bar": zod.number(),
+  "meter": zod.string(),
+  "confidence": zod.number()
+})),
+  "keyMap": zod.array(zod.object({
+  "time": zod.number(),
+  "key": zod.string(),
+  "confidence": zod.number()
+})),
+  "beats": zod.array(zod.object({
+  "time": zod.number(),
+  "beat": zod.number(),
+  "bar": zod.number(),
+  "confidence": zod.number()
+})),
+  "bars": zod.array(zod.object({
+  "bar": zod.number(),
+  "start": zod.number(),
+  "end": zod.number(),
+  "beats": zod.number(),
+  "confidence": zod.number()
+})),
+  "melody": zod.array(zod.object({
+  "start": zod.number(),
+  "end": zod.number(),
+  "pitch": zod.number(),
+  "velocity": zod.number(),
+  "confidence": zod.number(),
+  "source": zod.string()
+})),
+  "chords": zod.array(zod.object({
+  "start": zod.number(),
+  "end": zod.number(),
+  "symbol": zod.string(),
+  "roman": zod.string(),
+  "confidence": zod.number()
+})),
+  "sections": zod.array(zod.object({
+  "name": zod.string(),
+  "startBar": zod.number(),
+  "endBar": zod.number(),
+  "energy": zod.number()
+})),
+  "energy": zod.array(zod.number()),
+  "dynamics": zod.array(zod.number()),
+  "sourceStems": zod.array(zod.object({
+  "role": zod.string(),
+  "objectPath": zod.string(),
+  "provider": zod.string(),
+  "confidence": zod.number()
+})),
+  "lyrics": zod.array(zod.object({
+  "start": zod.number(),
+  "end": zod.number(),
+  "text": zod.string(),
+  "confidence": zod.number()
+})),
+  "confidenceByField": zod.record(zod.string(), zod.number()),
+  "provenance": zod.array(zod.object({
+  "capability": zod.string(),
+  "provider": zod.string(),
+  "version": zod.string(),
+  "status": zod.enum(['ready', 'fallback', 'unavailable'])
+})),
+  "providers": zod.array(zod.string()),
+  "confidence": zod.number(),
+  "createdAt": zod.string(),
+  "parentModelId": zod.string().nullish(),
+  "correction": zod.union([zod.object({
+  "correctedBy": zod.string(),
+  "correctedAt": zod.string(),
+  "fields": zod.array(zod.enum(['bpm', 'key', 'meter', 'sections']))
+}),zod.null()]).optional()
 })
 
 

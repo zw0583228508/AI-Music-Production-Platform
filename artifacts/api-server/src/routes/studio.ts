@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import {
   CreateArrangementBody,
   CreateArrangementParams,
@@ -18,6 +18,9 @@ import {
   GetProjectResponse,
   GetProjectSongModelParams,
   GetProjectSongModelResponse,
+  CorrectProjectSongModelBody,
+  CorrectProjectSongModelParams,
+  CorrectProjectSongModelResponse,
   ListArrangementsParams,
   ListArrangementsResponse,
   ListArtifactsParams,
@@ -61,6 +64,7 @@ import {
 } from "../lib/exportEngine";
 import { deleteExportObject, saveExportObject } from "../lib/objectStorage";
 import { analyzeProjectSource } from "../lib/sourceAnalyzer";
+import { validateSourceFileMetadata } from "../lib/sourceFormats";
 import {
   MUSIC_PROVIDERS,
   ProviderUnavailableError,
@@ -135,6 +139,8 @@ const songModelResponse = (
   sourceId: row.sourceId,
   version: row.version,
   status: row.status,
+  parentModelId: row.parentModelId,
+  correction: row.correction,
   ...row.model,
   providers: row.providers,
   confidence: row.confidence,
@@ -371,12 +377,12 @@ router.post("/projects/:projectId/sources", async (req, res): Promise<void> => {
     res.status(403).json({ error: "Forbidden" });
     return;
   }
-  const allowed =
-    body.data.contentType.startsWith("audio/") ||
-    body.data.contentType.startsWith("video/") ||
-    /\.(mid|midi)$/i.test(body.data.name);
-  if (!allowed) {
-    res.status(415).json({ error: "Use WAV, MP3, M4A, MIDI, or a video file" });
+  const sourceFormat = validateSourceFileMetadata(
+    body.data.name,
+    body.data.contentType,
+  );
+  if (!sourceFormat.valid) {
+    res.status(415).json({ error: "Unsupported source file format" });
     return;
   }
   if (!body.data.objectPath.startsWith("/objects/uploads/")) {
@@ -390,7 +396,7 @@ router.post("/projects/:projectId/sources", async (req, res): Promise<void> => {
     objectPath: body.data.objectPath,
     name: body.data.name,
     size: body.data.size,
-    contentType: body.data.contentType,
+    contentType: sourceFormat.normalizedContentType,
     sourceType: body.data.sourceType,
     status: "queued",
     progress: 4,
@@ -435,6 +441,197 @@ router.get("/projects/:projectId/song-model", async (req, res): Promise<void> =>
     return;
   }
   res.json(GetProjectSongModelResponse.parse(songModelResponse(songModel)));
+});
+
+router.patch("/projects/:projectId/song-model", async (req, res): Promise<void> => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const params = CorrectProjectSongModelParams.safeParse(req.params);
+  const body = CorrectProjectSongModelBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: "Invalid Song Model correction" });
+    return;
+  }
+
+  const [project] = await db
+    .select()
+    .from(musicProjectsTable)
+    .where(eq(musicProjectsTable.id, params.data.projectId))
+    .limit(1);
+  if (!project) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+  if (project.ownerId && project.ownerId !== req.user.id) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  const [latest] = await db
+    .select()
+    .from(songModelsTable)
+    .where(eq(songModelsTable.projectId, project.id))
+    .orderBy(desc(songModelsTable.version))
+    .limit(1);
+  if (!latest) {
+    res.status(404).json({ error: "Song Model not ready" });
+    return;
+  }
+
+  const correction = body.data;
+  if (correction.baseVersion !== latest.version) {
+    res.status(409).json({
+      error: "Song Model changed while corrections were being edited. Review the latest version and try again.",
+    });
+    return;
+  }
+  if (correction.sections) {
+    if (correction.sections.length !== latest.model.sections.length) {
+      res.status(400).json({ error: "Section corrections must retain the existing section count" });
+      return;
+    }
+    const invalidBoundary = correction.sections.some((section, index) =>
+      !Number.isInteger(section.startBar) ||
+      !Number.isInteger(section.endBar) ||
+      section.endBar < section.startBar ||
+      (index > 0 && section.startBar <= correction.sections![index - 1].endBar),
+    );
+    if (invalidBoundary) {
+      res.status(400).json({ error: "Section boundaries must be ordered and have an end bar at or after their start bar" });
+      return;
+    }
+  }
+
+  const fields = (["bpm", "key", "meter", "sections"] as const)
+    .filter((field) => correction[field] !== undefined);
+  const now = new Date();
+  const existingTempo = latest.model.tempoMap[0];
+  const existingKey = latest.model.keyMap[0];
+  const existingMeter = latest.model.meterMap[0];
+  const correctedModel = {
+    ...latest.model,
+    ...(correction.bpm === undefined
+      ? {}
+      : {
+          tempoMap: [
+            {
+              time: existingTempo?.time ?? 0,
+              bpm: correction.bpm,
+              confidence: existingTempo?.confidence
+                ?? latest.model.confidenceByField.tempo
+                ?? latest.confidence,
+            },
+            ...latest.model.tempoMap.slice(1),
+          ],
+        }),
+    ...(correction.key === undefined
+      ? {}
+      : {
+          keyMap: [
+            {
+              time: existingKey?.time ?? 0,
+              key: correction.key,
+              confidence: existingKey?.confidence
+                ?? latest.model.confidenceByField.key
+                ?? latest.confidence,
+            },
+            ...latest.model.keyMap.slice(1),
+          ],
+        }),
+    ...(correction.meter === undefined
+      ? {}
+      : {
+          meterMap: [
+            {
+              bar: existingMeter?.bar ?? 1,
+              meter: correction.meter,
+              confidence: existingMeter?.confidence
+                ?? latest.model.confidenceByField.meter
+                ?? latest.confidence,
+            },
+            ...latest.model.meterMap.slice(1),
+          ],
+        }),
+    ...(correction.sections === undefined
+      ? {}
+      : {
+          sections: correction.sections.map((section, index) => ({
+            ...section,
+            energy: latest.model.sections[index].energy,
+          })),
+        }),
+  };
+
+  const created = await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${project.id}))`,
+    );
+    const [lockedLatest] = await tx
+      .select()
+      .from(songModelsTable)
+      .where(eq(songModelsTable.projectId, project.id))
+      .orderBy(desc(songModelsTable.version), desc(songModelsTable.createdAt))
+      .limit(1);
+    if (
+      !lockedLatest ||
+      lockedLatest.id !== latest.id ||
+      lockedLatest.version !== correction.baseVersion
+    ) {
+      return null;
+    }
+    const [newModel] = await tx
+      .insert(songModelsTable)
+      .values({
+        id: randomUUID(),
+        projectId: project.id,
+        sourceId: lockedLatest.sourceId,
+        version: lockedLatest.version + 1,
+        status: "ready",
+        parentModelId: lockedLatest.id,
+        correction: {
+          correctedBy: req.user.id,
+          correctedAt: now.toISOString(),
+          fields,
+        },
+        model: correctedModel,
+        providers: lockedLatest.providers,
+        confidence: lockedLatest.confidence,
+        createdAt: now,
+      })
+      .returning();
+    await tx
+      .update(musicProjectsTable)
+      .set({
+        ownerId: project.ownerId ?? req.user.id,
+        ...(correction.bpm === undefined ? {} : { bpm: correction.bpm }),
+        ...(correction.key === undefined ? {} : { key: correction.key }),
+        ...(correction.meter === undefined ? {} : { meter: correction.meter }),
+        ...(correctedModel.sections === latest.model.sections
+          ? {}
+          : { sections: correctedModel.sections }),
+        updatedAt: now,
+      })
+      .where(eq(musicProjectsTable.id, project.id));
+    await tx.insert(studioActivitiesTable).values({
+      id: randomUUID(),
+      projectId: project.id,
+      title: "Song Model corrected",
+      detail: `v${newModel.version} · ${fields.join(", ")}`,
+      type: "analysis",
+      createdAt: now,
+    });
+    return newModel;
+  });
+  if (!created) {
+    res.status(409).json({
+      error: "Song Model changed while corrections were being saved. Review the latest version and try again.",
+    });
+    return;
+  }
+
+  res.json(CorrectProjectSongModelResponse.parse(songModelResponse(created)));
 });
 
 router.get("/projects/:projectId/analysis-jobs", async (req, res): Promise<void> => {

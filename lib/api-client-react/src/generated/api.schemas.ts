@@ -238,6 +238,22 @@ export interface ProviderProvenance {
   status: ProviderProvenanceStatus;
 }
 
+export type SongModelCorrectionFieldsItem = typeof SongModelCorrectionFieldsItem[keyof typeof SongModelCorrectionFieldsItem];
+
+
+export const SongModelCorrectionFieldsItem = {
+  bpm: 'bpm',
+  key: 'key',
+  meter: 'meter',
+  sections: 'sections',
+} as const;
+
+export interface SongModelCorrection {
+  correctedBy: string;
+  correctedAt: string;
+  fields: SongModelCorrectionFieldsItem[];
+}
+
 export interface SongModel {
   id: string;
   projectId: string;
@@ -262,6 +278,40 @@ export interface SongModel {
   providers: string[];
   confidence: number;
   createdAt: string;
+  /** @nullable */
+  parentModelId?: string | null;
+  correction?: SongModelCorrection | null;
+}
+
+export interface SectionCorrection {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name: string;
+  /** @minimum 1 */
+  startBar: number;
+  /** @minimum 1 */
+  endBar: number;
+}
+
+export interface SongModelCorrectionInput {
+  /** @minimum 1 */
+  baseVersion: number;
+  /**
+     * @minimum 20
+     * @maximum 400
+     */
+  bpm?: number;
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  key?: string;
+  /** @pattern ^[1-9][0-9]*\/[1-9][0-9]*$ */
+  meter?: string;
+  /** @minItems 1 */
+  sections?: SectionCorrection[];
 }
 
 export type AnalysisJobStatus = typeof AnalysisJobStatus[keyof typeof AnalysisJobStatus];

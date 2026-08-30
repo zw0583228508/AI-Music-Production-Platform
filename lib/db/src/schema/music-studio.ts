@@ -103,6 +103,12 @@ export type SongModelData = {
   }>;
 };
 
+export type SongModelCorrection = {
+  correctedBy: string;
+  correctedAt: string;
+  fields: Array<"bpm" | "key" | "meter" | "sections">;
+};
+
 export type ModelCapability =
   | "separation"
   | "structure"
@@ -170,12 +176,18 @@ export const songModelsTable = pgTable("music_song_models", {
   version: integer("version").notNull().default(1),
   status: text("status").notNull().default("ready"),
   analysisJobId: text("analysis_job_id"),
+  parentModelId: text("parent_model_id"),
+  correction: jsonb("correction").$type<SongModelCorrection | null>(),
   model: jsonb("model").$type<SongModelData>().notNull(),
   providers: jsonb("providers").$type<string[]>().notNull().default([]),
   confidence: doublePrecision("confidence").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("music_song_models_analysis_job_idx").on(table.analysisJobId),
+  uniqueIndex("music_song_models_project_version_idx").on(
+    table.projectId,
+    table.version,
+  ),
 ]);
 
 export const modelRegistryTable = pgTable("music_model_registry", {

@@ -1,11 +1,13 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { 
   useGetProjectSongModel, 
   useListAnalysisJobs, 
   useRetrySourceAnalysis, 
+  useCorrectProjectSongModel,
   useListMusicProviders,
   getListAnalysisJobsQueryKey,
-  getGetProjectSongModelQueryKey
+  getGetProjectSongModelQueryKey,
+  getGetProjectQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -17,6 +19,8 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/ui/empty";
@@ -52,6 +56,12 @@ export function SongModelInspector({ projectId }: { projectId: string }) {
 
   const { data: providers } = useListMusicProviders();
   const retry = useRetrySourceAnalysis();
+  const correctModel = useCorrectProjectSongModel();
+  const [bpm, setBpm] = useState("");
+  const [key, setKey] = useState("");
+  const [meter, setMeter] = useState("");
+  const [sections, setSections] = useState<Array<{ name: string; startBar: string; endBar: string }>>([]);
+  const [correctionError, setCorrectionError] = useState<string | null>(null);
 
   useEffect(() => {
     const latestCompleted = jobs?.find(job => job.status === "completed");
@@ -63,12 +73,89 @@ export function SongModelInspector({ projectId }: { projectId: string }) {
     }
   }, [jobs, projectId, queryClient]);
 
+  useEffect(() => {
+    if (!model) return;
+    setBpm(model.tempoMap?.[0]?.bpm?.toString() ?? "");
+    setKey(model.keyMap?.[0]?.key ?? "");
+    setMeter(model.meterMap?.[0]?.meter ?? "");
+    setSections((model.sections ?? []).map((section) => ({
+      name: section.name,
+      startBar: section.startBar.toString(),
+      endBar: section.endBar.toString(),
+    })));
+    setCorrectionError(null);
+  }, [model?.id]);
+
   const handleRetry = (sourceId: string) => {
     retry.mutate({ projectId, sourceId }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListAnalysisJobsQueryKey(projectId) });
         queryClient.invalidateQueries({ queryKey: getGetProjectSongModelQueryKey(projectId) });
       }
+    });
+  };
+
+  const saveCorrections = () => {
+    if (!model) return;
+    const currentBpm = model.tempoMap?.[0]?.bpm;
+    const parsedBpm = Number(bpm);
+    const changedSections = sections.some((section, index) => {
+      const current = model.sections[index];
+      return !current ||
+        section.name !== current.name ||
+        Number(section.startBar) !== current.startBar ||
+        Number(section.endBar) !== current.endBar;
+    });
+    const data: {
+      baseVersion: number;
+      bpm?: number;
+      key?: string;
+      meter?: string;
+      sections?: Array<{ name: string; startBar: number; endBar: number }>;
+    } = { baseVersion: model.version };
+
+    if (!Number.isFinite(parsedBpm) || parsedBpm < 20 || parsedBpm > 400) {
+      setCorrectionError("BPM must be a number between 20 and 400.");
+      return;
+    }
+    if (!key.trim()) {
+      setCorrectionError("Key is required.");
+      return;
+    }
+    if (!/^[1-9]\d*\/[1-9]\d*$/.test(meter)) {
+      setCorrectionError("Meter must use a format such as 4/4.");
+      return;
+    }
+    const normalizedSections = sections.map((section) => ({
+      name: section.name.trim(),
+      startBar: Number(section.startBar),
+      endBar: Number(section.endBar),
+    }));
+    if (normalizedSections.some((section, index) =>
+      !section.name || !Number.isInteger(section.startBar) || !Number.isInteger(section.endBar) ||
+      section.startBar < 1 || section.endBar < section.startBar ||
+      (index > 0 && section.startBar <= normalizedSections[index - 1].endBar),
+    )) {
+      setCorrectionError("Section names and ordered, non-overlapping bar boundaries are required.");
+      return;
+    }
+    if (parsedBpm !== currentBpm) data.bpm = parsedBpm;
+    if (key.trim() !== (model.keyMap?.[0]?.key ?? "")) data.key = key.trim();
+    if (meter !== (model.meterMap?.[0]?.meter ?? "")) data.meter = meter;
+    if (changedSections) data.sections = normalizedSections;
+    if (Object.keys(data).length === 1) {
+      setCorrectionError("Make a change before saving.");
+      return;
+    }
+    setCorrectionError(null);
+    correctModel.mutate({ projectId, data }, {
+      onSuccess: () => {
+        void queryClient.invalidateQueries({ queryKey: getGetProjectSongModelQueryKey(projectId) });
+        void queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(projectId) });
+      },
+      onError: (error) => {
+        setCorrectionError(error instanceof Error ? error.message : "Could not save Song Model corrections.");
+      },
     });
   };
 
@@ -226,6 +313,53 @@ export function SongModelInspector({ projectId }: { projectId: string }) {
               </CardContent>
             </Card>
           </div>
+
+          <Card className="shadow-sm border-t-2 border-t-amber-500/60">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Music className="h-4 w-4 text-amber-600" /> Correct before arranging
+              </CardTitle>
+              <p className="text-xs font-normal text-muted-foreground">
+                Saves an auditable new Song Model version. Provider provenance and confidence remain unchanged.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="song-model-bpm">BPM</Label>
+                  <Input id="song-model-bpm" type="number" min="20" max="400" value={bpm} onChange={(event) => setBpm(event.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="song-model-key">Key</Label>
+                  <Input id="song-model-key" value={key} onChange={(event) => setKey(event.target.value)} placeholder="D minor" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="song-model-meter">Meter</Label>
+                  <Input id="song-model-meter" value={meter} onChange={(event) => setMeter(event.target.value)} placeholder="4/4" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Section labels and boundaries</Label>
+                <div className="space-y-2">
+                  {sections.map((section, index) => (
+                    <div key={index} className="grid grid-cols-[minmax(0,1fr)_80px_80px] gap-2">
+                      <Input aria-label={`Section ${index + 1} name`} value={section.name} onChange={(event) => setSections((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))} />
+                      <Input aria-label={`Section ${index + 1} start bar`} type="number" min="1" value={section.startBar} onChange={(event) => setSections((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, startBar: event.target.value } : item))} />
+                      <Input aria-label={`Section ${index + 1} end bar`} type="number" min="1" value={section.endBar} onChange={(event) => setSections((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, endBar: event.target.value } : item))} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {correctionError && <p className="text-sm text-destructive">{correctionError}</p>}
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs text-muted-foreground">Section count and energy are retained.</span>
+                <Button onClick={saveCorrections} disabled={correctModel.isPending}>
+                  {correctModel.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Save corrections
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Raw Insights Grid */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

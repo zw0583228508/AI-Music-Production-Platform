@@ -47,6 +47,7 @@ import type {
   ProjectWorkspace,
   RegisterSourceInput,
   SongModel,
+  SongModelCorrectionInput,
   Track,
   UploadUrlRequest,
   UploadUrlResponse
@@ -1219,6 +1220,79 @@ export function useGetProjectSongModel<TData = Awaited<ReturnType<typeof getProj
 
 
 
+
+export const getCorrectProjectSongModelUrl = (projectId: string,) => {
+
+
+
+
+  return `/api/projects/${projectId}/song-model`
+}
+
+/**
+ * Creates an auditable immutable revision of the latest Song Model and updates the project analysis summary atomically. Omitted fields remain unchanged.
+ * @summary Create a corrected Song Model version
+ */
+export const correctProjectSongModel = async (projectId: string,
+    songModelCorrectionInput: SongModelCorrectionInput, options?: Parameters<typeof customFetch>[1]): Promise<SongModel> => {
+
+  return customFetch<SongModel>(getCorrectProjectSongModelUrl(projectId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(songModelCorrectionInput)
+  }
+);}
+
+
+
+
+
+export const getCorrectProjectSongModelMutationOptions = <TError = ErrorType<void | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof correctProjectSongModel>>, TError,{projectId: string;data: BodyType<SongModelCorrectionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof correctProjectSongModel>>, TError,{projectId: string;data: BodyType<SongModelCorrectionInput>}, TContext> => {
+
+const mutationKey = ['correctProjectSongModel'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof correctProjectSongModel>>, {projectId: string;data: BodyType<SongModelCorrectionInput>}> = (props) => {
+          const {projectId,data} = props ?? {};
+
+          return  correctProjectSongModel(projectId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CorrectProjectSongModelMutationResult = NonNullable<Awaited<ReturnType<typeof correctProjectSongModel>>>
+    export type CorrectProjectSongModelMutationBody = BodyType<SongModelCorrectionInput>
+    export type CorrectProjectSongModelMutationError = ErrorType<void | NotFoundResponse>
+
+    /**
+ * @summary Create a corrected Song Model version
+ */
+export const useCorrectProjectSongModel = <TError = ErrorType<void | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof correctProjectSongModel>>, TError,{projectId: string;data: BodyType<SongModelCorrectionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof correctProjectSongModel>>,
+        TError,
+        {projectId: string;data: BodyType<SongModelCorrectionInput>},
+        TContext
+      > => {
+      return useMutation(getCorrectProjectSongModelMutationOptions(options));
+    }
 
 export const getListAnalysisJobsUrl = (projectId: string,) => {
 

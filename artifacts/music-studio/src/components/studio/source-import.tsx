@@ -27,6 +27,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
+import {
+  SUPPORTED_SOURCE_FILE_ACCEPT,
+  SUPPORTED_SOURCE_FORMAT_LABEL,
+  validateSourceFile,
+} from "@/lib/source-file-formats";
 
 const MAX_SIZE = 500 * 1024 * 1024;
 
@@ -96,6 +101,15 @@ export function SourceImport({
 
   const startImport = async () => {
     if (!file) return;
+    const fileValidation = validateSourceFile(file);
+    if (!fileValidation.valid) {
+      toast({
+        title: "Unsupported source file",
+        description: fileValidation.message,
+        variant: "destructive",
+      });
+      return;
+    }
     if (file.size > MAX_SIZE) {
       toast({
         title: "File is too large",
@@ -107,9 +121,7 @@ export function SourceImport({
     setIsUploading(true);
     setUploadProgress(0);
     try {
-      const contentType = file.type || (
-        /\.midi?$/i.test(file.name) ? "audio/midi" : "application/octet-stream"
-      );
+      const { contentType } = fileValidation;
       const target = await requestUpload.mutateAsync({
         data: { name: file.name, size: file.size, contentType },
       });
@@ -142,6 +154,26 @@ export function SourceImport({
     }
   };
 
+  const selectFile = (selectedFile: File | null) => {
+    if (!selectedFile) {
+      setFile(null);
+      return;
+    }
+
+    const fileValidation = validateSourceFile(selectedFile);
+    if (!fileValidation.valid) {
+      setFile(null);
+      toast({
+        title: "Unsupported source file",
+        description: fileValidation.message,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setFile(selectedFile);
+  };
+
   const statusLabel = currentSource?.status === "preprocessing"
     ? "Normalizing audio"
     : currentSource?.status === "analyzing"
@@ -166,7 +198,7 @@ export function SourceImport({
         <DialogHeader>
           <DialogTitle>Import a real source recording</DialogTitle>
           <DialogDescription>
-            Upload WAV, MP3, M4A, MIDI, or video. The studio will inspect,
+            Upload {SUPPORTED_SOURCE_FORMAT_LABEL}. The studio will inspect,
             normalize, and convert it into the canonical Song Model.
           </DialogDescription>
         </DialogHeader>
@@ -197,8 +229,8 @@ export function SourceImport({
               <Input
                 className="sr-only"
                 type="file"
-                accept=".wav,.mp3,.m4a,.aac,.flac,.mid,.midi,.mp4,.mov,.webm,audio/*,video/*"
-                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                accept={SUPPORTED_SOURCE_FILE_ACCEPT}
+                onChange={(event) => selectFile(event.target.files?.[0] ?? null)}
               />
             </label>
 

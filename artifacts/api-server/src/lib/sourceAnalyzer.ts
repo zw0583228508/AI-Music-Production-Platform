@@ -18,7 +18,8 @@ import {
   type AnalysisSection,
   type SongModelData,
 } from "@workspace/db";
-import { getSourceObject } from "./objectStorage";
+import { runAnalysisProviders } from "./analysisProviders";
+import { createSourceDownloadUrl, getSourceObject } from "./objectStorage";
 
 const execFileAsync = promisify(execFile);
 const activeSourceJobs = new Set<string>();
@@ -57,6 +58,32 @@ function energyCurve(samples: Float32Array, bins = 24): number[] {
   });
   const max = Math.max(...values, 0.0001);
   return values.map((value) => Number(Math.min(1, value / max).toFixed(3)));
+}
+
+/**
+ * Treat decoded PCM as silent only when both its overall level and its peak
+ * are far below normal recording levels. Requiring both measurements keeps a
+ * quiet recording (or one with a short audible transient) from being rejected,
+ * while catching empty decodes and codec-level digital silence deterministically.
+ */
+export function isEffectivelySilent(samples: Float32Array): boolean {
+  if (samples.length === 0) return true;
+
+  let sumOfSquares = 0;
+  let peak = 0;
+  let finiteSamples = 0;
+  for (const sample of samples) {
+    if (!Number.isFinite(sample)) continue;
+    const magnitude = Math.abs(sample);
+    peak = Math.max(peak, magnitude);
+    sumOfSquares += sample * sample;
+    finiteSamples += 1;
+  }
+
+  if (finiteSamples === 0) return true;
+  const rms = Math.sqrt(sumOfSquares / finiteSamples);
+  // -90 dBFS RMS and -66 dBFS peak: well below a normally quiet recording.
+  return rms < 0.000_032 && peak < 0.000_5;
 }
 
 function estimateBpm(samples: Float32Array, sampleRate: number): number {
@@ -285,20 +312,27 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
       pcmBuffer.byteOffset,
       floatLength,
     );
+    await updateOwnedStage("validating_audio", 56);
+    if (isEffectivelySilent(samples)) {
+      throw new Error(
+        "No audible audio was detected in this upload. Please upload a recording with audible sound.",
+      );
+    }
     const fingerprint = await fingerprintFile(inputPath);
     const energy = energyCurve(samples);
-    const bpm = estimateBpm(samples, decodeRate);
+    let bpm = estimateBpm(samples, decodeRate);
     const key = estimateKey(samples, decodeRate, fingerprint);
-    const sections = makeSections(durationSeconds, bpm, energy);
-    const secondsPerBeat = 60 / bpm;
+    let meter = "4/4";
+    let sections = makeSections(durationSeconds, bpm, energy);
+    let secondsPerBeat = 60 / bpm;
     const beatCount = Math.max(1, Math.floor(durationSeconds / secondsPerBeat));
-    const beats = Array.from({ length: beatCount }, (_, index) => ({
+    let beats = Array.from({ length: beatCount }, (_, index) => ({
       time: Number((index * secondsPerBeat).toFixed(4)),
       beat: (index % 4) + 1,
       bar: Math.floor(index / 4) + 1,
       confidence: 0.68,
     }));
-    const bars = Array.from(
+    let bars = Array.from(
       { length: Math.max(1, Math.ceil(beatCount / 4)) },
       (_, index) => ({
         bar: index + 1,
@@ -311,6 +345,40 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
     const confidence = Number(
       Math.min(0.94, 0.62 + Math.log10(Math.max(10, samples.length)) / 30).toFixed(2),
     );
+    await updateOwnedStage("provider_analysis", 68);
+    const needsProviderSource =
+      (["FULL_SONG", "INSTRUMENTAL", "VIDEO"].includes(source.sourceType) &&
+        Boolean(process.env.ALL_IN_ONE_API_URL)) ||
+      (["VOCAL_ONLY", "SOLO_INSTRUMENT"].includes(source.sourceType) &&
+        Boolean(process.env.BASIC_PITCH_API_URL));
+    let sourceUrl: string | null = null;
+    if (needsProviderSource) {
+      try {
+        sourceUrl = await createSourceDownloadUrl(source.objectPath);
+      } catch {
+        sourceUrl = null;
+      }
+    }
+    const providerResults = await runAnalysisProviders({
+      sourceUrl,
+      sourceType: source.sourceType,
+      durationSeconds,
+    });
+    if (providerResults.structure) {
+      bpm = providerResults.structure.bpm;
+      meter = providerResults.structure.meter;
+      beats = providerResults.structure.beats;
+      bars = providerResults.structure.bars;
+      sections = providerResults.structure.sections;
+      secondsPerBeat = 60 / bpm;
+    }
+    const successfulAnalysisProviders: string[] = [];
+    if (providerResults.structure) {
+      successfulAnalysisProviders.push(providerResults.structure.providerId);
+    }
+    if (providerResults.transcription) {
+      successfulAnalysisProviders.push(providerResults.transcription.providerId);
+    }
     const model: SongModelData = {
       audio: {
         name: source.name,
@@ -321,11 +389,15 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
         channels,
       },
       tempoMap: [{ time: 0, bpm, confidence }],
-      meterMap: [{ bar: 1, meter: "4/4", confidence: 0.74 }],
+      meterMap: [{
+        bar: 1,
+        meter,
+        confidence: providerResults.structure?.confidence ?? 0.74,
+      }],
       keyMap: [{ time: 0, key, confidence: Math.max(0.5, confidence - 0.12) }],
       beats,
       bars,
-      melody: [],
+      melody: providerResults.transcription?.notes ?? [],
       chords: [],
       sections,
       energy,
@@ -333,11 +405,11 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
       sourceStems: [],
       lyrics: [],
       confidenceByField: {
-        tempo: confidence,
-        meter: 0.74,
+        tempo: providerResults.structure?.confidence ?? confidence,
+        meter: providerResults.structure?.confidence ?? 0.74,
         key: Math.max(0.5, confidence - 0.12),
-        structure: 0.58,
-        melody: 0,
+        structure: providerResults.structure?.confidence ?? 0.58,
+        melody: providerResults.transcription?.confidence ?? 0,
         harmony: 0,
       },
       provenance: [
@@ -348,30 +420,36 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
           status: "ready",
         },
         {
-          capability: "structure",
+          capability: providerResults.structure ? "key_analysis" : "structure",
           provider: "LOCAL_SIGNAL_ANALYZER_V1",
           version: "1.0.0",
           status: "fallback",
         },
-        {
-          capability: "transcription",
-          provider: "BASIC_PITCH_OR_MT3",
-          version: "not-configured",
-          status: "unavailable",
-        },
+        ...providerResults.provenance,
+        ...(["FULL_SONG", "INSTRUMENTAL", "VIDEO"].includes(source.sourceType)
+          ? [{
+              capability: "transcription",
+              provider: "MT3",
+              version: "not-configured",
+              status: "unavailable" as const,
+            }]
+          : []),
       ],
     };
     await updateOwnedStage("persisting_song_model", 88);
-    const previous = await db
-      .select({ version: songModelsTable.version })
-      .from(songModelsTable)
-      .where(eq(songModelsTable.projectId, source.projectId))
-      .orderBy(desc(songModelsTable.version))
-      .limit(1);
-    const version = (previous[0]?.version ?? 0) + 1;
     const songModelId = randomUUID();
 
     await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${source.projectId}))`,
+      );
+      const [previous] = await tx
+        .select({ version: songModelsTable.version })
+        .from(songModelsTable)
+        .where(eq(songModelsTable.projectId, source.projectId))
+        .orderBy(desc(songModelsTable.version))
+        .limit(1);
+      const version = (previous?.version ?? 0) + 1;
       const [completed] = await tx.update(analysisJobsTable)
         .set({
           status: "completed",
@@ -391,7 +469,7 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
         analysisJobId: job.id,
         version,
         model,
-        providers: ["FFMPEG", "LOCAL_SIGNAL_ANALYZER_V1"],
+        providers: ["FFMPEG", "LOCAL_SIGNAL_ANALYZER_V1", ...successfulAnalysisProviders],
         confidence,
       });
       await tx.update(projectSourcesTable)
@@ -405,11 +483,11 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
           duration: formatDuration(durationSeconds),
           bpm,
           key,
-          meter: "4/4",
+          meter,
           confidence,
           sections,
           energy,
-          providers: ["FFMPEG", "LOCAL_SIGNAL_ANALYZER_V1"],
+          providers: ["FFMPEG", "LOCAL_SIGNAL_ANALYZER_V1", ...successfulAnalysisProviders],
           updatedAt: new Date(),
         })
         .where(eq(musicProjectsTable.id, source.projectId));

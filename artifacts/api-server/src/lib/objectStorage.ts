@@ -47,6 +47,7 @@ function privateObjectDir(): string {
 async function signObjectUrl(
   bucketName: string,
   objectName: string,
+  method: "GET" | "PUT",
 ): Promise<string> {
   const response = await fetch(
     `${REPLIT_SIDECAR_ENDPOINT}/object-storage/signed-object-url`,
@@ -56,7 +57,7 @@ async function signObjectUrl(
       body: JSON.stringify({
         bucket_name: bucketName,
         object_name: objectName,
-        method: "PUT",
+        method,
         expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
       }),
       signal: AbortSignal.timeout(30_000),
@@ -79,9 +80,20 @@ export async function createSourceUploadTarget(): Promise<{
     `${privateObjectDir()}/${relativePath}`,
   );
   return {
-    uploadURL: await signObjectUrl(bucketName, objectName),
+    uploadURL: await signObjectUrl(bucketName, objectName, "PUT"),
     objectPath: `/objects/${relativePath}`,
   };
+}
+
+export async function createSourceDownloadUrl(objectPath: string): Promise<string> {
+  if (!objectPath.startsWith("/objects/uploads/")) {
+    throw new Error("Invalid source object path");
+  }
+  const relativePath = objectPath.slice("/objects/".length);
+  const { bucketName, objectName } = parseObjectPath(
+    `${privateObjectDir()}/${relativePath}`,
+  );
+  return signObjectUrl(bucketName, objectName, "GET");
 }
 
 export async function getSourceObject(objectPath: string): Promise<File | null> {

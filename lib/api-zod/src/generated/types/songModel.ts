@@ -16,6 +16,7 @@ import type { ProviderProvenance } from './providerProvenance';
 import type { Section } from './section';
 import type { SongModelAudio } from './songModelAudio';
 import type { SongModelConfidenceByField } from './songModelConfidenceByField';
+import type { SongModelCorrection } from './songModelCorrection';
 import type { SongModelStatus } from './songModelStatus';
 import type { SourceStem } from './sourceStem';
 import type { TempoEvent } from './tempoEvent';
@@ -44,4 +45,7 @@ export interface SongModel {
   providers: string[];
   confidence: number;
   createdAt: string;
+  /** @nullable */
+  parentModelId?: string | null;
+  correction?: SongModelCorrection | null;
 }
