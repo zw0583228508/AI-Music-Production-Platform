@@ -49,6 +49,7 @@ import type {
   MusicProvider,
   NotFoundResponse,
   Project,
+  ProjectDeletion,
   ProjectInput,
   ProjectSource,
   ProjectWorkspace,
@@ -1002,6 +1003,225 @@ export function useGetProject<TData = Awaited<ReturnType<typeof getProject>>, TE
 
 
 
+
+export const getDeleteProjectUrl = (projectId: string,) => {
+
+
+
+
+  return `/api/projects/${projectId}`
+}
+
+/**
+ * @summary Delete a music project and schedule private file cleanup
+ */
+export const deleteProject = async (projectId: string, options?: Parameters<typeof customFetch>[1]): Promise<ProjectDeletion> => {
+
+  return customFetch<ProjectDeletion>(getDeleteProjectUrl(projectId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteProjectMutationOptions = <TError = ErrorType<void | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteProject>>, TError,{projectId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteProject>>, TError,{projectId: string}, TContext> => {
+
+const mutationKey = ['deleteProject'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteProject>>, {projectId: string}> = (props) => {
+          const {projectId} = props ?? {};
+
+          return  deleteProject(projectId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteProjectMutationResult = NonNullable<Awaited<ReturnType<typeof deleteProject>>>
+
+    export type DeleteProjectMutationError = ErrorType<void | NotFoundResponse>
+
+    /**
+ * @summary Delete a music project and schedule private file cleanup
+ */
+export const useDeleteProject = <TError = ErrorType<void | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteProject>>, TError,{projectId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteProject>>,
+        TError,
+        {projectId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteProjectMutationOptions(options));
+    }
+
+export const getGetProjectDeletionUrl = (deletionId: string,) => {
+
+
+
+
+  return `/api/project-deletions/${deletionId}`
+}
+
+/**
+ * @summary Get project deletion cleanup status
+ */
+export const getProjectDeletion = async (deletionId: string, options?: Parameters<typeof customFetch>[1]): Promise<ProjectDeletion> => {
+
+  return customFetch<ProjectDeletion>(getGetProjectDeletionUrl(deletionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetProjectDeletionQueryKey = (deletionId: string,) => {
+    return [
+    `/api/project-deletions/${deletionId}`
+    ] as const;
+    }
+
+
+export const getGetProjectDeletionQueryOptions = <TData = Awaited<ReturnType<typeof getProjectDeletion>>, TError = ErrorType<void | NotFoundResponse>>(deletionId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProjectDeletion>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetProjectDeletionQueryKey(deletionId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getProjectDeletion>>> = ({ signal }) => getProjectDeletion(deletionId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: deletionId !== null && deletionId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getProjectDeletion>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetProjectDeletionQueryResult = NonNullable<Awaited<ReturnType<typeof getProjectDeletion>>>
+export type GetProjectDeletionQueryError = ErrorType<void | NotFoundResponse>
+
+
+/**
+ * @summary Get project deletion cleanup status
+ */
+
+export function useGetProjectDeletion<TData = Awaited<ReturnType<typeof getProjectDeletion>>, TError = ErrorType<void | NotFoundResponse>>(
+ deletionId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProjectDeletion>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetProjectDeletionQueryOptions(deletionId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRetryProjectDeletionUrl = (deletionId: string,) => {
+
+
+
+
+  return `/api/project-deletions/${deletionId}/retry`
+}
+
+/**
+ * @summary Retry incomplete private file cleanup
+ */
+export const retryProjectDeletion = async (deletionId: string, options?: Parameters<typeof customFetch>[1]): Promise<ProjectDeletion> => {
+
+  return customFetch<ProjectDeletion>(getRetryProjectDeletionUrl(deletionId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRetryProjectDeletionMutationOptions = <TError = ErrorType<void | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retryProjectDeletion>>, TError,{deletionId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof retryProjectDeletion>>, TError,{deletionId: string}, TContext> => {
+
+const mutationKey = ['retryProjectDeletion'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof retryProjectDeletion>>, {deletionId: string}> = (props) => {
+          const {deletionId} = props ?? {};
+
+          return  retryProjectDeletion(deletionId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RetryProjectDeletionMutationResult = NonNullable<Awaited<ReturnType<typeof retryProjectDeletion>>>
+
+    export type RetryProjectDeletionMutationError = ErrorType<void | NotFoundResponse>
+
+    /**
+ * @summary Retry incomplete private file cleanup
+ */
+export const useRetryProjectDeletion = <TError = ErrorType<void | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retryProjectDeletion>>, TError,{deletionId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof retryProjectDeletion>>,
+        TError,
+        {deletionId: string},
+        TContext
+      > => {
+      return useMutation(getRetryProjectDeletionMutationOptions(options));
+    }
 
 export const getAnalyzeProjectUrl = (projectId: string,) => {
 
@@ -2796,3 +3016,4 @@ export const useRunCopilot = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getRunCopilotMutationOptions(options));
     }
+

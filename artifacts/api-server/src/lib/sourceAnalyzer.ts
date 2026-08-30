@@ -49,6 +49,22 @@ class AnalysisLeaseLostError extends Error {
   }
 }
 
+async function withProjectStorageWrite<T>(
+  projectId: string,
+  write: () => Promise<T>,
+): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${projectId}))`);
+    const [project] = await tx
+      .select({ id: musicProjectsTable.id })
+      .from(musicProjectsTable)
+      .where(eq(musicProjectsTable.id, projectId))
+      .limit(1);
+    if (!project) throw new AnalysisLeaseLostError();
+    return write();
+  });
+}
+
 async function claimAnalysisAttempt(sourceId: string) {
   const [existing] = await db
     .select()
@@ -462,12 +478,15 @@ async function persistSeparationStems(
       stem.role,
       sourceDurationSeconds,
     );
-    const objectPath = await saveAnalysisObject(
+    const objectPath = await withProjectStorageWrite(
       projectId,
-      analysisJobId,
-      `${stem.role}.${stem.extension}`,
-      data,
-      stem.contentType,
+      () => saveAnalysisObject(
+        projectId,
+        analysisJobId,
+        `${stem.role}.${stem.extension}`,
+        data,
+        stem.contentType,
+      ),
     );
     return {
       role: stem.role,
@@ -1100,7 +1119,10 @@ export async function analyzeProjectSource(
       waveform = await fullDurationEnergy(inputPath, durationSeconds);
       const normalizedPath = join(directory, "normalized.flac");
       await execFileAsync("ffmpeg", ["-v", "error", "-i", inputPath, "-map", "0:a:0", "-c:a", "flac", normalizedPath]);
-      normalizedObjectPath = await saveSourceProxyObject(source.id, normalizedPath, "audio/flac");
+      normalizedObjectPath = await withProjectStorageWrite(
+        source.projectId,
+        () => saveSourceProxyObject(source.id, normalizedPath, "audio/flac"),
+      );
     }
     const energyDetection = midi ? null : detectEnergyEvidence(samples);
     const localTempo = midi ? null : detectTempoEvidence(samples, decodeRate);

@@ -190,6 +190,73 @@ paths:
                 $ref: "#/components/schemas/ProjectWorkspace"
         "404":
           $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteProject
+      tags: [projects]
+      summary: Delete a music project and schedule private file cleanup
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project deleted and private files cleaned up
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectDeletion"
+        "202":
+          description: Project deleted; private file cleanup is incomplete and retryable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectDeletion"
+        "401":
+          description: Login required
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /project-deletions/{deletionId}:
+    get:
+      operationId: getProjectDeletion
+      tags: [projects]
+      summary: Get project deletion cleanup status
+      parameters:
+        - $ref: "#/components/parameters/ProjectDeletionId"
+      responses:
+        "200":
+          description: Project deletion cleanup status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectDeletion"
+        "401":
+          description: Login required
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /project-deletions/{deletionId}/retry:
+    post:
+      operationId: retryProjectDeletion
+      tags: [projects]
+      summary: Retry incomplete private file cleanup
+      parameters:
+        - $ref: "#/components/parameters/ProjectDeletionId"
+      responses:
+        "200":
+          description: Cleanup completed or was already complete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectDeletion"
+        "202":
+          description: Cleanup remains incomplete and can be retried
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectDeletion"
+        "401":
+          description: Login required
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Cleanup is already in progress
   /projects/{projectId}/analyze:
     post:
       operationId: analyzeProject
@@ -698,6 +765,12 @@ components:
       required: true
       schema:
         type: string
+    ProjectDeletionId:
+      name: deletionId
+      in: path
+      required: true
+      schema:
+        type: string
     ArrangementId:
       name: arrangementId
       in: path
@@ -774,8 +847,9 @@ components:
         success: { type: boolean }
     UploadUrlRequest:
       type: object
-      required: [name, size, contentType]
+      required: [projectId, name, size, contentType]
       properties:
+        projectId: { type: string, minLength: 1 }
         name: { type: string, minLength: 1 }
         size: { type: number, minimum: 1, maximum: 524288000 }
         contentType: { type: string, minLength: 1 }
@@ -1308,6 +1382,21 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Artifact"
+    ProjectDeletion:
+      type: object
+      required: [id, projectId, status, attempts, pendingObjectCount, lastError, createdAt, updatedAt, completedAt]
+      properties:
+        id: { type: string }
+        projectId: { type: string }
+        status:
+          type: string
+          enum: [queued, running, partial, completed]
+        attempts: { type: number, minimum: 0 }
+        pendingObjectCount: { type: number, minimum: 0 }
+        lastError: { type: ["string", "null"] }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+        completedAt: { type: ["string", "null"] }
     AnalysisInput:
       type: object
       properties:

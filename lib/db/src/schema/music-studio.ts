@@ -233,6 +233,7 @@ export const musicProjectsTable = pgTable("music_projects", {
     .$onUpdate(() => new Date()),
 });
 
+export type ProjectCleanupStatus = "queued" | "running" | "partial" | "completed";
 export const projectSourcesTable = pgTable("music_project_sources", {
   id: text("id").primaryKey(),
   projectId: text("project_id")
@@ -755,3 +756,37 @@ export type ArrangementRevisionSummary = {
   conductorControls: string[];
   candidateSelectionChanged: boolean;
 };
+
+export const projectCleanupJobsTable = pgTable("music_project_cleanup_jobs", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id").notNull(),
+  ownerId: text("owner_id").notNull(),
+  status: text("status").$type<ProjectCleanupStatus>().notNull().default("queued"),
+  objectPaths: jsonb("object_paths").$type<string[]>().notNull().default([]),
+  activeUploadPaths: jsonb("active_upload_paths").$type<string[]>().notNull().default([]),
+  uploadLeaseExpiresAt: timestamp("upload_lease_expires_at", { withTimezone: true }),
+  analysisJobIds: jsonb("analysis_job_ids").$type<string[]>().notNull().default([]),
+  attempts: integer("attempts").notNull().default(0),
+  lastError: text("last_error"),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  leaseId: text("lease_id"),
+  leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
+
+export const projectUploadReservationsTable = pgTable("music_project_upload_reservations", {
+  objectPath: text("object_path").primaryKey(),
+  projectId: text("project_id")
+    .notNull()
+    .references(() => musicProjectsTable.id, { onDelete: "cascade" }),
+  ownerId: text("owner_id").notNull(),
+  contentType: text("content_type").notNull().default("application/octet-stream"),
+  size: integer("size").notNull().default(0),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

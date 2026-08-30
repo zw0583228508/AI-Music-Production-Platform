@@ -43,6 +43,8 @@ export interface LogoutSuccess {
 
 export interface UploadUrlRequest {
   /** @minLength 1 */
+  projectId: string;
+  /** @minLength 1 */
   name: string;
   /**
      * @minimum 1
@@ -1020,6 +1022,32 @@ export interface ProjectWorkspace {
   artifacts: Artifact[];
 }
 
+export type ProjectDeletionStatus = typeof ProjectDeletionStatus[keyof typeof ProjectDeletionStatus];
+
+
+export const ProjectDeletionStatus = {
+  queued: 'queued',
+  running: 'running',
+  partial: 'partial',
+  completed: 'completed',
+} as const;
+
+export interface ProjectDeletion {
+  id: string;
+  projectId: string;
+  status: ProjectDeletionStatus;
+  /** @minimum 0 */
+  attempts: number;
+  /** @minimum 0 */
+  pendingObjectCount: number;
+  /** @nullable */
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** @nullable */
+  completedAt: string | null;
+}
+
 export type AnalysisInputProvider = typeof AnalysisInputProvider[keyof typeof AnalysisInputProvider];
 
 
@@ -1698,3 +1726,4 @@ returnTo?: string;
 export type LogoutBrowserSessionParams = {
 returnTo?: string;
 };
+

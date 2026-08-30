@@ -1,11 +1,21 @@
 import { Router, type IRouter } from "express";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   RequestSourceUploadUrlBody,
   RequestSourceUploadUrlResponse,
 } from "@workspace/api-zod";
-import { db, musicArtifactsTable, musicProjectsTable } from "@workspace/db";
-import { createSourceUploadTarget, getPrivateObject } from "../lib/objectStorage";
+import {
+  db,
+  musicArtifactsTable,
+  musicProjectsTable,
+  projectUploadReservationsTable,
+} from "@workspace/db";
+import {
+  createSourceUploadTarget,
+  getPrivateObject,
+  isSourceObjectPath,
+  saveSourceUploadStream,
+} from "../lib/objectStorage";
 
 const router: IRouter = Router();
 
@@ -19,12 +29,99 @@ router.post("/storage/uploads/request-url", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Invalid upload metadata" });
     return;
   }
-  const { uploadURL, objectPath } = await createSourceUploadTarget();
+  const target = await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${parsed.data.projectId}))`,
+    );
+    const [project] = await tx
+      .select({ id: musicProjectsTable.id })
+      .from(musicProjectsTable)
+      .where(and(
+        eq(musicProjectsTable.id, parsed.data.projectId),
+        eq(musicProjectsTable.ownerId, req.user!.id),
+      ))
+      .limit(1);
+    if (!project) return null;
+    const created = await createSourceUploadTarget();
+    await tx.insert(projectUploadReservationsTable).values({
+      objectPath: created.objectPath,
+      projectId: project.id,
+      ownerId: req.user!.id,
+      contentType: parsed.data.contentType,
+      size: parsed.data.size,
+      expiresAt: created.expiresAt,
+    });
+    return created;
+  });
+  if (!target) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+  const { uploadURL, objectPath } = target;
   res.json(RequestSourceUploadUrlResponse.parse({
     uploadURL,
     objectPath,
     metadata: parsed.data,
   }));
+});
+
+router.put("/storage/uploads/:uploadId", async (req, res): Promise<void> => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const objectPath = `/objects/uploads/${req.params.uploadId}`;
+  if (!isSourceObjectPath(objectPath)) {
+    res.status(400).json({ error: "Invalid upload target" });
+    return;
+  }
+  const [reservation] = await db
+    .select()
+    .from(projectUploadReservationsTable)
+    .where(and(
+      eq(projectUploadReservationsTable.objectPath, objectPath),
+      eq(projectUploadReservationsTable.ownerId, req.user.id),
+    ))
+    .limit(1);
+  if (!reservation || reservation.expiresAt <= new Date()) {
+    res.status(404).json({ error: "Upload target not found or expired" });
+    return;
+  }
+  const contentLength = Number(req.headers["content-length"] ?? 0);
+  if (contentLength !== reservation.size) {
+    res.status(400).json({ error: "Upload size does not match the reservation" });
+    return;
+  }
+  const stored = await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${reservation.projectId}))`,
+    );
+    const [activeReservation] = await tx
+      .select({ projectId: projectUploadReservationsTable.projectId })
+      .from(projectUploadReservationsTable)
+      .innerJoin(
+        musicProjectsTable,
+        eq(musicProjectsTable.id, projectUploadReservationsTable.projectId),
+      )
+      .where(and(
+        eq(projectUploadReservationsTable.objectPath, objectPath),
+        eq(projectUploadReservationsTable.ownerId, req.user!.id),
+        eq(musicProjectsTable.ownerId, req.user!.id),
+      ))
+      .limit(1);
+    if (!activeReservation) return false;
+    await saveSourceUploadStream(
+      objectPath,
+      req,
+      reservation.contentType,
+    );
+    return true;
+  });
+  if (!stored) {
+    res.status(404).json({ error: "Project was deleted before upload" });
+    return;
+  }
+  res.status(204).end();
 });
 
 router.get("/storage/objects/*path", async (req, res): Promise<void> => {

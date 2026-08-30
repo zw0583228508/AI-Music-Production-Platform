@@ -108,16 +108,19 @@ export const LogoutMobileSessionResponse = zod.object({
  * @summary Request a protected direct-upload URL
  */
 
+
 export const requestSourceUploadUrlBodySizeMax = 524288000;
 
 
 
 
 export const RequestSourceUploadUrlBody = zod.object({
+  "projectId": zod.string().min(1),
   "name": zod.string().min(1),
   "size": zod.number().min(1).max(requestSourceUploadUrlBodySizeMax),
   "contentType": zod.string().min(1)
 })
+
 
 
 export const requestSourceUploadUrlResponseMetadataSizeMax = 524288000;
@@ -129,6 +132,7 @@ export const RequestSourceUploadUrlResponse = zod.object({
   "uploadURL": zod.string(),
   "objectPath": zod.string(),
   "metadata": zod.object({
+  "projectId": zod.string().min(1),
   "name": zod.string().min(1),
   "size": zod.number().min(1).max(requestSourceUploadUrlResponseMetadataSizeMax),
   "contentType": zod.string().min(1)
@@ -382,6 +386,84 @@ export const GetProjectResponse = zod.object({
   "createdAt": zod.string(),
   "url": zod.string().nullish()
 }))
+})
+
+
+/**
+ * @summary Delete a music project and schedule private file cleanup
+ */
+export const DeleteProjectParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+export const deleteProjectResponseAttemptsMin = 0;
+
+export const deleteProjectResponsePendingObjectCountMin = 0;
+
+
+
+export const DeleteProjectResponse = zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "status": zod.enum(['queued', 'running', 'partial', 'completed']),
+  "attempts": zod.number().min(deleteProjectResponseAttemptsMin),
+  "pendingObjectCount": zod.number().min(deleteProjectResponsePendingObjectCountMin),
+  "lastError": zod.string().nullable(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string(),
+  "completedAt": zod.string().nullable()
+})
+
+
+/**
+ * @summary Get project deletion cleanup status
+ */
+export const GetProjectDeletionParams = zod.object({
+  "deletionId": zod.coerce.string()
+})
+
+export const getProjectDeletionResponseAttemptsMin = 0;
+
+export const getProjectDeletionResponsePendingObjectCountMin = 0;
+
+
+
+export const GetProjectDeletionResponse = zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "status": zod.enum(['queued', 'running', 'partial', 'completed']),
+  "attempts": zod.number().min(getProjectDeletionResponseAttemptsMin),
+  "pendingObjectCount": zod.number().min(getProjectDeletionResponsePendingObjectCountMin),
+  "lastError": zod.string().nullable(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string(),
+  "completedAt": zod.string().nullable()
+})
+
+
+/**
+ * @summary Retry incomplete private file cleanup
+ */
+export const RetryProjectDeletionParams = zod.object({
+  "deletionId": zod.coerce.string()
+})
+
+export const retryProjectDeletionResponseAttemptsMin = 0;
+
+export const retryProjectDeletionResponsePendingObjectCountMin = 0;
+
+
+
+export const RetryProjectDeletionResponse = zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "status": zod.enum(['queued', 'running', 'partial', 'completed']),
+  "attempts": zod.number().min(retryProjectDeletionResponseAttemptsMin),
+  "pendingObjectCount": zod.number().min(retryProjectDeletionResponsePendingObjectCountMin),
+  "lastError": zod.string().nullable(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string(),
+  "completedAt": zod.string().nullable()
 })
 
 
@@ -2533,4 +2615,6 @@ export const RunCopilotResponse = zod.object({
 })),
   "affectedSections": zod.array(zod.string()),
   "interpreter": zod.enum(['openai', 'deterministic'])
-});
+})
+
+

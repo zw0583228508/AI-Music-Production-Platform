@@ -119,6 +119,8 @@ export * from './notFoundResponse';
 export * from './pianoNote';
 export * from './pianoNoteArticulation';
 export * from './project';
+export * from './projectDeletion';
+export * from './projectDeletionStatus';
 export * from './projectInput';
 export * from './projectInputSourceType';
 export * from './projectSource';

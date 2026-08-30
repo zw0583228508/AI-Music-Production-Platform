@@ -127,9 +127,12 @@ export function SourceImport({
     try {
       const { contentType } = fileValidation;
       const target = await requestUpload.mutateAsync({
-        data: { name: file.name, size: file.size, contentType },
+        data: { projectId, name: file.name, size: file.size, contentType },
       });
-      await uploadFile(file, target.uploadURL, setUploadProgress);
+      const uploadUrl = target.uploadURL.startsWith("/api/")
+        ? `${import.meta.env.BASE_URL.replace(/\/$/, "")}${target.uploadURL}`
+        : target.uploadURL;
+      await uploadFile(file, uploadUrl, setUploadProgress);
       await registerSource.mutateAsync({
         projectId,
         data: {

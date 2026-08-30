@@ -1,8 +1,19 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { useListProjects, useCreateProject, ProjectSourceType, ProjectStatus } from "@workspace/api-client-react";
+import {
+  getGetDashboardQueryKey,
+  getGetProjectDeletionQueryKey,
+  getListProjectsQueryKey,
+  Project,
+  ProjectSourceType,
+  ProjectStatus,
+  useCreateProject,
+  useDeleteProject,
+  useGetProjectDeletion,
+  useListProjects,
+  useRetryProjectDeletion,
+} from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { getListProjectsQueryKey } from "@workspace/api-client-react";
 import { 
   Library, 
   Plus, 
@@ -10,17 +21,18 @@ import {
   Music2, 
   Mic2, 
   Piano, 
-  Play, 
   Activity,
-  MoreVertical,
   Clock,
-  Music
+  Music,
+  Loader2,
+  RefreshCw,
+  Trash2,
+  TriangleAlert,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty";
 import { 
   Dialog, 
@@ -34,6 +46,123 @@ import {
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+
+type PendingCleanup = {
+  id: string;
+  projectName: string;
+};
+
+const pendingCleanupStorageKey = "music-studio:pending-project-cleanups";
+
+function readPendingCleanups(): PendingCleanup[] {
+  try {
+    const value = window.localStorage.getItem(pendingCleanupStorageKey);
+    if (!value) return [];
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is PendingCleanup =>
+      Boolean(
+        item &&
+        typeof item === "object" &&
+        typeof (item as PendingCleanup).id === "string" &&
+        typeof (item as PendingCleanup).projectName === "string",
+      )
+    );
+  } catch {
+    return [];
+  }
+}
+
+function PendingCleanupNotice({
+  cleanup,
+  onResolved,
+}: {
+  cleanup: PendingCleanup;
+  onResolved: (id: string) => void;
+}) {
+  const { toast } = useToast();
+  const retryProjectDeletion = useRetryProjectDeletion();
+  const { data: cleanupStatus } = useGetProjectDeletion(cleanup.id, {
+    query: {
+      queryKey: getGetProjectDeletionQueryKey(cleanup.id),
+      retry: false,
+      refetchInterval: (query) => {
+        const status = query.state.data?.status;
+        return status === "queued" || status === "running" ? 1_000 : false;
+      },
+    },
+  });
+
+  useEffect(() => {
+    if (cleanupStatus?.status === "completed") {
+      onResolved(cleanup.id);
+      toast({
+        title: "Stored files removed",
+        description: `Cleanup finished for ${cleanup.projectName}.`,
+      });
+    }
+  }, [cleanup.id, cleanup.projectName, cleanupStatus?.status, onResolved, toast]);
+
+  const handleRetry = async () => {
+    try {
+      const result = await retryProjectDeletion.mutateAsync({
+        deletionId: cleanup.id,
+      });
+      if (result.status === "completed") {
+        onResolved(cleanup.id);
+        toast({
+          title: "Stored files removed",
+          description: `Cleanup finished for ${cleanup.projectName}.`,
+        });
+      } else {
+        toast({
+          title: "Cleanup still incomplete",
+          description: "The remaining files are still tracked. You can retry again.",
+          variant: "destructive",
+        });
+      }
+    } catch (retryError) {
+      toast({
+        title: "Cleanup retry failed",
+        description: retryError instanceof Error
+          ? retryError.message
+          : "Try again in a moment.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  return (
+    <Alert variant="destructive">
+      <TriangleAlert className="h-4 w-4" />
+      <AlertTitle>Stored file cleanup needs attention</AlertTitle>
+      <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <span>
+          {cleanup.projectName} is deleted, but{" "}
+          {cleanupStatus
+            ? `${cleanupStatus.pendingObjectCount} private storage item${cleanupStatus.pendingObjectCount === 1 ? "" : "s"} remain.`
+            : "its private storage cleanup is being checked."}
+        </span>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={handleRetry}
+          disabled={
+            retryProjectDeletion.isPending ||
+            cleanupStatus?.status === "queued" ||
+            cleanupStatus?.status === "running" ||
+            !cleanupStatus
+          }
+        >
+          <RefreshCw className={`mr-2 h-4 w-4 ${retryProjectDeletion.isPending ? "animate-spin" : ""}`} />
+          Retry cleanup
+        </Button>
+      </AlertDescription>
+    </Alert>
+  );
+}
 
 const StatusBadge = ({ status }: { status: ProjectStatus }) => {
   const map: Record<ProjectStatus, { label: string, color: string }> = {
@@ -74,14 +203,38 @@ export default function Projects() {
   
   const { data: projects, isLoading, error } = useListProjects();
   const createProject = useCreateProject();
+  const deleteProject = useDeleteProject();
 
   const [open, setOpen] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [newSourceType, setNewSourceType] = useState<ProjectSourceType>('FULL_SONG');
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [pendingCleanups, setPendingCleanups] = useState<PendingCleanup[]>(
+    readPendingCleanups,
+  );
   
   const filteredProjects = projects?.filter(p => 
     p.name.toLowerCase().includes(search.toLowerCase())
   );
+
+  const removePendingCleanup = useCallback((id: string) => {
+    setPendingCleanups((current) => {
+      const next = current.filter((cleanup) => cleanup.id !== id);
+      window.localStorage.setItem(pendingCleanupStorageKey, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const rememberPendingCleanup = (cleanup: PendingCleanup) => {
+    setPendingCleanups((current) => {
+      const next = [
+        ...current.filter((item) => item.id !== cleanup.id),
+        cleanup,
+      ];
+      window.localStorage.setItem(pendingCleanupStorageKey, JSON.stringify(next));
+      return next;
+    });
+  };
 
   const handleCreate = () => {
     if (!newProjectName.trim()) return;
@@ -103,6 +256,47 @@ export default function Projects() {
         toast({ title: "Error", description: "Failed to create project", variant: "destructive" });
       }
     });
+  };
+
+  const handleDelete = async () => {
+    if (!projectToDelete) return;
+    const deletedProject = projectToDelete;
+    try {
+      const deletion = await deleteProject.mutateAsync({
+        projectId: deletedProject.id,
+      });
+      queryClient.setQueryData<Project[]>(
+        getListProjectsQueryKey(),
+        (current) => current?.filter((project) => project.id !== deletedProject.id),
+      );
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() }),
+        queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() }),
+      ]);
+      setProjectToDelete(null);
+      if (deletion.status === "completed") {
+        removePendingCleanup(deletion.id);
+      } else {
+        rememberPendingCleanup({
+          id: deletion.id,
+          projectName: deletedProject.name,
+        });
+      }
+      toast({
+        title: "Project deleted",
+        description: deletion.status === "completed"
+          ? `${deletedProject.name} and its stored files were removed.`
+          : `${deletedProject.name} was removed. Use the cleanup notice to retry its remaining stored files.`,
+      });
+    } catch (deleteError) {
+      toast({
+        title: "Project could not be deleted",
+        description: deleteError instanceof Error
+          ? deleteError.message
+          : "Try again in a moment.",
+        variant: "destructive",
+      });
+    }
   };
 
   if (error) {
@@ -190,6 +384,14 @@ export default function Projects() {
         </div>
       </div>
 
+      {pendingCleanups.map((cleanup) => (
+        <PendingCleanupNotice
+          key={cleanup.id}
+          cleanup={cleanup}
+          onResolved={removePendingCleanup}
+        />
+      ))}
+
       <div className="flex-1 overflow-auto -mx-6 px-6 -my-4 py-4">
         {isLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -224,49 +426,107 @@ export default function Projects() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {filteredProjects.map((project) => (
-              <Link key={project.id} href={`/projects/${project.id}`}>
-                <Card className="h-full overflow-hidden hover:border-primary/50 transition-colors shadow-sm group cursor-pointer active-elevate flex flex-col">
-                  <div className="h-1.5 w-full" style={{ backgroundColor: project.coverColor || 'hsl(var(--primary))' }} />
-                  <CardContent className="p-5 flex flex-col h-full">
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="p-2.5 bg-muted rounded-lg text-muted-foreground group-hover:text-primary group-hover:bg-primary/10 transition-colors">
-                        <SourceTypeIcon type={project.sourceType} />
+              <div key={project.id} className="relative">
+                <Link href={`/projects/${project.id}`}>
+                  <Card className="h-full overflow-hidden hover:border-primary/50 transition-colors shadow-sm group cursor-pointer active-elevate flex flex-col">
+                    <div className="h-1.5 w-full" style={{ backgroundColor: project.coverColor || 'hsl(var(--primary))' }} />
+                    <CardContent className="p-5 flex flex-col h-full">
+                      <div className="flex justify-between items-start mb-4 pr-10">
+                        <div className="p-2.5 bg-muted rounded-lg text-muted-foreground group-hover:text-primary group-hover:bg-primary/10 transition-colors">
+                          <SourceTypeIcon type={project.sourceType} />
+                        </div>
+                        <StatusBadge status={project.status} />
                       </div>
-                      <StatusBadge status={project.status} />
-                    </div>
                     
-                    <h3 className="text-lg font-bold text-foreground mb-1 group-hover:text-primary transition-colors line-clamp-1">
-                      {project.name}
-                    </h3>
+                      <h3 className="text-lg font-bold text-foreground mb-1 group-hover:text-primary transition-colors line-clamp-1">
+                        {project.name}
+                      </h3>
                     
-                    <div className="flex items-center gap-3 text-sm font-mono text-muted-foreground mb-4">
-                      <div className="flex items-center gap-1.5">
-                        <Activity className="h-3.5 w-3.5" />
-                        {project.bpm} BPM
+                      <div className="flex items-center gap-3 text-sm font-mono text-muted-foreground mb-4">
+                        <div className="flex items-center gap-1.5">
+                          <Activity className="h-3.5 w-3.5" />
+                          {project.bpm} BPM
+                        </div>
+                        <div className="w-1 h-1 rounded-full bg-border" />
+                        <div className="flex items-center gap-1.5">
+                          <Music className="h-3.5 w-3.5" />
+                          {project.key}
+                        </div>
                       </div>
-                      <div className="w-1 h-1 rounded-full bg-border" />
-                      <div className="flex items-center gap-1.5">
-                        <Music className="h-3.5 w-3.5" />
-                        {project.key}
-                      </div>
-                    </div>
 
-                    <div className="mt-auto pt-4 border-t flex items-center justify-between text-xs text-muted-foreground">
-                      <div className="flex items-center gap-1.5 font-mono">
-                        <Clock className="h-3.5 w-3.5" />
-                        {project.duration}
+                      <div className="mt-auto pt-4 border-t flex items-center justify-between text-xs text-muted-foreground">
+                        <div className="flex items-center gap-1.5 font-mono">
+                          <Clock className="h-3.5 w-3.5" />
+                          {project.duration}
+                        </div>
+                        <div>
+                          {new Date(project.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                        </div>
                       </div>
-                      <div>
-                        {new Date(project.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
+                    </CardContent>
+                  </Card>
+                </Link>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-3 top-4 z-10 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                  aria-label={`Delete ${project.name}`}
+                  onClick={() => setProjectToDelete(project)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
             ))}
           </div>
         )}
       </div>
+
+      <Dialog
+        open={Boolean(projectToDelete)}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && !deleteProject.isPending) setProjectToDelete(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete this project?</DialogTitle>
+            <DialogDescription>
+              This permanently removes the project, its arrangements, jobs, activity,
+              exports, and private source audio. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          {projectToDelete && (
+            <div className="rounded-lg border bg-muted/40 px-4 py-3">
+              <p className="font-semibold text-foreground">{projectToDelete.name}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Stored file cleanup is tracked and can be retried if storage is temporarily unavailable.
+              </p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setProjectToDelete(null)}
+              disabled={deleteProject.isPending}
+            >
+              Keep project
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleteProject.isPending}
+            >
+              {deleteProject.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="mr-2 h-4 w-4" />
+              )}
+              {deleteProject.isPending ? "Deleting..." : "Delete project"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

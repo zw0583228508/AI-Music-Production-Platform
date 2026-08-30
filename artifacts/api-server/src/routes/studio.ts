@@ -6,7 +6,7 @@ import {
   type Request,
   type Response,
 } from "express";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import {
   AnalyzeProjectBody,
   AnalyzeProjectParams,
@@ -19,6 +19,7 @@ import {
   CreateProjectExportResponse,
   CreateProjectBody,
   CreateProjectResponse,
+  DeleteProjectResponse,
   DownloadProjectExportParams,
   GenerateArrangementBody,
   GenerateArrangementParams,
@@ -31,6 +32,8 @@ import {
   SelectGenerationCandidateParams,
   SelectGenerationCandidateResponse,
   GetDashboardResponse,
+  GetProjectDeletionParams,
+  GetProjectDeletionResponse,
   GetProjectParams,
   GetProjectResponse,
   GetProjectSongModelParams,
@@ -63,6 +66,8 @@ import {
   RestoreArrangementRevisionBody,
   RestoreArrangementRevisionParams,
   RestoreArrangementRevisionResponse,
+  RetryProjectDeletionParams,
+  RetryProjectDeletionResponse,
   UpdateArrangementBody,
   UpdateArrangementParams,
   UpdateArrangementResponse,
@@ -74,7 +79,10 @@ import {
   analysisAttemptsTable,
   db,
   musicArtifactsTable,
+  musicExportsTable,
   musicProjectsTable,
+  projectCleanupJobsTable,
+  projectUploadReservationsTable,
   projectSourcesTable,
   songModelsTable,
   studioActivitiesTable,
@@ -90,7 +98,14 @@ import {
   formatBytes,
   renderArrangementExport,
 } from "../lib/exportEngine";
-import { deleteExportObject, saveExportObject } from "../lib/objectStorage";
+import {
+  deleteAnalysisObjects,
+  deleteExportObject,
+  deletePrivateObject,
+  isSourceObjectPath,
+  saveExportObject,
+} from "../lib/objectStorage";
+import { logger } from "../lib/logger";
 import { queueProjectSourceAnalysis } from "../lib/sourceAnalyzer";
 import { validateSourceFileMetadata } from "../lib/sourceFormats";
 import { interpretCopilotCommand } from "../lib/copilotInterpreter";
@@ -372,6 +387,153 @@ const artifactResponse = (
 ) => ({
   ...artifact,
   createdAt: iso(artifact.createdAt),
+});
+
+type ProjectCleanupPlan = {
+  objectPaths: string[];
+  analysisJobIds: string[];
+};
+
+function collectPrivateObjectPaths(value: unknown, paths: Set<string>): void {
+  if (typeof value === "string") {
+    if (
+      value.startsWith("/objects/uploads/") ||
+      value.startsWith("/objects/proxies/") ||
+      value.startsWith("/objects/analysis/") ||
+      value.startsWith("/api/storage/objects/exports/")
+    ) {
+      paths.add(value);
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectPrivateObjectPaths(item, paths);
+    return;
+  }
+  if (value && typeof value === "object") {
+    for (const item of Object.values(value)) {
+      collectPrivateObjectPaths(item, paths);
+    }
+  }
+}
+
+async function runProjectCleanup(jobId: string): Promise<typeof projectCleanupJobsTable.$inferSelect> {
+  const now = new Date();
+  const leaseId = randomUUID();
+  const [job] = await db
+    .update(projectCleanupJobsTable)
+    .set({
+      status: "running",
+      attempts: sql<number>`${projectCleanupJobsTable.attempts} + 1`,
+      startedAt: now,
+      leaseId,
+      leaseExpiresAt: new Date(now.getTime() + 2 * 60_000),
+      updatedAt: now,
+    })
+    .where(and(
+      eq(projectCleanupJobsTable.id, jobId),
+      or(
+        inArray(projectCleanupJobsTable.status, ["queued", "partial"]),
+        and(
+          eq(projectCleanupJobsTable.status, "running"),
+          or(
+            isNull(projectCleanupJobsTable.leaseExpiresAt),
+            lte(projectCleanupJobsTable.leaseExpiresAt, now),
+          ),
+        ),
+      ),
+    ))
+    .returning();
+  if (!job) {
+    const [existing] = await db
+      .select()
+      .from(projectCleanupJobsTable)
+      .where(eq(projectCleanupJobsTable.id, jobId))
+      .limit(1);
+    if (existing) return existing;
+    throw new Error("Project cleanup job not found");
+  }
+
+  const failures: Array<{ path: string; error: string }> = [];
+  await Promise.all([
+    ...job.objectPaths.map(async (path) => {
+      try {
+        await deletePrivateObject(path);
+      } catch (error) {
+        failures.push({
+          path,
+          error: error instanceof Error ? error.message : "Unknown object cleanup failure",
+        });
+      }
+    }),
+    ...job.analysisJobIds.map(async (analysisJobId) => {
+      try {
+        await deleteAnalysisObjects(job.projectId, analysisJobId);
+      } catch (error) {
+        failures.push({
+          path: `analysis:${analysisJobId}`,
+          error: error instanceof Error ? error.message : "Unknown analysis cleanup failure",
+        });
+      }
+    }),
+  ]);
+
+  const failedPaths = new Set(failures.map((failure) => failure.path));
+  const remainingObjectPaths = job.objectPaths.filter((path) => failedPaths.has(path));
+  const remainingAnalysisJobIds = job.analysisJobIds.filter((analysisJobId) =>
+    failedPaths.has(`analysis:${analysisJobId}`),
+  );
+  const completed = remainingObjectPaths.length === 0 && remainingAnalysisJobIds.length === 0;
+  const [updatedJob] = await db
+    .update(projectCleanupJobsTable)
+    .set({
+      status: completed ? "completed" : "partial",
+      objectPaths: remainingObjectPaths,
+      analysisJobIds: remainingAnalysisJobIds,
+      lastError: completed
+        ? null
+        : failures.map((failure) => `${failure.path}: ${failure.error}`).join("; "),
+      leaseId: null,
+      leaseExpiresAt: null,
+      completedAt: completed ? new Date() : null,
+      updatedAt: new Date(),
+    })
+    .where(and(
+      eq(projectCleanupJobsTable.id, job.id),
+      eq(projectCleanupJobsTable.status, "running"),
+      eq(projectCleanupJobsTable.leaseId, leaseId),
+    ))
+    .returning();
+  if (!updatedJob) {
+    const [current] = await db
+      .select()
+      .from(projectCleanupJobsTable)
+      .where(eq(projectCleanupJobsTable.id, job.id))
+      .limit(1);
+    if (!current) throw new Error("Project cleanup job disappeared");
+    return current;
+  }
+  if (!completed) {
+    logger.error(
+      { cleanupJobId: job.id, projectId: job.projectId, failures },
+      "music_project_cleanup_partial",
+    );
+  }
+  return updatedJob;
+}
+
+const projectCleanupResponse = (
+  job: typeof projectCleanupJobsTable.$inferSelect,
+) => ({
+  id: job.id,
+  projectId: job.projectId,
+  status: job.status,
+  attempts: job.attempts,
+  pendingObjectCount: job.objectPaths.length + job.analysisJobIds.length,
+  lastError: job.lastError,
+  createdAt: iso(job.createdAt),
+  updatedAt: iso(job.updatedAt),
+  completedAt: nullableIso(job.completedAt),
 });
 
 const sourceResponse = (
@@ -859,6 +1021,148 @@ router.post("/projects", async (req, res): Promise<void> => {
   res.status(201).json(CreateProjectResponse.parse(projectResponse(project)));
 });
 
+router.delete("/projects/:projectId", async (req, res): Promise<void> => {
+  const cleanupJob = await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${req.params.projectId}))`,
+    );
+    const [project] = await tx
+      .select()
+      .from(musicProjectsTable)
+      .where(and(
+        eq(musicProjectsTable.id, req.params.projectId),
+        eq(musicProjectsTable.ownerId, req.user!.id),
+      ))
+      .limit(1);
+    if (!project) return null;
+
+    const sources = await tx
+      .select()
+      .from(projectSourcesTable)
+      .where(eq(projectSourcesTable.projectId, project.id));
+    const models = await tx
+      .select()
+      .from(songModelsTable)
+      .where(eq(songModelsTable.projectId, project.id));
+    const analysisJobs = await tx
+      .select()
+      .from(analysisJobsTable)
+      .where(eq(analysisJobsTable.projectId, project.id));
+    const analysisAttempts = await tx
+      .select()
+      .from(analysisAttemptsTable)
+      .where(eq(analysisAttemptsTable.projectId, project.id));
+    const artifacts = await tx
+      .select()
+      .from(musicArtifactsTable)
+      .where(eq(musicArtifactsTable.projectId, project.id));
+    const exports = await tx
+      .select()
+      .from(musicExportsTable)
+      .where(eq(musicExportsTable.projectId, project.id));
+    const uploadReservations = await tx
+      .select()
+      .from(projectUploadReservationsTable)
+      .where(eq(projectUploadReservationsTable.projectId, project.id));
+    const objectPaths = new Set<string>();
+    for (const rows of [sources, models, artifacts, exports]) {
+      for (const row of rows) collectPrivateObjectPaths(row, objectPaths);
+    }
+    for (const source of sources) {
+      const safeSourceId = source.id.replace(/[^a-zA-Z0-9_-]/g, "");
+      if (safeSourceId) objectPaths.add(`/objects/proxies/${safeSourceId}.flac`);
+    }
+    for (const artifact of artifacts) {
+      if (artifact.type === "EXPORT") {
+        objectPaths.add(`/api/storage/objects/exports/${artifact.id}.zip`);
+      }
+    }
+    const reservedUploadPaths = uploadReservations.map((reservation) => reservation.objectPath);
+    for (const path of reservedUploadPaths) objectPaths.add(path);
+    const analysisJobIds = new Set([
+      ...analysisJobs.map((job) => job.id),
+      ...analysisAttempts.map((attempt) => attempt.id),
+    ]);
+    const [job] = await tx.insert(projectCleanupJobsTable).values({
+      id: randomUUID(),
+      projectId: project.id,
+      ownerId: req.user!.id,
+      objectPaths: [...objectPaths],
+      analysisJobIds: [...analysisJobIds],
+    }).returning();
+
+    // All project-owned relational records have a cascading project foreign key.
+    // Keeping the cleanup job outside that graph lets storage retries survive this delete.
+    await tx.delete(musicProjectsTable).where(and(
+      eq(musicProjectsTable.id, project.id),
+      eq(musicProjectsTable.ownerId, req.user!.id),
+    ));
+    return job;
+  });
+  if (!cleanupJob) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+
+  const finishedJob = await runProjectCleanup(cleanupJob.id);
+  res
+    .status(finishedJob.status === "completed" ? 200 : 202)
+    .json(DeleteProjectResponse.parse(projectCleanupResponse(finishedJob)));
+});
+
+router.get("/project-deletions/:deletionId", async (req, res): Promise<void> => {
+  const params = GetProjectDeletionParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [job] = await db
+    .select()
+    .from(projectCleanupJobsTable)
+    .where(and(
+      eq(projectCleanupJobsTable.id, params.data.deletionId),
+      eq(projectCleanupJobsTable.ownerId, req.user!.id),
+    ))
+    .limit(1);
+  if (!job) {
+    res.status(404).json({ error: "Project deletion not found" });
+    return;
+  }
+  res.json(GetProjectDeletionResponse.parse(projectCleanupResponse(job)));
+});
+
+router.post("/project-deletions/:deletionId/retry", async (req, res): Promise<void> => {
+  const params = RetryProjectDeletionParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [job] = await db
+    .select()
+    .from(projectCleanupJobsTable)
+    .where(and(
+      eq(projectCleanupJobsTable.id, params.data.deletionId),
+      eq(projectCleanupJobsTable.ownerId, req.user!.id),
+    ))
+    .limit(1);
+  if (!job) {
+    res.status(404).json({ error: "Project deletion not found" });
+    return;
+  }
+  if (job.status === "completed") {
+    res.json(RetryProjectDeletionResponse.parse(projectCleanupResponse(job)));
+    return;
+  }
+  const finishedJob = await runProjectCleanup(job.id);
+  if (finishedJob.status === "running") {
+    res.status(409).json({ error: "Project cleanup is already in progress" });
+    return;
+  }
+  res
+    .status(finishedJob.status === "completed" ? 200 : 202)
+    .json(RetryProjectDeletionResponse.parse(projectCleanupResponse(finishedJob)));
+});
+
 router.get("/projects/:projectId", async (req, res): Promise<void> => {
   await ensureSeeded();
   const params = GetProjectParams.safeParse(req.params);
@@ -1041,8 +1345,21 @@ router.post("/projects/:projectId/sources", async (req, res): Promise<void> => {
     });
     return;
   }
-  if (!body.data.objectPath.startsWith("/objects/uploads/")) {
+  if (!isSourceObjectPath(body.data.objectPath)) {
     res.status(400).json({ error: "Invalid uploaded object path" });
+    return;
+  }
+  const [uploadReservation] = await db
+    .select({ objectPath: projectUploadReservationsTable.objectPath })
+    .from(projectUploadReservationsTable)
+    .where(and(
+      eq(projectUploadReservationsTable.objectPath, body.data.objectPath),
+      eq(projectUploadReservationsTable.projectId, project.id),
+      eq(projectUploadReservationsTable.ownerId, req.user.id),
+    ))
+    .limit(1);
+  if (!uploadReservation) {
+    res.status(400).json({ error: "Upload reservation not found or expired" });
     return;
   }
   const [source] = await db.insert(projectSourcesTable).values({
@@ -1057,6 +1374,11 @@ router.post("/projects/:projectId/sources", async (req, res): Promise<void> => {
     status: "queued",
     progress: 4,
   }).returning();
+  await db.delete(projectUploadReservationsTable).where(and(
+    eq(projectUploadReservationsTable.objectPath, body.data.objectPath),
+    eq(projectUploadReservationsTable.projectId, project.id),
+    eq(projectUploadReservationsTable.ownerId, req.user.id),
+  ));
   await db.update(musicProjectsTable)
     .set({
       ownerId: project.ownerId ?? req.user.id,
@@ -2283,9 +2605,6 @@ router.post("/projects/:projectId/export", async (req, res): Promise<void> => {
       renderedFiles,
       Object.fromEntries(fileAllocations),
     );
-    await persistExportBundle(bundle);
-    exportBundles.set(bundle.package.id, bundle);
-
     const artifactRows: Array<typeof musicArtifactsTable.$inferInsert> =
       bundle.package.files.map((file) => ({
         id: fileAllocations.get(file.name)!.artifactId,
@@ -2303,9 +2622,21 @@ router.post("/projects/:projectId/export", async (req, res): Promise<void> => {
         parameters: { arrangementId: arrangement.id, exportId: allocation.exportId },
         storageUri: bundle.package.url,
       }));
-    await Promise.all([
-      db.insert(musicArtifactsTable).values(artifactRows),
-      db
+    await db.transaction(async (transaction) => {
+      await transaction.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${project.id}))`,
+      );
+      const [activeProject] = await transaction
+        .select({ id: musicProjectsTable.id })
+        .from(musicProjectsTable)
+        .where(eq(musicProjectsTable.id, project.id))
+        .limit(1);
+      if (!activeProject) {
+        throw new Error("Project was deleted before the export could be stored");
+      }
+      await persistExportBundle(bundle);
+      await transaction.insert(musicArtifactsTable).values(artifactRows);
+      await transaction
         .update(musicArtifactsTable)
         .set({
           label: bundle.package.filename,
@@ -2316,19 +2647,20 @@ router.post("/projects/:projectId/export", async (req, res): Promise<void> => {
           storageUri: bundle.package.url,
           parentIds: [...fileAllocations.values()].map((file) => file.artifactId),
         })
-        .where(eq(musicArtifactsTable.id, allocation.exportId)),
-      db
+        .where(eq(musicArtifactsTable.id, allocation.exportId));
+      await transaction
         .update(musicProjectsTable)
         .set({ status: "ready" })
-        .where(eq(musicProjectsTable.id, project.id)),
-      db.insert(studioActivitiesTable).values({
+        .where(eq(musicProjectsTable.id, project.id));
+      await transaction.insert(studioActivitiesTable).values({
         id: randomUUID(),
         projectId: project.id,
         title: "Export package ready",
         detail: `${bundle.package.filename} · ${bundle.package.size}`,
         type: "export",
-      }),
-    ]);
+      });
+    });
+    exportBundles.set(bundle.package.id, bundle);
 
     req.log.info(
       {
@@ -2342,6 +2674,9 @@ router.post("/projects/:projectId/export", async (req, res): Promise<void> => {
     );
     res.status(201).json(CreateProjectExportResponse.parse(bundle.package));
   } catch (error) {
+    await deleteExportObject(
+      `/api/storage/objects/exports/${allocation.exportId}.zip`,
+    ).catch(() => undefined);
     await db
       .update(musicArtifactsTable)
       .set({ state: "failed", size: "Failed" })

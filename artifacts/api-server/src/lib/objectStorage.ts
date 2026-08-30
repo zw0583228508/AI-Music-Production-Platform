@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
+import type { Readable } from "node:stream";
 import { Storage, type File } from "@google-cloud/storage";
 
 const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
@@ -46,10 +47,16 @@ function privateObjectDir(): string {
   return value.replace(/\/$/, "");
 }
 
+export function isSourceObjectPath(objectPath: string): boolean {
+  return /^\/objects\/uploads\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    .test(objectPath);
+}
+
 async function signObjectUrl(
   bucketName: string,
   objectName: string,
   method: "GET" | "PUT",
+  expiresAt = new Date(Date.now() + 15 * 60 * 1000),
 ): Promise<string> {
   const response = await fetch(
     `${REPLIT_SIDECAR_ENDPOINT}/object-storage/signed-object-url`,
@@ -60,7 +67,7 @@ async function signObjectUrl(
         bucket_name: bucketName,
         object_name: objectName,
         method,
-        expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+        expires_at: expiresAt.toISOString(),
       }),
       signal: AbortSignal.timeout(30_000),
     },
@@ -76,19 +83,38 @@ async function signObjectUrl(
 export async function createSourceUploadTarget(): Promise<{
   uploadURL: string;
   objectPath: string;
+  expiresAt: Date;
 }> {
   const relativePath = `uploads/${randomUUID()}`;
-  const { bucketName, objectName } = parseObjectPath(
-    `${privateObjectDir()}/${relativePath}`,
-  );
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+  const objectId = relativePath.slice("uploads/".length);
   return {
-    uploadURL: await signObjectUrl(bucketName, objectName, "PUT"),
+    uploadURL: `/api/storage/uploads/${objectId}`,
     objectPath: `/objects/${relativePath}`,
+    expiresAt,
   };
 }
 
+export async function saveSourceUploadStream(
+  objectPath: string,
+  input: Readable,
+  contentType: string,
+): Promise<void> {
+  if (!isSourceObjectPath(objectPath)) throw new Error("Invalid source object path");
+  const relativePath = objectPath.slice("/objects/".length);
+  const { bucketName, objectName } = parseObjectPath(
+    `${privateObjectDir()}/${relativePath}`,
+  );
+  const destination = objectStorageClient.bucket(bucketName).file(objectName)
+    .createWriteStream({
+      resumable: true,
+      metadata: { contentType, cacheControl: "private, no-store" },
+    });
+  await pipeline(input, destination);
+}
+
 export async function createSourceDownloadUrl(objectPath: string): Promise<string> {
-  if (!objectPath.startsWith("/objects/uploads/")) {
+  if (!isSourceObjectPath(objectPath)) {
     throw new Error("Invalid source object path");
   }
   const relativePath = objectPath.slice("/objects/".length);
@@ -99,7 +125,7 @@ export async function createSourceDownloadUrl(objectPath: string): Promise<strin
 }
 
 export async function getSourceObject(objectPath: string): Promise<File | null> {
-  if (!objectPath.startsWith("/objects/uploads/")) return null;
+  if (!isSourceObjectPath(objectPath)) return null;
   return getPrivateObject(objectPath.slice("/objects/".length));
 }
 
@@ -189,6 +215,41 @@ export async function deleteExportObject(downloadUrl: string): Promise<void> {
   const prefix = "/api/storage/objects/";
   if (!downloadUrl.startsWith(`${prefix}exports/`)) return;
   const file = await getPrivateObject(downloadUrl.slice(prefix.length));
+  if (file) await file.delete({ ignoreNotFound: true });
+}
+
+function privateObjectWildcard(objectPath: string): string | null {
+  let wildcardPath: string | null = null;
+  if (objectPath.startsWith("/objects/uploads/")) {
+    wildcardPath = objectPath.slice("/objects/".length);
+  } else if (objectPath.startsWith("/objects/proxies/")) {
+    wildcardPath = objectPath.slice("/objects/".length);
+  } else if (objectPath.startsWith("/objects/analysis/")) {
+    wildcardPath = objectPath.slice("/objects/".length);
+  } else if (objectPath.startsWith("/api/storage/objects/exports/")) {
+    wildcardPath = objectPath.slice("/api/storage/objects/".length);
+  }
+  if (!wildcardPath) return null;
+  const segments = wildcardPath.split("/");
+  if (
+    segments.some((segment) =>
+      !segment ||
+      segment === "." ||
+      segment === ".." ||
+      !/^[a-zA-Z0-9._-]+$/.test(segment)
+    )
+  ) {
+    return null;
+  }
+  return wildcardPath;
+}
+
+export async function deletePrivateObject(objectPath: string): Promise<void> {
+  const wildcardPath = privateObjectWildcard(objectPath);
+  if (!wildcardPath) {
+    throw new Error("Invalid private object path");
+  }
+  const file = await getPrivateObject(wildcardPath);
   if (file) await file.delete({ ignoreNotFound: true });
 }
 

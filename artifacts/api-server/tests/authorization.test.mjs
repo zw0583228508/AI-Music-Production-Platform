@@ -17,6 +17,8 @@ await build({
         db,
         musicArtifactsTable,
         musicProjectsTable,
+        projectCleanupJobsTable,
+        projectUploadReservationsTable,
       } from "@workspace/db";
       export { eq } from "drizzle-orm";
     `,
@@ -41,6 +43,8 @@ const {
   eq,
   musicArtifactsTable,
   musicProjectsTable,
+  projectCleanupJobsTable,
+  projectUploadReservationsTable,
 } = await import(pathToFileURL(harnessPath).href);
 
 let server;
@@ -240,4 +244,120 @@ test("project and export endpoints enforce owner authorization", async () => {
     (await request("/api/storage/objects/exports/private-test.zip", otherSession)).status,
     404,
   );
+
+  const traversalSource = await request(
+    `/api/projects/${projectId}/sources`,
+    ownerSession,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        objectPath: "/objects/uploads/../../exports/private-test.zip",
+        name: "unsafe.wav",
+        size: 128,
+        contentType: "audio/wav",
+        sourceType: "FULL_SONG",
+      }),
+    },
+  );
+  assert.equal(traversalSource.status, 400);
+
+  const pendingUploadPath = `/objects/uploads/00000000-0000-4000-8000-${String(process.pid).padStart(12, "0")}`;
+  await db.insert(projectUploadReservationsTable).values({
+    objectPath: pendingUploadPath,
+    projectId,
+    ownerId: `export-owner-${process.pid}`,
+    contentType: "audio/wav",
+    size: 128,
+    expiresAt: new Date(Date.now() + 15 * 60_000),
+  });
+
+  const crossUserDelete = await request(
+    `/api/projects/${projectId}`,
+    otherSession,
+    { method: "DELETE" },
+  );
+  assert.equal(crossUserDelete.status, 404);
+  const [projectAfterCrossUserDelete] = await db
+    .select({ id: musicProjectsTable.id })
+    .from(musicProjectsTable)
+    .where(eq(musicProjectsTable.id, projectId));
+  assert.equal(projectAfterCrossUserDelete.id, projectId);
+
+  const ownerDelete = await request(
+    `/api/projects/${projectId}`,
+    ownerSession,
+    { method: "DELETE" },
+  );
+  assert.ok([200, 202].includes(ownerDelete.status));
+  const deletion = await ownerDelete.json();
+  assert.equal(deletion.projectId, projectId);
+  assert.ok(["completed", "partial"].includes(deletion.status));
+
+  const [deletedProject, deletedArrangement, deletedArtifact] = await Promise.all([
+    db.select({ id: musicProjectsTable.id })
+      .from(musicProjectsTable)
+      .where(eq(musicProjectsTable.id, projectId)),
+    db.select({ id: arrangementsTable.id })
+      .from(arrangementsTable)
+      .where(eq(arrangementsTable.id, arrangementId)),
+    db.select({ id: musicArtifactsTable.id })
+      .from(musicArtifactsTable)
+      .where(eq(musicArtifactsTable.id, exportId)),
+  ]);
+  assert.equal(deletedProject.length, 0);
+  assert.equal(deletedArrangement.length, 0);
+  assert.equal(deletedArtifact.length, 0);
+  assert.equal(
+    (await request(
+      `/api/storage/uploads/${pendingUploadPath.split("/").at(-1)}`,
+      ownerSession,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "audio/wav" },
+        body: "x".repeat(128),
+      },
+    )).status,
+    404,
+  );
+
+  assert.equal(
+    (await request(`/api/project-deletions/${deletion.id}`, ownerSession)).status,
+    200,
+  );
+  assert.equal(
+    (await request(`/api/project-deletions/${deletion.id}`, otherSession)).status,
+    404,
+  );
+  const [cleanupJob] = await db
+    .select()
+    .from(projectCleanupJobsTable)
+    .where(eq(projectCleanupJobsTable.id, deletion.id));
+  assert.equal(cleanupJob.ownerId, `export-owner-${process.pid}`);
+
+  const staleCleanupId = `stale-cleanup-${process.pid}`;
+  await db.insert(projectCleanupJobsTable).values({
+    id: staleCleanupId,
+    projectId,
+    ownerId: `export-owner-${process.pid}`,
+    status: "running",
+    objectPaths: [],
+    analysisJobIds: [],
+    attempts: 1,
+    leaseId: "expired-worker",
+    leaseExpiresAt: new Date(Date.now() - 60_000),
+  });
+  const reclaimedCleanup = await request(
+    `/api/project-deletions/${staleCleanupId}/retry`,
+    ownerSession,
+    { method: "POST" },
+  );
+  assert.equal(reclaimedCleanup.status, 200);
+  assert.equal((await reclaimedCleanup.json()).status, "completed");
+  const [reclaimedJob] = await db
+    .select()
+    .from(projectCleanupJobsTable)
+    .where(eq(projectCleanupJobsTable.id, staleCleanupId));
+  assert.equal(reclaimedJob.attempts, 2);
+  assert.equal(reclaimedJob.leaseId, null);
 });
