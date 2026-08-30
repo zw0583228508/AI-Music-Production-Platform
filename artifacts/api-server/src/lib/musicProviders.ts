@@ -10,6 +10,7 @@ import type {
   TrackModel,
 } from "@workspace/db";
 import { db, modelRegistryTable } from "@workspace/db";
+import { attestAnalysisProviderHealth } from "./analysisProviderManifest";
 export type ProviderStatus = "ready" | "configured" | "unavailable";
 
 export type MusicProviderDescriptor = {
@@ -317,6 +318,19 @@ export const MUSIC_PROVIDERS: MusicProviderDescriptor[] = [
     notes: "Requires BS_ROFORMER_API_URL; returns stems that are copied into private analysis storage.",
   },
   {
+    id: "DEMUCS",
+    name: "DEMUCS",
+    provider: "Meta Research",
+    version: "configured-endpoint",
+    capabilities: ["separation"],
+    inputTypes: ["FULL_SONG", "VOCAL_ONLY", "INSTRUMENTAL", "VIDEO"],
+    execution: "remote",
+    status: remoteConfigured("DEMUCS") ? "configured" : "unavailable",
+    license: "Model-specific",
+    priority: 95,
+    notes: "Requires DEMUCS_API_URL; preferred separation provider and returns stems copied into private analysis storage.",
+  },
+  {
     id: "SHEETSAGE",
     name: "SheetSage",
     provider: "Research model",
@@ -361,11 +375,14 @@ export const MUSIC_PROVIDERS: MusicProviderDescriptor[] = [
 
 export function providerDescriptorCatalog(): ProviderDescriptorCatalogEntry[] {
   return MUSIC_PROVIDERS.map((provider) => {
-    const localReady =
-      provider.execution === "local" && provider.status === "ready";
-    const configured = localReady || provider.status === "configured";
+    const status = ["BASIC_PITCH", "DEMUCS"].includes(provider.id)
+      ? remoteConfigured(provider.id) ? "configured" : "unavailable"
+      : provider.status;
+    const localReady = provider.execution === "local" && status === "ready";
+    const configured = localReady || status === "configured";
     return {
       ...provider,
+      status,
       configured,
       checkpointReady: localReady,
       runtimeReady: localReady,
@@ -384,8 +401,85 @@ export function providerDescriptorCatalog(): ProviderDescriptorCatalogEntry[] {
   });
 }
 
+async function verifyAnalysisProviderHealth(
+  provider: ProviderDescriptorCatalogEntry,
+): Promise<ProviderDescriptorCatalogEntry> {
+  if (
+    !provider.configured ||
+    !["BASIC_PITCH", "DEMUCS"].includes(provider.id)
+  ) {
+    return provider;
+  }
+  const endpoint = process.env[`${provider.id}_API_URL`];
+  if (!endpoint) return provider;
+  const checkedAt = new Date().toISOString();
+  const startedAt = Date.now();
+  try {
+    const healthUrl = new URL("/health", endpoint);
+    healthUrl.searchParams.set("provider", provider.id);
+    const analysisToken = process.env[`${provider.id}_API_TOKEN`] ??
+      process.env.MUSIC_AI_WORKER_TOKEN;
+    const response = await fetch(healthUrl, {
+      headers: analysisToken
+        ? { Authorization: `Bearer ${analysisToken}` }
+        : undefined,
+      signal: AbortSignal.timeout(providerHealthTimeoutMs()),
+    });
+    if (!response.ok) throw new Error(`health check returned HTTP ${response.status}`);
+    const payload = await response.json() as unknown;
+    if (!isRecord(payload)) throw new Error("health response must be a JSON object");
+    const runtimeReady = payload["runtimeReady"] === true;
+    const checkpointReady = payload["checkpointReady"] === true;
+    const reportedVersion = typeof payload["modelVersion"] === "string" &&
+      payload["modelVersion"].trim()
+      ? payload["modelVersion"].trim()
+      : null;
+    let ready = false;
+    try {
+      attestAnalysisProviderHealth(provider.id, payload);
+      ready = true;
+    } catch {
+      // The descriptor remains configured until the full attestation passes.
+    }
+    const message = ready
+      ? "Checkpoint, runtime, checksum, and smoke test are verified."
+      : "Configured analysis worker health response did not satisfy the readiness contract.";
+    return {
+      ...provider,
+      status: ready ? "ready" : "configured",
+      checkpointReady,
+      runtimeReady,
+      reportedVersion,
+      lastHealth: {
+        status: ready ? "healthy" : "unhealthy",
+        checkedAt,
+        latencyMs: Math.max(0, Date.now() - startedAt),
+        message,
+      },
+    };
+  } catch (error) {
+    return {
+      ...provider,
+      status: "configured",
+      checkpointReady: false,
+      runtimeReady: false,
+      reportedVersion: null,
+      lastHealth: {
+        status: "unhealthy",
+        checkedAt,
+        latencyMs: Math.max(0, Date.now() - startedAt),
+        message: error instanceof Error
+          ? `Provider health check failed: ${error.message}`
+          : "Provider health check failed.",
+      },
+    };
+  }
+}
+
 export async function verifiedProviderDescriptorCatalog() {
-  const descriptors = providerDescriptorCatalog();
+  const descriptors = await Promise.all(
+    providerDescriptorCatalog().map(verifyAnalysisProviderHealth),
+  );
   const generationRegistry = await verifyProviderRegistry();
   const byId = new Map(descriptors.map((provider) => [provider.id, provider]));
   for (const generationProvider of generationRegistry) {

@@ -1,4 +1,4 @@
-modules = ["nodejs-24", "python-base-3.13", "postgresql-16"]
+modules = ["nodejs-24", "postgresql-16", "python-3.11"]
 
 [deployment]
 router = "application"
@@ -11,6 +11,27 @@ env = { "CI" = "true" }
 [workflows]
 runButton = "Project"
 
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Music AI Worker"
+
+[[workflows.workflow]]
+name = "Music AI Worker"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "uv run python services/music-ai-worker/smoke_test.py && uv run uvicorn app:app --app-dir services/music-ai-worker --host 0.0.0.0 --port 8008"
+waitForPort = 8008
+
+[workflows.workflow.metadata]
+outputType = "console"
+
 [agent]
 stack = "PNPM_WORKSPACE"
 expertMode = true
@@ -21,3 +42,10 @@ timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
+packages = ["ffmpeg-full", "libgccjit", "libsndfile", "libxcrypt", "oneDNN", "pkg-config", "portmidi", "re2", "xsimd"]
+
+[userenv]
+
+[userenv.development]
+BASIC_PITCH_API_URL = "http://127.0.0.1:8008"
+DEMUCS_API_URL = "http://127.0.0.1:8008"

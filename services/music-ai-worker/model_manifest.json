@@ -1,0 +1,17 @@
+{
+  "basic_pitch": {
+    "package": "basic-pitch",
+    "version": "0.4.0",
+    "checkpoint": "saved_models/icassp_2022/nmp.onnx",
+    "onnx_sha256": "2c3c1d144bfa61ad236e92e169c13535c880469a12a047d4e73451f2c059a0ec"
+  },
+  "demucs": {
+    "package": "demucs",
+    "version": "4.0.1",
+    "checkpoint": "htdemucs",
+    "checkpoint_file": "955717e8-8726e21a.th",
+    "checkpoint_sha256": "8726e21a993978c7ba086d3872e7608d7d5bfca646ca4aca459ffda844faa8b4"
+  },
+  "pedalboard": {"package": "pedalboard", "version": "0.9.24"},
+  "readiness_key": "basic-pitch-0.4.0-2c3c1d144bfa61ad236e92e169c13535c880469a12a047d4e73451f2c059a0ec-demucs-4.0.1-pedalboard-0.9.24"
+}

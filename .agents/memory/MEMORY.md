@@ -9,3 +9,4 @@
 - [Browser audio transport identity](browser-audio-transport-identity.md) — keep one media lifecycle and bind playback to an explicit source identity shared with timeline data.
 - [Private artifact publication](private-artifact-publication.md) — durable private outputs must coordinate publication with project deletion and keep storage identities cleanup-compatible.
 - [Project deletion storage fencing](project-deletion-storage-fencing.md) — private object writes must share a project fence with deletion; signed URL expiry is not terminal proof.
+- [Python music runtime compatibility](python-music-runtime-compatibility.md) — Basic Pitch, Demucs, and Pedalboard need specific Python/Nix compatibility pins before smoke inference succeeds.

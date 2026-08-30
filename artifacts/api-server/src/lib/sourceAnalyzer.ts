@@ -22,6 +22,7 @@ import {
 import {
   fuseCanonicalNotes,
   runAnalysisProviders,
+  configuredAnalysisProviderEndpoint,
   type SeparationAnalysisResult,
 } from "./analysisProviders";
 import { fuseProviderSongModels } from "./songModelValidation";
@@ -354,44 +355,44 @@ function detectEnergyEvidence(
 }
 async function providerStemData(
   stem: SeparationAnalysisResult["stems"][number],
+  providerId: SeparationAnalysisResult["providerId"],
 ): Promise<Buffer> {
   const maxBytes = 512 * 1024 * 1024;
   if (stem.contentBase64) {
     const normalized = stem.contentBase64.replace(/^data:[^;]+;base64,/, "");
     if (!normalized || !/^[a-zA-Z0-9+/]*={0,2}$/.test(normalized)) {
-      throw new Error(`BS_ROFORMER returned invalid base64 for ${stem.role}`);
+      throw new Error(`${providerId} returned invalid base64 for ${stem.role}`);
     }
     if (normalized.length * 0.75 > maxBytes) {
-      throw new Error(`BS_ROFORMER ${stem.role} stem is too large`);
+      throw new Error(`${providerId} ${stem.role} stem is too large`);
     }
     const data = Buffer.from(normalized, "base64");
-    if (!data.length) throw new Error(`BS_ROFORMER returned an empty ${stem.role} stem`);
+    if (!data.length) throw new Error(`${providerId} returned an empty ${stem.role} stem`);
     return data;
   }
   if (!stem.downloadUrl) {
-    throw new Error(`BS_ROFORMER did not provide audio for ${stem.role}`);
+    throw new Error(`${providerId} did not provide audio for ${stem.role}`);
   }
   const response = await fetch(stem.downloadUrl, {
     signal: AbortSignal.timeout(10 * 60_000),
     redirect: "error",
   });
   if (!response.ok) {
-    throw new Error(`BS_ROFORMER ${stem.role} download returned HTTP ${response.status}`);
+    throw new Error(`${providerId} ${stem.role} download returned HTTP ${response.status}`);
   }
-  const providerEndpoint = process.env.BS_ROFORMER_API_URL ??
-    process.env.BS_ROFORMER_SW_API_URL;
+  const providerEndpoint = configuredAnalysisProviderEndpoint(providerId);
   if (
     !providerEndpoint ||
     new URL(response.url).origin !== new URL(providerEndpoint).origin
   ) {
-    throw new Error(`BS_ROFORMER ${stem.role} download left the provider origin`);
+    throw new Error(`${providerId} ${stem.role} download left the provider origin`);
   }
   const length = Number(response.headers.get("content-length") || 0);
   if (length > maxBytes) {
-    throw new Error(`BS_ROFORMER ${stem.role} stem is too large`);
+    throw new Error(`${providerId} ${stem.role} stem is too large`);
   }
   if (!response.body) {
-    throw new Error(`BS_ROFORMER returned an empty ${stem.role} response`);
+    throw new Error(`${providerId} returned an empty ${stem.role} response`);
   }
   const reader = response.body.getReader();
   const chunks: Buffer[] = [];
@@ -402,12 +403,12 @@ async function providerStemData(
     total += value.byteLength;
     if (total > maxBytes) {
       await reader.cancel();
-      throw new Error(`BS_ROFORMER ${stem.role} stem is too large`);
+      throw new Error(`${providerId} ${stem.role} stem is too large`);
     }
     chunks.push(Buffer.from(value));
   }
   const data = Buffer.concat(chunks, total);
-  if (!data.length) throw new Error(`BS_ROFORMER returned an empty ${stem.role} stem`);
+  if (!data.length) throw new Error(`${providerId} returned an empty ${stem.role} stem`);
   return data;
 }
 
@@ -415,6 +416,7 @@ async function validateStemAudio(
   data: Buffer,
   path: string,
   role: string,
+  providerId: SeparationAnalysisResult["providerId"],
   sourceDurationSeconds: number,
 ): Promise<void> {
   await writeFile(path, data);
@@ -436,7 +438,7 @@ async function validateStemAudio(
     duration < minimumDuration ||
     duration > maximumDuration
   ) {
-    throw new Error(`BS_ROFORMER ${role} stem failed audio validation`);
+    throw new Error(`${providerId} ${role} stem failed audio validation`);
   }
 }
 
@@ -448,11 +450,12 @@ async function persistSeparationStems(
   sourceDurationSeconds: number,
 ): Promise<SongModelData["sourceStems"]> {
   return Promise.all(result.stems.map(async (stem) => {
-    const data = await providerStemData(stem);
+    const data = await providerStemData(stem, result.providerId);
     await validateStemAudio(
       data,
       join(directory, `verified-${stem.role}.${stem.extension}`),
       stem.role,
+      result.providerId,
       sourceDurationSeconds,
     );
     const objectPath = await withProjectStorageWrite(
@@ -675,6 +678,7 @@ async function analyzeProjectSourceBeforeTask1(sourceId: string): Promise<void> 
       ? [
           "ALL_IN_ONE_API_URL",
           "MT3_API_URL",
+           "DEMUCS_API_URL",
           "BS_ROFORMER_API_URL",
           "SHEET_SAGE_API_URL",
         ]
@@ -1158,6 +1162,7 @@ export async function analyzeProjectSource(
     const needsProviderSource = !midi && [
       "BS_ROFORMER",
       "BS_ROFORMER_SW",
+      "DEMUCS",
       "ALL_IN_ONE",
       "BASIC_PITCH",
       "MT3",
@@ -1587,7 +1592,8 @@ export async function analyzeProjectSource(
           },
         }] : []),
         ...sourceStems
-          .filter((stem) => stem.provider === "BS_ROFORMER")
+          .filter((stem) =>
+            stem.provider === "BS_ROFORMER" || stem.provider === "DEMUCS")
           .map((stem) => ({
             id: randomUUID(),
             projectId: source.projectId,

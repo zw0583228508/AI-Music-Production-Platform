@@ -1187,6 +1187,7 @@ export type AnalysisInputProvider = typeof AnalysisInputProvider[keyof typeof An
 
 export const AnalysisInputProvider = {
   BS_ROFORMER: 'BS_ROFORMER',
+  DEMUCS: 'DEMUCS',
   ALL_IN_ONE: 'ALL_IN_ONE',
   MT3: 'MT3',
   BASIC_PITCH: 'BASIC_PITCH',

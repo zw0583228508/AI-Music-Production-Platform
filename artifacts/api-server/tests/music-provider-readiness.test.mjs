@@ -44,6 +44,7 @@ after(async () => {
   delete process.env.MUSIC_PROVIDER_METEOR_URL;
   delete process.env.MUSIC_PROVIDER_METEOR_HEALTH_URL;
   delete process.env.MUSIC_PROVIDER_HEALTH_TIMEOUT_MS;
+  delete process.env.DEMUCS_API_URL;
   await unlink(harnessPath).catch(() => undefined);
 });
 
@@ -161,4 +162,51 @@ test("reports an unconfigured provider as unavailable without probing", async ()
   assert.equal(catalogEntry.configured, false);
   assert.equal(catalogEntry.lastHealth.status, "unknown");
   assert.equal(catalogEntry.lastHealth.checkedAt, null);
+});
+
+test("does not claim DEMUCS readiness without every verified health signal", async () => {
+  const server = createServer((request, response) => {
+    assert.equal(request.url, "/health?provider=DEMUCS");
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({
+      provider: "DEMUCS",
+      status: "healthy",
+      checkpointReady: true,
+      runtimeReady: true,
+      modelVersion: "4.0.1",
+      checksum: "8726e21a993978c7ba086d3872e7608d7d5bfca646ca4aca459ffda844faa8b4",
+      smokeTested: true,
+    }));
+  });
+  await listen(server);
+  const address = server.address();
+  process.env.DEMUCS_API_URL = `http://127.0.0.1:${address.port}/separate`;
+  try {
+    const ready = (await verifiedProviderDescriptorCatalog()).find(
+      (provider) => provider.id === "DEMUCS",
+    );
+    assert.equal(ready?.status, "ready");
+    assert.equal(ready?.lastHealth.status, "healthy");
+
+    server.removeAllListeners("request");
+    server.on("request", (_request, response) => {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({
+        provider: "DEMUCS",
+        status: "healthy",
+        checkpointReady: true,
+        runtimeReady: true,
+        modelVersion: "demucs-v4",
+        smokeTested: true,
+      }));
+    });
+    const incomplete = (await verifiedProviderDescriptorCatalog()).find(
+      (provider) => provider.id === "DEMUCS",
+    );
+    assert.equal(incomplete?.status, "configured");
+    assert.equal(incomplete?.lastHealth.status, "unhealthy");
+  } finally {
+    delete process.env.DEMUCS_API_URL;
+    await new Promise((resolve) => server.close(resolve));
+  }
 });

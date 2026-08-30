@@ -1515,7 +1515,7 @@ components:
       properties:
         provider:
           type: string
-          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, SHEETSAGE, CHROMA, BASS, FUSION]
+          enum: [BS_ROFORMER, DEMUCS, ALL_IN_ONE, MT3, BASIC_PITCH, SHEETSAGE, CHROMA, BASS, FUSION]
         refresh:
           type: boolean
     Analysis:

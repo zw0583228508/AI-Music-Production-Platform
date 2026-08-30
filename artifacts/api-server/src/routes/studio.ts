@@ -1913,6 +1913,7 @@ router.get("/projects/:projectId/analysis-jobs", async (req, res): Promise<void>
 });
 
 router.get("/providers", async (_req, res): Promise<void> => {
+  res.setHeader("Cache-Control", "no-store");
   res.json(ListMusicProvidersResponse.parse(
     await verifiedProviderDescriptorCatalog(),
   ));
@@ -2401,6 +2402,7 @@ router.post(
 );
 
 router.get("/music-providers", async (_req, res): Promise<void> => {
+  res.setHeader("Cache-Control", "no-store");
   res.json(ListGenerationProvidersResponse.parse(await listProviderCatalog()));
 });
 

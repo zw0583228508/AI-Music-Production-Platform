@@ -1,4 +1,5 @@
 import type { AnalysisSection, SongModelData } from "@workspace/db";
+import { attestAnalysisProviderHealth } from "./analysisProviderManifest";
 
 type ProviderProvenance = SongModelData["providerProvenance"][number];
 type MelodyNote = SongModelData["melody"][number];
@@ -10,6 +11,7 @@ type MeterEvent = SongModelData["meterMap"][number];
 
 export type AnalysisProviderId =
   | "BS_ROFORMER"
+  | "DEMUCS"
   | "ALL_IN_ONE"
   | "BASIC_PITCH"
   | "MT3"
@@ -27,7 +29,7 @@ export type ProviderStem = {
 };
 
 export type SeparationAnalysisResult = {
-  providerId: "BS_ROFORMER";
+  providerId: "BS_ROFORMER" | "DEMUCS";
   version: string;
   stems: ProviderStem[];
   confidence: number;
@@ -105,8 +107,13 @@ class ProviderRequestError extends Error {
 
 const MAX_PROVIDER_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 250;
+const ANALYSIS_HEALTH_TTL_MS = 30_000;
+const analysisHealthCache = new Map<string, {
+  expiresAt: number;
+  error: ProviderRequestError | null;
+}>();
 
-const configuredEndpoint = (providerId: AnalysisProviderId): string | null => {
+export const configuredAnalysisProviderEndpoint = (providerId: AnalysisProviderId): string | null => {
   const aliases = providerId === "BS_ROFORMER"
     ? ["BS_ROFORMER_API_URL", "BS_ROFORMER_SW_API_URL"]
     : providerId === "SHEETSAGE"
@@ -124,7 +131,10 @@ const providerToken = (providerId: AnalysisProviderId): string | undefined => {
   if (providerId === "SHEETSAGE") {
     return process.env.SHEETSAGE_API_TOKEN ?? process.env.SHEET_SAGE_API_TOKEN;
   }
-  return process.env[`${providerId}_API_TOKEN`];
+  return process.env[`${providerId}_API_TOKEN`] ??
+    (["BASIC_PITCH", "DEMUCS"].includes(providerId)
+      ? process.env.MUSIC_AI_WORKER_TOKEN
+      : undefined);
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -155,7 +165,9 @@ function providerVersion(payload: Record<string, unknown>, providerId: string): 
 }
 
 function providerAction(providerId: AnalysisProviderId): string {
-  return providerId === "BS_ROFORMER" ? "separate" : "analyze";
+  return providerId === "BS_ROFORMER" || providerId === "DEMUCS"
+    ? "separate"
+    : "analyze";
 }
 
 function providerRequestUrl(endpoint: string, action: string): URL {
@@ -288,11 +300,53 @@ async function pollProviderJob(
   );
 }
 
+async function attestProviderHealth(
+  providerId: AnalysisProviderId,
+  endpoint: string,
+  token: string | undefined,
+): Promise<void> {
+  const cacheKey = `${providerId}:${endpoint}`;
+  const cached = analysisHealthCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    if (cached.error) throw cached.error;
+    return;
+  }
+  try {
+    const healthUrl = new URL("/health", endpoint);
+    healthUrl.searchParams.set("provider", providerId);
+    const response = await fetch(healthUrl, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) throw new Error(`health check returned HTTP ${response.status}`);
+    const payload = await readProviderJson(providerId, response);
+    attestAnalysisProviderHealth(providerId, payload);
+    analysisHealthCache.set(cacheKey, {
+      expiresAt: Date.now() + ANALYSIS_HEALTH_TTL_MS,
+      error: null,
+    });
+  } catch (error) {
+    const attestationError = new ProviderRequestError(
+      `${providerId} health attestation failed: ${
+        error instanceof Error ? error.message : "unknown error"
+      }`,
+      "health-attestation-failed",
+      false,
+      0,
+    );
+    analysisHealthCache.set(cacheKey, {
+      expiresAt: Date.now() + ANALYSIS_HEALTH_TTL_MS,
+      error: attestationError,
+    });
+    throw attestationError;
+  }
+}
+
 async function requestProvider(
   providerId: AnalysisProviderId,
   input: AnalysisProviderInput,
 ): Promise<{ payload: unknown; attempts: number }> {
-  const endpoint = configuredEndpoint(providerId);
+  const endpoint = configuredAnalysisProviderEndpoint(providerId);
   if (!endpoint) {
     throw new ProviderRequestError(
       `${providerId} is not configured`,
@@ -311,6 +365,7 @@ async function requestProvider(
   }
 
   const token = providerToken(providerId);
+  await attestProviderHealth(providerId, endpoint, token);
   let lastError: ProviderRequestError | null = null;
   for (let attempt = 1; attempt <= MAX_PROVIDER_ATTEMPTS; attempt += 1) {
     try {
@@ -423,7 +478,7 @@ function normalizeStemRole(value: string): string {
   };
   const normalized = aliases[role] ?? role;
   if (!/^[a-z0-9_]{1,64}$/.test(normalized)) {
-    throw new Error("BS_ROFORMER returned an invalid stem role");
+    throw new Error("Separation provider returned an invalid stem role");
   }
   return normalized;
 }
@@ -443,10 +498,11 @@ function parseStem(
   value: unknown,
   index: number,
   allowedOrigin: string,
+  providerId: string,
   fallbackRole?: string,
 ): ProviderStem {
   if (!isRecord(value)) {
-    throw new Error(`BS_ROFORMER stem ${index + 1} must be an object`);
+    throw new Error(`${providerId} stem ${index + 1} must be an object`);
   }
   const rawRole = value["role"] ?? value["name"] ?? fallbackRole;
   const rawConfidence = value["confidence"];
@@ -461,7 +517,7 @@ function parseStem(
     !contentType.startsWith("audio/") ||
     (typeof contentBase64 !== "string" && typeof downloadUrl !== "string")
   ) {
-    throw new Error(`BS_ROFORMER stem ${index + 1} is invalid`);
+    throw new Error(`${providerId} stem ${index + 1} is invalid`);
   }
   if (typeof downloadUrl === "string") {
     const artifactUrl = new URL(downloadUrl);
@@ -470,7 +526,7 @@ function parseStem(
       artifactUrl.origin !== allowedOrigin
     ) {
       throw new Error(
-        `BS_ROFORMER stem ${index + 1} must use the configured provider origin`,
+        `${providerId} stem ${index + 1} must use the configured provider origin`,
       );
     }
   }
@@ -486,38 +542,43 @@ function parseStem(
   };
 }
 
-export function parseSeparation(payload: unknown): SeparationAnalysisResult {
-  if (!isRecord(payload)) throw new Error("BS_ROFORMER response must be an object");
-  const endpoint = configuredEndpoint("BS_ROFORMER");
-  if (!endpoint) throw new Error("BS_ROFORMER is not configured");
+export function parseSeparation(
+  providerId: SeparationAnalysisResult["providerId"],
+  payload: unknown,
+): SeparationAnalysisResult {
+  if (!isRecord(payload)) throw new Error(`${providerId} response must be an object`);
+  const endpoint = configuredAnalysisProviderEndpoint(providerId);
+  if (!endpoint) throw new Error(`${providerId} is not configured`);
   const allowedOrigin = new URL(endpoint).origin;
   const rawStems = payload["stems"];
   const stems = Array.isArray(rawStems)
-    ? rawStems.map((value, index) => parseStem(value, index, allowedOrigin))
+    ? rawStems.map((value, index) =>
+        parseStem(value, index, allowedOrigin, providerId))
     : isRecord(rawStems)
       ? Object.entries(rawStems).map(([role, value], index) =>
           parseStem(
             isRecord(value) ? value : { data: value, confidence: payload["confidence"] },
             index,
             allowedOrigin,
+            providerId,
             role,
           ))
       : [];
   if (stems.length < 2) {
-    throw new Error("BS_ROFORMER must return at least two stems");
+    throw new Error(`${providerId} must return at least two stems`);
   }
   const roles = stems.map((stem) => stem.role);
   if (new Set(roles).size !== roles.length) {
-    throw new Error("BS_ROFORMER returned duplicate stem roles");
+    throw new Error(`${providerId} returned duplicate stem roles`);
   }
   if (!roles.includes("lead_vocal") && !roles.includes("instrumental")) {
-    throw new Error("BS_ROFORMER did not return a vocal or instrumental stem");
+    throw new Error(`${providerId} did not return a vocal or instrumental stem`);
   }
   return {
-    providerId: "BS_ROFORMER",
-    version: providerVersion(payload, "BS_ROFORMER"),
+    providerId,
+    version: providerVersion(payload, providerId),
     stems,
-    confidence: confidence(payload["confidence"], "BS_ROFORMER confidence"),
+    confidence: confidence(payload["confidence"], `${providerId} confidence`),
   };
 }
 
@@ -1117,7 +1178,7 @@ function unavailableProvenance(
   capability: string,
   input: AnalysisProviderInput,
 ): ProviderProvenance | null {
-  const endpoint = configuredEndpoint(providerId);
+  const endpoint = configuredAnalysisProviderEndpoint(providerId);
   if (endpoint && input.sourceUrl) return null;
   return {
     capability,
@@ -1205,9 +1266,17 @@ export async function runAnalysisProviders(
   };
 
   if (wantsSeparation) {
-    schedule("BS_ROFORMER", "separation", parseSeparation, (result) => {
-      separation = result;
-    });
+    const separationProvider = configuredAnalysisProviderEndpoint("DEMUCS")
+      ? "DEMUCS"
+      : "BS_ROFORMER";
+    schedule(
+      separationProvider,
+      "separation",
+      (payload) => parseSeparation(separationProvider, payload),
+      (result) => {
+        separation = result;
+      },
+    );
   }
   if (isFullMix) {
     schedule(

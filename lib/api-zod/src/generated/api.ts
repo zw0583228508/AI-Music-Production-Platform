@@ -520,7 +520,7 @@ export const AnalyzeProjectParams = zod.object({
 })
 
 export const AnalyzeProjectBody = zod.object({
-  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'SHEETSAGE', 'CHROMA', 'BASS', 'FUSION']).optional(),
+  "provider": zod.enum(['BS_ROFORMER', 'DEMUCS', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'SHEETSAGE', 'CHROMA', 'BASS', 'FUSION']).optional(),
   "refresh": zod.boolean().optional()
 })
 
