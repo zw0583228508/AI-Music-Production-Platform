@@ -181,7 +181,7 @@ function masterAudio(source: Float32Array, profile: string): Float32Array {
   return mastered;
 }
 
-function encodeWav(samples: Float32Array): Buffer {
+export function encodeWav(samples: Float32Array): Buffer {
   const bytesPerSample = 2;
   const dataSize = samples.length * bytesPerSample;
   const buffer = Buffer.alloc(44 + dataSize);
@@ -297,7 +297,7 @@ function createMidi(
   return Buffer.concat([header, ...chunks]);
 }
 
-function createPerformanceMidi(
+export function createPerformanceMidi(
   trackModels: TrackModel[],
   bpm: number,
   meter: string,

@@ -229,6 +229,9 @@ export const getProjectResponseArrangementsItemSectionsItemMidiTracksCcItemMax =
 export const getProjectResponseArrangementsItemSectionsItemTransposeSemitonesMin = -24;
 export const getProjectResponseArrangementsItemSectionsItemTransposeSemitonesMax = 24;
 
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationQualityReportOneScoreMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
+
 
 
 export const GetProjectResponse = zod.object({
@@ -339,7 +342,30 @@ export const GetProjectResponse = zod.object({
   "songModelVersion": zod.number().nullish(),
   "seed": zod.number(),
   "parameters": zod.record(zod.string(), zod.unknown()),
-  "parentArtifactIds": zod.array(zod.string())
+  "parentArtifactIds": zod.array(zod.string()),
+  "evaluation": zod.object({
+  "status": zod.enum(['plan_received', 'rendering', 'render_succeeded', 'analyzing', 'evaluated', 'render_failed', 'analysis_failed']),
+  "providerScore": zod.number(),
+  "renderArtifactIds": zod.array(zod.string()),
+  "artifacts": zod.array(zod.object({
+  "id": zod.string(),
+  "type": zod.enum(['AUDIO_TRACK', 'MIDI', 'QUALITY_REPORT']),
+  "label": zod.string(),
+  "url": zod.string()
+})),
+  "qualityReport": zod.union([zod.object({
+  "score": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationQualityReportOneScoreMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationQualityReportOneScoreMax),
+  "checks": zod.record(zod.string(), zod.number()),
+  "weights": zod.record(zod.string(), zod.number()),
+  "strengths": zod.array(zod.string()),
+  "weaknesses": zod.array(zod.string()),
+  "warnings": zod.array(zod.string()),
+  "evaluatedAt": zod.string(),
+  "renderArtifactIds": zod.array(zod.string()),
+  "lineageComplete": zod.boolean()
+}),zod.null()]),
+  "error": zod.string().nullable()
+})
 }),zod.null()]).optional(),
   "createdAt": zod.string()
 })),
@@ -1298,6 +1324,9 @@ export const listArrangementsResponseSectionsItemMidiTracksCcItemMax = 127;
 export const listArrangementsResponseSectionsItemTransposeSemitonesMin = -24;
 export const listArrangementsResponseSectionsItemTransposeSemitonesMax = 24;
 
+export const listArrangementsResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
+
 
 
 export const ListArrangementsResponseItem = zod.object({
@@ -1382,7 +1411,30 @@ export const ListArrangementsResponseItem = zod.object({
   "songModelVersion": zod.number().nullish(),
   "seed": zod.number(),
   "parameters": zod.record(zod.string(), zod.unknown()),
-  "parentArtifactIds": zod.array(zod.string())
+  "parentArtifactIds": zod.array(zod.string()),
+  "evaluation": zod.object({
+  "status": zod.enum(['plan_received', 'rendering', 'render_succeeded', 'analyzing', 'evaluated', 'render_failed', 'analysis_failed']),
+  "providerScore": zod.number(),
+  "renderArtifactIds": zod.array(zod.string()),
+  "artifacts": zod.array(zod.object({
+  "id": zod.string(),
+  "type": zod.enum(['AUDIO_TRACK', 'MIDI', 'QUALITY_REPORT']),
+  "label": zod.string(),
+  "url": zod.string()
+})),
+  "qualityReport": zod.union([zod.object({
+  "score": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax),
+  "checks": zod.record(zod.string(), zod.number()),
+  "weights": zod.record(zod.string(), zod.number()),
+  "strengths": zod.array(zod.string()),
+  "weaknesses": zod.array(zod.string()),
+  "warnings": zod.array(zod.string()),
+  "evaluatedAt": zod.string(),
+  "renderArtifactIds": zod.array(zod.string()),
+  "lineageComplete": zod.boolean()
+}),zod.null()]),
+  "error": zod.string().nullable()
+})
 }),zod.null()]).optional(),
   "createdAt": zod.string()
 })
@@ -1440,6 +1492,9 @@ export const createArrangementResponseSectionsItemMidiTracksCcItemMax = 127;
 
 export const createArrangementResponseSectionsItemTransposeSemitonesMin = -24;
 export const createArrangementResponseSectionsItemTransposeSemitonesMax = 24;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
 
 
 
@@ -1525,7 +1580,30 @@ export const CreateArrangementResponse = zod.object({
   "songModelVersion": zod.number().nullish(),
   "seed": zod.number(),
   "parameters": zod.record(zod.string(), zod.unknown()),
-  "parentArtifactIds": zod.array(zod.string())
+  "parentArtifactIds": zod.array(zod.string()),
+  "evaluation": zod.object({
+  "status": zod.enum(['plan_received', 'rendering', 'render_succeeded', 'analyzing', 'evaluated', 'render_failed', 'analysis_failed']),
+  "providerScore": zod.number(),
+  "renderArtifactIds": zod.array(zod.string()),
+  "artifacts": zod.array(zod.object({
+  "id": zod.string(),
+  "type": zod.enum(['AUDIO_TRACK', 'MIDI', 'QUALITY_REPORT']),
+  "label": zod.string(),
+  "url": zod.string()
+})),
+  "qualityReport": zod.union([zod.object({
+  "score": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin).max(createArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax),
+  "checks": zod.record(zod.string(), zod.number()),
+  "weights": zod.record(zod.string(), zod.number()),
+  "strengths": zod.array(zod.string()),
+  "weaknesses": zod.array(zod.string()),
+  "warnings": zod.array(zod.string()),
+  "evaluatedAt": zod.string(),
+  "renderArtifactIds": zod.array(zod.string()),
+  "lineageComplete": zod.boolean()
+}),zod.null()]),
+  "error": zod.string().nullable()
+})
 }),zod.null()]).optional(),
   "createdAt": zod.string()
 })
@@ -1680,6 +1758,9 @@ export const updateArrangementResponseSectionsItemMidiTracksCcItemMax = 127;
 export const updateArrangementResponseSectionsItemTransposeSemitonesMin = -24;
 export const updateArrangementResponseSectionsItemTransposeSemitonesMax = 24;
 
+export const updateArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
+
 
 
 export const UpdateArrangementResponse = zod.object({
@@ -1764,7 +1845,30 @@ export const UpdateArrangementResponse = zod.object({
   "songModelVersion": zod.number().nullish(),
   "seed": zod.number(),
   "parameters": zod.record(zod.string(), zod.unknown()),
-  "parentArtifactIds": zod.array(zod.string())
+  "parentArtifactIds": zod.array(zod.string()),
+  "evaluation": zod.object({
+  "status": zod.enum(['plan_received', 'rendering', 'render_succeeded', 'analyzing', 'evaluated', 'render_failed', 'analysis_failed']),
+  "providerScore": zod.number(),
+  "renderArtifactIds": zod.array(zod.string()),
+  "artifacts": zod.array(zod.object({
+  "id": zod.string(),
+  "type": zod.enum(['AUDIO_TRACK', 'MIDI', 'QUALITY_REPORT']),
+  "label": zod.string(),
+  "url": zod.string()
+})),
+  "qualityReport": zod.union([zod.object({
+  "score": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax),
+  "checks": zod.record(zod.string(), zod.number()),
+  "weights": zod.record(zod.string(), zod.number()),
+  "strengths": zod.array(zod.string()),
+  "weaknesses": zod.array(zod.string()),
+  "warnings": zod.array(zod.string()),
+  "evaluatedAt": zod.string(),
+  "renderArtifactIds": zod.array(zod.string()),
+  "lineageComplete": zod.boolean()
+}),zod.null()]),
+  "error": zod.string().nullable()
+})
 }),zod.null()]).optional(),
   "createdAt": zod.string()
 })
@@ -1938,6 +2042,9 @@ export const restoreArrangementRevisionResponseSectionsItemMidiTracksCcItemMax =
 export const restoreArrangementRevisionResponseSectionsItemTransposeSemitonesMin = -24;
 export const restoreArrangementRevisionResponseSectionsItemTransposeSemitonesMax = 24;
 
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
+
 
 
 export const RestoreArrangementRevisionResponse = zod.object({
@@ -2022,7 +2129,30 @@ export const RestoreArrangementRevisionResponse = zod.object({
   "songModelVersion": zod.number().nullish(),
   "seed": zod.number(),
   "parameters": zod.record(zod.string(), zod.unknown()),
-  "parentArtifactIds": zod.array(zod.string())
+  "parentArtifactIds": zod.array(zod.string()),
+  "evaluation": zod.object({
+  "status": zod.enum(['plan_received', 'rendering', 'render_succeeded', 'analyzing', 'evaluated', 'render_failed', 'analysis_failed']),
+  "providerScore": zod.number(),
+  "renderArtifactIds": zod.array(zod.string()),
+  "artifacts": zod.array(zod.object({
+  "id": zod.string(),
+  "type": zod.enum(['AUDIO_TRACK', 'MIDI', 'QUALITY_REPORT']),
+  "label": zod.string(),
+  "url": zod.string()
+})),
+  "qualityReport": zod.union([zod.object({
+  "score": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax),
+  "checks": zod.record(zod.string(), zod.number()),
+  "weights": zod.record(zod.string(), zod.number()),
+  "strengths": zod.array(zod.string()),
+  "weaknesses": zod.array(zod.string()),
+  "warnings": zod.array(zod.string()),
+  "evaluatedAt": zod.string(),
+  "renderArtifactIds": zod.array(zod.string()),
+  "lineageComplete": zod.boolean()
+}),zod.null()]),
+  "error": zod.string().nullable()
+})
 }),zod.null()]).optional(),
   "createdAt": zod.string()
 })
@@ -2305,6 +2435,9 @@ export const listGenerationCandidatesResponsePlanSectionsItemMidiTracksCcItemMax
 export const listGenerationCandidatesResponsePlanSectionsItemTransposeSemitonesMin = -24;
 export const listGenerationCandidatesResponsePlanSectionsItemTransposeSemitonesMax = 24;
 
+export const listGenerationCandidatesResponseEvaluationQualityReportOneScoreMin = 0;
+export const listGenerationCandidatesResponseEvaluationQualityReportOneScoreMax = 1;
+
 
 
 export const ListGenerationCandidatesResponseItem = zod.object({
@@ -2315,7 +2448,7 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "reportedModelVersion": zod.string().nullish(),
   "providerRequestId": zod.string().nullish(),
   "seed": zod.number(),
-  "rank": zod.number(),
+  "rank": zod.number().nullable(),
   "label": zod.string(),
   "score": zod.number(),
   "confidence": zod.number(),
@@ -2456,6 +2589,29 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "createdBy": zod.string()
 })
 })).nullable(),
+  "evaluation": zod.object({
+  "status": zod.enum(['plan_received', 'rendering', 'render_succeeded', 'analyzing', 'evaluated', 'render_failed', 'analysis_failed']),
+  "providerScore": zod.number(),
+  "renderArtifactIds": zod.array(zod.string()),
+  "artifacts": zod.array(zod.object({
+  "id": zod.string(),
+  "type": zod.enum(['AUDIO_TRACK', 'MIDI', 'QUALITY_REPORT']),
+  "label": zod.string(),
+  "url": zod.string()
+})),
+  "qualityReport": zod.union([zod.object({
+  "score": zod.number().min(listGenerationCandidatesResponseEvaluationQualityReportOneScoreMin).max(listGenerationCandidatesResponseEvaluationQualityReportOneScoreMax),
+  "checks": zod.record(zod.string(), zod.number()),
+  "weights": zod.record(zod.string(), zod.number()),
+  "strengths": zod.array(zod.string()),
+  "weaknesses": zod.array(zod.string()),
+  "warnings": zod.array(zod.string()),
+  "evaluatedAt": zod.string(),
+  "renderArtifactIds": zod.array(zod.string()),
+  "lineageComplete": zod.boolean()
+}),zod.null()]),
+  "error": zod.string().nullable()
+}),
   "createdAt": zod.string()
 })
 export const ListGenerationCandidatesResponse = zod.array(ListGenerationCandidatesResponseItem)
@@ -2500,6 +2656,9 @@ export const selectGenerationCandidateResponseSectionsItemMidiTracksCcItemMax = 
 
 export const selectGenerationCandidateResponseSectionsItemTransposeSemitonesMin = -24;
 export const selectGenerationCandidateResponseSectionsItemTransposeSemitonesMax = 24;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
 
 
 
@@ -2585,7 +2744,30 @@ export const SelectGenerationCandidateResponse = zod.object({
   "songModelVersion": zod.number().nullish(),
   "seed": zod.number(),
   "parameters": zod.record(zod.string(), zod.unknown()),
-  "parentArtifactIds": zod.array(zod.string())
+  "parentArtifactIds": zod.array(zod.string()),
+  "evaluation": zod.object({
+  "status": zod.enum(['plan_received', 'rendering', 'render_succeeded', 'analyzing', 'evaluated', 'render_failed', 'analysis_failed']),
+  "providerScore": zod.number(),
+  "renderArtifactIds": zod.array(zod.string()),
+  "artifacts": zod.array(zod.object({
+  "id": zod.string(),
+  "type": zod.enum(['AUDIO_TRACK', 'MIDI', 'QUALITY_REPORT']),
+  "label": zod.string(),
+  "url": zod.string()
+})),
+  "qualityReport": zod.union([zod.object({
+  "score": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax),
+  "checks": zod.record(zod.string(), zod.number()),
+  "weights": zod.record(zod.string(), zod.number()),
+  "strengths": zod.array(zod.string()),
+  "weaknesses": zod.array(zod.string()),
+  "warnings": zod.array(zod.string()),
+  "evaluatedAt": zod.string(),
+  "renderArtifactIds": zod.array(zod.string()),
+  "lineageComplete": zod.boolean()
+}),zod.null()]),
+  "error": zod.string().nullable()
+})
 }),zod.null()]).optional(),
   "createdAt": zod.string()
 })

@@ -5,6 +5,7 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { CandidateEvaluation } from './candidateEvaluation';
 import type { GenerationProvenanceParameters } from './generationProvenanceParameters';
 import type { GenerationProvenanceProvider } from './generationProvenanceProvider';
 
@@ -22,4 +23,5 @@ export interface GenerationProvenance {
   seed: number;
   parameters: GenerationProvenanceParameters;
   parentArtifactIds: string[];
+  evaluation: CandidateEvaluation;
 }

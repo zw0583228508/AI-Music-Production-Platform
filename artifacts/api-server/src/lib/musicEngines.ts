@@ -36,7 +36,13 @@ export type RenderedTrack = {
 export type QualityReport = {
   score: number;
   checks: Record<string, number>;
+  weights: Record<string, number>;
+  strengths: string[];
+  weaknesses: string[];
   warnings: string[];
+  evaluatedAt: string;
+  renderArtifactIds: string[];
+  lineageComplete: boolean;
 };
 
 export type RenderPipelineResult = {
@@ -51,6 +57,17 @@ export type RenderPipelineResult = {
 
 const clamp = (value: number, min = 0, max = 1): number =>
   Math.max(min, Math.min(max, value));
+
+export function secondsPerBar(bpm: number, meter = "4/4"): number {
+  const [rawNumerator, rawDenominator] = meter.split("/").map(Number);
+  const numerator = Number.isFinite(rawNumerator) && rawNumerator > 0
+    ? rawNumerator
+    : 4;
+  const denominator = Number.isFinite(rawDenominator) && rawDenominator > 0
+    ? rawDenominator
+    : 4;
+  return 60 / Math.max(40, bpm || 92) * numerator * (4 / denominator);
+}
 
 const round = (value: number, digits = 4): number =>
   Number(value.toFixed(digits));
@@ -280,10 +297,13 @@ export class HarmonyEngine {
     }
     const root = keyRoot(songModel.keyMap[0]?.key || "C");
     const progression = [0, 5, 7, 9];
-    const secondsPerBar = 60 / Math.max(40, songModel.tempoMap[0]?.bpm || 92) * 4;
+    const barSeconds = secondsPerBar(
+      songModel.tempoMap[0]?.bpm || 92,
+      songModel.meterMap[0]?.meter,
+    );
     return plan.sections.flatMap((section, index) => {
-      const sectionStart = (section.startBar - 1) * secondsPerBar;
-      const sectionEnd = section.endBar * secondsPerBar;
+      const sectionStart = (section.startBar - 1) * barSeconds;
+      const sectionEnd = section.endBar * barSeconds;
       const offset = progression[index % progression.length];
       return [{ start: sectionStart, end: sectionEnd, root: root + offset, tones: [root + offset, root + offset + 4, root + offset + 7, root + offset + 11], symbol: `${root + offset}` }];
     });
@@ -299,6 +319,10 @@ export class CompositionEngine {
   }): Array<TrackModel> {
     const bpm = Math.max(40, input.songModel.tempoMap[0]?.bpm || 92);
     const beat = 60 / bpm;
+    const barSeconds = secondsPerBar(
+      bpm,
+      input.songModel.meterMap[0]?.meter,
+    );
     return input.tracks.map((track) => {
       const definition = getInstrumentDefinition(track.instrument || track.name, track.role);
       const notes: MusicalNote[] = [];
@@ -314,8 +338,8 @@ export class CompositionEngine {
         }));
       } else {
         input.plan.sections.forEach((section, sectionIndex) => {
-          const sectionStart = (section.startBar - 1) * beat * 4;
-          const sectionEnd = section.endBar * beat * 4;
+          const sectionStart = (section.startBar - 1) * barSeconds;
+          const sectionEnd = section.endBar * barSeconds;
           const action = section.tracks[track.name] || "main_harmony";
           if (action === "none") return;
           const chord = input.harmony[sectionIndex % Math.max(1, input.harmony.length)];
@@ -362,10 +386,11 @@ export class ModulationEngine {
     section: Pick<ArrangementPlanSection, "section" | "startBar" | "endBar">,
     semitones: number,
     bpm: number,
+    meter = "4/4",
   ): TrackModel[] {
-    const secondsPerBar = 60 / Math.max(40, bpm) * 4;
-    const start = (section.startBar - 1) * secondsPerBar;
-    const end = section.endBar * secondsPerBar;
+    const barSeconds = secondsPerBar(bpm, meter);
+    const start = (section.startBar - 1) * barSeconds;
+    const end = section.endBar * barSeconds;
     return trackModels.map((track) => ({
       ...track,
       notes: track.notes.map((note) => {
@@ -390,13 +415,14 @@ export function applyPlanModulations(
   trackModels: TrackModel[],
   plan: ArrangementPlan,
   bpm: number,
+  meter = "4/4",
 ): TrackModel[] {
   return plan.sections.reduce((tracks, section) => {
     const operation = section.operations.find((item) => item.startsWith("modulate:"));
     if (!operation) return tracks;
     const semitones = Number(operation.slice("modulate:".length));
     return Number.isFinite(semitones) && semitones !== 0
-      ? new ModulationEngine().transpose(tracks, section, semitones, bpm)
+      ? new ModulationEngine().transpose(tracks, section, semitones, bpm, meter)
       : tracks;
   }, trackModels);
 }
@@ -676,19 +702,40 @@ export class MixGraph {
 }
 
 export class QualityEngine {
-  assess(trackModels: TrackModel[], mix: Float32Array, plan: ArrangementPlan): QualityReport {
+  assess(
+    trackModels: TrackModel[],
+    mix: Float32Array,
+    plan: ArrangementPlan,
+    options: {
+      lineageComplete?: boolean;
+      renderArtifactIds?: string[];
+      evaluatedAt?: string;
+      bpm?: number;
+      meter?: string;
+    } = {},
+  ): QualityReport {
     const notes = trackModels.flatMap((track) => track.notes);
     const playable = trackModels.length ? trackModels.reduce((sum, track) => sum + track.notes.filter((note) => note.pitch >= track.instrumentDefinition.playableRange.min && note.pitch <= track.instrumentDefinition.playableRange.max).length, 0) / Math.max(1, notes.length) : 0;
-    const aligned = notes.length ? notes.filter((note) => note.start >= 0 && note.duration > 0 && Math.abs(note.start * 4 - Math.round(note.start * 4)) < 0.2).length / notes.length : 0;
+    const beatsPerSecond = Math.max(40, options.bpm ?? 92) / 60;
+    const aligned = notes.length ? notes.filter((note) => {
+      const sixteenthPosition = note.start * beatsPerSecond * 4;
+      return note.start >= 0 &&
+        note.duration > 0 &&
+        Math.abs(sixteenthPosition - Math.round(sixteenthPosition)) < 0.2;
+    }).length / notes.length : 0;
     const structure = plan.sections.length ? 1 : 0;
     let peak = 0;
     let squared = 0;
     let phaseDifference = 0;
+    let activeFrames = 0;
+    let clippedSamples = 0;
     for (const value of mix) peak = Math.max(peak, Math.abs(value));
     for (let i = 0; i < mix.length; i += 2) {
       squared += mix[i] ** 2 + mix[i + 1] ** 2;
       phaseDifference += Math.abs(mix[i] - mix[i + 1]);
+      if (Math.max(Math.abs(mix[i]), Math.abs(mix[i + 1])) > 0.0005) activeFrames += 1;
     }
+    for (const value of mix) if (Math.abs(value) >= 0.99) clippedSamples += 1;
     const rms = Math.sqrt(squared / Math.max(1, mix.length));
     const pitchClasses = new Set(notes.map((note) => note.pitch % 12));
     const harmonicCompatibility = clamp(1 - Math.max(0, pitchClasses.size - 9) * 0.08);
@@ -713,8 +760,68 @@ export class QualityEngine {
       phase: clamp(1 - phaseDifference / Math.max(1, mix.length / 2)),
       loudness: clamp(rms / 0.12),
     };
-    const score = round(Object.values(checks).reduce((sum, value) => sum + value, 0) / Object.values(checks).length, 3);
-    return { score, checks, warnings: playable < 0.98 ? ["Some notes were constrained to the instrument's playable range."] : [] };
+    const barSeconds = secondsPerBar(options.bpm ?? 92, options.meter);
+    const sectionCoverage = plan.sections.length
+      ? plan.sections.filter((section) => {
+          const sectionStart = Math.max(0, (section.startBar ?? 1) - 1) *
+            barSeconds;
+          const sectionEnd = Math.max(
+            sectionStart,
+            (section.endBar ?? section.startBar ?? 1) * barSeconds,
+          );
+          return notes.some((note) =>
+            note.start < sectionEnd &&
+            note.start + note.duration > sectionStart);
+        }).length / plan.sections.length
+      : 0;
+    const requiredChecks: Record<string, number> = {
+      silence: mix.length > 0 ? activeFrames / Math.max(1, mix.length / 2) : 0,
+      clipping: mix.length > 0 ? 1 - clippedSamples / mix.length : 0,
+      notePlayability: playable,
+      timing: aligned,
+      sectionCoverage,
+      lineage: options.lineageComplete === false ? 0 : 1,
+    };
+    const weights = {
+      silence: 0.15,
+      clipping: 0.15,
+      notePlayability: 0.2,
+      timing: 0.15,
+      sectionCoverage: 0.15,
+      lineage: 0.2,
+    };
+    const score = round(Object.entries(weights).reduce(
+      (sum, [name, weight]) => sum + requiredChecks[name] * weight,
+      0,
+    ), 3);
+    const dimensionLabels: Record<string, string> = {
+      silence: "audible signal",
+      clipping: "headroom",
+      notePlayability: "note playability",
+      timing: "timing",
+      sectionCoverage: "section coverage",
+      lineage: "lineage",
+    };
+    const dimensions = Object.entries(requiredChecks)
+      .sort(([, left], [, right]) => right - left);
+    const warnings = [
+      ...(playable < 0.98 ? ["Some notes were constrained to the instrument's playable range."] : []),
+      ...(requiredChecks.silence < 0.2 ? ["The render is mostly silent."] : []),
+      ...(requiredChecks.clipping < 0.99 ? ["The render contains clipped samples."] : []),
+      ...(requiredChecks.sectionCoverage < 1 ? ["One or more planned sections contain no rendered notes."] : []),
+      ...(requiredChecks.lineage < 1 ? ["Render lineage is incomplete."] : []),
+    ];
+    return {
+      score,
+      checks: { ...checks, ...requiredChecks },
+      weights,
+      strengths: dimensions.slice(0, 2).map(([name]) => dimensionLabels[name] ?? name),
+      weaknesses: dimensions.slice(-2).reverse().map(([name]) => dimensionLabels[name] ?? name),
+      warnings,
+      evaluatedAt: options.evaluatedAt ?? new Date().toISOString(),
+      renderArtifactIds: options.renderArtifactIds ?? [],
+      lineageComplete: requiredChecks.lineage === 1,
+    };
   }
 }
 
@@ -744,7 +851,12 @@ export function buildTrackModels(input: {
   const harmony = new HarmonyEngine().generate(input.songModel, input.plan);
   const composed = new CompositionEngine().compose({ songModel: input.songModel, plan: input.plan, tracks: input.tracks, harmony });
   const bpm = input.songModel.tempoMap[0]?.bpm ?? 92;
-  const modulated = applyPlanModulations(composed, input.plan, bpm);
+  const modulated = applyPlanModulations(
+    composed,
+    input.plan,
+    bpm,
+    input.songModel.meterMap[0]?.meter,
+  );
   const voiced = new VoiceLeadingEngine().apply(modulated);
   return voiced.map((track) => new PerformanceEngine().perform(track, input.style, input.seed ?? hashSeed(input.plan.id)));
 }
@@ -946,6 +1058,13 @@ export function renderMusicPipeline(input: {
   masterProfile: string;
   durationSeconds?: number;
   sampleRate?: number;
+  quality?: {
+    lineageComplete?: boolean;
+    renderArtifactIds?: string[];
+    evaluatedAt?: string;
+    bpm?: number;
+    meter?: string;
+  };
 }): RenderPipelineResult {
   const sampleRate = input.sampleRate ?? 44_100;
   const trackModels = input.trackModels !== undefined
@@ -972,7 +1091,13 @@ export function renderMusicPipeline(input: {
   });
   const mix = new MixGraph().mix(rendered, input.style, Math.ceil(sampleRate * durationSeconds));
   const mastered = new MasterEngine().process(mix, input.masterProfile);
-  const quality = new QualityEngine().assess(trackModels, mix, input.plan);
+  const quality = new QualityEngine().assess(trackModels, mix, input.plan, {
+    ...input.quality,
+    bpm: input.quality?.bpm ?? input.songModel.tempoMap[0]?.bpm ?? 92,
+    meter: input.quality?.meter ??
+      input.songModel.meterMap[0]?.meter ??
+      "4/4",
+  });
   const renderProvenance = rendered.map(({ trackModel, renderer }) => provenance(renderer, "1.0.0", { sampleRate, durationSeconds }, [trackModel.provenance.model]));
   return {
     tracks: rendered,

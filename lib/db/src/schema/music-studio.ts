@@ -773,8 +773,17 @@ export type ArrangementGenerationProvenance = {
   seed: number;
   parameters: GenerationParameters;
   parentArtifactIds: string[];
+  evaluation: CandidateEvaluation;
 };
 
+export type CandidateEvaluationStatus =
+  | "plan_received"
+  | "rendering"
+  | "render_succeeded"
+  | "analyzing"
+  | "evaluated"
+  | "render_failed"
+  | "analysis_failed";
 export type CandidatePlan = {
   sections: ArrangementSection[];
   tracks?: Array<{
@@ -804,7 +813,7 @@ export const musicGenerationCandidatesTable = pgTable(
     provider: text("provider").notNull(),
     modelVersion: text("model_version").notNull(),
     seed: integer("seed").notNull(),
-    rank: integer("rank").notNull(),
+    rank: integer("rank"),
     label: text("label").notNull(),
     score: doublePrecision("score").notNull(),
     confidence: doublePrecision("confidence").notNull(),
@@ -820,6 +829,19 @@ export const musicGenerationCandidatesTable = pgTable(
       .default([]),
     plan: jsonb("plan").$type<CandidatePlan>().notNull(),
     trackModels: jsonb("track_models").$type<TrackModel[] | null>(),
+    evaluatedPlan: jsonb("evaluated_plan").$type<ArrangementPlan | null>(),
+    evaluatedStyleSpec: jsonb("evaluated_style_spec").$type<StyleSpec | null>(),
+    evaluation: jsonb("evaluation")
+      .$type<CandidateEvaluation>()
+      .notNull()
+      .default({
+        status: "plan_received",
+        providerScore: 0,
+        renderArtifactIds: [],
+        artifacts: [],
+        qualityReport: null,
+        error: null,
+      }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
 );
@@ -960,3 +982,31 @@ export const musicUsageLedgerTable = pgTable("music_usage_ledger", {
 }, (table) => [
   uniqueIndex("music_usage_ledger_job_unique").on(table.jobId),
 ]);
+
+export type CandidateEvaluation = {
+  status: CandidateEvaluationStatus;
+  providerScore: number;
+  renderArtifactIds: string[];
+  artifacts: CandidateEvaluationArtifact[];
+  qualityReport: CandidateQualityReport | null;
+  error: string | null;
+};
+
+export type CandidateQualityReport = {
+  score: number;
+  checks: Record<string, number>;
+  weights: Record<string, number>;
+  strengths: string[];
+  weaknesses: string[];
+  warnings: string[];
+  evaluatedAt: string;
+  renderArtifactIds: string[];
+  lineageComplete: boolean;
+};
+
+export type CandidateEvaluationArtifact = {
+  id: string;
+  type: "AUDIO_TRACK" | "MIDI" | "QUALITY_REPORT";
+  label: string;
+  url: string;
+};

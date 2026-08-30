@@ -1767,7 +1767,7 @@ components:
           additionalProperties: true
     GenerationProvenance:
       type: object
-      required: [jobId, candidateId, provider, modelVersion, seed, parameters, parentArtifactIds]
+      required: [jobId, candidateId, provider, modelVersion, seed, parameters, parentArtifactIds, evaluation]
       properties:
         jobId: { type: string }
         candidateId: { type: string }
@@ -1788,6 +1788,8 @@ components:
         parentArtifactIds:
           type: array
           items: { type: string }
+        evaluation:
+          $ref: "#/components/schemas/CandidateEvaluation"
     GenerationJob:
       type: object
       required: [id, projectId, arrangementId, task, status, provider, modelVersion, providerRuntime, hardware, speed, progress, stage, requestedCandidates, seed, parameters, parentArtifactIds, retryable, attempt, maxAttempts, createdAt, updatedAt]
@@ -1840,9 +1842,63 @@ components:
         updatedAt: { type: string }
         completedAt:
           type: [string, "null"]
+    CandidateQualityReport:
+      type: object
+      required: [score, checks, weights, strengths, weaknesses, warnings, evaluatedAt, renderArtifactIds, lineageComplete]
+      properties:
+        score: { type: number, minimum: 0, maximum: 1 }
+        checks:
+          type: object
+          additionalProperties: { type: number }
+        weights:
+          type: object
+          additionalProperties: { type: number }
+        strengths:
+          type: array
+          items: { type: string }
+        weaknesses:
+          type: array
+          items: { type: string }
+        warnings:
+          type: array
+          items: { type: string }
+        evaluatedAt: { type: string }
+        renderArtifactIds:
+          type: array
+          items: { type: string }
+        lineageComplete: { type: boolean }
+    CandidateEvaluation:
+      type: object
+      required: [status, providerScore, renderArtifactIds, artifacts, qualityReport, error]
+      properties:
+        status:
+          type: string
+          enum: [plan_received, rendering, render_succeeded, analyzing, evaluated, render_failed, analysis_failed]
+        providerScore: { type: number }
+        renderArtifactIds:
+          type: array
+          items: { type: string }
+        artifacts:
+          type: array
+          items:
+            type: object
+            required: [id, type, label, url]
+            properties:
+              id: { type: string }
+              type:
+                type: string
+                enum: [AUDIO_TRACK, MIDI, QUALITY_REPORT]
+              label: { type: string }
+              url: { type: string }
+        qualityReport:
+          oneOf:
+            - $ref: "#/components/schemas/CandidateQualityReport"
+            - type: "null"
+        error:
+          type: [string, "null"]
     GenerationCandidate:
       type: object
-      required: [id, jobId, provider, modelVersion, seed, rank, label, score, confidence, summary, status, parameters, parentArtifactIds, plan, trackModels, createdAt]
+      required: [id, jobId, provider, modelVersion, seed, rank, label, score, confidence, summary, status, parameters, parentArtifactIds, plan, trackModels, evaluation, createdAt]
       properties:
         id: { type: string }
         jobId: { type: string }
@@ -1855,7 +1911,8 @@ components:
         providerRequestId:
           type: [string, "null"]
         seed: { type: number }
-        rank: { type: number }
+        rank:
+          type: [number, "null"]
         label: { type: string }
         score: { type: number }
         confidence: { type: number }
@@ -1891,6 +1948,8 @@ components:
           type: [array, "null"]
           items:
             $ref: "#/components/schemas/TrackModel"
+        evaluation:
+          $ref: "#/components/schemas/CandidateEvaluation"
         createdAt: { type: string }
     GenerationProvider:
       type: object

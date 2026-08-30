@@ -913,6 +913,65 @@ export const GenerationProvenanceProvider = {
   MIDI_SAG: 'MIDI_SAG',
 } as const;
 
+export type CandidateEvaluationStatus = typeof CandidateEvaluationStatus[keyof typeof CandidateEvaluationStatus];
+
+
+export const CandidateEvaluationStatus = {
+  plan_received: 'plan_received',
+  rendering: 'rendering',
+  render_succeeded: 'render_succeeded',
+  analyzing: 'analyzing',
+  evaluated: 'evaluated',
+  render_failed: 'render_failed',
+  analysis_failed: 'analysis_failed',
+} as const;
+
+export type CandidateEvaluationArtifactsItemType = typeof CandidateEvaluationArtifactsItemType[keyof typeof CandidateEvaluationArtifactsItemType];
+
+
+export const CandidateEvaluationArtifactsItemType = {
+  AUDIO_TRACK: 'AUDIO_TRACK',
+  MIDI: 'MIDI',
+  QUALITY_REPORT: 'QUALITY_REPORT',
+} as const;
+
+export type CandidateQualityReportChecks = {[key: string]: number};
+
+export type CandidateQualityReportWeights = {[key: string]: number};
+
+export interface CandidateQualityReport {
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  score: number;
+  checks: CandidateQualityReportChecks;
+  weights: CandidateQualityReportWeights;
+  strengths: string[];
+  weaknesses: string[];
+  warnings: string[];
+  evaluatedAt: string;
+  renderArtifactIds: string[];
+  lineageComplete: boolean;
+}
+
+export type CandidateEvaluationArtifactsItem = {
+  id: string;
+  type: CandidateEvaluationArtifactsItemType;
+  label: string;
+  url: string;
+};
+
+export interface CandidateEvaluation {
+  status: CandidateEvaluationStatus;
+  providerScore: number;
+  renderArtifactIds: string[];
+  artifacts: CandidateEvaluationArtifactsItem[];
+  qualityReport: CandidateQualityReport | null;
+  /** @nullable */
+  error: string | null;
+}
+
 export type GenerationProvenanceParameters = { [key: string]: unknown };
 
 export interface GenerationProvenance {
@@ -929,6 +988,7 @@ export interface GenerationProvenance {
   seed: number;
   parameters: GenerationProvenanceParameters;
   parentArtifactIds: string[];
+  evaluation: CandidateEvaluation;
 }
 
 export interface Arrangement {
@@ -1588,7 +1648,8 @@ export interface GenerationCandidate {
   /** @nullable */
   providerRequestId?: string | null;
   seed: number;
-  rank: number;
+  /** @nullable */
+  rank: number | null;
   label: string;
   score: number;
   confidence: number;
@@ -1599,6 +1660,7 @@ export interface GenerationCandidate {
   plan: GenerationCandidatePlan;
   /** @nullable */
   trackModels: TrackModel[] | null;
+  evaluation: CandidateEvaluation;
   createdAt: string;
 }
 

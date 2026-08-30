@@ -12,6 +12,7 @@ await build({
     contents: `
       export {
         queueArrangementGeneration,
+        selectGenerationCandidate,
         resumePendingGenerationJobs,
         startGenerationRecoveryScheduler,
       } from "./src/lib/arrangementGeneration";
@@ -21,6 +22,7 @@ await build({
         musicGenerationCandidatesTable,
         musicGenerationJobsTable,
         musicProjectsTable,
+        tracksTable,
       } from "@workspace/db";
       export { eq } from "drizzle-orm";
     `,
@@ -31,7 +33,7 @@ await build({
   platform: "node",
   format: "esm",
   outfile: harnessPath,
-  external: ["pg-native", "@google-cloud/*", "@google/*"],
+  external: ["pg-native"],
   banner: {
     js: `import { createRequire as __createRequire } from "node:module";
 globalThis.require = __createRequire(import.meta.url);`,
@@ -45,7 +47,9 @@ const {
   musicGenerationCandidatesTable,
   musicGenerationJobsTable,
   musicProjectsTable,
+  tracksTable,
   queueArrangementGeneration,
+  selectGenerationCandidate,
   startGenerationRecoveryScheduler,
 } = await import(pathToFileURL(harnessPath).href);
 
@@ -70,7 +74,7 @@ function waitForListen(server) {
 }
 
 async function waitForCompletedJob(jobId) {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  for (let attempt = 0; attempt < 600; attempt += 1) {
     const [job] = await db
       .select()
       .from(musicGenerationJobsTable)
@@ -122,7 +126,7 @@ before(async () => {
             confidence: 0.91,
             summary: "A complete provider arrangement.",
             plan: {
-              sections: [{ name: "Verse", energy: 0.72, density: 0.68, tracks: ["Piano", "Bass"] }],
+              sections: [{ name: "Verse", energy: 0.72, density: 0.68, tracks: ["Bass"] }],
             },
           },
         ],
@@ -157,6 +161,15 @@ before(async () => {
     status: "generating",
     sections: [],
   });
+  await db.insert(tracksTable).values({
+    id: `generation-track-${process.pid}`,
+    projectId: ids.project,
+    name: "Piano",
+    role: "harmony",
+    kind: "midi",
+    color: "#3366ff",
+    status: "generated",
+  });
   await db.insert(musicGenerationJobsTable).values({
     id: ids.job,
     projectId: ids.project,
@@ -190,11 +203,47 @@ before(async () => {
         rhythmIntensity: 0.6,
       },
       songModel: {
+        contractVersion: "1.0",
+        validation: { status: "accepted", issues: [] },
+        fusion: { selectedProvider: "TEST", confidence: 0.9, decisions: [] },
+        audio: {
+          name: "test.wav",
+          contentType: "audio/wav",
+          size: 1,
+          durationSeconds: 16,
+          sampleRate: 44100,
+          channels: 2,
+          proxyObjectPath: null,
+          proxyContentType: null,
+          analysisStartSeconds: 0,
+          analysisDurationSeconds: 16,
+          analysisCoverage: "full",
+        },
+        analysisStartSeconds: 0,
+        analysisDurationSeconds: 16,
+        analysisCoverage: 1,
         tempoMap: [{ time: 0, bpm: 120, confidence: 0.9 }],
         meterMap: [{ bar: 1, meter: "4/4", confidence: 0.9 }],
         keyMap: [{ time: 0, key: "C major", confidence: 0.9 }],
+        melody: [],
+        chords: [],
         sections: [{ name: "Verse", startBar: 1, endBar: 8, energy: 0.6 }],
+        energy: [0.6],
+        beats: [],
+        bars: [],
+        dynamics: [],
+        waveform: [],
+        stems: [],
+        sourceStems: [],
+        lyrics: [],
+        providers: ["TEST"],
       },
+      tracks: [{
+        id: `generation-track-${process.pid}`,
+        name: "Piano",
+        role: "harmony",
+        instrument: "Piano",
+      }],
     },
   });
 });
@@ -219,12 +268,48 @@ test("recurring recovery reclaims a lease that expires after startup and persist
     .where(eq(musicGenerationCandidatesTable.jobId, ids.job))
     .orderBy(musicGenerationCandidatesTable.rank);
   assert.equal(candidates.length, 2);
-  assert.equal(candidates[0].label, "Top Choice");
+  assert.equal(candidates[0].label, "Second Choice");
   assert.equal(candidates[0].rank, 1);
   assert.equal(candidates[0].modelVersion, "meteor");
   assert.equal(candidates[0].reportedModelVersion, "mock-meteor-v9");
   assert.equal(candidates[0].seed, 4242);
-  assert.deepEqual(candidates[0].parameters, { temperature: 0.4 });
+  assert.equal(candidates[0].parameters.temperature, 0.4);
+  assert.equal(candidates[0].parameters.providerScore, 0.71);
+  assert.equal(candidates[0].evaluation.status, "evaluated");
+  assert.ok(candidates[0].evaluation.qualityReport);
+  assert.equal(candidates[0].evaluation.artifacts.length, 3);
+  assert.deepEqual(
+    Object.keys(candidates[0].evaluation.qualityReport.weights).sort(),
+    ["clipping", "lineage", "notePlayability", "sectionCoverage", "silence", "timing"],
+  );
+  assert.equal(candidates[0].evaluation.qualityReport.strengths.length, 2);
+  assert.equal(candidates[0].evaluation.qualityReport.weaknesses.length, 2);
+  assert.ok(candidates[0].score > candidates[1].score);
+  assert.equal(candidates[1].evaluation.status, "evaluated");
+
+  await db
+    .update(arrangementsTable)
+    .set({
+      style: "edited after evaluation",
+      energy: 0.1,
+      harmonyComplexity: 9,
+    })
+    .where(eq(arrangementsTable.id, ids.arrangement));
+  const selected = await selectGenerationCandidate(
+    candidates[0].id,
+    `generation-owner-${process.pid}`,
+  );
+  assert.ok(selected);
+  assert.equal(selected.style, "orchestral");
+  assert.equal(selected.energy, 0.6);
+  assert.equal(selected.harmonyComplexity, 5);
+  assert.deepEqual(selected.plan, candidates[0].evaluatedPlan);
+  assert.deepEqual(selected.styleSpec, candidates[0].evaluatedStyleSpec);
+  assert.deepEqual(selected.trackModels, candidates[0].trackModels);
+  assert.deepEqual(
+    selected.generationProvenance.evaluation,
+    candidates[0].evaluation,
+  );
 
   await db.insert(arrangementsTable).values({
     id: ids.queuedArrangement,
@@ -260,9 +345,10 @@ test("recurring recovery reclaims a lease that expires after startup and persist
     .where(eq(musicGenerationCandidatesTable.jobId, queued.id))
     .orderBy(musicGenerationCandidatesTable.rank);
   assert.equal(queuedCandidates.length, 2);
-  assert.equal(queuedCandidates[0].label, "Top Choice");
+  assert.equal(queuedCandidates[0].label, "Second Choice");
   assert.equal(queuedCandidates[0].rank, 1);
-  assert.deepEqual(queuedCandidates[0].parameters, { temperature: 0.7 });
+  assert.equal(queuedCandidates[0].parameters.temperature, 0.7);
+  assert.equal(queuedCandidates[0].evaluation.status, "evaluated");
 });
 
 test("an unhealthy runtime replaces the queued health snapshot and retries under the lease", async () => {

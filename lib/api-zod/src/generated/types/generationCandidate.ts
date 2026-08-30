@@ -5,6 +5,7 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { CandidateEvaluation } from './candidateEvaluation';
 import type { GenerationCandidateParameters } from './generationCandidateParameters';
 import type { GenerationCandidatePlan } from './generationCandidatePlan';
 import type { GenerationCandidateProvider } from './generationCandidateProvider';
@@ -21,7 +22,8 @@ export interface GenerationCandidate {
   /** @nullable */
   providerRequestId?: string | null;
   seed: number;
-  rank: number;
+  /** @nullable */
+  rank: number | null;
   label: string;
   score: number;
   confidence: number;
@@ -32,5 +34,6 @@ export interface GenerationCandidate {
   plan: GenerationCandidatePlan;
   /** @nullable */
   trackModels: TrackModel[] | null;
+  evaluation: CandidateEvaluation;
   createdAt: string;
 }

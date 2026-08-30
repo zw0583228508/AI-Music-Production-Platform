@@ -900,7 +900,8 @@ export default function ProjectWorkspace() {
                         </div>
                       </CardContent>
                     </Card>
-                  ) : generationJob?.status === "failed" ? (
+                  ) : generationJob?.status === "failed" &&
+                    generationCandidates.length === 0 ? (
                     <Alert variant="destructive">
                       <Activity className="h-4 w-4" />
                       <AlertTitle>Provider generation failed</AlertTitle>
@@ -908,45 +909,101 @@ export default function ProjectWorkspace() {
                         {generationJob.error ?? "The worker returned an unknown error."}
                       </AlertDescription>
                     </Alert>
-                  ) : generationJob?.status === "succeeded" &&
+                  ) : (generationJob?.status === "succeeded" ||
+                    generationJob?.status === "failed") &&
                     generationCandidates.length > 0 ? (
                    <div className="space-y-4">
-                      {generationCandidates.map((candidate: GenerationCandidate) => (
-                        <Card key={candidate.id} className="group hover:border-primary/50 transition-colors shadow-sm">
-                          <CardContent className="p-4 flex items-center justify-between gap-4">
-                           <div className="flex items-center gap-4">
-                             <div className="h-10 w-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-mono text-xs font-bold">
-                               {Math.round(candidate.score * 100)}
-                             </div>
-                             <div>
-                                <div className="flex items-center gap-2">
-                                  <div className="font-semibold">{candidate.label}</div>
-                                  <Badge variant={candidate.rank === 1 ? "default" : "outline"}>
-                                    #{candidate.rank}
-                                  </Badge>
+                      {generationCandidates.map((candidate: GenerationCandidate) => {
+                        const quality = candidate.evaluation.qualityReport;
+                        const evaluated = candidate.evaluation.status === "evaluated" && quality;
+                        return (
+                          <Card key={candidate.id} className="group hover:border-primary/50 transition-colors shadow-sm">
+                            <CardContent className="p-4 space-y-4">
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="flex items-start gap-4">
+                                  <div className={cn(
+                                    "h-11 w-11 shrink-0 rounded-full flex flex-col items-center justify-center font-mono text-xs font-bold",
+                                    evaluated
+                                      ? "bg-primary/10 text-primary"
+                                      : "bg-destructive/10 text-destructive",
+                                  )}>
+                                    <span>{Math.round(candidate.score * 100)}</span>
+                                    <span className="text-[8px] font-sans font-medium uppercase">quality</span>
+                                  </div>
+                                  <div>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <div className="font-semibold">{candidate.label}</div>
+                                      <Badge variant={candidate.rank === 1 && evaluated ? "default" : "outline"}>
+                                        {candidate.rank === null ? "Unranked" : `#${candidate.rank}`}
+                                      </Badge>
+                                      <Badge variant={evaluated ? "secondary" : "destructive"}>
+                                        {candidate.evaluation.status.replaceAll("_", " ")}
+                                      </Badge>
+                                    </div>
+                                    <div className="mt-1 text-xs text-muted-foreground">
+                                      {candidate.provider} · {candidate.modelVersion} · provider score {Math.round(candidate.evaluation.providerScore * 100)}
+                                    </div>
+                                    <p className="mt-2 max-w-xl text-sm">{candidate.summary}</p>
+                                    <div className="mt-2 text-xs text-muted-foreground">
+                                      {candidate.plan.sections.length} sections · {Math.round(candidate.confidence * 100)}% confidence · seed {candidate.seed}
+                                    </div>
+                                  </div>
                                 </div>
-                                <div className="mt-1 text-xs text-muted-foreground">
-                                  {candidate.provider} · {candidate.modelVersion}
+                                <Button
+                                  size="sm"
+                                  disabled={
+                                    candidate.status !== "validated" ||
+                                    !evaluated ||
+                                    selectGenerationCandidate.isPending
+                                  }
+                                  onClick={() => handleSelectCandidate(candidate)}
+                                >
+                                  {candidate.status === "selected" ? "Selected" : "Select"}
+                                </Button>
+                              </div>
+                              {evaluated ? (
+                                <div className="grid gap-3 border-t pt-3 text-xs sm:grid-cols-2">
+                                  <div>
+                                    <div className="font-medium text-foreground">Strongest dimensions</div>
+                                    <div className="mt-1 text-muted-foreground">
+                                      {quality.strengths.join(" · ")}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className="font-medium text-foreground">Weakest dimensions</div>
+                                    <div className="mt-1 text-muted-foreground">
+                                      {quality.weaknesses.join(" · ")}
+                                    </div>
+                                  </div>
+                                  <div className="flex flex-wrap gap-2 sm:col-span-2">
+                                    {candidate.evaluation.artifacts.map((artifact) => (
+                                      <Button key={artifact.id} size="sm" variant="outline" asChild>
+                                        <a href={artifact.url} download>
+                                          <Download className="mr-1.5 h-3.5 w-3.5" />
+                                          {artifact.label}
+                                        </a>
+                                      </Button>
+                                    ))}
+                                  </div>
+                                  {quality.warnings.length > 0 && (
+                                    <div className="text-amber-700 dark:text-amber-400 sm:col-span-2">
+                                      {quality.warnings.join(" ")}
+                                    </div>
+                                  )}
                                 </div>
-                                <p className="mt-2 max-w-xl text-sm">{candidate.summary}</p>
-                                <div className="mt-2 text-xs text-muted-foreground">
-                                  {candidate.plan.sections.length} sections · {Math.round(candidate.confidence * 100)}% confidence · seed {candidate.seed}
-                                </div>
-                             </div>
-                           </div>
-                           <Button
-                             size="sm"
-                              disabled={
-                                candidate.status !== "validated" ||
-                                selectGenerationCandidate.isPending
-                              }
-                              onClick={() => handleSelectCandidate(candidate)}
-                           >
-                              {candidate.status === "selected" ? "Selected" : "Select"}
-                           </Button>
-                         </CardContent>
-                       </Card>
-                     ))}
+                              ) : (
+                                <Alert variant="destructive">
+                                  <Activity className="h-4 w-4" />
+                                  <AlertTitle>Candidate fenced from ranking</AlertTitle>
+                                  <AlertDescription>
+                                    {candidate.evaluation.error ?? "Render or quality evidence is unavailable."}
+                                  </AlertDescription>
+                                </Alert>
+                              )}
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
                    </div>
                  ) : (
                    <div className="text-center py-12 border rounded-xl bg-card border-dashed">

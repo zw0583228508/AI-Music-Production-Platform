@@ -10,8 +10,12 @@ import {
   songModelsTable,
   studioActivitiesTable,
   tracksTable,
+  type ArrangementPlan,
+  type CandidateEvaluation,
   type GenerationParameters,
   type MusicGenerationTask,
+  type SongModelData,
+  type TrackModel,
 } from "@workspace/db";
 import {
   createProviderRegistry,
@@ -25,15 +29,20 @@ import {
   type GenerationHardware,
   type GenerationSpeed,
   type MusicProviderId,
+  type ProviderCandidate,
 } from "./musicProviders";
 import {
   applyPlanModulations,
   buildTrackModels,
   createArrangementPlan,
   createStyleSpec,
+  renderMusicPipeline,
 } from "./musicEngines";
+import { createPerformanceMidi, encodeWav } from "./exportEngine";
+import { deleteExportObject, saveExportObject } from "./objectStorage";
+import { rankEvaluatedCandidates } from "./candidateRanking";
 
-const sha256 = (value: string): string =>
+const sha256 = (value: string | Buffer): string =>
   createHash("sha256").update(value).digest("hex");
 
 export type QueueGenerationInput = {
@@ -98,8 +107,184 @@ export const generationCandidateResponse = (
   parentArtifactIds: row.parentArtifactIds,
   plan: row.plan,
   trackModels: row.trackModels,
+  evaluation: row.evaluation,
   createdAt: row.createdAt.toISOString(),
 });
+
+type CandidateMaterializationInput = {
+  candidateId: string;
+  version: number;
+  source: {
+    style: string;
+    harmonyComplexity: number;
+    energy: number;
+    density: number;
+    orchestraSize: number;
+    rhythmIntensity: number;
+  };
+  songModel: SongModelData;
+  songModelVersion: number | null;
+  tracks: Array<{ id: string; name: string; role: string; instrument: string }>;
+  candidate: {
+    provider: string;
+    seed: number;
+    plan: ProviderCandidate["plan"];
+    parentArtifactIds: string[];
+    trackModels?: TrackModel[] | null;
+  };
+  trackModelsMaterialized?: boolean;
+};
+
+function materializeCandidate(input: CandidateMaterializationInput): {
+  plan: ArrangementPlan;
+  trackModels: TrackModel[];
+  styleSpec: ReturnType<typeof createStyleSpec>;
+  engineParameters: Record<string, number | string | boolean>;
+} {
+  const { candidate, source, songModel, tracks } = input;
+  const engineParameters = {
+    seed: candidate.seed,
+    harmonyComplexity: source.harmonyComplexity,
+    energy: source.energy,
+    density: source.density,
+    orchestraSize: source.orchestraSize,
+    rhythmIntensity: source.rhythmIntensity,
+    songModelVersion: input.songModelVersion ?? 0,
+    provider: candidate.provider,
+    modulationSemitones: source.harmonyComplexity >= 8 ? 2 : 0,
+  };
+  const styleSpec = createStyleSpec(source.style, {
+    density: source.density,
+    harmonyComplexity: source.harmonyComplexity,
+    energy: source.energy,
+  });
+  const generatedPlan = createArrangementPlan({
+    arrangementId: input.candidateId,
+    version: input.version,
+    songModel,
+    style: styleSpec,
+    tracks,
+    parameters: { ...engineParameters, arrangementId: input.candidateId },
+    parentIds: candidate.parentArtifactIds,
+  });
+  const providerSections = new Map(
+    candidate.plan.sections.map((section) => [section.name.toLowerCase(), section]),
+  );
+  const descriptorByToken = new Map<string, Set<string>>();
+  const registerTrackToken = (token: string, trackName: string) => {
+    const normalized = token.toLowerCase();
+    const matches = descriptorByToken.get(normalized) ?? new Set<string>();
+    matches.add(trackName);
+    descriptorByToken.set(normalized, matches);
+  };
+  for (const track of tracks) {
+    registerTrackToken(track.id, track.name);
+    registerTrackToken(track.name, track.name);
+    registerTrackToken(track.role, track.name);
+  }
+  for (const descriptor of candidate.plan.tracks ?? []) {
+    const projectTrack = tracks.find((track) => track.id === descriptor.id);
+    if (!projectTrack) continue;
+    registerTrackToken(descriptor.id, projectTrack.name);
+    registerTrackToken(descriptor.name, projectTrack.name);
+    registerTrackToken(descriptor.role, projectTrack.name);
+  }
+  const plan: ArrangementPlan = {
+    ...generatedPlan,
+    sections: generatedPlan.sections.map((section) => {
+      const providerSection = providerSections.get(
+        section.section.replaceAll("_", " ").toLowerCase(),
+      );
+      if (!providerSection) return section;
+      const enabled = new Set(providerSection.tracks.flatMap((track) =>
+        [...(descriptorByToken.get(track.toLowerCase()) ?? [])]));
+      return {
+        ...section,
+        energy: providerSection.energy,
+        density: providerSection.density,
+        tracks: Object.fromEntries(
+          Object.entries(section.tracks).map(([trackName, operation]) => [
+            trackName,
+            enabled.has(trackName) ? operation : "none",
+          ]),
+        ),
+      };
+    }),
+  };
+  const trackModels = candidate.trackModels == null
+    ? buildTrackModels({
+        songModel,
+        plan,
+        tracks,
+        style: styleSpec,
+        seed: candidate.seed,
+      })
+    : input.trackModelsMaterialized
+      ? candidate.trackModels
+      : applyPlanModulations(
+          candidate.trackModels,
+          plan,
+          songModel.tempoMap[0]?.bpm ?? 92,
+          songModel.meterMap[0]?.meter,
+        );
+  const playabilityErrors = validateCanonicalTrackModels(
+    trackModels,
+    tracks.map((track) => track.id),
+  );
+  if (playabilityErrors.length) {
+    throw new Error(
+      `Generated TrackModels are not playable: ${playabilityErrors.join("; ")}`,
+    );
+  }
+  return { plan, trackModels, styleSpec, engineParameters };
+}
+
+function normalizeSongModelSnapshot(value: unknown): SongModelData {
+  const raw = value && typeof value === "object"
+    ? value as Partial<SongModelData>
+    : {};
+  return {
+    contractVersion: "1.0",
+    validation: { status: "accepted", issues: [] },
+    fusion: { selectedProvider: null, confidence: 0, decisions: [] },
+    audio: {
+      name: "generation-input",
+      contentType: "application/octet-stream",
+      size: 0,
+      durationSeconds: 8,
+      sampleRate: 44_100,
+      channels: 2,
+      proxyObjectPath: null,
+      proxyContentType: null,
+      analysisStartSeconds: 0,
+      analysisDurationSeconds: 8,
+      analysisCoverage: "full",
+      ...raw.audio,
+    },
+    analysisStartSeconds: raw.analysisStartSeconds ?? 0,
+    analysisDurationSeconds: raw.analysisDurationSeconds ??
+      raw.audio?.durationSeconds ?? 8,
+    analysisCoverage: raw.analysisCoverage ?? 1,
+    beats: raw.beats ?? [],
+    bars: raw.bars ?? [],
+    dynamics: raw.dynamics ?? [],
+    waveform: raw.waveform ?? [],
+    stems: raw.stems ?? [],
+    sourceStems: raw.sourceStems ?? [],
+    lyrics: raw.lyrics ?? [],
+    confidenceByField: raw.confidenceByField ?? {},
+    providerProvenance: raw.providerProvenance ?? [],
+    tempoMap: raw.tempoMap ?? [],
+    meterMap: raw.meterMap ?? [],
+    keyMap: raw.keyMap ?? [],
+    melody: raw.melody ?? [],
+    chords: raw.chords ?? [],
+    sections: raw.sections ?? [],
+    energy: raw.energy ?? [],
+    fieldStatus: raw.fieldStatus ?? {},
+    provenance: raw.provenance ?? {},
+  };
+}
 
 export async function listProviderCatalog() {
   return providerCatalog(await verifyProviderRegistry());
@@ -308,6 +493,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
   let heartbeat: ReturnType<typeof setInterval> | undefined;
   let cancellationWatcher: ReturnType<typeof setInterval> | undefined;
   const abortController = new AbortController();
+  const unpublishedEvaluationUrls: string[] = [];
   try {
     const provider = createProviderRegistry().find(
       (candidate) => candidate.definition.id === job.provider,
@@ -382,6 +568,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
     }, 1_000);
 
     const snapshot = job.inputSnapshot;
+    const evaluationSongModel = normalizeSongModelSnapshot(snapshot.songModel);
     const result = await provider.generate(
       {
         jobId: job.id,
@@ -436,8 +623,8 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
       .update(musicGenerationJobsTable)
       .set({
         providerRequestId: result.requestId,
-        progress: 76,
-        stage: "ranking_candidates",
+        progress: 70,
+        stage: "rendering_candidates",
       })
       .where(
         and(
@@ -451,17 +638,326 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
       .returning({ id: musicGenerationJobsTable.id });
     if (!rankingOwner) throw new Error("Generation job lease was lost");
 
-    const ranked = result.candidates
-      .sort((left, right) => right.score - left.score)
-      .slice(0, job.requestedCandidates);
+    const providerCandidates = result.candidates.slice(0, job.requestedCandidates);
+    const artifactRows: Array<typeof musicArtifactsTable.$inferInsert> = [];
+    const candidateRows: Array<
+      typeof musicGenerationCandidatesTable.$inferInsert & {
+        evaluation: CandidateEvaluation;
+        score: number;
+      }
+    > = [];
+    for (const [providerIndex, candidate] of providerCandidates.entries()) {
+      if (abortController.signal.aborted) {
+        throw new ProviderCancellationAcknowledgedError(
+          "Generation cancelled before candidate evaluation completed",
+        );
+      }
+      const candidateId = randomUUID();
+      const planArtifactId = randomUUID();
+      const candidateParentIds = [
+        ...new Set([
+          ...job.parentArtifactIds,
+          ...candidate.parentArtifactIds,
+        ]),
+      ];
+      const serializedProviderPlan = JSON.stringify(candidate.plan);
+      const planChecksum = sha256(serializedProviderPlan);
+      artifactRows.push({
+        id: planArtifactId,
+        projectId: job.projectId,
+        type: "ARRANGEMENT_PLAN",
+        label: `${candidate.label} · ${provider.definition.displayName}`,
+        version: snapshot.arrangement.version,
+        size: `${Buffer.byteLength(serializedProviderPlan)} B`,
+        format: "JSON",
+        hash: planChecksum,
+        checksum: planChecksum,
+        parentIds: candidateParentIds,
+        createdBy: "arrangement-provider",
+        modelVersion: `${provider.definition.id}@${result.modelVersion}`,
+        provider: provider.definition.id,
+        retentionPolicy: "project",
+        technicalMetadata: {
+          mediaType: "application/json",
+          providerOrdinal: providerIndex + 1,
+          providerScore: candidate.score,
+          confidence: candidate.confidence,
+        },
+        storageUri: `db://music_generation_candidates/${candidateId}`,
+      });
+
+      let phase: CandidateEvaluation["status"] = "rendering";
+      let evaluation: CandidateEvaluation;
+      let materializedTrackModels: TrackModel[] | null = null;
+      let evaluatedPlan: ArrangementPlan | null = null;
+      let evaluatedStyleSpec: ReturnType<typeof createStyleSpec> | null = null;
+      let evaluationScore = 0;
+      let candidateStatus = "rejected";
+      const candidateObjectUrls: string[] = [];
+      try {
+        const audioArtifactId = randomUUID();
+        const midiArtifactId = randomUUID();
+        const qualityArtifactId = randomUUID();
+        const renderArtifactIds = [audioArtifactId, midiArtifactId];
+        const materialized = materializeCandidate({
+          candidateId,
+          version: snapshot.arrangement.version + 1,
+          source: snapshot.arrangement,
+          songModel: evaluationSongModel,
+          songModelVersion: job.songModelVersion,
+          tracks: snapshot.tracks,
+          candidate: {
+            provider: provider.definition.id,
+            seed: job.seed,
+            plan: candidate.plan,
+            parentArtifactIds: candidateParentIds,
+            trackModels: candidate.trackModels,
+          },
+        });
+        materializedTrackModels = materialized.trackModels;
+        evaluatedPlan = materialized.plan;
+        evaluatedStyleSpec = materialized.styleSpec;
+        const evaluatedAt = new Date().toISOString();
+        const pipeline = renderMusicPipeline({
+          songModel: evaluationSongModel,
+          plan: materialized.plan,
+          tracks: snapshot.tracks,
+          trackModels: materialized.trackModels,
+          style: materialized.styleSpec,
+          seed: job.seed,
+          masterProfile: "BALANCED",
+          quality: {
+            lineageComplete:
+              Boolean(result.modelVersion && provider.definition.id) &&
+              materialized.trackModels.every((track) =>
+                Boolean(
+                  track.provenance.model &&
+                  track.provenance.version &&
+                  track.provenance.createdBy,
+                )),
+            renderArtifactIds,
+            evaluatedAt,
+          },
+        });
+        const wav = encodeWav(pipeline.master);
+        const midi = createPerformanceMidi(
+          materialized.trackModels,
+          evaluationSongModel.tempoMap[0]?.bpm ?? 92,
+          evaluationSongModel.meterMap[0]?.meter ?? "4/4",
+          pipeline.durationSeconds,
+        );
+        const objectPrefix = `generation/${job.id}/${candidateId}`;
+        const audioUrl = await saveExportObject(
+          `${objectPrefix}/render.wav`,
+          wav,
+          "audio/wav",
+        );
+        candidateObjectUrls.push(audioUrl);
+        unpublishedEvaluationUrls.push(audioUrl);
+        const midiUrl = await saveExportObject(
+          `${objectPrefix}/performance.mid`,
+          midi,
+          "audio/midi",
+        );
+        candidateObjectUrls.push(midiUrl);
+        unpublishedEvaluationUrls.push(midiUrl);
+        phase = "analyzing";
+        const requiredDimensions = [
+          "silence",
+          "clipping",
+          "notePlayability",
+          "timing",
+          "sectionCoverage",
+          "lineage",
+        ];
+        if (
+          !Number.isFinite(pipeline.quality.score) ||
+          requiredDimensions.some((name) =>
+            !Number.isFinite(pipeline.quality.checks[name]))
+        ) {
+          throw new Error("Independent quality analysis is incomplete");
+        }
+        const qualityData = Buffer.from(JSON.stringify({
+          candidateId,
+          provider: provider.definition.id,
+          modelVersion: job.modelVersion,
+          reportedModelVersion: result.modelVersion,
+          providerRequestId: candidate.providerRequestId ?? result.requestId,
+          seed: job.seed,
+          providerScore: candidate.score,
+          quality: pipeline.quality,
+        }, null, 2));
+        const qualityUrl = await saveExportObject(
+          `${objectPrefix}/quality-report.json`,
+          qualityData,
+          "application/json",
+        );
+        candidateObjectUrls.push(qualityUrl);
+        unpublishedEvaluationUrls.push(qualityUrl);
+        evaluation = {
+          status: "evaluated",
+          providerScore: candidate.score,
+          renderArtifactIds,
+          artifacts: [
+            { id: audioArtifactId, type: "AUDIO_TRACK", label: "Rendered audio", url: audioUrl },
+            { id: midiArtifactId, type: "MIDI", label: "Performance MIDI", url: midiUrl },
+            { id: qualityArtifactId, type: "QUALITY_REPORT", label: "Quality report", url: qualityUrl },
+          ],
+          qualityReport: pipeline.quality,
+          error: null,
+        };
+        evaluationScore = pipeline.quality.score;
+        candidateStatus = "validated";
+        const artifactParentIds = [planArtifactId, ...candidateParentIds];
+        artifactRows.push(
+          {
+            id: audioArtifactId,
+            projectId: job.projectId,
+            type: "AUDIO_TRACK",
+            label: `${candidate.label} · evaluation render`,
+            version: snapshot.arrangement.version,
+            size: `${wav.byteLength} B`,
+            format: "WAV",
+            url: audioUrl,
+            storageUri: audioUrl,
+            hash: sha256(wav),
+            checksum: sha256(wav),
+            parentIds: artifactParentIds,
+            createdBy: "candidate-render-evaluator",
+            modelVersion: "LOCAL_EXPRESSIVE_SYNTH@1.0.0",
+            provider: provider.definition.id,
+            technicalMetadata: {
+              mediaType: "audio/wav",
+              bytes: wav.byteLength,
+              durationSeconds: pipeline.durationSeconds,
+              candidateId,
+            },
+          },
+          {
+            id: midiArtifactId,
+            projectId: job.projectId,
+            type: "MIDI",
+            label: `${candidate.label} · evaluation MIDI`,
+            version: snapshot.arrangement.version,
+            size: `${midi.byteLength} B`,
+            format: "MIDI",
+            url: midiUrl,
+            storageUri: midiUrl,
+            hash: sha256(midi),
+            checksum: sha256(midi),
+            parentIds: artifactParentIds,
+            createdBy: "candidate-render-evaluator",
+            modelVersion: "PERFORMANCE_MIDI@1.0.0",
+            provider: provider.definition.id,
+            technicalMetadata: {
+              mediaType: "audio/midi",
+              bytes: midi.byteLength,
+              durationSeconds: pipeline.durationSeconds,
+              candidateId,
+            },
+          },
+          {
+            id: qualityArtifactId,
+            projectId: job.projectId,
+            type: "QUALITY_REPORT",
+            label: `${candidate.label} · independent quality`,
+            version: snapshot.arrangement.version,
+            size: `${qualityData.byteLength} B`,
+            format: "JSON",
+            url: qualityUrl,
+            storageUri: qualityUrl,
+            hash: sha256(qualityData),
+            checksum: sha256(qualityData),
+            parentIds: [audioArtifactId, midiArtifactId, planArtifactId],
+            createdBy: "quality-engine",
+            modelVersion: "QUALITY_ENGINE@1.0.0",
+            provider: provider.definition.id,
+            technicalMetadata: {
+              mediaType: "application/json",
+              bytes: qualityData.byteLength,
+              qualityScore: pipeline.quality.score,
+              candidateId,
+            },
+          },
+        );
+      } catch (error) {
+        await Promise.all(candidateObjectUrls.map((url) =>
+          deleteExportObject(url).catch(() => undefined)));
+        for (const url of candidateObjectUrls) {
+          const index = unpublishedEvaluationUrls.indexOf(url);
+          if (index >= 0) unpublishedEvaluationUrls.splice(index, 1);
+        }
+        evaluation = {
+          status: phase === "analyzing" ? "analysis_failed" : "render_failed",
+          providerScore: candidate.score,
+          renderArtifactIds: [],
+          artifacts: [],
+          qualityReport: null,
+          error: error instanceof Error ? error.message : "Candidate evaluation failed",
+        };
+      }
+      candidateRows.push({
+        id: candidateId,
+        jobId: job.id,
+        projectId: job.projectId,
+        arrangementId: job.arrangementId,
+        artifactId: planArtifactId,
+        providerRequestId: candidate.providerRequestId ?? result.requestId,
+        provider: provider.definition.id,
+        modelVersion: job.modelVersion,
+        reportedModelVersion: result.modelVersion,
+        seed: job.seed,
+        rank: null,
+        label: candidate.label,
+        score: evaluationScore,
+        confidence: candidate.confidence,
+        summary: candidate.summary,
+        status: candidateStatus,
+        parameters: {
+          ...job.parameters,
+          ...candidate.parameters,
+          providerScore: candidate.score,
+        },
+        parentArtifactIds: candidateParentIds,
+        plan: candidate.plan,
+        trackModels: materializedTrackModels,
+        evaluatedPlan,
+        evaluatedStyleSpec,
+        evaluation,
+      });
+      await db
+        .update(musicGenerationJobsTable)
+        .set({
+          progress: 70 + Math.round(((providerIndex + 1) / providerCandidates.length) * 22),
+          stage: phase === "analyzing" ? "analyzing_candidates" : "rendering_candidates",
+          heartbeatAt: new Date(),
+          leaseExpiresAt: new Date(Date.now() + leaseDurationMs),
+        })
+        .where(and(
+          eq(musicGenerationJobsTable.id, job.id),
+          eq(musicGenerationJobsTable.workerId, workerId),
+          eq(musicGenerationJobsTable.leaseVersion, leaseVersion),
+          eq(musicGenerationJobsTable.status, "running"),
+        ));
+    }
+    const ranked = rankEvaluatedCandidates(candidateRows);
+    const allEvaluationsFailed = ranked.every((candidate) =>
+      candidate.evaluation.status !== "evaluated");
     const now = new Date();
     await db.transaction(async (tx) => {
       const [completed] = await tx
         .update(musicGenerationJobsTable)
         .set({
-          status: "succeeded",
+          status: allEvaluationsFailed ? "failed" : "succeeded",
           progress: 100,
-          stage: "complete",
+          stage: allEvaluationsFailed ? "evaluation_failed" : "complete",
+          error: allEvaluationsFailed
+            ? "No candidate produced complete render and quality evidence."
+            : null,
+          errorCode: allEvaluationsFailed
+            ? "CANDIDATE_EVALUATION_FAILED"
+            : null,
+          retryable: !allEvaluationsFailed,
           completedAt: now,
           leaseExpiresAt: null,
         })
@@ -476,80 +972,30 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
         )
         .returning({ id: musicGenerationJobsTable.id });
       if (!completed) throw new Error("Generation job lease was lost");
-      for (const [index, candidate] of ranked.entries()) {
-        const artifactId = randomUUID();
-        const candidateId = randomUUID();
-        const serializedPlan = JSON.stringify(candidate.plan);
-        const checksum = sha256(serializedPlan);
-        const providerRequestId =
-          candidate.providerRequestId ?? result.requestId;
-        await tx.insert(musicArtifactsTable).values({
-          id: artifactId,
-          projectId: job.projectId,
-          type: "ARRANGEMENT_PLAN",
-          label: `${candidate.label} · ${provider.definition.displayName}`,
-          version: snapshot.arrangement.version,
-          size: `${Buffer.byteLength(serializedPlan)} B`,
-          format: "JSON",
-          hash: checksum,
-          checksum,
-          parentIds: job.parentArtifactIds,
-          createdBy: "arrangement-provider",
-          modelVersion: `${provider.definition.id}@${job.modelVersion}`,
-          provider: provider.definition.id,
-          parameters: {
-            generationJobId: job.id,
-            generationCandidateId: candidateId,
-            seed: job.seed,
-            leaseVersion,
-            providerRequestId: providerRequestId ?? "",
-          },
-          retentionPolicy: "project",
-          technicalMetadata: {
-            mediaType: "application/json",
-            candidateRank: index + 1,
-            confidence: candidate.confidence,
-            expectedModelVersion: job.modelVersion,
-            reportedModelVersion: result.modelVersion,
-            runtimeVersion: providerRuntime.reportedVersion,
-          },
-        });
-        await tx.insert(musicGenerationCandidatesTable).values({
-          id: candidateId,
-          jobId: job.id,
-          projectId: job.projectId,
-          arrangementId: job.arrangementId,
-          artifactId,
-          providerRequestId,
-          provider: provider.definition.id,
-          modelVersion: job.modelVersion,
-          reportedModelVersion: result.modelVersion,
-          seed: job.seed,
-          rank: index + 1,
-          label: candidate.label,
-          score: candidate.score,
-          confidence: candidate.confidence,
-          summary: candidate.summary,
-          status: "validated",
-          parameters: job.parameters,
-          parentArtifactIds: job.parentArtifactIds,
-          plan: candidate.plan,
-           trackModels: candidate.trackModels ?? null,
-        });
-      }
+      await tx.insert(musicArtifactsTable).values(artifactRows);
+      await tx.insert(musicGenerationCandidatesTable).values(ranked);
       await tx
         .update(arrangementsTable)
-        .set({ status: "ready" })
+        .set({
+          status: allEvaluationsFailed
+            ? (snapshot.arrangement.status === "ready" ? "ready" : "draft")
+            : "ready",
+        })
         .where(eq(arrangementsTable.id, job.arrangementId));
       await tx.insert(studioActivitiesTable).values({
         id: randomUUID(),
         projectId: job.projectId,
-        title: "Provider generation completed",
-        detail: `${provider.definition.displayName} · ${ranked.length} ranked candidate${ranked.length === 1 ? "" : "s"}`,
+        title: allEvaluationsFailed
+          ? "Candidate evaluation failed"
+          : "Rendered candidate evaluation completed",
+        detail: `${provider.definition.displayName} · ${ranked.filter((candidate) => candidate.status === "validated").length}/${ranked.length} candidates passed render and quality analysis`,
         type: "arrangement",
       });
     });
+    unpublishedEvaluationUrls.length = 0;
   } catch (error) {
+    await Promise.all(unpublishedEvaluationUrls.map((url) =>
+      deleteExportObject(url).catch(() => undefined)));
     const message = error instanceof Error ? error.message : "Generation failed";
     const cancellationUnconfirmed =
       error instanceof ProviderCancellationUnconfirmedError;
@@ -931,8 +1377,18 @@ export async function selectGenerationCandidate(
       .limit(1);
     return existing ?? null;
   }
-  if (candidate.status !== "validated") return null;
+  if (
+    candidate.status !== "validated" ||
+    candidate.evaluation.status !== "evaluated" ||
+    candidate.evaluation.qualityReport === null ||
+    candidate.trackModels === null ||
+    candidate.evaluatedPlan === null ||
+    candidate.evaluatedStyleSpec === null
+  ) return null;
   const source = sourceArrangement[0];
+  const evaluatedPlan = candidate.evaluatedPlan;
+  const evaluatedStyleSpec = candidate.evaluatedStyleSpec;
+  const evaluatedTrackModels = candidate.trackModels;
   return db.transaction(async (tx) => {
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtext(${candidate.projectId}))`,
@@ -955,7 +1411,7 @@ export async function selectGenerationCandidate(
         .limit(1);
       return existing ?? null;
     }
-    const [job, existingArrangements, songModels, projectTracks] = await Promise.all([
+    const [job, existingArrangements, projectTracks] = await Promise.all([
       tx
         .select()
         .from(musicGenerationJobsTable)
@@ -967,152 +1423,55 @@ export async function selectGenerationCandidate(
         .where(eq(arrangementsTable.projectId, candidate.projectId)),
       tx
         .select()
-        .from(songModelsTable)
-        .where(eq(songModelsTable.projectId, candidate.projectId))
-        .orderBy(desc(songModelsTable.version))
-        .limit(1),
-      tx
-        .select()
         .from(tracksTable)
         .where(eq(tracksTable.projectId, candidate.projectId)),
     ]);
-    const songModel = songModels[0];
-    if (!songModel || projectTracks.length === 0) {
-      throw new Error("Selected arrangement candidate needs a Song Model and at least one project track");
+    const generationJob = job[0];
+    if (!generationJob) {
+      throw new Error("Selected arrangement candidate is missing its generation job");
     }
     const nextVersion =
       Math.max(0, ...existingArrangements.map((item) => item.version)) + 1;
-    const trackDescriptors = projectTracks.map((track) => ({
-      id: track.id,
-      name: track.name,
-      role: track.role,
-      instrument: track.name,
-    }));
+    const evaluatedArrangement = generationJob.inputSnapshot.arrangement;
     const engineParameters = {
       seed: candidate.seed,
-      harmonyComplexity: source.harmonyComplexity,
-      energy: source.energy,
-      density: source.density,
-      orchestraSize: source.orchestraSize,
-      rhythmIntensity: source.rhythmIntensity,
-      songModelVersion: songModel.version,
+      harmonyComplexity: evaluatedArrangement.harmonyComplexity,
+      energy: evaluatedArrangement.energy,
+      density: evaluatedArrangement.density,
+      orchestraSize: evaluatedArrangement.orchestraSize,
+      rhythmIntensity: evaluatedArrangement.rhythmIntensity,
+      songModelVersion: generationJob.songModelVersion ?? 0,
       provider: candidate.provider,
-      modulationSemitones: source.harmonyComplexity >= 8 ? 2 : 0,
+      modulationSemitones:
+        evaluatedArrangement.harmonyComplexity >= 8 ? 2 : 0,
     };
-    const styleSpec = createStyleSpec(source.style, {
-      density: source.density,
-      harmonyComplexity: source.harmonyComplexity,
-      energy: source.energy,
-    });
-    const generatedPlan = createArrangementPlan({
-      arrangementId: candidate.id,
-      version: nextVersion,
-      songModel: songModel.model,
-      style: styleSpec,
-      tracks: trackDescriptors,
-      parameters: { ...engineParameters, arrangementId: candidate.id },
-      parentIds: candidate.parentArtifactIds,
-    });
-    const providerSections = new Map(
-      candidate.plan.sections.map((section) => [section.name.toLowerCase(), section]),
-    );
-    const descriptorByToken = new Map<string, Set<string>>();
-    const registerTrackToken = (token: string, trackName: string) => {
-      const normalized = token.toLowerCase();
-      const matches = descriptorByToken.get(normalized) ?? new Set<string>();
-      matches.add(trackName);
-      descriptorByToken.set(normalized, matches);
-    };
-    for (const track of projectTracks) {
-      registerTrackToken(track.id, track.name);
-      registerTrackToken(track.name, track.name);
-      registerTrackToken(track.role, track.name);
-    }
-    for (const descriptor of candidate.plan.tracks ?? []) {
-      const projectTrack = projectTracks.find((track) => track.id === descriptor.id);
-      if (!projectTrack) continue;
-      registerTrackToken(descriptor.id, projectTrack.name);
-      registerTrackToken(descriptor.name, projectTrack.name);
-      registerTrackToken(descriptor.role, projectTrack.name);
-    }
-    const plan = {
-      ...generatedPlan,
-      sections: generatedPlan.sections.map((section) => {
-        const providerSection = providerSections.get(section.section.replaceAll("_", " ").toLowerCase());
-        if (!providerSection) return section;
-        const enabled = new Set(providerSection.tracks.flatMap((track) => {
-          return [...(descriptorByToken.get(track.toLowerCase()) ?? [])];
-        }));
-        return {
-          ...section,
-          energy: providerSection.energy,
-          density: providerSection.density,
-          tracks: Object.fromEntries(
-            Object.entries(section.tracks).map(([trackName, operation]) => [
-              trackName,
-              enabled.has(trackName) ? operation : "none",
-            ]),
-          ),
-        };
-      }),
-    };
-    const generatedTrackModels = candidate.trackModels === null
-      ? buildTrackModels({
-          songModel: songModel.model,
-          plan,
-          tracks: trackDescriptors,
-          style: styleSpec,
-          seed: candidate.seed,
-        })
-      : applyPlanModulations(
-          candidate.trackModels,
-          plan,
-          songModel.model.tempoMap[0]?.bpm ?? 92,
-        );
-    const playabilityErrors = validateCanonicalTrackModels(
-      generatedTrackModels,
-      trackDescriptors.map((track) => track.id),
-    );
-    if (playabilityErrors.length) {
-      throw new Error(`Generated TrackModels are not playable: ${playabilityErrors.join("; ")}`);
-    }
+    const styleSpec = evaluatedStyleSpec;
+    const plan = evaluatedPlan;
+    const generatedTrackModels = evaluatedTrackModels;
     const selectedPlanArtifactId = randomUUID();
-    const trackModelParents = candidate.artifactId
-      ? [selectedPlanArtifactId]
-      : candidate.parentArtifactIds;
-    const trackModels = generatedTrackModels.map((trackModel) => ({
-      ...trackModel,
-      provenance: {
-        ...trackModel.provenance,
-        parameters: {
-          ...trackModel.provenance.parameters,
-          upstreamModel: trackModel.provenance.model,
-        },
-        parentIds: trackModelParents,
-      },
-    }));
+    const trackModels = generatedTrackModels;
     const [arrangement] = await tx
       .insert(arrangementsTable)
       .values({
         id: randomUUID(),
         projectId: source.projectId,
         name: `${source.name} · ${candidate.label}`,
-        style: source.style,
-        mode: source.mode,
+        style: evaluatedArrangement.style,
+        mode: evaluatedArrangement.mode,
         version: nextVersion,
         status: "ready",
-        harmonyComplexity: source.harmonyComplexity,
-        energy: source.energy,
-        density: source.density,
-        orchestraSize: source.orchestraSize,
-        rhythmIntensity: source.rhythmIntensity,
+        harmonyComplexity: evaluatedArrangement.harmonyComplexity,
+        energy: evaluatedArrangement.energy,
+        density: evaluatedArrangement.density,
+        orchestraSize: evaluatedArrangement.orchestraSize,
+        rhythmIntensity: evaluatedArrangement.rhythmIntensity,
         sections: candidate.plan.sections,
         sourceGenerationJobId: candidate.jobId,
         sourceCandidateId: candidate.id,
         styleSpec,
         plan,
         trackModels,
-        songModelVersion: songModel.version,
+        songModelVersion: generationJob.songModelVersion,
         parentArrangementId: source.id,
         parameters: engineParameters,
         seed: candidate.seed,
@@ -1131,10 +1490,11 @@ export async function selectGenerationCandidate(
           modelVersion: candidate.modelVersion,
           reportedModelVersion: candidate.reportedModelVersion,
           providerRequestId: candidate.providerRequestId,
-          songModelVersion: job[0]?.songModelVersion ?? null,
+          songModelVersion: generationJob.songModelVersion,
           seed: candidate.seed,
           parameters: candidate.parameters,
           parentArtifactIds: candidate.parentArtifactIds,
+          evaluation: candidate.evaluation,
         },
       })
       .returning();
