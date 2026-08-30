@@ -49,3 +49,10 @@ packages = ["ffmpeg-full", "libgccjit", "libsndfile", "libxcrypt", "oneDNN", "pk
 [userenv.development]
 BASIC_PITCH_API_URL = "http://127.0.0.1:8008"
 DEMUCS_API_URL = "http://127.0.0.1:8008"
+ACE_STEP_API_URL = "https://windot100--ace-step.modal.run"
+MUSIC_PROVIDER_ACE_STEP_CHECKPOINT_SHA256 = "d3f38c0fb68bd980d4f49c469f68bce9a94216cef614a85f7cea34fc98bd8b4e"
+MUSIC_PROVIDER_ACE_STEP_CONTAINER_DIGEST = "sha256:c24957d8b4fc84f6e676675fd00ccbd3d8cf5beb3464eb80ab60e75057c08eae"
+MUSIC_PROVIDER_ACE_STEP_MODEL_VERSION = "ace-step-1.5-base"
+MUSIC_PROVIDER_ACE_STEP_MODAL_IMAGE_ID = "im-JZ7V3KgPwL1NLT6Q6bZfQe"
+MUSIC_PROVIDER_ACE_STEP_SOURCE_IMAGE_DIGEST = "sha256:c24957d8b4fc84f6e676675fd00ccbd3d8cf5beb3464eb80ab60e75057c08eae"
+MUSIC_PROVIDER_ACE_STEP_URL = "https://windot100--ace-step.modal.run"

@@ -46,6 +46,7 @@ after(async () => {
   delete process.env.MUSIC_PROVIDER_METEOR_URL;
   delete process.env.MUSIC_PROVIDER_METEOR_CHECKPOINT_SHA256;
   delete process.env.MUSIC_PROVIDER_METEOR_CONTAINER_DIGEST;
+  delete process.env.MUSIC_PROVIDER_METEOR_MODAL_IMAGE_ID;
   delete process.env.MUSIC_PROVIDER_METEOR_HEALTH_URL;
   delete process.env.MUSIC_PROVIDER_HEALTH_TIMEOUT_MS;
   delete process.env.DEMUCS_API_URL;
@@ -67,12 +68,14 @@ async function withHealthServer(handler, run) {
     `http://127.0.0.1:${address.port}/generate`;
   process.env.MUSIC_PROVIDER_METEOR_CHECKPOINT_SHA256 = "b".repeat(64);
   process.env.MUSIC_PROVIDER_METEOR_CONTAINER_DIGEST = `sha256:${"c".repeat(64)}`;
+  process.env.MUSIC_PROVIDER_METEOR_MODAL_IMAGE_ID = "im-MeteorPromoted42";
   try {
     await run();
   } finally {
     delete process.env.MUSIC_PROVIDER_METEOR_URL;
     delete process.env.MUSIC_PROVIDER_METEOR_CHECKPOINT_SHA256;
     delete process.env.MUSIC_PROVIDER_METEOR_CONTAINER_DIGEST;
+    delete process.env.MUSIC_PROVIDER_METEOR_MODAL_IMAGE_ID;
     await new Promise((resolve) => server.close(resolve));
   }
 }
@@ -96,6 +99,7 @@ test("routes only to a worker with a verified checkpoint and runtime", async () 
         ready: true,
         gpuReady: true,
         revision: "meteor-r42",
+        imageId: "im-MeteorPromoted42",
         containerDigest: `sha256:${"c".repeat(64)}`,
         cudaVersion: "12.4",
         pytorchVersion: "2.5.1",

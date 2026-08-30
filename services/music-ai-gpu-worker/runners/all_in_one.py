@@ -13,8 +13,9 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from .common import (
-    RunnerError, attest_checkpoint, download_source, durable_job_dir, emit,
-    finite_number, request_value, require_cuda, require_distribution_version, runtime_provenance, validate_audio,
+    RunnerError, attest_checkpoint, durable_job_dir, emit, finite_number,
+    materialize_source, request_value, require_cuda, require_distribution_version,
+    runtime_provenance, validate_audio,
 )
 
 # This source revision is deliberately marked unverified until deployment
@@ -44,6 +45,14 @@ class OfficialAllInOneBackend:
         model = os.getenv("ALL_IN_ONE_MODEL", "harmonix-fold0")
         if not checkpoint.is_file():
             raise RunnerError("All-In-One generic checkpoint override requires a checkpoint file")
+        demucs_root = Path(os.environ.get(
+            "MUSIC_PROVIDER_ALL_IN_ONE_DEMUCS_ROOT", ""
+        ))
+        if not demucs_root.is_dir():
+            raise RunnerError("mounted All-In-One Demucs cache root is required")
+        os.environ["TORCH_HOME"] = str(demucs_root.resolve())
+        os.environ["HF_HUB_OFFLINE"] = "1"
+        os.environ["TRANSFORMERS_OFFLINE"] = "1"
         digest = attest_checkpoint(checkpoint, PROVIDER)
         try:
             with AllInOneSession(
@@ -211,13 +220,13 @@ def normalize_structure(raw: dict[str, Any], duration: float) -> dict[str, Any]:
             "sections": result_sections, "confidence": overall}
 
 
-def run_job(request: dict[str, Any], checkpoint: Path, backend: AllInOneBackend | None = None) -> dict[str, Any]:
+def run_job(request: dict[str, Any], checkpoint: Path, backend: AllInOneBackend | None = None,
+            *, smoke: bool = False) -> dict[str, Any]:
     require_cuda()
     digest = attest_checkpoint(checkpoint, PROVIDER)
     duration = finite_number(request_value(request, "durationSeconds"), "durationSeconds", .001)
     work = durable_job_dir(request, PROVIDER)
-    audio = download_source(request_value(request, "sourceUrl"), work / "source.wav")
-    validate_audio(audio)
+    audio = materialize_source(request, work / "source.wav", checkpoint, smoke)
     active = backend or OfficialAllInOneBackend()
     output = normalize_structure(active.analyze(audio, checkpoint), duration)
     output.update({"version": MODEL_VERSION, "modelVersion": MODEL_VERSION,
@@ -242,15 +251,9 @@ def main(argv: list[str] | None = None) -> int:
     checkpoint = Path(args.checkpoint)
     if args.smoke:
         require_cuda(); digest = attest_checkpoint(checkpoint, PROVIDER)
-        audio = os.getenv("ALL_IN_ONE_SMOKE_AUDIO")
-        if not audio or not Path(audio).is_file(): raise RunnerError("ALL_IN_ONE_SMOKE_AUDIO must reference mounted real audio")
-        result = normalize_structure(OfficialAllInOneBackend().analyze(Path(audio), checkpoint), float("inf"))
-        proof_provenance = {"provider": PROVIDER, "modelVersion": MODEL_VERSION,
-              "checkpointSha256": digest, "backend": OfficialAllInOneBackend.name,
-              "backendVersion": BACKEND_VERSION, "revision": BACKEND_SOURCE_REVISION,
-              "sourceRevision": BACKEND_SOURCE_REVISION,
-              "upstreamSourceRevision": UPSTREAM_SOURCE_REVISION, "device": "cuda"}
-        proof_provenance.update(runtime_provenance())
+        result = run_job({"requestId": f"smoke-all-in-one-{os.urandom(8).hex()}"},
+                         checkpoint, smoke=True)
+        proof_provenance = result["provenance"]
         emit({"smokeTested": True, "provider": PROVIDER, "modelVersion": args.model_version,
               "version": args.model_version, "checkpointSha256": digest,
               "backend": OfficialAllInOneBackend.name,

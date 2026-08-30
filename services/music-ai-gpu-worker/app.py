@@ -154,8 +154,13 @@ def _installed_version(distribution: str) -> str | None:
         return None
 
 
-def _gpu_runtime() -> tuple[bool, str]:
-    expected_python = MANIFEST["runtime"]["python"]
+def _expected_runtime(details: dict[str, Any]) -> dict[str, str]:
+    return {**MANIFEST["runtime"], **details.get("runtime", {})}
+
+
+def _gpu_runtime(details: dict[str, Any]) -> tuple[bool, str]:
+    expected_runtime = _expected_runtime(details)
+    expected_python = expected_runtime["python"]
     actual_python = ".".join(str(part) for part in sys.version_info[:3])
     if actual_python != expected_python:
         return False, f"Python version {actual_python} does not match {expected_python}"
@@ -163,22 +168,27 @@ def _gpu_runtime() -> tuple[bool, str]:
         import torch
     except Exception:
         return False, "PyTorch is not installed"
-    expected = MANIFEST["runtime"]["pytorch"]
+    expected = expected_runtime["pytorch"]
     actual = getattr(torch, "__version__", "")
     if actual != expected:
         return False, f"PyTorch version {actual or 'unknown'} does not match {expected}"
-    for distribution in ("transformers", "accelerate"):
-        expected_package = MANIFEST["runtime"][distribution]
+    for distribution in ("torchvision", "torchaudio", "transformers", "accelerate"):
+        expected_package = expected_runtime[distribution]
         actual_package = _installed_version(distribution)
         if actual_package != expected_package:
             return False, (
                 f"{distribution} version {actual_package or 'missing'} "
                 f"does not match {expected_package}"
             )
-    expected_cuda = MANIFEST["runtime"]["cuda"]
+    expected_cuda = expected_runtime["cuda"]
     image_cuda = os.getenv("MUSIC_GPU_CUDA_VERSION")
     if image_cuda != expected_cuda:
         return False, f"CUDA image version {image_cuda or 'unknown'} does not match {expected_cuda}"
+    wheel_cuda = ".".join(expected_cuda.split(".")[:2])
+    if str(torch.version.cuda or "") != wheel_cuda:
+        return False, (
+            f"PyTorch CUDA {torch.version.cuda or 'unknown'} does not match {wheel_cuda}"
+        )
     if not torch.cuda.is_available():
         return False, "CUDA GPU is not available"
     try:
@@ -188,8 +198,13 @@ def _gpu_runtime() -> tuple[bool, str]:
     return True, f"CUDA {torch.version.cuda or 'unknown'} GPU ready"
 
 
-def _run_command(command: str, args: list[str], payload: dict[str, Any] | None,
-                 timeout: int) -> tuple[int, str, str]:
+def _run_command(
+    command: str,
+    args: list[str],
+    payload: dict[str, Any] | None,
+    timeout: int,
+    env_overrides: dict[str, str] | None = None,
+) -> tuple[int, str, str]:
     try:
         process = subprocess.run(
             [*shlex.split(command), *args],
@@ -198,14 +213,23 @@ def _run_command(command: str, args: list[str], payload: dict[str, Any] | None,
             text=True,
             timeout=timeout,
             check=False,
-            env={**os.environ, "CUDA_VISIBLE_DEVICES": os.getenv("CUDA_VISIBLE_DEVICES", "0")},
+            env={
+                **os.environ,
+                "CUDA_VISIBLE_DEVICES": os.getenv("CUDA_VISIBLE_DEVICES", "0"),
+                "MODAL_IMAGE_ID": os.getenv("MODAL_IMAGE_ID", ""),
+                **(env_overrides or {}),
+            },
         )
         return process.returncode, process.stdout[-4 * 1024 * 1024:], process.stderr[-4096:]
     except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
         return 127, "", type(exc).__name__
 
 
-def _provider_health(provider: str, run_smoke: bool = True) -> dict[str, Any]:
+def _provider_health(
+    provider: str,
+    run_smoke: bool = True,
+    artifact_base_url: str | None = None,
+) -> dict[str, Any]:
     details = PROVIDERS.get(provider)
     if not details:
         raise HTTPException(404, "unknown provider")
@@ -217,7 +241,8 @@ def _provider_health(provider: str, run_smoke: bool = True) -> dict[str, Any]:
         or details.get("checkpoint_sha256")
     )
     actual_hash = _checkpoint_digest(checkpoint)
-    runtime_ready, runtime_message = _gpu_runtime()
+    expected_runtime = _expected_runtime(details)
+    runtime_ready, runtime_message = _gpu_runtime(details)
     try:
         import torch
         pytorch_version = str(torch.__version__)
@@ -230,6 +255,8 @@ def _provider_health(provider: str, run_smoke: bool = True) -> dict[str, Any]:
     )).strip()
     container_digest = os.getenv("MUSIC_GPU_CONTAINER_DIGEST", "").strip()
     immutable_container = bool(re.fullmatch(r"sha256:[a-fA-F0-9]{64}", container_digest))
+    modal_image_id = os.getenv("MODAL_IMAGE_ID", "").strip()
+    immutable_modal_image = bool(re.fullmatch(r"im-[A-Za-z0-9]+", modal_image_id))
     checksum_ready = bool(expected_hash and actual_hash and actual_hash.lower() == expected_hash.lower())
     runner = os.getenv(details["runner_env"], "").strip()
     smoke_command = os.getenv(details["smoke_env"], "").strip() or runner
@@ -249,18 +276,29 @@ def _provider_health(provider: str, run_smoke: bool = True) -> dict[str, Any]:
              "--checkpoint", str(checkpoint)],
             None,
             HEALTH_TIMEOUT_SECONDS,
+            {
+                "MUSIC_GPU_ARTIFACT_BASE_URL": artifact_base_url or "",
+                "MUSIC_GPU_ARTIFACT_CAPABILITY_EXPIRES": str(
+                    int(time.time()) + ARTIFACT_TTL_SECONDS
+                ),
+            },
         )
         if code == 0:
             try:
                 proof = json.loads(output.strip().splitlines()[-1])
+                proof_provenance = (
+                    proof.get("provenance")
+                    if isinstance(proof.get("provenance"), dict)
+                    else proof
+                )
                 smoke_tested = (
                     proof.get("smokeTested") is True
                     and proof.get("provider") == provider
                     and proof.get("modelVersion") == version
                     and proof.get("checkpointSha256", "").lower() == actual_hash.lower()
                     and _provenance_matches(
-                        proof, version, actual_hash, revision, container_digest,
-                        cuda_version, pytorch_version, gpu_model,
+                        proof_provenance, version, actual_hash, revision, container_digest,
+                        modal_image_id, cuda_version, pytorch_version, gpu_model,
                     )
                     and bool(proof.get("output"))
                 )
@@ -270,7 +308,9 @@ def _provider_health(provider: str, run_smoke: bool = True) -> dict[str, Any]:
             except (json.JSONDecodeError, IndexError):
                 smoke_message = "Smoke runner did not return a valid proof"
         else:
-            smoke_message = f"Smoke inference failed ({error or 'runner error'})"
+            # stderr can contain local paths, framework internals, or very
+            # large logs. It is intentionally not reflected through health.
+            smoke_message = f"Smoke inference failed (runner exit {code})"
     reasons = []
     if not configured:
         reasons.append("provider is not enabled")
@@ -285,7 +325,9 @@ def _provider_health(provider: str, run_smoke: bool = True) -> dict[str, Any]:
     if not runner:
         reasons.append("model runner is not configured")
     if not immutable_container:
-        reasons.append("immutable container digest is not configured")
+        reasons.append("source image digest is not configured")
+    if not immutable_modal_image:
+        reasons.append("Modal image identity is not available")
     if not smoke_tested:
         reasons.append(smoke_message)
     ready = not reasons
@@ -301,23 +343,38 @@ def _provider_health(provider: str, run_smoke: bool = True) -> dict[str, Any]:
         "checksum": actual_hash,
         "checkpointSha256": actual_hash,
         "smokeTested": smoke_tested,
-        "framework": MANIFEST["runtime"],
+        "framework": expected_runtime,
+        "expectedRuntime": expected_runtime,
         "revision": revision,
+        "sourceImageDigest": container_digest,
         "containerDigest": container_digest,
+        "modalImageId": modal_image_id,
+        "imageId": modal_image_id,
         "cudaVersion": cuda_version,
         "pytorchVersion": pytorch_version,
         "gpu": gpu_model,
         "runtime": {
             "revision": revision,
+            "sourceImageDigest": container_digest,
             "containerDigest": container_digest,
+            "modalImageId": modal_image_id,
+            "imageId": modal_image_id,
             "cudaVersion": cuda_version,
             "pytorchVersion": pytorch_version,
             "gpu": gpu_model,
             "pythonVersion": ".".join(str(part) for part in sys.version_info[:3]),
         },
         "message": "GPU checkpoint, runtime, checksum, and smoke test are verified"
-        if ready else "; ".join(reasons),
+        if ready else _bounded_health_message(reasons),
     }
+
+
+def _bounded_health_message(reasons: list[str]) -> str:
+    cleaned = [
+        re.sub(r"[\x00-\x1f\x7f]+", " ", str(reason)).strip()[:240]
+        for reason in reasons
+    ]
+    return "; ".join(item for item in cleaned if item)[:768]
 
 
 def _provenance_matches(
@@ -326,6 +383,7 @@ def _provenance_matches(
     checkpoint: str | None,
     revision: str,
     container_digest: str,
+    modal_image_id: str,
     cuda_version: str,
     pytorch_version: str,
     gpu: str,
@@ -337,7 +395,8 @@ def _provenance_matches(
         "modelVersion": model_version,
         "checkpointSha256": checkpoint.lower(),
         "revision": revision,
-        "containerDigest": container_digest,
+        "sourceImageDigest": container_digest,
+        "modalImageId": modal_image_id,
         "cudaVersion": cuda_version,
         "pytorchVersion": pytorch_version,
         "gpu": gpu,
@@ -355,10 +414,14 @@ class JobRequest(BaseModel):
     model_version: str | None = Field(default=None, alias="modelVersion")
 
 
-def _validate_provider(provider: str) -> dict[str, Any]:
+def _validate_provider(
+    provider: str, artifact_base_url: str | None = None
+) -> dict[str, Any]:
     if provider not in PROVIDERS:
         raise HTTPException(404, "unknown provider")
-    health = _provider_health(provider, run_smoke=True)
+    health = _provider_health(
+        provider, run_smoke=True, artifact_base_url=artifact_base_url
+    )
     if health["status"] != "ready":
         raise HTTPException(503, "provider is not ready: " + health["message"])
     return health
@@ -379,6 +442,7 @@ def _result_from_runner(provider: str, health: dict[str, Any], output: str) -> d
         health["checkpointSha256"],
         health["revision"],
         health["containerDigest"],
+        health["modalImageId"],
         health["cudaVersion"],
         health["pytorchVersion"],
         health["gpu"],
@@ -398,6 +462,9 @@ def _result_from_runner(provider: str, health: dict[str, Any], output: str) -> d
         "checkpointSha256": health["checkpointSha256"],
         "revision": health["revision"],
         "containerDigest": health["containerDigest"],
+        "sourceImageDigest": health["sourceImageDigest"],
+        "modalImageId": health["modalImageId"],
+        "imageId": health["modalImageId"],
         "cudaVersion": health["cudaVersion"],
         "pytorchVersion": health["pytorchVersion"],
         "gpu": health["gpu"],
@@ -423,7 +490,13 @@ async def _execute(job_id: str) -> None:
         if claimed != 1:
             return
         provider = row["provider"]
-        health = _validate_provider(provider)
+        request = _runner_payload(json.loads(row["request_json"]), job_id)
+        artifact_base = request.get("_artifactBaseUrl")
+        health = (
+            _validate_provider(provider, artifact_base)
+            if artifact_base
+            else _validate_provider(provider)
+        )
         loading = connection.execute(
             "UPDATE jobs SET progress=15, stage='loading_model', updated_at=? WHERE id=? AND status='running'",
             (time.time(), job_id),
@@ -434,7 +507,6 @@ async def _execute(job_id: str) -> None:
                 (time.time(), job_id),
             )
             return
-        request = _runner_payload(json.loads(row["request_json"]), job_id)
         runner = os.getenv(PROVIDERS[provider]["runner_env"], "").strip()
         connection.execute(
             "UPDATE jobs SET progress=35, stage='running_model', updated_at=? WHERE id=?",
@@ -465,6 +537,7 @@ async def _execute(job_id: str) -> None:
                 env={
                     **os.environ,
                     "CUDA_VISIBLE_DEVICES": os.getenv("CUDA_VISIBLE_DEVICES", "0"),
+                    "MODAL_IMAGE_ID": os.getenv("MODAL_IMAGE_ID", ""),
                     "MUSIC_GPU_ARTIFACT_BASE_URL": request.get("_artifactBaseUrl", ""),
                     "MUSIC_GPU_ARTIFACT_CAPABILITY_EXPIRES": str(
                         int(time.time()) + ARTIFACT_TTL_SECONDS
@@ -734,18 +807,21 @@ def download_artifact(
 
 
 @app.get("/health", dependencies=[Depends(_auth)])
-def health(provider: str | None = None):
+def health(request: Request, provider: str | None = None):
+    artifact_base = f"{_trusted_artifact_base(request)}/artifacts"
     if provider:
-        return _provider_health(provider)
-    return {"providers": {name: _provider_health(name) for name in PROVIDERS}}
+        return _provider_health(provider, artifact_base_url=artifact_base)
+    return {
+        "providers": {
+            name: _provider_health(name, artifact_base_url=artifact_base)
+            for name in PROVIDERS
+        }
+    }
 
 
 async def submit(request: JobRequest, raw_request: Request):
     key = raw_request.headers.get("Idempotency-Key", "")
-    base = str(raw_request.base_url).rstrip("/")
-    parsed = urlsplit(base)
-    if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
-        raise HTTPException(400, "artifact origin must be HTTPS")
+    base = _trusted_artifact_base(raw_request)
     job = _queue(request, key, f"{base}/artifacts")
     if job["id"] not in TASKS and job["status"] == "queued":
         TASKS[job["id"]] = asyncio.create_task(_execute(job["id"]))
@@ -758,6 +834,37 @@ async def submit(request: JobRequest, raw_request: Request):
             "cancelUrl": job["cancelUrl"],
         },
         status_code=202,
+    )
+
+
+def _trusted_artifact_base(request: Request) -> str:
+    """Compare the request origin to the exact deployment-controlled origin."""
+    configured = os.getenv("MUSIC_GPU_PUBLIC_ORIGIN", "").strip()
+    expected = urlsplit(configured)
+    if (
+        expected.scheme != "https" or not expected.hostname
+        or expected.username or expected.password
+        or expected.path not in ("", "/") or expected.query or expected.fragment
+    ):
+        raise HTTPException(503, "canonical public origin is not configured")
+    parsed = urlsplit(str(request.base_url).rstrip("/"))
+    enabled = list(ENABLED)
+    if len(enabled) != 1:
+        raise HTTPException(503, "artifact origin requires one isolated provider")
+    hostname = (parsed.hostname or "").lower()
+    expected_port = expected.port or 443
+    actual_port = parsed.port or 443
+    if (
+        parsed.scheme != "https"
+        or actual_port != expected_port
+        or parsed.username
+        or parsed.password
+        or hostname != expected.hostname.lower()
+    ):
+        raise HTTPException(400, "request origin does not match the configured endpoint")
+    return (
+        f"https://{expected.hostname.lower()}"
+        + (f":{expected_port}" if expected_port != 443 else "")
     )
 
 

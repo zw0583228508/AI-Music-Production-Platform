@@ -60,6 +60,28 @@ runs as an unprivileged `music-ai` user.
 `ace-step`, `mt3`, and `all-in-one`. Each endpoint serves the existing FastAPI
 worker but enables only its own provider. MusicGen is deliberately not a Modal
 priority deployment.
+
+`MUSIC_GPU_MODAL_DEPLOY_PROVIDERS` is a strict comma-separated deployment
+allowlist. It defaults to `ACE_STEP`, the only provider with a verified public
+checkpoint snapshot. An explicitly empty value or unknown provider aborts
+module evaluation. For example, after separately validating and mounting MT3:
+
+```sh
+MUSIC_GPU_PUBLIC_ORIGIN_ACE_STEP=https://workspace--music-ai-gpu-worker-ace-step.modal.run \
+MUSIC_GPU_MODAL_DEPLOY_PROVIDERS=ACE_STEP,MT3 \
+  modal deploy services/music-ai-gpu-worker/modal_app.py
+```
+
+Set one exact `MUSIC_GPU_PUBLIC_ORIGIN_<PROVIDER>` at deploy time for every
+selected provider. The worker receives it as `MUSIC_GPU_PUBLIC_ORIGIN` and
+fails health/submission closed when it is absent or differs from the request
+origin.
+
+Provider images have independent runtime pins. ACE-Step uses the official
+Linux x86_64 stack: CUDA 12.8.1 runtime image, PyTorch 2.10.0+cu128,
+Torchvision 0.25.0+cu128, Torchaudio 2.10.0+cu128, Transformers 4.57.6, and
+Accelerate 1.12.0. Other providers retain the reviewed CUDA 12.4/PyTorch 2.5.1
+stack until their checkpoint/runtime combination is validated.
 It remains bearer-protected by `MUSIC_AI_WORKER_TOKEN`; endpoint URLs are not
 an authorization boundary and must not be placed in clients.
 
@@ -85,14 +107,19 @@ modal volume create music-ai-outputs-v1
 Create the named secret out of band. It contains `MUSIC_AI_WORKER_TOKEN`,
 `MUSIC_GPU_ARTIFACT_CAPABILITY_SECRET`, plus approved runner,
 smoke-runner, checkpoint revision, and checkpoint-SHA values; never commit it.
-Runner artifact URLs use the authenticated submission's HTTPS origin, not a
-configured or guessed public URL. Each signed URL expires and atomically
+Runner artifact URLs require the authenticated request origin to exactly match
+the deployment-controlled `MUSIC_GPU_PUBLIC_ORIGIN`; suffix/Host guesses are
+rejected. Each signed URL expires and atomically
 consumes only its named artifact; separate stem capabilities remain usable.
-`MUSIC_GPU_CONTAINER_DIGEST` is a deterministic SHA-256 of the reviewed
+Authenticated health smoke uses the same strictly validated provider endpoint
+origin and passes its `/artifacts` base only to the smoke subprocess; runner
+stderr and local paths are never reflected through health failures.
+The `sourceImageDigest` response is a deterministic SHA-256 of the reviewed
 provider image build inputs (Dockerfile, worker/config/manifest, runner, and
-requirements), not a claim about an OCI registry layer digest. It is baked and
-passed by `modal_app.py`, so the control plane can pin the exact source-image
-identity consistently with the `containerDigest` contract.
+requirements), not an OCI registry layer digest or actual container identity.
+The legacy `containerDigest` field aliases this source digest for compatibility
+and must not be the sole trust anchor. `modalImageId`/`imageId` report Modal's
+strictly validated runtime-injected `MODAL_IMAGE_ID`.
 
 ```sh
 modal secret create music-ai-worker-runtime --from-dotenv .modal-worker.env
@@ -112,6 +139,31 @@ before enabling a provider, and never commit them:
 modal volume put music-ai-models-v1 ./verified-models/ace-step-1.5-base ace-step-1.5-base
 modal volume get music-ai-models-v1 ace-step-1.5-base ./verified-models/ace-step-1.5-base
 ```
+
+The deployable bootstrap entrypoint performs an atomic staged snapshot,
+canonical digest, smoke-fixture write, and model Volume commit:
+
+```sh
+modal run services/music-ai-gpu-worker/bootstrap_modal_app.py::bootstrap --provider ACE_STEP
+```
+
+ACE-Step builds `ace-step-1.5-runtime` atomically from the public
+`ACE-Step/Ace-Step1.5` snapshot at
+`19671f406d603126926c1b7e2adc169acbcade22` and
+`ACE-Step/acestep-v15-base` at
+`e432212fec32b8965a14ffa57ae653438d6abd14`. The composite contains only
+`acestep-v15-base`, `vae`, `Qwen3-Embedding-0.6B`, and required root
+configuration. It excludes the turbo and 1.7B thinking model. A prior verified
+`ace-step-1.5-base` is hardlinked (or copied) into staging when available and
+is never deleted; otherwise the base revision is downloaded. The final
+composite is independently canonical-hashed before its model Volume commit.
+Bootstrap entrypoints also
+exist for BS_ROFORMER, MT3, and ALL_IN_ONE, but intentionally fail before
+creating checkpoint files because their current adapter identities do not establish an
+unambiguous, immutable public checkpoint snapshot. Operators must review and
+pin those sources rather than allowing an inference-time auto-download or a
+checkpoint-shaped placeholder. Successful bootstrap output contains only
+provider, relative path, digest, revision, and size.
 
 For a checkpoint upgrade, create new versioned volumes, update the pinned
 secret/checksum in a reviewed deployment, and wait for health smoke validation

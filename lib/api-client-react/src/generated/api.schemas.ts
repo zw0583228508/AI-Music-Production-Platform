@@ -1515,15 +1515,17 @@ export const ProviderRuntimeSnapshotHealthStatus = {
 } as const;
 
 /**
- * Immutable worker attestation captured from live health and required to match the completion payload.
+ * Immutable worker attestation captured from live health and required to match the completion payload. The Modal image ID is the independently promoted runtime identity; the source image digest is retained as an additional compatibility check.
  */
 export interface ProviderRuntimeProvenance {
   model: string;
   /** @pattern ^[a-fA-F0-9]{64}$ */
   checkpointSha256: string;
   revision: string;
+  /** @pattern ^im-[A-Za-z0-9]+$ */
+  modalImageId: string;
   /** @pattern ^sha256:[a-fA-F0-9]{64}$ */
-  containerDigest: string;
+  sourceImageDigest: string;
   cudaVersion: string;
   pytorchVersion: string;
   gpu: string;

@@ -13,8 +13,9 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from .common import (
-    RunnerError, attest_checkpoint, download_source, durable_job_dir, emit,
-    finite_number, request_value, require_cuda, require_distribution_version, runtime_provenance, validate_audio,
+    RunnerError, attest_checkpoint, durable_job_dir, emit, finite_number,
+    materialize_source, request_value, require_cuda, require_distribution_version,
+    runtime_provenance,
 )
 
 # This revision has not been independently verified in this repository.  It is
@@ -100,13 +101,13 @@ def normalize_notes(events: list[dict[str, Any]], duration: float) -> list[dict[
     return notes
 
 
-def run_job(request: dict[str, Any], checkpoint: Path, backend: Mt3Backend | None = None) -> dict[str, Any]:
+def run_job(request: dict[str, Any], checkpoint: Path, backend: Mt3Backend | None = None,
+            *, smoke: bool = False) -> dict[str, Any]:
     require_cuda()
     digest = attest_checkpoint(checkpoint, PROVIDER)
     duration = finite_number(request_value(request, "durationSeconds"), "durationSeconds", 0.001)
     work = durable_job_dir(request, PROVIDER)
-    audio = download_source(request_value(request, "sourceUrl"), work / "source.wav")
-    validate_audio(audio)
+    audio = materialize_source(request, work / "source.wav", checkpoint, smoke)
     active = backend or OfficialMt3Backend()
     notes = normalize_notes(active.transcribe(audio, checkpoint), duration + 1)
     overall = min((note["confidence"] for note in notes), default=0.0)
@@ -136,25 +137,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.smoke:
         require_cuda()
         digest = attest_checkpoint(checkpoint, PROVIDER)
-        smoke = os.getenv("MT3_SMOKE_AUDIO")
-        if not smoke or not Path(smoke).is_file():
-            raise RunnerError("MT3_SMOKE_AUDIO must reference mounted real audio")
-        events = OfficialMt3Backend().transcribe(Path(smoke), checkpoint)
-        if not events:
+        result = run_job({"requestId": f"smoke-mt3-{os.urandom(8).hex()}"},
+                         checkpoint, smoke=True)
+        if not result["notes"]:
             raise RunnerError("MT3 smoke inference returned no notes")
-        proof_provenance = {"provider": PROVIDER, "modelVersion": MODEL_VERSION,
-              "checkpointSha256": digest, "backend": OfficialMt3Backend.name,
-              "backendVersion": BACKEND_VERSION, "revision": BACKEND_SOURCE_REVISION,
-              "sourceRevision": BACKEND_SOURCE_REVISION,
-              "upstreamSourceRevision": UPSTREAM_SOURCE_REVISION, "device": "cuda"}
-        proof_provenance.update(runtime_provenance())
+        proof_provenance = result["provenance"]
         emit({"smokeTested": True, "provider": PROVIDER, "modelVersion": args.model_version,
               "version": args.model_version, "checkpointSha256": digest,
               "backend": OfficialMt3Backend.name, "backendVersion": BACKEND_VERSION,
               "sourceRevision": BACKEND_SOURCE_REVISION,
               "upstreamSourceRevision": UPSTREAM_SOURCE_REVISION,
               "device": "cuda", "provenance": proof_provenance,
-              "output": {"notes": len(events)}})
+              "output": {"notes": len(result["notes"])}})
     else:
         import sys
         payload = json.load(sys.stdin)

@@ -246,7 +246,8 @@ export type ProviderRuntimeSnapshot = {
     model: string;
     checkpointSha256: string;
     revision: string;
-    containerDigest: string;
+    modalImageId: string;
+    sourceImageDigest: string;
     cudaVersion: string;
     pytorchVersion: string;
     gpu: string;

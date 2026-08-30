@@ -95,7 +95,7 @@ class GpuWorkerContractTests(unittest.TestCase):
                     "asgi": {"version": "3.0"},
                     "http_version": "1.1",
                     "method": "GET",
-                    "scheme": "http",
+                    "scheme": "https",
                     "path": "/health",
                     "raw_path": b"/health",
                     "query_string": b"provider=ACE_STEP",
@@ -103,7 +103,7 @@ class GpuWorkerContractTests(unittest.TestCase):
                         (b"authorization", b"Bearer health-test-token"),
                     ],
                     "client": ("127.0.0.1", 1),
-                    "server": ("worker", 80),
+                    "server": ("workspace--music-ai-gpu-worker-ace-step.modal.run", 443),
                     "root_path": "",
                 },
                 receive,
@@ -112,7 +112,15 @@ class GpuWorkerContractTests(unittest.TestCase):
             return sent
 
         try:
-            sent = asyncio.run(request_health())
+            with mock.patch.object(worker, "ENABLED", {"ACE_STEP"}), mock.patch.dict(
+                os.environ,
+                {
+                    "MUSIC_GPU_PUBLIC_ORIGIN":
+                        "https://workspace--music-ai-gpu-worker-ace-step.modal.run",
+                    "MODAL_IMAGE_ID": "im-TestImage123",
+                },
+            ):
+                sent = asyncio.run(request_health())
             start = next(item for item in sent if item["type"] == "http.response.start")
             body = b"".join(
                 item.get("body", b"")
@@ -235,6 +243,8 @@ class GpuWorkerContractTests(unittest.TestCase):
             "checkpointSha256": "a" * 64,
             "revision": "repo@revision",
             "containerDigest": "sha256:" + "b" * 64,
+            "sourceImageDigest": "sha256:" + "b" * 64,
+            "modalImageId": "im-TestImage123",
             "cudaVersion": "12.4",
             "pytorchVersion": "2.5.1+cu124",
             "gpu": "NVIDIA L4",
@@ -244,6 +254,8 @@ class GpuWorkerContractTests(unittest.TestCase):
             "checkpointSha256": health["checkpointSha256"],
             "revision": health["revision"],
             "containerDigest": health["containerDigest"],
+            "sourceImageDigest": health["sourceImageDigest"],
+            "modalImageId": health["modalImageId"],
             "cudaVersion": health["cudaVersion"],
             "pytorchVersion": health["pytorchVersion"],
             "gpu": health["gpu"],
@@ -253,6 +265,47 @@ class GpuWorkerContractTests(unittest.TestCase):
         provenance["gpu"] = "different GPU"
         with self.assertRaisesRegex(RuntimeError, "provenance"):
             worker._result_from_runner("MT3", health, json.dumps({"provenance": provenance}))
+
+    def test_artifact_base_accepts_only_matching_modal_provider_host(self):
+        host = "workspace--music-ai-gpu-worker-bs-roformer.modal.run"
+        request = worker.Request({
+            "type": "http", "scheme": "https", "server": (host, 443),
+            "path": "/", "query_string": b"", "headers": [(b"host", host.encode())],
+        })
+        with mock.patch.object(worker, "ENABLED", {"BS_ROFORMER"}), mock.patch.dict(
+            os.environ, {"MUSIC_GPU_PUBLIC_ORIGIN": f"https://{host}"}
+        ):
+            self.assertEqual(worker._trusted_artifact_base(request), f"https://{host}")
+            attacker = worker.Request({
+                "type": "http", "scheme": "https", "server": ("attacker.example", 443),
+                "path": "/", "query_string": b"",
+                "headers": [(b"host", b"attacker.example")],
+            })
+            with self.assertRaises(worker.HTTPException) as rejected:
+                worker._trusted_artifact_base(attacker)
+            self.assertEqual(rejected.exception.status_code, 400)
+
+    def test_smoke_subprocess_can_receive_derived_artifact_environment(self):
+        code, output, _ = worker._run_command(
+            "python3",
+            [
+                "-c",
+                "import os; print(os.environ['MUSIC_GPU_ARTIFACT_BASE_URL'])",
+            ],
+            None,
+            10,
+            {"MUSIC_GPU_ARTIFACT_BASE_URL": "https://trusted.modal.run/artifacts"},
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(output.strip(), "https://trusted.modal.run/artifacts")
+
+    def test_health_failure_messages_are_bounded_and_strip_control_characters(self):
+        message = worker._bounded_health_message(
+            ["/private/path\x00\n" + ("internal traceback " * 200)]
+        )
+        self.assertLessEqual(len(message), 768)
+        self.assertNotIn("\x00", message)
+        self.assertNotIn("\n", message)
 
     def test_artifact_rejects_invalid_capability_and_traversal(self):
         path, expires, _ = self._artifact("vocals.flac")

@@ -1,5 +1,11 @@
 # Build the approved ACE-Step release into the image, then mount its checkpoint.
 # Official source pin. Do not replace with the unrelated PyPI ace-step 0.1.0.
 git+https://github.com/ace-step/ACE-Step-1.5.git@ca1e85fe9430179831e6bc6be790c332190a3866
+--extra-index-url https://download.pytorch.org/whl/cu128
+torch==2.10.0+cu128
+torchvision==0.25.0+cu128
+torchaudio==2.10.0+cu128
+transformers>=4.51.0,<4.58.0
+accelerate>=1.12.0
 numpy==2.1.3
-soundfile==0.12.1
+soundfile==0.13.1

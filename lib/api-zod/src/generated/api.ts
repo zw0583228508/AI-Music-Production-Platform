@@ -2505,7 +2505,8 @@ export const GenerateArrangementBody = zod.object({
 })
 
 export const generateArrangementResponseProviderRuntimeOneRuntimeProvenanceOneCheckpointSha256RegExp = new RegExp('^[a-fA-F0-9]{64}$');
-export const generateArrangementResponseProviderRuntimeOneRuntimeProvenanceOneContainerDigestRegExp = new RegExp('^sha256:[a-fA-F0-9]{64}$');
+export const generateArrangementResponseProviderRuntimeOneRuntimeProvenanceOneModalImageIdRegExp = new RegExp('^im-[A-Za-z0-9]+$');
+export const generateArrangementResponseProviderRuntimeOneRuntimeProvenanceOneSourceImageDigestRegExp = new RegExp('^sha256:[a-fA-F0-9]{64}$');
 export const generateArrangementResponseProgressMin = 0;
 export const generateArrangementResponseProgressMax = 100;
 
@@ -2537,11 +2538,12 @@ export const GenerateArrangementResponse = zod.object({
   "model": zod.string(),
   "checkpointSha256": zod.string().regex(generateArrangementResponseProviderRuntimeOneRuntimeProvenanceOneCheckpointSha256RegExp),
   "revision": zod.string(),
-  "containerDigest": zod.string().regex(generateArrangementResponseProviderRuntimeOneRuntimeProvenanceOneContainerDigestRegExp),
+  "modalImageId": zod.string().regex(generateArrangementResponseProviderRuntimeOneRuntimeProvenanceOneModalImageIdRegExp),
+  "sourceImageDigest": zod.string().regex(generateArrangementResponseProviderRuntimeOneRuntimeProvenanceOneSourceImageDigestRegExp),
   "cudaVersion": zod.string(),
   "pytorchVersion": zod.string(),
   "gpu": zod.string()
-}).describe('Immutable worker attestation captured from live health and required to match the completion payload.'),zod.null()]).optional()
+}).describe('Immutable worker attestation captured from live health and required to match the completion payload. The Modal image ID is the independently promoted runtime identity; the source image digest is retained as an additional compatibility check.'),zod.null()]).optional()
 }),zod.null()]),
   "hardware": zod.enum(['AUTO', 'CPU', 'GPU']),
   "speed": zod.enum(['FAST', 'BALANCED', 'QUALITY']),
@@ -2572,7 +2574,8 @@ export const GetGenerationJobParams = zod.object({
 })
 
 export const getGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneCheckpointSha256RegExp = new RegExp('^[a-fA-F0-9]{64}$');
-export const getGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneContainerDigestRegExp = new RegExp('^sha256:[a-fA-F0-9]{64}$');
+export const getGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneModalImageIdRegExp = new RegExp('^im-[A-Za-z0-9]+$');
+export const getGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneSourceImageDigestRegExp = new RegExp('^sha256:[a-fA-F0-9]{64}$');
 export const getGenerationJobResponseProgressMin = 0;
 export const getGenerationJobResponseProgressMax = 100;
 
@@ -2604,11 +2607,12 @@ export const GetGenerationJobResponse = zod.object({
   "model": zod.string(),
   "checkpointSha256": zod.string().regex(getGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneCheckpointSha256RegExp),
   "revision": zod.string(),
-  "containerDigest": zod.string().regex(getGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneContainerDigestRegExp),
+  "modalImageId": zod.string().regex(getGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneModalImageIdRegExp),
+  "sourceImageDigest": zod.string().regex(getGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneSourceImageDigestRegExp),
   "cudaVersion": zod.string(),
   "pytorchVersion": zod.string(),
   "gpu": zod.string()
-}).describe('Immutable worker attestation captured from live health and required to match the completion payload.'),zod.null()]).optional()
+}).describe('Immutable worker attestation captured from live health and required to match the completion payload. The Modal image ID is the independently promoted runtime identity; the source image digest is retained as an additional compatibility check.'),zod.null()]).optional()
 }),zod.null()]),
   "hardware": zod.enum(['AUTO', 'CPU', 'GPU']),
   "speed": zod.enum(['FAST', 'BALANCED', 'QUALITY']),
@@ -2639,7 +2643,8 @@ export const CancelGenerationJobParams = zod.object({
 })
 
 export const cancelGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneCheckpointSha256RegExp = new RegExp('^[a-fA-F0-9]{64}$');
-export const cancelGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneContainerDigestRegExp = new RegExp('^sha256:[a-fA-F0-9]{64}$');
+export const cancelGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneModalImageIdRegExp = new RegExp('^im-[A-Za-z0-9]+$');
+export const cancelGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneSourceImageDigestRegExp = new RegExp('^sha256:[a-fA-F0-9]{64}$');
 export const cancelGenerationJobResponseProgressMin = 0;
 export const cancelGenerationJobResponseProgressMax = 100;
 
@@ -2671,11 +2676,12 @@ export const CancelGenerationJobResponse = zod.object({
   "model": zod.string(),
   "checkpointSha256": zod.string().regex(cancelGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneCheckpointSha256RegExp),
   "revision": zod.string(),
-  "containerDigest": zod.string().regex(cancelGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneContainerDigestRegExp),
+  "modalImageId": zod.string().regex(cancelGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneModalImageIdRegExp),
+  "sourceImageDigest": zod.string().regex(cancelGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneSourceImageDigestRegExp),
   "cudaVersion": zod.string(),
   "pytorchVersion": zod.string(),
   "gpu": zod.string()
-}).describe('Immutable worker attestation captured from live health and required to match the completion payload.'),zod.null()]).optional()
+}).describe('Immutable worker attestation captured from live health and required to match the completion payload. The Modal image ID is the independently promoted runtime identity; the source image digest is retained as an additional compatibility check.'),zod.null()]).optional()
 }),zod.null()]),
   "hardware": zod.enum(['AUTO', 'CPU', 'GPU']),
   "speed": zod.enum(['FAST', 'BALANCED', 'QUALITY']),
@@ -2706,7 +2712,8 @@ export const RetryGenerationJobParams = zod.object({
 })
 
 export const retryGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneCheckpointSha256RegExp = new RegExp('^[a-fA-F0-9]{64}$');
-export const retryGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneContainerDigestRegExp = new RegExp('^sha256:[a-fA-F0-9]{64}$');
+export const retryGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneModalImageIdRegExp = new RegExp('^im-[A-Za-z0-9]+$');
+export const retryGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneSourceImageDigestRegExp = new RegExp('^sha256:[a-fA-F0-9]{64}$');
 export const retryGenerationJobResponseProgressMin = 0;
 export const retryGenerationJobResponseProgressMax = 100;
 
@@ -2738,11 +2745,12 @@ export const RetryGenerationJobResponse = zod.object({
   "model": zod.string(),
   "checkpointSha256": zod.string().regex(retryGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneCheckpointSha256RegExp),
   "revision": zod.string(),
-  "containerDigest": zod.string().regex(retryGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneContainerDigestRegExp),
+  "modalImageId": zod.string().regex(retryGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneModalImageIdRegExp),
+  "sourceImageDigest": zod.string().regex(retryGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneSourceImageDigestRegExp),
   "cudaVersion": zod.string(),
   "pytorchVersion": zod.string(),
   "gpu": zod.string()
-}).describe('Immutable worker attestation captured from live health and required to match the completion payload.'),zod.null()]).optional()
+}).describe('Immutable worker attestation captured from live health and required to match the completion payload. The Modal image ID is the independently promoted runtime identity; the source image digest is retained as an additional compatibility check.'),zod.null()]).optional()
 }),zod.null()]),
   "hardware": zod.enum(['AUTO', 'CPU', 'GPU']),
   "speed": zod.enum(['FAST', 'BALANCED', 'QUALITY']),
@@ -3147,7 +3155,8 @@ export const SelectGenerationCandidateResponse = zod.object({
  * @summary List generation provider capabilities and availability
  */
 export const listGenerationProvidersResponseRuntimeProvenanceOneCheckpointSha256RegExp = new RegExp('^[a-fA-F0-9]{64}$');
-export const listGenerationProvidersResponseRuntimeProvenanceOneContainerDigestRegExp = new RegExp('^sha256:[a-fA-F0-9]{64}$');
+export const listGenerationProvidersResponseRuntimeProvenanceOneModalImageIdRegExp = new RegExp('^im-[A-Za-z0-9]+$');
+export const listGenerationProvidersResponseRuntimeProvenanceOneSourceImageDigestRegExp = new RegExp('^sha256:[a-fA-F0-9]{64}$');
 
 
 export const ListGenerationProvidersResponseItem = zod.object({
@@ -3168,11 +3177,12 @@ export const ListGenerationProvidersResponseItem = zod.object({
   "model": zod.string(),
   "checkpointSha256": zod.string().regex(listGenerationProvidersResponseRuntimeProvenanceOneCheckpointSha256RegExp),
   "revision": zod.string(),
-  "containerDigest": zod.string().regex(listGenerationProvidersResponseRuntimeProvenanceOneContainerDigestRegExp),
+  "modalImageId": zod.string().regex(listGenerationProvidersResponseRuntimeProvenanceOneModalImageIdRegExp),
+  "sourceImageDigest": zod.string().regex(listGenerationProvidersResponseRuntimeProvenanceOneSourceImageDigestRegExp),
   "cudaVersion": zod.string(),
   "pytorchVersion": zod.string(),
   "gpu": zod.string()
-}).describe('Immutable worker attestation captured from live health and required to match the completion payload.'),zod.null()]).optional(),
+}).describe('Immutable worker attestation captured from live health and required to match the completion payload. The Modal image ID is the independently promoted runtime identity; the source image digest is retained as an additional compatibility check.'),zod.null()]).optional(),
   "lastHealth": zod.object({
   "status": zod.enum(['healthy', 'unhealthy', 'unknown']),
   "checkedAt": zod.string().nullable(),
@@ -3483,3 +3493,5 @@ export const RunCopilotResponse = zod.object({
   "affectedSections": zod.array(zod.string()),
   "interpreter": zod.enum(['openai', 'deterministic'])
 })
+
+// End of generated schema.

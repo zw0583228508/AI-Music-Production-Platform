@@ -15,14 +15,18 @@ import {
   anyAccompCommercialUseAuthorized,
   expectedGpuContainerDigest,
   expectedGpuCheckpointSha256,
+  expectedGpuModalImageId,
   expectedGpuModelVersion,
+  expectedGpuSourceImageDigest,
   isGpuAttestedProvider,
 } from "./gpuProviderAttestation";
 export {
   anyAccompCommercialUseAuthorized,
   expectedGpuContainerDigest,
   expectedGpuCheckpointSha256,
+  expectedGpuModalImageId,
   expectedGpuModelVersion,
+  expectedGpuSourceImageDigest,
   isGpuAttestedProvider,
 } from "./gpuProviderAttestation";
 export type ProviderStatus = "ready" | "configured" | "unavailable";
@@ -746,26 +750,35 @@ function remoteEnvironmentPrefix(providerId: string): string {
   return providerId === "ACE_STEP_BASE" ? "ACE_STEP" : providerId;
 }
 
+function remoteProviderEndpoint(providerId: string): string | undefined {
+  const prefix = remoteEnvironmentPrefix(providerId);
+  const key = providerId.replace(/[^A-Z0-9]/g, "_");
+  return process.env[`MUSIC_PROVIDER_${key}_URL`] ??
+    process.env["MUSIC_PROVIDER_GATEWAY_URL"] ??
+    process.env[`${prefix}_API_URL`];
+}
+
+function remoteProviderToken(providerId: string): string | undefined {
+  const prefix = remoteEnvironmentPrefix(providerId);
+  const key = providerId.replace(/[^A-Z0-9]/g, "_");
+  return process.env[`MUSIC_PROVIDER_${key}_TOKEN`] ??
+    process.env["MUSIC_PROVIDER_GATEWAY_TOKEN"] ??
+    process.env[`${prefix}_API_TOKEN`] ??
+    process.env.MUSIC_AI_WORKER_TOKEN;
+}
+
 export async function cancelRemoteProviderJob(
   providerId: string,
   cancelUrlValue: string,
 ): Promise<void> {
-  const prefix = remoteEnvironmentPrefix(providerId);
-  const key = providerId.replace(/[^A-Z0-9]/g, "_");
-  const endpoint =
-    process.env[`MUSIC_PROVIDER_${key}_URL`] ??
-    process.env["MUSIC_PROVIDER_GATEWAY_URL"] ??
-    process.env[`${prefix}_API_URL`];
+  const endpoint = remoteProviderEndpoint(providerId);
   if (!endpoint) throw new Error(`${providerId} worker is not configured`);
   const endpointUrl = new URL(endpoint);
   const cancelUrl = new URL(cancelUrlValue, endpointUrl);
   if (cancelUrl.origin !== endpointUrl.origin) {
     throw new Error("Provider cancellation URL must use the configured worker origin");
   }
-  const token =
-    process.env[`MUSIC_PROVIDER_${key}_TOKEN`] ??
-    process.env["MUSIC_PROVIDER_GATEWAY_TOKEN"] ??
-    process.env[`${prefix}_API_TOKEN`];
+  const token = remoteProviderToken(providerId);
   let lastStatus = 0;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const response = await fetch(cancelUrl, {
@@ -795,10 +808,9 @@ export async function runArrangementProvider(
     return generateLocalArrangement(provider, input);
   }
 
-  const prefix = remoteEnvironmentPrefix(provider.id);
-  const endpoint = process.env[`${prefix}_API_URL`];
+  const endpoint = remoteProviderEndpoint(provider.id);
   if (!endpoint) throw new ProviderUnavailableError(provider.id);
-  const token = process.env[`${prefix}_API_TOKEN`];
+  const token = remoteProviderToken(provider.id);
   const response = await fetch(new URL("/arrange", endpoint), {
     method: "POST",
     headers: {
@@ -1126,8 +1138,11 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
       const expectedChecksum = strictGpuAttestation
         ? expectedGpuCheckpointSha256(this.definition.id)
         : null;
-      const expectedContainerDigest = strictGpuAttestation
-        ? expectedGpuContainerDigest(this.definition.id)
+      const expectedModalImageId = strictGpuAttestation
+        ? expectedGpuModalImageId(this.definition.id)
+        : null;
+      const expectedSourceImageDigest = strictGpuAttestation
+        ? expectedGpuSourceImageDigest(this.definition.id)
         : null;
       const reportedProvider = typeof payload["provider"] === "string"
         ? payload["provider"].trim()
@@ -1145,7 +1160,8 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
         exactModel &&
         isSha256(reportedChecksum) &&
         reportedChecksum.toLowerCase() === expectedChecksum &&
-        runtimeProvenance?.containerDigest === expectedContainerDigest &&
+        runtimeProvenance?.modalImageId === expectedModalImageId &&
+        runtimeProvenance?.sourceImageDigest === expectedSourceImageDigest &&
         smokeTested &&
         gpuReady &&
         runtimeProvenance !== null &&
@@ -1155,7 +1171,7 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
         Boolean(reportedVersion) && strictAttestationReady;
       const message = ready
         ? strictGpuAttestation
-          ? "GPU runtime, checkpoint checksum, model version, and smoke inference are verified."
+          ? "GPU runtime, independently promoted Modal image, checkpoint checksum, model version, and smoke inference are verified."
           : "Checkpoint and provider runtime are ready."
         : typeof payload["message"] === "string" && payload["message"].trim()
           ? payload["message"].trim()
@@ -1172,9 +1188,13 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
                 )
                 ? "GPU worker checkpoint SHA-256 does not match the deployment pin."
                 : strictGpuAttestation &&
-                    (!expectedContainerDigest ||
-                      runtimeProvenance?.containerDigest !== expectedContainerDigest)
-                  ? "GPU worker container digest does not match the deployment pin."
+                    (!expectedModalImageId ||
+                      runtimeProvenance?.modalImageId !== expectedModalImageId)
+                  ? "GPU worker Modal image ID does not match the independently promoted deployment pin."
+                : strictGpuAttestation &&
+                    (!expectedSourceImageDigest ||
+                      runtimeProvenance?.sourceImageDigest !== expectedSourceImageDigest)
+                  ? "GPU worker source image digest does not match the compatibility deployment pin."
                 : strictGpuAttestation && !smokeTested
                   ? "GPU worker has not completed a real smoke inference."
                   : strictGpuAttestation && !gpuReady
@@ -1262,6 +1282,8 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
         !isSha256(checkpointSha256) ||
         checkpointSha256.toLowerCase() !== this.attestedChecksum ||
         payload["smokeTested"] !== true ||
+        runtimeProvenance?.modalImageId !==
+          expectedGpuModalImageId(this.definition.id) ||
         !sameRuntimeProvenance(runtimeProvenance, this.readiness.runtimeProvenance)
       ) {
         throw new Error(
@@ -1597,13 +1619,8 @@ export const providerDefinitions: ProviderDefinition[] = [
 
 export function createProviderRegistry(): MusicGenerationProvider[] {
   return providerDefinitions.map((definition) => {
-    const key = providerEnvKey(definition.id);
-    const endpoint =
-      process.env[`MUSIC_PROVIDER_${key}_URL`] ??
-      process.env["MUSIC_PROVIDER_GATEWAY_URL"];
-    const token =
-      process.env[`MUSIC_PROVIDER_${key}_TOKEN`] ??
-      process.env["MUSIC_PROVIDER_GATEWAY_TOKEN"];
+    const endpoint = remoteProviderEndpoint(definition.id);
+    const token = remoteProviderToken(definition.id);
     return new HttpMusicGenerationProvider(definition, endpoint, token);
   });
 }
@@ -1715,7 +1732,8 @@ export type ProviderRuntimeProvenance = {
   model: string;
   checkpointSha256: string;
   revision: string;
-  containerDigest: string;
+  modalImageId: string;
+  sourceImageDigest: string;
   cudaVersion: string;
   pytorchVersion: string;
   gpu: string;
@@ -1736,14 +1754,31 @@ function parseRuntimeProvenance(
   const model = provenanceText(modelVersion);
   const checkpointSha256 = isSha256(checksum) ? checksum.toLowerCase() : null;
   const revision = provenanceText(payload["revision"] ?? payload["checkpointRevision"] ?? runtime["revision"]);
-  const containerDigest = provenanceText(payload["containerDigest"] ?? runtime["containerDigest"]);
+  const modalImageId = provenanceText(
+    payload["modalImageId"] ?? payload["imageId"] ??
+      runtime["modalImageId"] ?? runtime["imageId"],
+  );
+  const sourceImageDigest = provenanceText(
+    payload["sourceImageDigest"] ?? runtime["sourceImageDigest"] ??
+      payload["containerDigest"] ?? runtime["containerDigest"],
+  );
   const cudaVersion = provenanceText(payload["cudaVersion"] ?? runtime["cudaVersion"]);
   const pytorchVersion = provenanceText(payload["pytorchVersion"] ?? payload["torchVersion"] ?? runtime["pytorchVersion"] ?? runtime["torchVersion"]);
   const gpu = provenanceText(payload["gpu"] ?? payload["gpuModel"] ?? runtime["gpu"] ?? runtime["gpuModel"]);
   return model && checkpointSha256 && revision &&
-      containerDigest && /^sha256:[a-f0-9]{64}$/i.test(containerDigest) &&
+      modalImageId && /^im-[A-Za-z0-9]+$/.test(modalImageId) &&
+      sourceImageDigest && /^sha256:[a-f0-9]{64}$/i.test(sourceImageDigest) &&
       cudaVersion && pytorchVersion && gpu
-    ? { model, checkpointSha256, revision, containerDigest, cudaVersion, pytorchVersion, gpu }
+    ? {
+      model,
+      checkpointSha256,
+      revision,
+      modalImageId,
+      sourceImageDigest,
+      cudaVersion,
+      pytorchVersion,
+      gpu,
+    }
     : null;
 }
 
@@ -1755,7 +1790,8 @@ function sameRuntimeProvenance(
     left.model === right.model &&
     left.checkpointSha256 === right.checkpointSha256 &&
     left.revision === right.revision &&
-    left.containerDigest === right.containerDigest &&
+    left.modalImageId === right.modalImageId &&
+    left.sourceImageDigest === right.sourceImageDigest &&
     left.cudaVersion === right.cudaVersion &&
     left.pytorchVersion === right.pytorchVersion &&
     left.gpu === right.gpu);

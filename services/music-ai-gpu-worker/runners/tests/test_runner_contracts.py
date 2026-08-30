@@ -11,23 +11,79 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from runners import ace_step, bs_roformer
+from runners import common
 from runners.common import RunnerError
 
 
+def _make_ace_checkpoint(parent: Path) -> Path:
+    root = parent / ace_step.COMPOSITE_ROOT_NAME
+    root.mkdir()
+    for name in ace_step.REQUIRED_SUBTREES:
+        (root / name).mkdir()
+    for name in ace_step.REQUIRED_BASE_FILES:
+        (root / ace_step.BASE_CONFIG_NAME / name).write_bytes(
+            f"attested-{name}".encode()
+        )
+    return root
+
+
 class RunnerContractTests(unittest.TestCase):
+    def test_smoke_fixture_must_be_inside_model_volume(self) -> None:
+        with tempfile.TemporaryDirectory() as volume, tempfile.TemporaryDirectory() as other:
+            fixture = Path(other) / "smoke.wav"
+            fixture.write_bytes(b"not-read-because-location-is-rejected")
+            with patch.dict(os.environ, {
+                "MUSIC_GPU_CHECKPOINT_ROOT": volume,
+                "MUSIC_GPU_SMOKE_INPUT_PATH": str(fixture),
+            }), self.assertRaisesRegex(RunnerError, "inside"):
+                common.smoke_input_path(Path(volume) / "model.ckpt")
+
+    def test_smoke_fixture_uses_job_audio_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as volume:
+            fixture = Path(volume) / "smoke.wav"
+            fixture.write_bytes(b"fixture")
+            with patch.dict(os.environ, {
+                "MUSIC_GPU_CHECKPOINT_ROOT": volume,
+                "MUSIC_GPU_SMOKE_INPUT_PATH": str(fixture),
+            }), patch.object(common, "validate_audio") as validate:
+                self.assertEqual(common.smoke_input_path(Path(volume) / "model.ckpt"), fixture)
+                validate.assert_called_once_with(fixture)
+
     def test_verified_provider_pins(self) -> None:
         self.assertEqual(bs_roformer.BACKEND_VERSION, "0.1.5")
         self.assertIn("b0f1386fcced25f559f3e61c9f08a73cd9bddf80",
                       bs_roformer.BACKEND_SOURCE_REVISION)
         self.assertEqual(ace_step.MODEL_SOURCE, "ACE-Step/acestep-v15-base")
+        self.assertIn("e432212fec32b8965a14ffa57ae653438d6abd14",
+                      ace_step.MODEL_SNAPSHOT)
+        self.assertIn("19671f406d603126926c1b7e2adc169acbcade22",
+                      ace_step.SHARED_MODEL_SNAPSHOT)
         self.assertIn("ca1e85fe9430179831e6bc6be790c332190a3866",
                       ace_step.BACKEND_SOURCE_REVISION)
 
     def test_ace_backend_uses_documented_api_with_fake_modules(self) -> None:
         calls = {}
         class Handler:
-            def initialize_service(self, **kwargs): calls["initialize"] = kwargs
-        class LLM: pass
+            def initialize_service(self, **kwargs):
+                calls["initialize"] = kwargs
+                runtime_root = Path(kwargs["project_root"])
+                runtime_base = runtime_root / kwargs["config_path"]
+                calls["runtime_root"] = runtime_root
+                calls["model_targets"] = {
+                    name: (runtime_base / name).resolve()
+                    for name in ace_step.REQUIRED_BASE_FILES
+                }
+                # Reproduce the official handler's source synchronization.
+                for name in (
+                    "configuration_acestep_v15.py",
+                    "modeling_acestep_v15_base.py",
+                    "apg_guidance.py",
+                ):
+                    (runtime_base / name).write_text("# synced by handler\n")
+                return "loaded", True
+        class LLM:
+            def initialize_service(self, **_kwargs):
+                calls["llm_initialize"] = True
         class Params:
             def __init__(self, **kwargs): calls["params"] = kwargs
         class Config:
@@ -43,15 +99,89 @@ class RunnerContractTests(unittest.TestCase):
                 GenerationConfig=Config, GenerationParams=Params, generate_music=generate),
         }
         with tempfile.TemporaryDirectory() as raw, \
-             patch.dict(sys.modules, modules), patch.object(ace_step, "require_cuda"):
-            backend = ace_step.OfficialAceStepBackend(Path(raw))
+             patch.dict(sys.modules, modules), patch.object(ace_step, "require_cuda"), \
+             patch.object(ace_step, "ace_runtime_provenance", return_value={}):
+            root = _make_ace_checkpoint(Path(raw))
+            original = {
+                name: (root / ace_step.BASE_CONFIG_NAME / name).read_bytes()
+                for name in ace_step.REQUIRED_BASE_FILES
+            }
+            original_digest = common.checkpoint_sha256(root)
+            backend = ace_step.OfficialAceStepBackend(root)
             outputs = backend.generate(prompt="piano", seed=7, duration_seconds=2,
-                                       candidates=1, output_dir=Path(raw))
+                                       candidates=1, output_dir=root)
+            after = {
+                name: (root / ace_step.BASE_CONFIG_NAME / name).read_bytes()
+                for name in ace_step.REQUIRED_BASE_FILES
+            }
+            after_digest = common.checkpoint_sha256(root)
         self.assertEqual(outputs, [{"path": "a.flac"}])
-        self.assertEqual(calls["initialize"]["checkpoint_dir"], raw)
+        self.assertNotEqual(calls["initialize"]["project_root"], str(root.resolve()))
+        self.assertEqual(calls["initialize"]["config_path"], "acestep-v15-base")
+        self.assertNotIn("checkpoint_dir", calls["initialize"])
+        self.assertFalse(calls["initialize"]["use_mlx_dit"])
         self.assertEqual(calls["initialize"]["device"], "cuda")
         self.assertEqual(calls["config"]["seeds"], [7])
+        self.assertFalse(calls["params"]["thinking"])
+        self.assertNotIn("llm_initialize", calls)
+        self.assertEqual(
+            os.environ["ACESTEP_CHECKPOINTS_DIR"], str(calls["runtime_root"])
+        )
+        self.assertFalse(calls["runtime_root"].exists())
+        self.assertEqual(original, after)
+        self.assertEqual(original_digest, after_digest)
+        for target in calls["model_targets"].values():
+            self.assertTrue(root.resolve() in target.parents)
+        for name in (
+            "configuration_acestep_v15.py",
+            "modeling_acestep_v15_base.py",
+            "apg_guidance.py",
+        ):
+            self.assertFalse((root / ace_step.BASE_CONFIG_NAME / name).exists())
+        self.assertEqual(os.environ["PYTHONDONTWRITEBYTECODE"], "1")
 
+    def test_ace_backend_fails_closed_when_shared_subtree_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as raw, \
+             patch.object(ace_step, "require_cuda"), \
+             patch.object(ace_step, "ace_runtime_provenance", return_value={}):
+            root = Path(raw) / ace_step.COMPOSITE_ROOT_NAME
+            root.mkdir()
+            (root / ace_step.BASE_CONFIG_NAME).mkdir()
+            (root / "vae").mkdir()
+            with self.assertRaisesRegex(RunnerError, "Qwen3-Embedding-0.6B"):
+                ace_step.OfficialAceStepBackend(root)
+
+    def test_ace_backend_rejects_config_other_than_base_basename(self) -> None:
+        with tempfile.TemporaryDirectory() as raw, \
+             patch.dict(os.environ, {
+                 "MUSIC_PROVIDER_ACE_STEP_CONFIG_PATH": "../acestep-v15-base",
+             }), patch.object(ace_step, "require_cuda"), \
+             patch.object(ace_step, "ace_runtime_provenance", return_value={}):
+            root = _make_ace_checkpoint(Path(raw))
+            with self.assertRaisesRegex(RunnerError, "must equal"):
+                ace_step.OfficialAceStepBackend(root)
+
+    def test_ace_checkpoint_rejects_symlink_escape(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            parent = Path(raw)
+            root = _make_ace_checkpoint(parent)
+            outside = parent / "outside.safetensors"
+            outside.write_bytes(b"not-attested")
+            model = root / ace_step.BASE_CONFIG_NAME / "model.safetensors"
+            model.unlink()
+            model.symlink_to(outside)
+            with self.assertRaisesRegex(RunnerError, "escapes attested root"):
+                ace_step._validated_composite_root(root)
+
+    def test_ace_runtime_rejects_stale_torch_pin(self) -> None:
+        versions = {
+            "torch": "2.5.1+cu124",
+            "torchvision": ace_step.TORCHVISION_VERSION,
+            "torchaudio": ace_step.TORCHAUDIO_VERSION,
+        }
+        with patch.object(ace_step, "version", side_effect=lambda name: versions[name]):
+            with self.assertRaisesRegex(RunnerError, "does not match"):
+                ace_step.ace_runtime_provenance()
     def test_ace_rejects_unbounded_candidate_request(self) -> None:
         with self.assertRaisesRegex(RunnerError, "candidateCount"):
             ace_step._parameters({"prompt": "drums", "candidateCount": 99})
@@ -76,7 +206,7 @@ class RunnerContractTests(unittest.TestCase):
                  patch.object(bs_roformer, "attest_checkpoint", return_value="a" * 64), \
                  patch.object(bs_roformer, "require_cuda"), \
                  patch.object(bs_roformer, "durable_job_dir", return_value=work), \
-                 patch.object(bs_roformer, "download_source", return_value=work / "source.wav"):
+                 patch.object(bs_roformer, "materialize_source", return_value=work / "source.wav"):
                 with self.assertRaisesRegex(RunnerError, "exactly two"):
                     bs_roformer.run_job({"sourceUrl": "https://example.test/a.wav"}, checkpoint, OneStem)
 

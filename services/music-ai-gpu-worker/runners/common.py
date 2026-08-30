@@ -188,7 +188,44 @@ def download_source(source_url: Any, destination: Path) -> Path:
         raise RunnerError(f"unable to fetch source audio: {type(exc).__name__}") from exc
     if not destination.exists() or not destination.stat().st_size:
         raise RunnerError("source audio is empty")
+    validate_audio(destination)
     return destination
+
+
+def smoke_input_path(checkpoint: Path) -> Path | None:
+    """Resolve a trusted mounted smoke fixture without permitting arbitrary files."""
+    value = os.environ.get("MUSIC_GPU_SMOKE_INPUT_PATH", "").strip()
+    if not value:
+        return None
+    candidate = Path(value).resolve()
+    volume = Path(os.environ.get(
+        "MUSIC_GPU_CHECKPOINT_ROOT", str(checkpoint.resolve().parent)
+    )).resolve()
+    if candidate != volume and volume not in candidate.parents:
+        raise RunnerError("smoke input path must be inside MUSIC_GPU_CHECKPOINT_ROOT")
+    validate_audio(candidate)
+    return candidate
+
+
+def materialize_source(request: dict[str, Any], destination: Path,
+                       checkpoint: Path, smoke: bool = False) -> Path:
+    """Use a trusted local smoke fixture or the normal vetted HTTPS source path."""
+    local = smoke_input_path(checkpoint) if smoke else None
+    if local is not None:
+        shutil.copyfile(local, destination)
+        validate_audio(destination)
+        return destination
+    url = (os.environ.get("MUSIC_GPU_SMOKE_INPUT_URL", "").strip()
+           if smoke else request_value(request, "sourceUrl"))
+    if smoke and not url:
+        # Backward-compatible name, explicitly treated as a URL.
+        url = os.environ.get("MUSIC_GPU_SMOKE_INPUT", "").strip()
+    if not url:
+        raise RunnerError(
+            "MUSIC_GPU_SMOKE_INPUT_PATH or MUSIC_GPU_SMOKE_INPUT_URL is required"
+            if smoke else "canonical sourceUrl is required"
+        )
+    return download_source(url, destination)
 
 
 def validate_audio(path: Path) -> dict[str, Any]:
@@ -276,7 +313,12 @@ def runtime_provenance() -> dict[str, str]:
     container = os.getenv("MUSIC_GPU_CONTAINER_DIGEST", "").strip()
     if not container:
         raise RunnerError("MUSIC_GPU_CONTAINER_DIGEST is required for provenance")
-    return {"containerDigest": container, "cudaVersion": str(torch.version.cuda or "unknown"),
+    modal_image_id = os.getenv("MODAL_IMAGE_ID", "").strip()
+    if not __import__("re").fullmatch(r"im-[A-Za-z0-9]+", modal_image_id):
+        raise RunnerError("valid MODAL_IMAGE_ID is required for provenance")
+    return {"sourceImageDigest": container, "containerDigest": container,
+            "modalImageId": modal_image_id, "imageId": modal_image_id,
+            "cudaVersion": str(torch.version.cuda or "unknown"),
             "pytorchVersion": str(torch.__version__),
             "gpu": torch.cuda.get_device_name(torch.cuda.current_device())}
 

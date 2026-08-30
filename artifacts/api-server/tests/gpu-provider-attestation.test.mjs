@@ -13,6 +13,7 @@ await build({
       export {
         createProviderRegistry,
         cancelRemoteProviderJob,
+        expectedGpuModalImageId,
         providerCatalog,
         runArrangementProvider,
         selectMusicProvider,
@@ -36,6 +37,7 @@ globalThis.require = __createRequire(import.meta.url);`,
 const {
   cancelRemoteProviderJob,
   createProviderRegistry,
+  expectedGpuModalImageId,
   providerCatalog,
   runArrangementProvider,
   selectMusicProvider,
@@ -43,10 +45,14 @@ const {
 } = await import(pathToFileURL(harnessPath).href);
 
 after(async () => {
+  delete process.env.ACE_STEP_API_URL;
   delete process.env.MUSIC_PROVIDER_ACE_STEP_URL;
   delete process.env.MUSIC_PROVIDER_ACE_STEP_CHECKPOINT_SHA256;
   delete process.env.MUSIC_PROVIDER_ACE_STEP_CONTAINER_DIGEST;
+  delete process.env.MUSIC_PROVIDER_ACE_STEP_SOURCE_IMAGE_DIGEST;
+  delete process.env.MUSIC_PROVIDER_ACE_STEP_MODAL_IMAGE_ID;
   delete process.env.MUSIC_PROVIDER_ACE_STEP_TOKEN;
+  delete process.env.MUSIC_AI_WORKER_TOKEN;
   await unlink(harnessPath).catch(() => undefined);
 });
 
@@ -78,12 +84,16 @@ async function withWorker(health, run) {
     `http://127.0.0.1:${address.port}/generate`;
   process.env.MUSIC_PROVIDER_ACE_STEP_CHECKPOINT_SHA256 = "a".repeat(64);
   process.env.MUSIC_PROVIDER_ACE_STEP_CONTAINER_DIGEST = `sha256:${"c".repeat(64)}`;
+  process.env.MUSIC_PROVIDER_ACE_STEP_SOURCE_IMAGE_DIGEST = `sha256:${"c".repeat(64)}`;
+  process.env.MUSIC_PROVIDER_ACE_STEP_MODAL_IMAGE_ID = "im-AceStepPromoted42";
   try {
     await run();
   } finally {
     delete process.env.MUSIC_PROVIDER_ACE_STEP_URL;
     delete process.env.MUSIC_PROVIDER_ACE_STEP_CHECKPOINT_SHA256;
     delete process.env.MUSIC_PROVIDER_ACE_STEP_CONTAINER_DIGEST;
+    delete process.env.MUSIC_PROVIDER_ACE_STEP_SOURCE_IMAGE_DIGEST;
+    delete process.env.MUSIC_PROVIDER_ACE_STEP_MODAL_IMAGE_ID;
     await new Promise((resolve) => server.close(resolve));
   }
 }
@@ -107,15 +117,41 @@ const attestedHealth = {
   checkpointSha256: "a".repeat(64),
   smokeTested: true,
   revision: "ace-step-1.5-base-r42",
+  modalImageId: "im-AceStepPromoted42",
   containerDigest: `sha256:${"c".repeat(64)}`,
   cudaVersion: "12.4",
   pytorchVersion: "2.5.1",
   gpu: "NVIDIA A100",
 };
 
+test("Modal image deployment pins accept only canonical IDs", () => {
+  process.env.MUSIC_PROVIDER_ACE_STEP_MODAL_IMAGE_ID = "sha256:not-a-modal-id";
+  assert.equal(expectedGpuModalImageId("ACE_STEP"), null);
+  process.env.MUSIC_PROVIDER_ACE_STEP_MODAL_IMAGE_ID = " im-Promoted123 ";
+  assert.equal(expectedGpuModalImageId("ACE_STEP"), "im-Promoted123");
+  delete process.env.MUSIC_PROVIDER_ACE_STEP_MODAL_IMAGE_ID;
+});
+
 test("GPU providers require exact checksum, model, GPU, and smoke attestation", async () => {
   await withWorker(attestedHealth, async () => {
+    delete process.env.MUSIC_PROVIDER_ACE_STEP_MODAL_IMAGE_ID;
+    const [provider] = await verifyProviderRegistry([aceStepProvider()], true);
+    assert.equal(providerCatalog([provider])[0].status, "configured");
+    assert.match(provider.readiness.message, /Modal image ID/i);
+  });
+
+  await withWorker({
+    ...attestedHealth,
+    modalImageId: "im-DifferentPromotedImage",
+  }, async () => {
+    const [provider] = await verifyProviderRegistry([aceStepProvider()], true);
+    assert.equal(providerCatalog([provider])[0].status, "configured");
+    assert.match(provider.readiness.message, /Modal image ID/i);
+  });
+
+  await withWorker(attestedHealth, async () => {
     delete process.env.MUSIC_PROVIDER_ACE_STEP_CONTAINER_DIGEST;
+    delete process.env.MUSIC_PROVIDER_ACE_STEP_SOURCE_IMAGE_DIGEST;
     const [provider] = await verifyProviderRegistry([aceStepProvider()], true);
     assert.equal(providerCatalog([provider])[0].status, "configured");
   });
@@ -142,6 +178,7 @@ test("GPU providers require exact checksum, model, GPU, and smoke attestation", 
   await withWorker(attestedHealth, async () => {
     const [provider] = await verifyProviderRegistry([aceStepProvider()], true);
     assert.equal(providerCatalog([provider])[0].status, "ready");
+    assert.equal(provider.readiness.runtimeProvenance?.modalImageId, "im-AceStepPromoted42");
     const selected = selectMusicProvider([provider], {
       task: "ARRANGEMENT",
       requestedProvider: "ACE_STEP",
@@ -195,6 +232,73 @@ test("authenticated cancellation uses the generation provider configuration", as
   } finally {
     delete process.env.MUSIC_PROVIDER_ACE_STEP_URL;
     delete process.env.MUSIC_PROVIDER_ACE_STEP_TOKEN;
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("deployment env routes and authenticates ACE-Step health and generation", async () => {
+  const authorizations = [];
+  const server = createServer((request, response) => {
+    authorizations.push(request.headers.authorization);
+    response.writeHead(200, { "Content-Type": "application/json" });
+    if (request.url === "/health?provider=ACE_STEP") {
+      response.end(JSON.stringify(attestedHealth));
+      return;
+    }
+    response.end(JSON.stringify({
+      provider: "WRONG_PROVIDER",
+      modelVersion: "ace-step-1.5-base",
+      checkpointSha256: "a".repeat(64),
+      smokeTested: true,
+      candidates: [{}],
+    }));
+  });
+  await listen(server);
+  const address = server.address();
+  delete process.env.MUSIC_PROVIDER_ACE_STEP_URL;
+  delete process.env.MUSIC_PROVIDER_ACE_STEP_TOKEN;
+  process.env.ACE_STEP_API_URL = `http://127.0.0.1:${address.port}/generate`;
+  process.env.MUSIC_AI_WORKER_TOKEN = "deployment-worker-token";
+  process.env.MUSIC_PROVIDER_ACE_STEP_CHECKPOINT_SHA256 = "a".repeat(64);
+  process.env.MUSIC_PROVIDER_ACE_STEP_SOURCE_IMAGE_DIGEST = `sha256:${"c".repeat(64)}`;
+  process.env.MUSIC_PROVIDER_ACE_STEP_MODAL_IMAGE_ID = "im-AceStepPromoted42";
+  try {
+    const [provider] = await verifyProviderRegistry([aceStepProvider()], true);
+    assert.equal(providerCatalog([provider])[0].status, "ready");
+    await assert.rejects(() => provider.generate({
+      jobId: "deployment-env-job",
+      projectId: "project-1",
+      arrangementId: "arrangement-1",
+      task: "ARRANGEMENT",
+      style: "pop",
+      mode: "FULL",
+      hardware: "GPU",
+      speed: "BALANCED",
+      candidates: 1,
+      seed: 46,
+      parameters: {},
+      parentArtifactIds: [],
+      songModel: {},
+      tracks: [],
+      arrangement: {
+        version: 1,
+        harmonyComplexity: 5,
+        energy: 0.5,
+        density: 0.5,
+        orchestraSize: 4,
+        rhythmIntensity: 0.5,
+      },
+    }), /GPU provenance attestation/i);
+    assert.deepEqual(authorizations, [
+      "Bearer deployment-worker-token",
+      "Bearer deployment-worker-token",
+    ]);
+  } finally {
+    delete process.env.ACE_STEP_API_URL;
+    delete process.env.MUSIC_AI_WORKER_TOKEN;
+    delete process.env.MUSIC_PROVIDER_ACE_STEP_CHECKPOINT_SHA256;
+    delete process.env.MUSIC_PROVIDER_ACE_STEP_SOURCE_IMAGE_DIGEST;
+    delete process.env.MUSIC_PROVIDER_ACE_STEP_MODAL_IMAGE_ID;
     await new Promise((resolve) => server.close(resolve));
   }
 });

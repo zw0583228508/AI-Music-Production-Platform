@@ -10,7 +10,8 @@ from typing import Any
 
 from .common import (RunnerError, artifact_descriptor, attest_checkpoint, cached_result,
                      download_source, durable_job_dir, emit, move_artifact, request_value,
-                     require_cuda, runtime_provenance, save_result)
+                     materialize_source, require_cuda, require_distribution_version,
+                     runtime_provenance, save_result, file_sha256)
 
 PROVIDER = "BS_ROFORMER"
 MODEL_VERSION = "bs-roformer-viperx-v1"
@@ -22,9 +23,15 @@ BACKEND_SOURCE_REVISION = "openmirlab/bs-roformer-infer@b0f1386fcced25f559f3e61c
 class BSRoformerInferBackend:
     """Official public session API with explicit local model/config paths."""
     def __init__(self, checkpoint: Path, output_dir: Path) -> None:
+        require_distribution_version(BACKEND_DISTRIBUTION, BACKEND_VERSION)
         config = Path(os.environ.get("MUSIC_PROVIDER_BS_ROFORMER_CONFIG_PATH", ""))
         if not config.is_file():
             raise RunnerError("mounted BS-RoFormer config path is required")
+        expected_config = os.environ.get(
+            "MUSIC_PROVIDER_BS_ROFORMER_CONFIG_SHA256", ""
+        ).strip().lower()
+        if (len(expected_config) != 64 or file_sha256(config) != expected_config):
+            raise RunnerError("mounted BS-RoFormer config SHA-256 is missing or mismatched")
         try:
             from bs_roformer import BSRoformerSession
         except ImportError as exc:
@@ -55,7 +62,8 @@ class BSRoformerInferBackend:
         return [outputs["vocals"], outputs["instrumental"]]
 
 
-def run_job(request: dict[str, Any], checkpoint: Path, backend_cls=BSRoformerInferBackend) -> dict[str, Any]:
+def run_job(request: dict[str, Any], checkpoint: Path, backend_cls=BSRoformerInferBackend,
+            *, smoke: bool = False) -> dict[str, Any]:
     if not checkpoint.is_file():
         raise RunnerError("BS-RoFormer checkpoint is missing from durable storage")
     digest = attest_checkpoint(checkpoint, PROVIDER)
@@ -64,7 +72,7 @@ def run_job(request: dict[str, Any], checkpoint: Path, backend_cls=BSRoformerInf
     if prior is not None:
         return prior
     require_cuda()
-    source = download_source(request_value(request, "sourceUrl"), work / "source.wav")
+    source = materialize_source(request, work / "source.wav", checkpoint, smoke)
     outputs = backend_cls(checkpoint, work).separate(source)
     if len(outputs) != 2:
         raise RunnerError("BS-RoFormer must produce exactly two stems")
@@ -110,10 +118,8 @@ def main(argv: list[str] | None = None) -> int:
             raise RunnerError("provider or model version does not match this runner")
         checkpoint = Path(args.checkpoint)
         if args.smoke:
-            source = __import__("os").environ.get("MUSIC_GPU_SMOKE_INPUT")
-            if not source:
-                raise RunnerError("MUSIC_GPU_SMOKE_INPUT is required for real smoke inference")
-            result = run_job({"requestId": "smoke-bs-roformer", "sourceUrl": source}, checkpoint)
+            result = run_job({"requestId": f"smoke-bs-roformer-{os.urandom(8).hex()}"},
+                             checkpoint, smoke=True)
             emit({"smokeTested": True, **result["provenance"], "output": {"stems": len(result["stems"])}})
         else:
             payload = json.load(sys.stdin)
