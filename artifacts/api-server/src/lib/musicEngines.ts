@@ -72,6 +72,7 @@ export type LicensedInstrumentSmokeEvidence = {
 
 export type LicensedInstrumentPack = {
   candidateId?: string;
+  historyId?: string;
   kind?: "vst3" | "sfz";
   assetId?: string;
   id?: string;
@@ -85,6 +86,8 @@ export type LicensedInstrumentPack = {
   smokeEvidence?: LicensedInstrumentSmokeEvidence;
   createdAt?: string;
   activatedAt?: string;
+  deactivatedAt?: string;
+  unavailableReason?: string;
 };
 
 export type LicensedInstrumentPackCatalog = {
@@ -93,8 +96,23 @@ export type LicensedInstrumentPackCatalog = {
     sfz: LicensedInstrumentPack;
   };
   candidates: LicensedInstrumentPack[];
+  history: {
+    vst3: LicensedInstrumentPack[];
+    sfz: LicensedInstrumentPack[];
+  };
 };
 
+export class LicensedInstrumentWorkerError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly responseText: string,
+  ) {
+    super(
+      `Licensed instrument worker returned HTTP ${status}: ${responseText.slice(0, 500)}`,
+    );
+    this.name = "LicensedInstrumentWorkerError";
+  }
+}
 type NativeRenderResult = {
   samples: Float32Array;
   attestation: NativeRendererAttestation;
@@ -137,9 +155,7 @@ async function licensedInstrumentWorkerJson<T>(
   });
   if (!response.ok) {
     const message = await response.text();
-    throw new Error(
-      `Licensed instrument worker returned HTTP ${response.status}: ${message.slice(0, 500)}`,
-    );
+    throw new LicensedInstrumentWorkerError(response.status, message);
   }
   return response.json() as Promise<T>;
 }
@@ -159,6 +175,14 @@ export async function activateLicensedInstrumentPack(
   );
 }
 
+export async function reactivateLicensedInstrumentPack(
+  historyId: string,
+): Promise<LicensedInstrumentPack> {
+  return licensedInstrumentWorkerJson<LicensedInstrumentPack>(
+    `/admin/assets/history/${encodeURIComponent(historyId)}/activate`,
+    { method: "POST" },
+  );
+}
 export type QualityReport = {
   score: number;
   checks: Record<string, number>;

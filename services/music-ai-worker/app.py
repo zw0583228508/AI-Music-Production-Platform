@@ -307,10 +307,27 @@ def _read_asset_state() -> dict:
     try:
         value = json.loads(_asset_state_path().read_text())
     except (OSError, json.JSONDecodeError):
-        return {"candidates": {}}
-    return value if isinstance(value, dict) and isinstance(value.get("candidates", {}), dict) else {"candidates": {}}
+        value = {}
+    if not isinstance(value, dict) or not isinstance(value.get("candidates", {}), dict):
+        value = {}
+    value["candidates"] = value.get("candidates", {})
+    history = value.get("history")
+    if not isinstance(history, dict):
+        history = {}
+    value["history"] = {
+        kind: history.get(kind, [])
+        if isinstance(history.get(kind, []), list)
+        else []
+        for kind in ("vst3", "sfz")
+    }
+    return value
 
-
+def _read_asset_manifest() -> dict:
+    try:
+        value = json.loads(ASSET_MANIFEST_PATH.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
 def _write_asset_state(state: dict) -> None:
     _atomic_write_json(_asset_state_path(), state)
 
@@ -623,10 +640,37 @@ def _candidate_entry(candidate: dict) -> dict:
         "rendererPath": candidate["rendererPath"],
         "smokeEvidence": candidate["smokeEvidence"],
     }
+    for optional in ("candidateId", "createdAt", "activatedAt"):
+        if candidate.get(optional):
+            entry[optional] = candidate[optional]
     entry["path" if candidate["kind"] == "vst3" else "libraryPath"] = candidate["path"]
     return entry
 
-
+def _validate_verified_asset(
+    kind: Literal["vst3", "sfz"],
+    entry: dict,
+    *,
+    label: str,
+) -> dict:
+    try:
+        asset = _asset_from_entry(kind, entry)
+    except ValueError as exc:
+        raise HTTPException(409, f"{label} changed after verification: {exc}") from exc
+    evidence = entry.get("smokeEvidence")
+    if (
+        not isinstance(evidence, dict)
+        or evidence.get("assetId") != asset["id"]
+        or evidence.get("sha256") != asset["sha256"]
+        or evidence.get("rendererSha256") != asset["rendererSha256"]
+        or evidence.get("nativeHostAttested") is not True
+        or evidence.get("canonicalSensitivity") is not True
+        or evidence.get("audible") is not True
+    ):
+        raise HTTPException(
+            409,
+            f"{label} no longer matches its canonical TrackModel smoke evidence",
+        )
+    return asset
 def _activate_asset_candidate(candidate_id: str) -> dict:
     with ASSET_STATE_LOCK, _asset_file_lock():
         try:
@@ -640,44 +684,65 @@ def _activate_asset_candidate(candidate_id: str) -> dict:
         kind = candidate.get("kind")
         if kind not in {"vst3", "sfz"}:
             raise HTTPException(409, "candidate has an invalid asset kind")
+        current = _read_asset_manifest().get(kind)
+        if isinstance(current, dict) and current.get("candidateId") == candidate_id:
+            raise HTTPException(409, "candidate is already active")
+        return _activate_verified_entry(
+            kind,
+            _candidate_entry(candidate),
+            state,
+            response_id=candidate_id,
+            label="candidate",
+        )
+
+def _reactivate_asset_history(history_id: str) -> dict:
+    with ASSET_STATE_LOCK, _asset_file_lock():
         try:
-            asset = _asset_from_entry(kind, _candidate_entry(candidate))
+            ASSET_MANIFEST_PATH.relative_to(ASSET_ROOT)
         except ValueError as exc:
-            raise HTTPException(409, f"candidate changed after verification: {exc}") from exc
-        evidence = candidate.get("smokeEvidence")
-        if (
-            not isinstance(evidence, dict)
-            or evidence.get("assetId") != asset["id"]
-            or evidence.get("sha256") != asset["sha256"]
-            or evidence.get("rendererSha256") != asset["rendererSha256"]
-            or evidence.get("nativeHostAttested") is not True
-            or evidence.get("canonicalSensitivity") is not True
-            or evidence.get("audible") is not True
-        ):
-            raise HTTPException(409, "candidate no longer matches its canonical TrackModel smoke evidence")
-        try:
-            current = json.loads(ASSET_MANIFEST_PATH.read_text())
-        except (OSError, json.JSONDecodeError):
-            current = {}
-        if not isinstance(current, dict):
-            current = {}
-        current[kind] = _candidate_entry(candidate)
-        _atomic_write_json(ASSET_MANIFEST_PATH, current, indent=2)
-        candidate["status"] = "active"
-        candidate["activatedAt"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        try:
-            _write_asset_state(state)
-        except OSError:
-            # The manifest is the single authoritative commit. A stale
-            # candidate list can be repaired on the next successful write and
-            # must not turn an atomic activation into a reported failure.
-            pass
-        return _asset_candidate_response(candidate)
-
-
+            raise HTTPException(500, "licensed asset manifest must be inside MUSIC_AI_ASSET_ROOT") from exc
+        state = _read_asset_state()
+        current, manifest_existed = _read_asset_manifest_for_update()
+        if not manifest_existed:
+            raise HTTPException(404, "historical instrument pack not found")
+        state["history"] = _rotation_history(current, state)
+        found: tuple[Literal["vst3", "sfz"], dict] | None = None
+        for kind in ("vst3", "sfz"):
+            record = next(
+                (
+                    item
+                    for item in state["history"][kind]
+                    if isinstance(item, dict) and item.get("historyId") == history_id
+                ),
+                None,
+            )
+            if record:
+                found = (kind, record)
+                break
+        if not found:
+            raise HTTPException(404, "historical instrument pack not found")
+        kind, record = found
+        if record.get("status") != "verified":
+            raise HTTPException(409, "historical instrument pack is unavailable")
+        return _activate_verified_entry(
+            kind,
+            record,
+            state,
+            response_id=record.get("candidateId", history_id),
+            label="historical pack",
+            remove_history_id=history_id,
+        )
 @app.get("/admin/assets", dependencies=[Depends(_require_admin_auth)])
 def list_asset_candidates() -> dict:
     state = _read_asset_state()
+    manifest = _read_asset_manifest()
+    state["history"] = _rotation_history(manifest, state)
+    active_candidate_ids = {
+        entry.get("candidateId")
+        for kind in ("vst3", "sfz")
+        if isinstance((entry := manifest.get(kind)), dict)
+        and isinstance(entry.get("candidateId"), str)
+    }
     active: dict[str, dict] = {}
     for kind in ("vst3", "sfz"):
         try:
@@ -694,12 +759,36 @@ def list_asset_candidates() -> dict:
         _asset_candidate_response(candidate)
         for candidate in state["candidates"].values()
         if isinstance(candidate, dict)
+        and candidate.get("status") == "verified"
+        and candidate.get("candidateId") not in active_candidate_ids
     ]
+    history: dict[str, list[dict]] = {}
+    for kind in ("vst3", "sfz"):
+        history[kind] = []
+        for record in state["history"][kind]:
+            if not isinstance(record, dict):
+                continue
+            visible = _asset_candidate_response(record)
+            try:
+                _validate_verified_asset(kind, record, label="historical pack")
+                visible["status"] = "verified"
+            except HTTPException:
+                # Do not expose private paths or an exception that could leak
+                # storage details. A missing/tampered pack is reviewable but
+                # never eligible for reactivation.
+                visible["status"] = "unavailable"
+                visible["unavailableReason"] = "Historical bytes are missing or changed"
+            history[kind].append(visible)
+        history[kind].sort(
+            key=lambda item: item.get("deactivatedAt") or item.get("activatedAt") or "",
+            reverse=True,
+        )
     return {
         "active": active,
         "candidates": sorted(
             candidates, key=lambda item: item.get("createdAt", ""), reverse=True
         ),
+        "history": history,
     }
 
 
@@ -734,7 +823,14 @@ def activate_asset(candidate_id: str) -> dict:
         raise HTTPException(404, "candidate not found")
     return _activate_asset_candidate(candidate_id)
 
-
+@app.post(
+    "/admin/assets/history/{history_id}/activate",
+    dependencies=[Depends(_require_admin_auth)],
+)
+def reactivate_asset(history_id: str) -> dict:
+    if not re.fullmatch(r"[A-Za-z0-9_-]{20,}", history_id):
+        raise HTTPException(404, "historical instrument pack not found")
+    return _reactivate_asset_history(history_id)
 def _canonical_track_model(value: object) -> dict:
     if not isinstance(value, dict):
         raise HTTPException(422, "trackModel must be a canonical TrackModel object")
@@ -1313,3 +1409,215 @@ def render(payload: RenderRequest) -> dict:
 @app.exception_handler(HTTPException)
 async def errors(_, exc: HTTPException):
     return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+
+def _activate_verified_entry(
+    kind: Literal["vst3", "sfz"],
+    entry: dict,
+    state: dict,
+    *,
+    response_id: str,
+    label: str,
+    remove_history_id: str | None = None,
+) -> dict:
+    _validate_verified_asset(kind, entry, label=label)
+    current, manifest_existed = _read_asset_manifest_for_update()
+    state["history"] = _rotation_history(
+        current,
+        state,
+        allow_state_fallback=manifest_existed,
+    )
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    _archive_current_asset(kind, current, state, now)
+    if remove_history_id:
+        state["history"][kind] = [
+            record
+            for record in state["history"][kind]
+            if not (
+                isinstance(record, dict)
+                and record.get("historyId") == remove_history_id
+            )
+        ]
+    manifest_entry = {
+        key: entry[key]
+        for key in (
+            "id",
+            "identity",
+            "licenseOwner",
+            "licenseReference",
+            "rendererIdentity",
+            "sha256",
+            "rendererSha256",
+            "rendererPath",
+            "smokeEvidence",
+            "path" if kind == "vst3" else "libraryPath",
+        )
+        if key in entry
+    }
+    manifest_entry["candidateId"] = response_id
+    if entry.get("createdAt"):
+        manifest_entry["createdAt"] = entry["createdAt"]
+    manifest_entry["activatedAt"] = now
+    current[kind] = manifest_entry
+    current["_history"] = state["history"]
+    _atomic_write_json(ASSET_MANIFEST_PATH, current, indent=2)
+    active_candidate = state["candidates"].get(response_id)
+    if isinstance(active_candidate, dict):
+        active_candidate["status"] = "active"
+        active_candidate["activatedAt"] = now
+    response = {
+        key: value
+        for key, value in entry.items()
+        if key not in {"path", "libraryPath", "rendererPath", "candidateRoot"}
+    }
+    response["candidateId"] = response_id
+    response["assetId"] = response.get("assetId") or response.get("id")
+    response["kind"] = kind
+    response["status"] = "active"
+    response["activatedAt"] = now
+    try:
+        _write_asset_state(state)
+    except OSError:
+        # The manifest is the single authoritative commit. A stale history
+        # list must not turn an atomic activation into a reported failure.
+        pass
+    return response
+
+def _archive_current_asset(
+    kind: Literal["vst3", "sfz"],
+    current: dict,
+    state: dict,
+    now: str,
+) -> None:
+    record = _history_record(kind, current.get(kind), state, now)
+    if not record:
+        return
+    history = state["history"][kind]
+    if any(
+        isinstance(previous, dict)
+        and (
+            previous.get("historyId") == record["historyId"]
+            or (
+                previous.get("sha256") == record.get("sha256")
+                and previous.get("rendererSha256") == record.get("rendererSha256")
+                and previous.get("kind") == kind
+            )
+        )
+        for previous in history
+    ):
+        return
+    history.append(record)
+
+def _read_asset_manifest_for_update() -> tuple[dict, bool]:
+    try:
+        value = json.loads(ASSET_MANIFEST_PATH.read_text())
+    except FileNotFoundError:
+        return {}, False
+    except OSError as exc:
+        raise HTTPException(503, "licensed asset manifest could not be read") from exc
+    except json.JSONDecodeError as exc:
+        raise HTTPException(503, "licensed asset manifest is invalid") from exc
+    if not isinstance(value, dict):
+        raise HTTPException(503, "licensed asset manifest must be a JSON object")
+    return value, True
+
+def _history_record(
+    kind: Literal["vst3", "sfz"],
+    current_entry: object,
+    state: dict,
+    now: str,
+) -> dict | None:
+    if not isinstance(current_entry, dict):
+        return None
+    manifest_entry = {
+        key: current_entry[key]
+        for key in (
+            "id",
+            "identity",
+            "licenseOwner",
+            "licenseReference",
+            "rendererIdentity",
+            "sha256",
+            "rendererSha256",
+            "rendererPath",
+            "smokeEvidence",
+        )
+        if key in current_entry
+    }
+    path_key = "path" if kind == "vst3" else "libraryPath"
+    if path_key not in current_entry:
+        return None
+    manifest_entry[path_key] = current_entry[path_key]
+    matching_candidate = next(
+        (
+            candidate
+            for candidate in state["candidates"].values()
+            if isinstance(candidate, dict)
+            and candidate.get("status") == "active"
+            and candidate.get("kind") == kind
+            and candidate.get("assetId") == current_entry.get("id")
+            and candidate.get("sha256") == current_entry.get("sha256")
+            and candidate.get("rendererSha256") == current_entry.get("rendererSha256")
+        ),
+        None,
+    )
+    if isinstance(matching_candidate, dict):
+        matching_candidate["status"] = "historical"
+    history_id = (
+        current_entry.get("candidateId")
+        or (
+            matching_candidate.get("candidateId")
+            if isinstance(matching_candidate, dict)
+            else None
+        )
+    ) or f"history-{secrets.token_urlsafe(18)}"
+    return {
+        **manifest_entry,
+        "assetId": manifest_entry.get("id"),
+        "historyId": history_id,
+        "candidateId": (
+            current_entry.get("candidateId")
+            or (
+                matching_candidate.get("candidateId")
+                if isinstance(matching_candidate, dict)
+                else history_id
+            )
+        ),
+        "kind": kind,
+        "status": "verified",
+        "createdAt": (
+            current_entry.get("createdAt")
+            or (
+                matching_candidate.get("createdAt")
+                if isinstance(matching_candidate, dict)
+                else None
+            )
+        ),
+        "activatedAt": (
+            current_entry.get("activatedAt")
+            or (
+                matching_candidate.get("activatedAt")
+                if isinstance(matching_candidate, dict)
+                else None
+            )
+        ),
+        "deactivatedAt": now,
+    }
+
+def _rotation_history(
+    manifest: dict,
+    state: dict,
+    *,
+    allow_state_fallback: bool = True,
+) -> dict[str, list[dict]]:
+    manifest_history = manifest.get("_history")
+    source = (
+        manifest_history
+        if isinstance(manifest_history, dict)
+        else state.get("history", {}) if allow_state_fallback else {}
+    )
+    return {
+        kind: copy.deepcopy(source.get(kind, []))
+        if isinstance(source, dict) and isinstance(source.get(kind, []), list)
+        else []
+        for kind in ("vst3", "sfz")
+    }

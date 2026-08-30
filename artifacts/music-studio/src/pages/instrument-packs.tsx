@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { 
   useListLicensedInstrumentPacks, 
   useActivateLicensedInstrumentPack,
+  useReactivateLicensedInstrumentPack,
   useStageLicensedInstrumentPack,
   getListLicensedInstrumentPacksQueryKey,
   type LicensedInstrumentPack,
@@ -12,7 +13,7 @@ import {
   Package, Upload, CheckCircle, XCircle, Box, 
   Check, Loader2, Music2, ShieldCheck, HardDrive, 
   Cpu, FileWarning, Fingerprint, Key, CheckCircle2, CircleDashed,
-  Play
+  History, Play, RotateCcw
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -51,6 +52,8 @@ export default function InstrumentPacks() {
 
   const active = data?.active;
   const candidates = data?.candidates || [];
+  const history = data?.history || { vst3: [], sfz: [] };
+  const historyCount = history.vst3.length + history.sfz.length;
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
@@ -65,9 +68,10 @@ export default function InstrumentPacks() {
       </div>
 
       <Tabs defaultValue="active" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 mb-8 max-w-2xl">
+        <TabsList className="grid w-full grid-cols-4 mb-8 max-w-3xl">
           <TabsTrigger value="active">Active Assets</TabsTrigger>
           <TabsTrigger value="candidates">Candidates ({candidates.length})</TabsTrigger>
+          <TabsTrigger value="history">History ({historyCount})</TabsTrigger>
           <TabsTrigger value="stage">Stage New</TabsTrigger>
         </TabsList>
         
@@ -93,6 +97,44 @@ export default function InstrumentPacks() {
                 <CandidateCard key={candidate.candidateId} pack={candidate} />
               ))}
             </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="history" className="space-y-8">
+          <Alert>
+            <History className="h-4 w-4" />
+            <AlertTitle>Verified rotation history</AlertTitle>
+            <AlertDescription>
+              Reactivation rechecks the original asset and host checksums against their smoke evidence before changing the active manifest.
+            </AlertDescription>
+          </Alert>
+          {historyCount === 0 ? (
+            <Card className="border-dashed bg-muted/30">
+              <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                <History className="h-12 w-12 mb-4 opacity-50" />
+                <p>No previously active packs yet.</p>
+                <p className="text-sm">A pack appears here after another verified version replaces it.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            (['vst3', 'sfz'] as const).map((kind) => (
+              <section key={kind} className="space-y-4">
+                <div className="flex items-center gap-2">
+                  {kind === 'vst3' ? <Cpu className="h-5 w-5 text-primary" /> : <Music2 className="h-5 w-5 text-primary" />}
+                  <h2 className="text-xl font-semibold uppercase tracking-wide">{kind} history</h2>
+                  <Badge variant="secondary">{history[kind].length}</Badge>
+                </div>
+                {history[kind].length === 0 ? (
+                  <p className="text-sm text-muted-foreground border rounded-lg p-4">No previous {kind.toUpperCase()} versions.</p>
+                ) : (
+                  <div className="space-y-6">
+                    {history[kind].map((pack) => (
+                      <CandidateCard key={pack.historyId} pack={pack} isHistory />
+                    ))}
+                  </div>
+                )}
+              </section>
+            ))
           )}
         </TabsContent>
         
@@ -179,7 +221,7 @@ function ActivePackCard({ kind, pack }: { kind: 'vst3' | 'sfz', pack?: LicensedI
   );
 }
 
-function CandidateCard({ pack }: { pack: LicensedInstrumentPack }) {
+function CandidateCard({ pack, isHistory = false }: { pack: LicensedInstrumentPack, isHistory?: boolean }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   
@@ -201,10 +243,29 @@ function CandidateCard({ pack }: { pack: LicensedInstrumentPack }) {
       }
     }
   });
+  const reactivateMutation = useReactivateLicensedInstrumentPack({
+    mutation: {
+      onSuccess: () => {
+        toast({
+          title: "Pack Reactivated",
+          description: `Restored ${pack.identity} (${pack.kind}) after checksum revalidation.`,
+        });
+        queryClient.invalidateQueries({ queryKey: getListLicensedInstrumentPacksQueryKey() });
+      },
+      onError: () => {
+        toast({
+          title: "Reactivation Blocked",
+          description: "The historical bytes or smoke evidence no longer match. The active pack was not changed.",
+          variant: "destructive"
+        });
+      }
+    }
+  });
 
   const isVerified = pack.status === 'verified';
   const isFailed = pack.status === 'unavailable'; 
   const isActive = pack.status === 'active';
+  const isPending = activateMutation.isPending || reactivateMutation.isPending;
 
   return (
     <Card className={`overflow-hidden transition-all duration-300 ${isVerified ? 'border-primary/30 shadow-sm' : ''}`}>
@@ -214,7 +275,7 @@ function CandidateCard({ pack }: { pack: LicensedInstrumentPack }) {
           <div className="flex items-center gap-2 mb-4">
             <Badge variant="outline" className="uppercase font-mono text-xs">{pack.kind}</Badge>
             {isVerified && <Badge className="bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 border-emerald-500/20 dark:text-emerald-400 gap-1"><CheckCircle2 className="h-3 w-3" /> Verified</Badge>}
-            {isFailed && <Badge variant="destructive" className="gap-1"><XCircle className="h-3 w-3" /> Failed</Badge>}
+            {isFailed && <Badge variant="destructive" className="gap-1"><XCircle className="h-3 w-3" /> Unavailable</Badge>}
             {isActive && <Badge variant="default" className="gap-1 bg-blue-500 hover:bg-blue-600 text-white"><Check className="h-3 w-3" /> Active</Badge>}
           </div>
           
@@ -242,17 +303,48 @@ function CandidateCard({ pack }: { pack: LicensedInstrumentPack }) {
               <span className="text-muted-foreground block text-xs">Host SHA-256</span>
               <span className="font-mono text-xs break-all">{pack.rendererSha256}</span>
             </div>
+            {isHistory && (
+              <>
+                <div>
+                  <span className="text-muted-foreground block text-xs">Originally activated</span>
+                  <span className="text-xs">{pack.activatedAt ? new Date(pack.activatedAt).toLocaleString() : 'Recorded before activation timestamps'}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-xs">Rotated out</span>
+                  <span className="text-xs">{pack.deactivatedAt ? new Date(pack.deactivatedAt).toLocaleString() : 'N/A'}</span>
+                </div>
+              </>
+            )}
           </div>
           
           {isVerified && !isActive && (
             <Button 
               className="mt-6 w-full font-bold shadow-md" 
-              onClick={() => activateMutation.mutate({ candidateId: pack.candidateId! })}
-              disabled={activateMutation.isPending}
+              onClick={() => {
+                if (isHistory) {
+                  reactivateMutation.mutate({ historyId: pack.historyId! });
+                } else {
+                  activateMutation.mutate({ candidateId: pack.candidateId! });
+                }
+              }}
+              disabled={isPending}
             >
-              {activateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Play className="h-4 w-4 mr-2" />}
-              Activate This Pack
+              {isPending
+                ? <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                : isHistory
+                  ? <RotateCcw className="h-4 w-4 mr-2" />
+                  : <Play className="h-4 w-4 mr-2" />}
+              {isHistory ? 'Reactivate Verified Pack' : 'Activate This Pack'}
             </Button>
+          )}
+          {isHistory && isFailed && (
+            <Alert variant="destructive" className="mt-6">
+              <FileWarning className="h-4 w-4" />
+              <AlertTitle>Reactivation unavailable</AlertTitle>
+              <AlertDescription>
+                {pack.unavailableReason || 'Historical bytes no longer match the verified checksums.'}
+              </AlertDescription>
+            </Alert>
           )}
         </div>
 
@@ -290,8 +382,8 @@ function CandidateCard({ pack }: { pack: LicensedInstrumentPack }) {
               {isFailed ? (
                 <>
                   <FileWarning className="h-8 w-8 text-destructive opacity-80" />
-                  <p className="font-medium text-destructive">Smoke evidence failed.</p>
-                  <p className="text-sm">The candidate did not pass validation checks.</p>
+                  <p className="font-medium text-destructive">{isHistory ? 'Historical bytes unavailable.' : 'Smoke evidence failed.'}</p>
+                  <p className="text-sm">{isHistory ? 'This version cannot replace the active pack.' : 'The candidate did not pass validation checks.'}</p>
                 </>
               ) : (
                 <>

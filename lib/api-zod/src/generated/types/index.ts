@@ -117,6 +117,7 @@ export * from './keyEvent';
 export * from './licensedInstrumentPack';
 export * from './licensedInstrumentPackCatalog';
 export * from './licensedInstrumentPackCatalogActive';
+export * from './licensedInstrumentPackCatalogHistory';
 export * from './licensedInstrumentPackKind';
 export * from './licensedInstrumentPackStatus';
 export * from './licensedInstrumentSmokeEvidence';

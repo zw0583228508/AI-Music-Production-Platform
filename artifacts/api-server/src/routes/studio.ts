@@ -32,6 +32,8 @@ import {
   ListGenerationCandidatesResponse,
   ListGenerationProvidersResponse,
   ListLicensedInstrumentPacksResponse,
+  ReactivateLicensedInstrumentPackParams,
+  ReactivateLicensedInstrumentPackResponse,
   SelectGenerationCandidateParams,
   SelectGenerationCandidateResponse,
   StageLicensedInstrumentPackResponse,
@@ -146,8 +148,10 @@ import {
   buildTrackModels,
   createArrangementPlan,
   createStyleSpec,
+  LicensedInstrumentWorkerError,
   licensedInstrumentWorkerConfig,
   listLicensedInstrumentPacks,
+  reactivateLicensedInstrumentPack as reactivateLicensedInstrumentPackOnWorker,
 } from "../lib/musicEngines";
 import {
   evaluateArrangementEligibility,
@@ -201,6 +205,27 @@ function requireStudioAdmin(req: Request, res: Response, next: NextFunction): vo
     return;
   }
   next();
+}
+
+function sendLicensedInstrumentWorkerError(
+  error: unknown,
+  res: Response,
+): boolean {
+  if (
+    !(error instanceof LicensedInstrumentWorkerError)
+    || ![404, 409].includes(error.status)
+  ) {
+    return false;
+  }
+  let detail = error.responseText.slice(0, 500);
+  try {
+    const payload = JSON.parse(error.responseText) as { detail?: unknown };
+    if (typeof payload.detail === "string") detail = payload.detail;
+  } catch {
+    // Preserve the bounded worker response as the error detail.
+  }
+  res.status(error.status).json({ error: detail });
+  return true;
 }
 
 router.use(requireStudioAuth);
@@ -284,11 +309,36 @@ router.post(
       res.status(400).json({ error: params.error.message });
       return;
     }
-    res.json(
-      ActivateLicensedInstrumentPackResponse.parse(
-        await activateLicensedInstrumentPackOnWorker(params.data.candidateId),
-      ),
-    );
+    try {
+      res.json(
+        ActivateLicensedInstrumentPackResponse.parse(
+          await activateLicensedInstrumentPackOnWorker(params.data.candidateId),
+        ),
+      );
+    } catch (error) {
+      if (!sendLicensedInstrumentWorkerError(error, res)) throw error;
+    }
+  },
+);
+
+router.post(
+  "/instrument-packs/history/:historyId/activate",
+  requireStudioAdmin,
+  async (req, res): Promise<void> => {
+    const params = ReactivateLicensedInstrumentPackParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    try {
+      res.json(
+        ReactivateLicensedInstrumentPackResponse.parse(
+          await reactivateLicensedInstrumentPackOnWorker(params.data.historyId),
+        ),
+      );
+    } catch (error) {
+      if (!sendLicensedInstrumentWorkerError(error, res)) throw error;
+    }
   },
 );
 

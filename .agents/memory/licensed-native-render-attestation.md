@@ -14,3 +14,9 @@ Native-code installation is a separate trust boundary from studio administration
 **Why:** A legitimate studio administrator account can still be compromised, and an upload form that directly executes arbitrary host bytes turns that compromise into worker code execution.
 
 **How to apply:** Keep host approval outside the upload request, require authentication to fail closed on administration endpoints, and make the atomically replaced licensed manifest the authoritative activation commit under a cross-process lock.
+
+Instrument-pack rotation history must be committed inside the same atomically replaced manifest as the active selection; auxiliary state files are mirrors only. Activation and rollback must fail closed when an existing manifest cannot be read or parsed.
+
+**Why:** Committing the active selection and history in separate files allows a crash or mirror-write failure to activate new bytes while permanently losing the previous verified version.
+
+**How to apply:** Archive the outgoing pack and select the incoming pack in one manifest replacement, revalidate historical bytes and smoke evidence before rollback, and never treat a corrupt manifest as a first install.

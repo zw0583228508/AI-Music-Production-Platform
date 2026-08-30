@@ -42,6 +42,7 @@ export const LicensedInstrumentPackStatus = {
 
 export interface LicensedInstrumentPack {
   candidateId?: string;
+  historyId?: string;
   kind?: LicensedInstrumentPackKind;
   assetId?: string;
   id?: string;
@@ -55,6 +56,8 @@ export interface LicensedInstrumentPack {
   smokeEvidence?: LicensedInstrumentSmokeEvidence;
   createdAt?: string;
   activatedAt?: string;
+  deactivatedAt?: string;
+  unavailableReason?: string;
 }
 
 export type LicensedInstrumentPackCatalogActive = {
@@ -62,9 +65,14 @@ export type LicensedInstrumentPackCatalogActive = {
   sfz: LicensedInstrumentPack;
 };
 
+export type LicensedInstrumentPackCatalogHistory = {
+  vst3: LicensedInstrumentPack[];
+  sfz: LicensedInstrumentPack[];
+};
 export interface LicensedInstrumentPackCatalog {
   active: LicensedInstrumentPackCatalogActive;
   candidates: LicensedInstrumentPack[];
+  history: LicensedInstrumentPackCatalogHistory;
 }
 
 export interface AuthUser {
@@ -2088,4 +2096,3 @@ returnTo?: string;
 export type LogoutBrowserSessionParams = {
 returnTo?: string;
 };
-

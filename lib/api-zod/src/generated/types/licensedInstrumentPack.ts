@@ -11,6 +11,7 @@ import type { LicensedInstrumentSmokeEvidence } from './licensedInstrumentSmokeE
 
 export interface LicensedInstrumentPack {
   candidateId?: string;
+  historyId?: string;
   kind?: LicensedInstrumentPackKind;
   assetId?: string;
   id?: string;
@@ -24,4 +25,6 @@ export interface LicensedInstrumentPack {
   smokeEvidence?: LicensedInstrumentSmokeEvidence;
   createdAt?: string;
   activatedAt?: string;
+  deactivatedAt?: string;
+  unavailableReason?: string;
 }

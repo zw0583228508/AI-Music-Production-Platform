@@ -598,6 +598,171 @@ class WorkerTests(unittest.TestCase):
             self.assertEqual(manifest["sfz"]["id"], "new-sfz")
             self.assertEqual(manifest["sfz"]["smokeEvidence"], evidence)
 
+    def test_verified_rotation_history_reactivates_and_rejects_changed_bytes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest_path = root / "licensed_assets.json"
+
+            def pack(candidate_id: str, asset_id: str, content: str, status: str):
+                candidate_root = root / ".staged" / candidate_id
+                library = candidate_root / "asset"
+                library.mkdir(parents=True)
+                (library / "instrument.sfz").write_text(content)
+                renderer = candidate_root / "renderer" / "native-host"
+                renderer.parent.mkdir()
+                renderer.write_text("#!/bin/sh\n")
+                renderer.chmod(0o755)
+                evidence = {
+                    "assetId": asset_id,
+                    "sha256": app._sha256_tree(library),
+                    "rendererSha256": app._sha256_tree(renderer),
+                    "nativeHostAttested": True,
+                    "canonicalSensitivity": True,
+                    "audible": True,
+                }
+                return {
+                    "candidateId": candidate_id,
+                    "kind": "sfz",
+                    "assetId": asset_id,
+                    "identity": f"{asset_id} identity",
+                    "licenseOwner": "Test Studio",
+                    "licenseReference": f"license-{asset_id}",
+                    "rendererIdentity": "Approved Host",
+                    "sha256": evidence["sha256"],
+                    "rendererSha256": evidence["rendererSha256"],
+                    "path": str(library),
+                    "libraryPath": str(library),
+                    "rendererPath": str(renderer),
+                    "status": status,
+                    "smokeEvidence": evidence,
+                    "createdAt": "2026-08-30T10:00:00Z",
+                    "activatedAt": "2026-08-30T10:05:00Z" if status == "active" else None,
+                }
+
+            previous = pack(
+                "previous-pack-candidate-123456",
+                "previous-pack",
+                "previous",
+                "active",
+            )
+            replacement = pack(
+                "replacement-candidate-1234567",
+                "replacement-pack",
+                "replacement",
+                "verified",
+            )
+            manifest_path.write_text(json.dumps({
+                "sfz": app._candidate_entry(previous),
+            }))
+            (root / app.ASSET_STATE_FILENAME).write_text(json.dumps({
+                "candidates": {
+                    previous["candidateId"]: previous,
+                    replacement["candidateId"]: replacement,
+                },
+            }))
+
+            with (
+                unittest.mock.patch.object(app, "ASSET_ROOT", root),
+                unittest.mock.patch.object(app, "ASSET_MANIFEST_PATH", manifest_path),
+            ):
+                with unittest.mock.patch.object(
+                    app,
+                    "_write_asset_state",
+                    side_effect=OSError("simulated state mirror failure"),
+                ):
+                    app._activate_asset_candidate(replacement["candidateId"])
+                catalog = app.list_asset_candidates()
+                self.assertEqual(
+                    [item["assetId"] for item in catalog["history"]["sfz"]],
+                    ["previous-pack"],
+                )
+                self.assertEqual(catalog["history"]["sfz"][0]["status"], "verified")
+                history_id = catalog["history"]["sfz"][0]["historyId"]
+
+                app._reactivate_asset_history(history_id)
+                self.assertEqual(
+                    json.loads(manifest_path.read_text())["sfz"]["id"],
+                    "previous-pack",
+                )
+
+                replacement_library = Path(replacement["libraryPath"])
+                (replacement_library / "instrument.sfz").write_text("tampered")
+                catalog = app.list_asset_candidates()
+                self.assertEqual(catalog["history"]["sfz"][0]["status"], "unavailable")
+                with self.assertRaises(HTTPException) as error:
+                    app._reactivate_asset_history(
+                        catalog["history"]["sfz"][0]["historyId"]
+                    )
+                self.assertEqual(error.exception.status_code, 409)
+                self.assertEqual(
+                    json.loads(manifest_path.read_text())["sfz"]["id"],
+                    "previous-pack",
+                )
+
+    def test_corrupt_manifest_blocks_activation_and_reactivation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            library = root / ".staged" / "candidate-corrupt-test-12345" / "asset"
+            library.mkdir(parents=True)
+            (library / "instrument.sfz").write_text("candidate")
+            renderer = library.parent / "renderer" / "native-host"
+            renderer.parent.mkdir()
+            renderer.write_text("#!/bin/sh\n")
+            renderer.chmod(0o755)
+            evidence = {
+                "assetId": "candidate-pack",
+                "sha256": app._sha256_tree(library),
+                "rendererSha256": app._sha256_tree(renderer),
+                "nativeHostAttested": True,
+                "canonicalSensitivity": True,
+                "audible": True,
+            }
+            candidate = {
+                "candidateId": "candidate-corrupt-test-12345",
+                "kind": "sfz",
+                "assetId": "candidate-pack",
+                "identity": "Candidate Pack",
+                "licenseOwner": "Test Studio",
+                "licenseReference": "license-candidate",
+                "rendererIdentity": "Approved Host",
+                "sha256": evidence["sha256"],
+                "rendererSha256": evidence["rendererSha256"],
+                "path": str(library),
+                "libraryPath": str(library),
+                "rendererPath": str(renderer),
+                "status": "verified",
+                "smokeEvidence": evidence,
+            }
+            history = {
+                **app._candidate_entry(candidate),
+                "historyId": "history-corrupt-test-123456",
+                "candidateId": candidate["candidateId"],
+                "assetId": candidate["assetId"],
+                "kind": "sfz",
+                "status": "verified",
+            }
+            (root / app.ASSET_STATE_FILENAME).write_text(json.dumps({
+                "candidates": {candidate["candidateId"]: candidate},
+                "history": {"vst3": [], "sfz": [history]},
+            }))
+            manifest_path = root / "licensed_assets.json"
+            corrupt_manifest = "{this-is-not-json"
+            manifest_path.write_text(corrupt_manifest)
+
+            with (
+                unittest.mock.patch.object(app, "ASSET_ROOT", root),
+                unittest.mock.patch.object(app, "ASSET_MANIFEST_PATH", manifest_path),
+            ):
+                with self.assertRaises(HTTPException) as activation_error:
+                    app._activate_asset_candidate(candidate["candidateId"])
+                self.assertEqual(activation_error.exception.status_code, 503)
+                self.assertEqual(manifest_path.read_text(), corrupt_manifest)
+
+                with self.assertRaises(HTTPException) as reactivation_error:
+                    app._reactivate_asset_history(history["historyId"])
+                self.assertEqual(reactivation_error.exception.status_code, 503)
+                self.assertEqual(manifest_path.read_text(), corrupt_manifest)
+
     def test_source_resolution_rejects_private_and_reserved_addresses(self):
         for address in ("10.0.0.1", "127.0.0.1", "192.0.2.1", "169.254.1.1"):
             with self.subTest(address=address), unittest.mock.patch.object(

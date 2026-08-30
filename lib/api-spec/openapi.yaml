@@ -54,7 +54,7 @@ paths:
     get:
       operationId: listLicensedInstrumentPacks
       tags: [studio]
-      summary: List active and staged licensed instrument packs
+      summary: List active, staged, and previously active licensed instrument packs
       responses:
         "200":
           description: Licensed instrument pack catalog
@@ -150,6 +150,30 @@ paths:
           description: Studio administrator access required
         "409":
           description: Candidate is not verified or changed after verification
+  /instrument-packs/history/{historyId}/activate:
+    post:
+      operationId: reactivateLicensedInstrumentPack
+      tags: [studio]
+      summary: Reactivate a previously verified licensed instrument pack
+      description: Revalidates the historical asset and native-host checksums against its original smoke evidence before atomically switching the active manifest.
+      parameters:
+        - name: historyId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Historical pack is now active
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LicensedInstrumentPack"
+        "403":
+          description: Studio administrator access required
+        "404":
+          description: Historical pack was not found
+        "409":
+          description: Historical bytes or smoke evidence no longer match
   /auth/user:
     get:
       tags: [Auth]
@@ -1019,6 +1043,7 @@ components:
       required: [status]
       properties:
         candidateId: { type: string }
+        historyId: { type: string }
         kind: { type: string, enum: [vst3, sfz] }
         assetId: { type: string }
         id: { type: string }
@@ -1033,9 +1058,11 @@ components:
           $ref: "#/components/schemas/LicensedInstrumentSmokeEvidence"
         createdAt: { type: string }
         activatedAt: { type: string }
+        deactivatedAt: { type: string }
+        unavailableReason: { type: string }
     LicensedInstrumentPackCatalog:
       type: object
-      required: [active, candidates]
+      required: [active, candidates, history]
       properties:
         active:
           type: object
@@ -1049,6 +1076,18 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/LicensedInstrumentPack"
+        history:
+          type: object
+          required: [vst3, sfz]
+          properties:
+            vst3:
+              type: array
+              items:
+                $ref: "#/components/schemas/LicensedInstrumentPack"
+            sfz:
+              type: array
+              items:
+                $ref: "#/components/schemas/LicensedInstrumentPack"
     AuthUser:
       type: object
       required: [id, email, firstName, lastName, profileImageUrl]

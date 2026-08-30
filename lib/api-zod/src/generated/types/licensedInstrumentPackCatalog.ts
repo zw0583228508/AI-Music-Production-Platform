@@ -7,8 +7,10 @@
  */
 import type { LicensedInstrumentPack } from './licensedInstrumentPack';
 import type { LicensedInstrumentPackCatalogActive } from './licensedInstrumentPackCatalogActive';
+import type { LicensedInstrumentPackCatalogHistory } from './licensedInstrumentPackCatalogHistory';
 
 export interface LicensedInstrumentPackCatalog {
   active: LicensedInstrumentPackCatalogActive;
   candidates: LicensedInstrumentPack[];
+  history: LicensedInstrumentPackCatalogHistory;
 }

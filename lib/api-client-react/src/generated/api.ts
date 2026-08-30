@@ -257,7 +257,7 @@ export const getListLicensedInstrumentPacksUrl = () => {
 }
 
 /**
- * @summary List active and staged licensed instrument packs
+ * @summary List active, staged, and previously active licensed instrument packs
  */
 export const listLicensedInstrumentPacks = async ( options?: Parameters<typeof customFetch>[1]): Promise<LicensedInstrumentPackCatalog> => {
 
@@ -304,7 +304,7 @@ export type ListLicensedInstrumentPacksQueryError = ErrorType<void>
 
 
 /**
- * @summary List active and staged licensed instrument packs
+ * @summary List active, staged, and previously active licensed instrument packs
  */
 
 export function useListLicensedInstrumentPacks<TData = Awaited<ReturnType<typeof listLicensedInstrumentPacks>>, TError = ErrorType<void>>(
@@ -478,6 +478,78 @@ export const useActivateLicensedInstrumentPack = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getActivateLicensedInstrumentPackMutationOptions(options));
+    }
+
+export const getReactivateLicensedInstrumentPackUrl = (historyId: string,) => {
+
+
+
+
+  return `/api/instrument-packs/history/${historyId}/activate`
+}
+
+/**
+ * Revalidates the historical asset and native-host checksums against its original smoke evidence before atomically switching the active manifest.
+ * @summary Reactivate a previously verified licensed instrument pack
+ */
+export const reactivateLicensedInstrumentPack = async (historyId: string, options?: Parameters<typeof customFetch>[1]): Promise<LicensedInstrumentPack> => {
+
+  return customFetch<LicensedInstrumentPack>(getReactivateLicensedInstrumentPackUrl(historyId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getReactivateLicensedInstrumentPackMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reactivateLicensedInstrumentPack>>, TError,{historyId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reactivateLicensedInstrumentPack>>, TError,{historyId: string}, TContext> => {
+
+const mutationKey = ['reactivateLicensedInstrumentPack'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reactivateLicensedInstrumentPack>>, {historyId: string}> = (props) => {
+          const {historyId} = props ?? {};
+
+          return  reactivateLicensedInstrumentPack(historyId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReactivateLicensedInstrumentPackMutationResult = NonNullable<Awaited<ReturnType<typeof reactivateLicensedInstrumentPack>>>
+
+    export type ReactivateLicensedInstrumentPackMutationError = ErrorType<void>
+
+    /**
+ * @summary Reactivate a previously verified licensed instrument pack
+ */
+export const useReactivateLicensedInstrumentPack = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reactivateLicensedInstrumentPack>>, TError,{historyId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reactivateLicensedInstrumentPack>>,
+        TError,
+        {historyId: string},
+        TContext
+      > => {
+      return useMutation(getReactivateLicensedInstrumentPackMutationOptions(options));
     }
 
 export const getGetCurrentAuthUserUrl = () => {
