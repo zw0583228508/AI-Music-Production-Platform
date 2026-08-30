@@ -1,4 +1,5 @@
 import { strict as assert } from "node:assert";
+import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { after, test } from "node:test";
 import { unlink } from "node:fs/promises";
@@ -17,6 +18,7 @@ await build({
         verifyProviderRegistry,
         verifiedProviderDescriptorCatalog,
       } from "./src/lib/musicProviders";
+       export { createSession, deleteSession } from "./src/lib/auth";
       export { ListGenerationProvidersResponse } from "@workspace/api-zod";
     `,
     resolveDir: apiDirectory,
@@ -35,6 +37,8 @@ globalThis.require = __createRequire(import.meta.url);`,
 
 const {
   createProviderRegistry,
+  createSession,
+  deleteSession,
   providerCatalog,
   selectMusicProvider,
   verifyProviderRegistry,
@@ -58,6 +62,77 @@ function listen(server) {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
   });
+}
+
+function close(server) {
+  return new Promise((resolve) => server.close(resolve));
+}
+
+async function availablePort() {
+  const probe = createServer();
+  await listen(probe);
+  const address = probe.address();
+  const port = address.port;
+  await close(probe);
+  return port;
+}
+
+async function waitUntilReady(baseUrl, childError) {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    try {
+      const response = await fetch(`${baseUrl}/api/healthz`);
+      if (response.ok) return;
+    } catch {
+      // The restarted API has not opened its port yet.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`Provider catalog API did not become ready.\n${childError()}`);
+}
+
+async function stopApi(child) {
+  if (!child || child.exitCode !== null) return;
+  await new Promise((resolve) => {
+    child.once("exit", resolve);
+    child.kill("SIGTERM");
+  });
+}
+
+async function readAuthenticatedCatalog(baseUrl, session) {
+  const response = await fetch(`${baseUrl}/api/music-providers`, {
+    headers: { Authorization: `Bearer ${session}` },
+  });
+  if (response.status !== 200) {
+    assert.fail(
+      `Provider readiness request failed after authentication with HTTP ${response.status}: ${await response.text()}`,
+    );
+  }
+  return ListGenerationProvidersResponse.parse(await response.json());
+}
+
+function assertPromotedAceStep(catalog) {
+  const provider = catalog.find((candidate) => candidate.id === "ACE_STEP");
+  assert.ok(provider, "Authenticated provider catalog omitted ACE-Step");
+  assert.equal(provider.status, "ready");
+  assert.equal(provider.available, true);
+  assert.equal(provider.configured, true);
+  assert.equal(provider.checkpointReady, true);
+  assert.equal(provider.runtimeReady, true);
+  assert.equal(provider.smokeTested, true);
+  assert.equal(provider.modelVersion, "ace-step-1.5-base");
+  assert.equal(provider.reportedVersion, "ace-step-1.5-base");
+  assert.equal(provider.reportedChecksum, "a".repeat(64));
+  assert.deepEqual(provider.runtimeProvenance, {
+    model: "ace-step-1.5-base",
+    checkpointSha256: "a".repeat(64),
+    revision: "ace-step-1.5-base-r42",
+    modalImageId: "im-AceStepPromoted42",
+    sourceImageDigest: `sha256:${"c".repeat(64)}`,
+    cudaVersion: "12.4",
+    pytorchVersion: "2.5.1",
+    gpu: "NVIDIA A100",
+  });
+  assert.equal(provider.lastHealth.status, "healthy");
 }
 
 async function withHealthServer(handler, run) {
@@ -113,6 +188,7 @@ test("routes only to a worker with a verified checkpoint and runtime", async () 
     assert.equal(catalogEntry.status, "ready");
     assert.equal(catalogEntry.checkpointReady, true);
     assert.equal(catalogEntry.runtimeReady, true);
+    assert.equal(catalogEntry.smokeTested, true);
     assert.equal(catalogEntry.reportedVersion, "meteor");
     assert.equal(catalogEntry.lastHealth.status, "healthy");
     assert.equal(
@@ -133,6 +209,109 @@ test("routes only to a worker with a verified checkpoint and runtime", async () 
     assert.equal(legacyEntry.runtimeReady, catalogEntry.runtimeReady);
     assert.equal(legacyEntry.reportedVersion, catalogEntry.reportedVersion);
   });
+});
+
+test("authenticated ACE-Step catalog identity survives an API restart", async () => {
+  let api;
+  let session;
+  let apiError = "";
+  let workerHealthChecks = 0;
+  const worker = createServer((request, response) => {
+    if (request.headers.authorization !== "Bearer catalog-worker-token") {
+      response.writeHead(401, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ error: "worker authentication required" }));
+      return;
+    }
+    if (request.url !== "/health?provider=ACE_STEP") {
+      response.writeHead(404, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ error: "not found" }));
+      return;
+    }
+    workerHealthChecks += 1;
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({
+      status: "ready",
+      healthy: true,
+      provider: "ACE_STEP",
+      runtimeReady: true,
+      gpuReady: true,
+      checkpointReady: true,
+      modelVersion: "ace-step-1.5-base",
+      checkpointSha256: "a".repeat(64),
+      smokeTested: true,
+      revision: "ace-step-1.5-base-r42",
+      modalImageId: "im-AceStepPromoted42",
+      sourceImageDigest: `sha256:${"c".repeat(64)}`,
+      cudaVersion: "12.4",
+      pytorchVersion: "2.5.1",
+      gpu: "NVIDIA A100",
+    }));
+  });
+  await listen(worker);
+  const workerAddress = worker.address();
+  const childEnvironment = {
+    ...process.env,
+    NODE_ENV: "test",
+    MUSIC_PROVIDER_ACE_STEP_URL:
+      `http://127.0.0.1:${workerAddress.port}/generate`,
+    MUSIC_PROVIDER_ACE_STEP_TOKEN: "catalog-worker-token",
+    MUSIC_PROVIDER_ACE_STEP_CHECKPOINT_SHA256: "a".repeat(64),
+    MUSIC_PROVIDER_ACE_STEP_MODAL_IMAGE_ID: "im-AceStepPromoted42",
+    MUSIC_PROVIDER_ACE_STEP_SOURCE_IMAGE_DIGEST: `sha256:${"c".repeat(64)}`,
+  };
+  const startApi = async () => {
+    const port = await availablePort();
+    const baseUrl = `http://127.0.0.1:${port}`;
+    apiError = "";
+    const child = spawn(
+      process.execPath,
+      ["--enable-source-maps", "./dist/index.mjs"],
+      {
+        cwd: apiDirectory,
+        env: { ...childEnvironment, PORT: String(port) },
+        stdio: ["ignore", "ignore", "pipe"],
+      },
+    );
+    child.stderr.on("data", (chunk) => {
+      apiError += chunk.toString();
+    });
+    await waitUntilReady(baseUrl, () => apiError);
+    return { child, baseUrl };
+  };
+
+  try {
+    let running = await startApi();
+    api = running.child;
+    session = await createSession({
+      user: {
+        id: `provider-release-${process.pid}`,
+        email: null,
+        firstName: "Provider",
+        lastName: "Release",
+        profileImageUrl: null,
+      },
+      access_token: "test",
+    });
+
+    const anonymous = await fetch(`${running.baseUrl}/api/music-providers`);
+    assert.equal(anonymous.status, 401);
+    assert.deepEqual(await anonymous.json(), { error: "Unauthorized" });
+    assertPromotedAceStep(
+      await readAuthenticatedCatalog(running.baseUrl, session),
+    );
+
+    await stopApi(api);
+    running = await startApi();
+    api = running.child;
+    assertPromotedAceStep(
+      await readAuthenticatedCatalog(running.baseUrl, session),
+    );
+    assert.ok(workerHealthChecks >= 2);
+  } finally {
+    await stopApi(api);
+    if (session) await deleteSession(session);
+    await close(worker);
+  }
 });
 
 test("keeps a configured worker unavailable when its checkpoint is missing", async () => {

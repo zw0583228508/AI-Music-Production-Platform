@@ -14,6 +14,7 @@ export interface ProviderRuntimeSnapshot {
   configurationReady: boolean;
   checkpointReady: boolean;
   runtimeReady: boolean;
+  smokeTested: boolean;
   healthStatus: ProviderRuntimeSnapshotHealthStatus;
   /** @nullable */
   checkedAt: string | null;

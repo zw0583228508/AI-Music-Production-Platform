@@ -2148,7 +2148,7 @@ components:
         createdAt: { type: string }
     GenerationProvider:
       type: object
-      required: [id, name, modelVersion, tasks, hardware, speeds, available, status, configured, checkpointReady, runtimeReady, reportedVersion, lastHealth]
+      required: [id, name, modelVersion, tasks, hardware, speeds, available, status, configured, checkpointReady, runtimeReady, smokeTested, reportedVersion, lastHealth]
       properties:
         id:
           type: string
@@ -2177,6 +2177,9 @@ components:
         configured: { type: boolean }
         checkpointReady: { type: boolean }
         runtimeReady: { type: boolean }
+        smokeTested:
+          type: boolean
+          description: True only when the worker's live health response proves a real smoke inference completed.
         reportedVersion:
           type: [string, "null"]
         reportedChecksum:
@@ -2202,7 +2205,7 @@ components:
           type: [string, "null"]
     ProviderRuntimeSnapshot:
       type: object
-      required: [availability, configurationReady, checkpointReady, runtimeReady, healthStatus, checkedAt, latencyMs, message, reportedVersion]
+      required: [availability, configurationReady, checkpointReady, runtimeReady, smokeTested, healthStatus, checkedAt, latencyMs, message, reportedVersion]
       properties:
         availability:
           type: string
@@ -2210,6 +2213,7 @@ components:
         configurationReady: { type: boolean }
         checkpointReady: { type: boolean }
         runtimeReady: { type: boolean }
+        smokeTested: { type: boolean }
         healthStatus:
           type: string
           enum: [healthy, unhealthy, unknown]

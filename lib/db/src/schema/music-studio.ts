@@ -236,6 +236,7 @@ export type ProviderRuntimeSnapshot = {
   configurationReady: boolean;
   checkpointReady: boolean;
   runtimeReady: boolean;
+  smokeTested: boolean;
   healthStatus: ProviderHealthStatus;
   checkedAt: string | null;
   latencyMs: number | null;

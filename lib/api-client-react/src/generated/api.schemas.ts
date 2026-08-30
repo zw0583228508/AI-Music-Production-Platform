@@ -1536,6 +1536,7 @@ export interface ProviderRuntimeSnapshot {
   configurationReady: boolean;
   checkpointReady: boolean;
   runtimeReady: boolean;
+  smokeTested: boolean;
   healthStatus: ProviderRuntimeSnapshotHealthStatus;
   /** @nullable */
   checkedAt: string | null;
@@ -1829,6 +1830,8 @@ export interface GenerationProvider {
   configured: boolean;
   checkpointReady: boolean;
   runtimeReady: boolean;
+  /** True only when the worker's live health response proves a real smoke inference completed. */
+  smokeTested: boolean;
   /** @nullable */
   reportedVersion: string | null;
   /** @nullable */

@@ -1005,6 +1005,7 @@ export default function ProjectWorkspace() {
                         {compatibleArrangementProviders?.map((provider) => {
                           const ready = provider.status === "ready";
                           const configured = provider.status === "configured";
+                          const provenance = provider.runtimeProvenance;
                           const label = ready
                             ? "Ready"
                             : configured
@@ -1024,6 +1025,34 @@ export default function ProjectWorkspace() {
                                   {" · "}
                                   {provider.lastHealth.message}
                                 </div>
+                                {provenance && (
+                                  <div className="mt-2 space-y-1 text-[11px] text-muted-foreground">
+                                    <div>
+                                      <span className="font-medium text-foreground">Image</span>
+                                      {" "}
+                                      <span className="font-mono">{provenance.modalImageId}</span>
+                                    </div>
+                                    <div className="break-all">
+                                      <span className="font-medium text-foreground">Checkpoint</span>
+                                      {" "}
+                                      <span className="font-mono">{provenance.checkpointSha256}</span>
+                                    </div>
+                                    <div className="break-all">
+                                      <span className="font-medium text-foreground">Source</span>
+                                      {" "}
+                                      <span className="font-mono">{provenance.sourceImageDigest}</span>
+                                    </div>
+                                    <div>
+                                      CUDA {provenance.cudaVersion}
+                                      {" · "}
+                                      PyTorch {provenance.pytorchVersion}
+                                      {" · "}
+                                      {provenance.gpu}
+                                      {" · "}
+                                      {provider.smokeTested ? "Smoke passed" : "Smoke not verified"}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                               <Badge
                                 variant={ready ? "default" : configured ? "destructive" : "outline"}
