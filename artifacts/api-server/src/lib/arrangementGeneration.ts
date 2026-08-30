@@ -1,5 +1,9 @@
+import { execFile } from "node:child_process";
 import { createHash, randomInt, randomUUID } from "node:crypto";
-import { isDeepStrictEqual } from "node:util";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { isDeepStrictEqual, promisify } from "node:util";
 import { and, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
 import {
   arrangementsTable,
@@ -30,6 +34,7 @@ import {
   type GenerationHardware,
   type GenerationSpeed,
   type MusicProviderId,
+  type ProviderAudioArtifact,
   type ProviderCandidate,
 } from "./musicProviders";
 import {
@@ -37,6 +42,8 @@ import {
   buildTrackModels,
   createArrangementPlan,
   createStyleSpec,
+  decodePcm16Wav,
+  QualityEngine,
   renderMusicPipeline,
 } from "./musicEngines";
 import { createPerformanceMidi, encodeWav } from "./exportEngine";
@@ -49,6 +56,68 @@ import {
 
 const sha256 = (value: string | Buffer): string =>
   createHash("sha256").update(value).digest("hex");
+const execFileAsync = promisify(execFile);
+const PROVIDER_AUDIO_LIMIT_BYTES = 128 * 1024 * 1024;
+
+async function ingestProviderAudio(artifact: ProviderAudioArtifact): Promise<Buffer> {
+  const response = await fetch(artifact.url, {
+    headers: { Accept: "audio/flac, audio/wav" },
+    redirect: "error",
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!response.ok) {
+    throw new Error(`Provider audio download returned HTTP ${response.status}`);
+  }
+  const declaredLength = Number(
+    response.headers.get("content-length") ?? artifact.bytes,
+  );
+  if (
+    !Number.isFinite(declaredLength) ||
+    declaredLength !== artifact.bytes ||
+    declaredLength <= 0 ||
+    declaredLength > PROVIDER_AUDIO_LIMIT_BYTES
+  ) {
+    throw new Error(
+      "Provider audio download size does not match its attested metadata",
+    );
+  }
+  const downloaded = Buffer.from(await response.arrayBuffer());
+  if (
+    downloaded.byteLength !== artifact.bytes ||
+    sha256(downloaded) !== artifact.sha256
+  ) {
+    throw new Error("Provider audio download failed checksum verification");
+  }
+
+  const workspace = await mkdtemp(join(tmpdir(), "music-provider-audio-"));
+  const inputPath = join(workspace, `input.${artifact.format}`);
+  const outputPath = join(workspace, "output.wav");
+  try {
+    await writeFile(inputPath, downloaded);
+    await execFileAsync("ffmpeg", [
+      "-v", "error",
+      "-nostdin",
+      "-y",
+      "-i", inputPath,
+      "-map", "0:a:0",
+      "-ac", "2",
+      "-ar", "44100",
+      "-c:a", "pcm_s16le",
+      outputPath,
+    ], {
+      timeout: 120_000,
+      maxBuffer: 1024 * 1024,
+    });
+    const wav = await readFile(outputPath);
+    if (wav.byteLength <= 44 || wav.byteLength > PROVIDER_AUDIO_LIMIT_BYTES) {
+      throw new Error("Provider audio transcoding produced an invalid WAV");
+    }
+    decodePcm16Wav(wav, 44_100);
+    return wav;
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+}
 
 export type QueueGenerationInput = {
   candidates?: number;
@@ -744,7 +813,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           providerOrdinal: providerIndex + 1,
           providerScore: candidate.score,
           confidence: candidate.confidence,
-          generationSeed: job.seed,
+          generationSeed: candidate.seed,
           generationParameters: JSON.stringify(job.parameters),
           providerRuntimeProvenance: JSON.stringify(result.runtimeProvenance ?? null),
           ...(result.checkpointSha256
@@ -776,7 +845,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           tracks: snapshot.tracks,
           candidate: {
             provider: provider.definition.id,
-            seed: job.seed,
+            seed: candidate.seed,
             plan: candidate.plan,
             parentArtifactIds: candidateParentIds,
             trackModels: candidate.trackModels,
@@ -786,13 +855,16 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
         evaluatedPlan = materialized.plan;
         evaluatedStyleSpec = materialized.styleSpec;
         const evaluatedAt = new Date().toISOString();
+        const providerWav = candidate.audioArtifact
+          ? await ingestProviderAudio(candidate.audioArtifact)
+          : null;
         const pipeline = renderMusicPipeline({
           songModel: evaluationSongModel,
           plan: materialized.plan,
           tracks: snapshot.tracks,
           trackModels: materialized.trackModels,
           style: materialized.styleSpec,
-          seed: job.seed,
+          seed: candidate.seed,
           masterProfile: "BALANCED",
           quality: {
             lineageComplete:
@@ -807,12 +879,28 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
             evaluatedAt,
           },
         });
-        const wav = encodeWav(pipeline.master);
+        const wav = providerWav ?? encodeWav(pipeline.master);
+        const quality = providerWav
+          ? new QualityEngine().assess(
+              materialized.trackModels,
+              decodePcm16Wav(providerWav, 44_100),
+              materialized.plan,
+              {
+                lineageComplete: pipeline.quality.lineageComplete,
+                renderArtifactIds,
+                evaluatedAt,
+                bpm: evaluationSongModel.tempoMap[0]?.bpm ?? 92,
+                meter: evaluationSongModel.meterMap[0]?.meter ?? "4/4",
+              },
+            )
+          : pipeline.quality;
+        const candidateDuration =
+          candidate.audioArtifact?.durationSeconds ?? pipeline.durationSeconds;
         const midi = createPerformanceMidi(
           materialized.trackModels,
           evaluationSongModel.tempoMap[0]?.bpm ?? 92,
           evaluationSongModel.meterMap[0]?.meter ?? "4/4",
-          pipeline.durationSeconds,
+          candidateDuration,
         );
         const objectPrefix = `generation/${job.id}/${candidateId}`;
         const audioUrl = await saveExportObject(
@@ -840,12 +928,12 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
         ];
         const renderArtifactIdSet = new Set<string>(renderArtifactIds);
         if (
-          !Number.isFinite(pipeline.quality.score) ||
-          !pipeline.quality.lineageComplete ||
-          pipeline.quality.renderArtifactIds.length !== renderArtifactIds.length ||
-          pipeline.quality.renderArtifactIds.some((id) => !renderArtifactIdSet.has(id)) ||
+          !Number.isFinite(quality.score) ||
+          !quality.lineageComplete ||
+          quality.renderArtifactIds.length !== renderArtifactIds.length ||
+          quality.renderArtifactIds.some((id) => !renderArtifactIdSet.has(id)) ||
           requiredDimensions.some((name) =>
-            !Number.isFinite(pipeline.quality.checks[name]))
+            !Number.isFinite(quality.checks[name]))
         ) {
           throw new Error("Independent quality analysis is incomplete");
         }
@@ -856,11 +944,11 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           reportedModelVersion: result.modelVersion,
           checkpointSha256: result.checkpointSha256,
           providerRequestId: candidate.providerRequestId ?? result.requestId,
-          seed: job.seed,
+          seed: candidate.seed,
           parameters: job.parameters,
           runtimeProvenance: result.runtimeProvenance ?? null,
           providerScore: candidate.score,
-          quality: pipeline.quality,
+          quality,
         }, null, 2));
         const qualityUrl = await saveExportObject(
           `${objectPrefix}/quality-report.json`,
@@ -878,10 +966,10 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
             { id: midiArtifactId, type: "MIDI", label: "Performance MIDI", url: midiUrl },
             { id: qualityArtifactId, type: "QUALITY_REPORT", label: "Quality report", url: qualityUrl },
           ],
-          qualityReport: pipeline.quality,
+          qualityReport: quality,
           error: null,
         };
-        evaluationScore = pipeline.quality.score;
+        evaluationScore = quality.score;
         candidateStatus = "validated";
         const artifactParentIds = [planArtifactId, ...candidateParentIds];
         artifactRows.push(
@@ -889,7 +977,9 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
             id: audioArtifactId,
             projectId: job.projectId,
             type: "AUDIO_TRACK",
-            label: `${candidate.label} · evaluation render`,
+            label: providerWav
+              ? `${candidate.label} · ACE-Step generated accompaniment`
+              : `${candidate.label} · evaluation render`,
             version: snapshot.arrangement.version,
             size: `${wav.byteLength} B`,
             format: "WAV",
@@ -898,16 +988,30 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
             hash: sha256(wav),
             checksum: sha256(wav),
             parentIds: artifactParentIds,
-            createdBy: "candidate-render-evaluator",
-            modelVersion: "LOCAL_EXPRESSIVE_SYNTH@1.0.0",
+            createdBy: providerWav
+              ? "gpu-provider-output-ingest"
+              : "candidate-render-evaluator",
+            modelVersion: providerWav
+              ? result.modelVersion
+              : "LOCAL_EXPRESSIVE_SYNTH@1.0.0",
             provider: provider.definition.id,
             technicalMetadata: {
               mediaType: "audio/wav",
               bytes: wav.byteLength,
-              durationSeconds: pipeline.durationSeconds,
+              durationSeconds: candidateDuration,
               candidateId,
-              generationSeed: job.seed,
+              generationSeed: candidate.seed,
               generationParameters: JSON.stringify(job.parameters),
+              audioSource: providerWav
+                ? "provider-output"
+                : "local-evaluation-render",
+              ...(candidate.audioArtifact
+                ? {
+                    providerArtifactSha256: candidate.audioArtifact.sha256,
+                    providerArtifactFormat: candidate.audioArtifact.format,
+                    providerArtifactBytes: candidate.audioArtifact.bytes,
+                  }
+                : {}),
               providerRuntimeProvenance: JSON.stringify(result.runtimeProvenance ?? null),
               ...(result.checkpointSha256
                 ? { checkpointSha256: result.checkpointSha256 }
@@ -933,9 +1037,9 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
             technicalMetadata: {
               mediaType: "audio/midi",
               bytes: midi.byteLength,
-              durationSeconds: pipeline.durationSeconds,
+              durationSeconds: candidateDuration,
               candidateId,
-              generationSeed: job.seed,
+              generationSeed: candidate.seed,
               generationParameters: JSON.stringify(job.parameters),
               providerRuntimeProvenance: JSON.stringify(result.runtimeProvenance ?? null),
               ...(result.checkpointSha256
@@ -962,9 +1066,9 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
             technicalMetadata: {
               mediaType: "application/json",
               bytes: qualityData.byteLength,
-              qualityScore: pipeline.quality.score,
+              qualityScore: quality.score,
               candidateId,
-              generationSeed: job.seed,
+              generationSeed: candidate.seed,
               generationParameters: JSON.stringify(job.parameters),
               providerRuntimeProvenance: JSON.stringify(result.runtimeProvenance ?? null),
               ...(result.checkpointSha256
@@ -1000,7 +1104,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
         modelVersion: job.modelVersion,
         reportedModelVersion: result.modelVersion,
         checkpointSha256: result.checkpointSha256,
-        seed: job.seed,
+        seed: candidate.seed,
         rank: null,
         label: candidate.label,
         score: evaluationScore,

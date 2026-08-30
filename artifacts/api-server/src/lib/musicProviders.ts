@@ -1311,7 +1311,13 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
     const candidates = payload["candidates"]
       .slice(0, input.candidates)
       .map((candidate, index) =>
-        normalizeCandidate(candidate, index, input, sharedTrackModels));
+        normalizeCandidate(
+          candidate,
+          index,
+          input,
+          sharedTrackModels,
+          this.endpoint ? new URL(this.endpoint).origin : undefined,
+        ));
     if (candidates.length === 0) {
       throw new Error(`${this.definition.displayName} worker returned no candidates`);
     }
@@ -1340,7 +1346,8 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
     if (!this.endpoint) {
       throw new Error(`${this.definition.displayName} worker is not configured`);
     }
-    const response = await fetch(this.endpoint, {
+    const requestUrl = providerGenerationUrl(this.endpoint, input.task);
+    const response = await fetch(requestUrl, {
       method: "POST",
       headers: {
         ...this.headers(),
@@ -1350,6 +1357,9 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
         provider: this.definition.id,
         modelVersion: this.definition.modelVersion,
         ...input,
+        prompt: providerGenerationPrompt(input),
+        candidateCount: input.candidates,
+        durationSeconds: providerGenerationDuration(input.songModel),
       }),
       signal: signal
         ? AbortSignal.any([signal, AbortSignal.timeout(10 * 60 * 1000)])
@@ -1369,7 +1379,7 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
         `${this.definition.displayName} worker did not return a status URL`,
       );
     }
-    const endpointUrl = new URL(this.endpoint);
+    const endpointUrl = new URL(requestUrl);
     const statusUrl = new URL(payload["statusUrl"], endpointUrl);
     if (statusUrl.origin !== endpointUrl.origin) {
       throw new Error("Provider status URL must use the configured worker origin");
@@ -1735,6 +1745,50 @@ export type ProviderGenerationInput = {
   };
 };
 
+function providerGenerationUrl(
+  endpoint: string,
+  task: MusicGenerationTask,
+): string {
+  const url = new URL(endpoint);
+  if (
+    (url.pathname === "/" || url.pathname === "") &&
+    url.hostname.endsWith(".modal.run")
+  ) {
+    url.pathname = task === "ARRANGEMENT" ? "/arrange" : "/generate";
+  }
+  return url.toString();
+}
+
+function providerGenerationDuration(songModelValue: unknown): number {
+  const songModel = isRecord(songModelValue) ? songModelValue : {};
+  const audio = isRecord(songModel["audio"]) ? songModel["audio"] : {};
+  const duration = typeof audio["durationSeconds"] === "number" &&
+      Number.isFinite(audio["durationSeconds"])
+    ? audio["durationSeconds"]
+    : 30;
+  return Math.max(1, Math.min(120, duration));
+}
+
+function providerGenerationPrompt(input: ProviderGenerationInput): string {
+  const task = input.task === "ACCOMPANIMENT"
+    ? "instrumental accompaniment"
+    : "complete instrumental arrangement";
+  const trackNames = input.tracks
+    .map((track) => track.instrument || track.name)
+    .filter(Boolean)
+    .slice(0, 12)
+    .join(", ");
+  return [
+    task,
+    `style: ${input.style}`,
+    `energy: ${input.arrangement.energy.toFixed(2)}`,
+    `density: ${input.arrangement.density.toFixed(2)}`,
+    trackNames ? `instrumentation: ${trackNames}` : "",
+    "preserve clear space for the source vocal or lead melody",
+    "no lead vocals",
+  ].filter(Boolean).join("; ").slice(0, 4000);
+}
+
 export type GenerationHardware = "AUTO" | "CPU" | "GPU";
 
 export type ProviderGenerationResult = {
@@ -1880,10 +1934,12 @@ function normalizeCandidate(
   index: number,
   input: ProviderGenerationInput,
   sharedTrackModels?: unknown,
+  expectedArtifactOrigin?: string,
 ): ProviderCandidate {
   if (!isRecord(value)) throw new Error(`Provider candidate ${index + 1} is invalid`);
-  const plan = value["plan"];
-  if (!isRecord(plan)) throw new Error(`Provider candidate ${index + 1} has no plan`);
+  const plan = isRecord(value["plan"])
+    ? value["plan"]
+    : providerFallbackPlan(input);
   const parameters = isRecord(value["parameters"])
     ? value["parameters"] as GenerationParameters
     : input.parameters;
@@ -1910,13 +1966,17 @@ function normalizeCandidate(
   return {
     providerRequestId:
       typeof value["providerRequestId"] === "string" ? value["providerRequestId"] : null,
-    label: stringValue(value["label"], `candidates[${index}].label`),
-    score: finiteNumber(value["score"], `candidates[${index}].score`),
-    confidence: finiteNumber(
-      value["confidence"],
-      `candidates[${index}].confidence`,
-    ),
-    summary: stringValue(value["summary"], `candidates[${index}].summary`),
+    label: optionalString(value["label"]) ?? `Candidate ${String.fromCharCode(65 + index)}`,
+    score: optionalUnitNumber(value["score"]) ?? 0.5,
+    confidence: optionalUnitNumber(value["confidence"]) ?? 0.5,
+    summary: optionalString(value["summary"]) ??
+      "Provider audio received; independent render analysis is pending.",
+    seed: typeof value["seed"] === "number" &&
+        Number.isInteger(value["seed"]) &&
+        value["seed"] >= 0 &&
+        value["seed"] <= 2_147_483_647
+      ? value["seed"]
+      : Math.min(2_147_483_647, input.seed + index),
     plan: {
       sections: normalizeSections(plan["sections"]),
       tracks: Array.isArray(plan["tracks"])
@@ -1931,8 +1991,26 @@ function normalizeCandidate(
     parameters,
     parentArtifactIds: parents,
     trackModels,
+    audioArtifact: normalizeProviderAudioArtifact(
+      value["artifact"] ??
+        (Array.isArray(value["artifacts"]) ? value["artifacts"][0] : undefined),
+      index,
+      expectedArtifactOrigin,
+    ),
   };
 }
+
+export type ProviderAudioArtifact = {
+  name: string;
+  url: string;
+  contentType: "audio/flac" | "audio/wav";
+  format: "flac" | "wav";
+  bytes: number;
+  sha256: string;
+  durationSeconds: number;
+  sampleRate: number;
+  channels: number;
+};
 
 export type ProviderCandidate = {
   providerRequestId: string | null;
@@ -1940,11 +2018,118 @@ export type ProviderCandidate = {
   score: number;
   confidence: number;
   summary: string;
+  seed: number;
   plan: CandidatePlan;
   parameters: GenerationParameters;
   parentArtifactIds: string[];
   trackModels?: TrackModel[];
+  audioArtifact?: ProviderAudioArtifact;
 };
+
+function optionalString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function optionalUnitNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1
+    ? value
+    : null;
+}
+
+function providerFallbackPlan(input: ProviderGenerationInput): Record<string, unknown> {
+  const songModel = isRecord(input.songModel) ? input.songModel : {};
+  const sections = Array.isArray(songModel["sections"])
+    ? songModel["sections"].filter(isRecord)
+    : [];
+  const enabledTracks = input.tracks.map((track) => track.id);
+  return {
+    sections: sections.length
+      ? sections.map((section, index) => ({
+          name: optionalString(section["name"]) ?? `Section ${index + 1}`,
+          energy: optionalUnitNumber(section["energy"]) ?? input.arrangement.energy,
+          density: input.arrangement.density,
+          tracks: enabledTracks,
+        }))
+      : [{
+          name: "Full Song",
+          energy: input.arrangement.energy,
+          density: input.arrangement.density,
+          tracks: enabledTracks,
+        }],
+  };
+}
+
+function normalizeProviderAudioArtifact(
+  value: unknown,
+  candidateIndex: number,
+  expectedOrigin?: string,
+): ProviderAudioArtifact | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!isRecord(value)) {
+    throw new Error(`Provider candidate ${candidateIndex + 1} audio artifact is invalid`);
+  }
+  const name = stringValue(value["name"], `candidates[${candidateIndex}].artifact.name`);
+  const format = optionalString(value["format"])?.toLowerCase();
+  const contentType = optionalString(value["contentType"])?.toLowerCase();
+  if (
+    (format !== "flac" && format !== "wav") ||
+    (contentType !== "audio/flac" && contentType !== "audio/wav")
+  ) {
+    throw new Error(`Provider candidate ${candidateIndex + 1} audio format is unsupported`);
+  }
+  const urlValue = stringValue(value["url"], `candidates[${candidateIndex}].artifact.url`);
+  const url = new URL(urlValue);
+  if (
+    url.protocol !== "https:" ||
+    (expectedOrigin && url.origin !== expectedOrigin) ||
+    !url.searchParams.get("expires") ||
+    !url.searchParams.get("capability")
+  ) {
+    throw new Error(`Provider candidate ${candidateIndex + 1} audio URL is not a trusted capability`);
+  }
+  const bytes = finiteNumber(value["bytes"], `candidates[${candidateIndex}].artifact.bytes`);
+  const durationSeconds = finiteNumber(
+    value["durationSeconds"],
+    `candidates[${candidateIndex}].artifact.durationSeconds`,
+  );
+  const sampleRate = finiteNumber(
+    value["sampleRate"],
+    `candidates[${candidateIndex}].artifact.sampleRate`,
+  );
+  const channels = finiteNumber(
+    value["channels"],
+    `candidates[${candidateIndex}].artifact.channels`,
+  );
+  const artifactSha256 = optionalString(value["sha256"])?.toLowerCase();
+  if (
+    !Number.isInteger(bytes) ||
+    bytes <= 0 ||
+    bytes > 128 * 1024 * 1024 ||
+    durationSeconds <= 0 ||
+    durationSeconds > 120 ||
+    !Number.isInteger(sampleRate) ||
+    sampleRate < 8_000 ||
+    sampleRate > 192_000 ||
+    !Number.isInteger(channels) ||
+    channels < 1 ||
+    channels > 2 ||
+    !artifactSha256 ||
+    !isSha256(artifactSha256)
+  ) {
+    throw new Error(`Provider candidate ${candidateIndex + 1} audio metadata is invalid`);
+  }
+  return {
+    name,
+    url: url.toString(),
+    contentType,
+    format,
+    bytes,
+    sha256: artifactSha256,
+    durationSeconds,
+    sampleRate,
+    channels,
+  };
+}
 
 function providerEnvKey(id: MusicProviderId): string {
   return id.replace(/[^A-Z0-9]/g, "_");

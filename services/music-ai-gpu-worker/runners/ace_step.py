@@ -250,6 +250,32 @@ def run_job(request: dict[str, Any], checkpoint: Path,
     if len(audios) != count:
         raise RunnerError("ACE-Step returned a different number of candidates")
     candidates = []
+    song = request.get("songModel") if isinstance(request.get("songModel"), dict) else {}
+    source_sections = song.get("sections") if isinstance(song.get("sections"), list) else []
+    arrangement = request.get("arrangement") if isinstance(request.get("arrangement"), dict) else {}
+    tracks = request.get("tracks") if isinstance(request.get("tracks"), list) else []
+    enabled_tracks = [
+        str(track.get("id"))
+        for track in tracks
+        if isinstance(track, dict) and isinstance(track.get("id"), str)
+    ]
+    plan_sections = []
+    for index, section in enumerate(source_sections):
+        if not isinstance(section, dict):
+            continue
+        plan_sections.append({
+            "name": str(section.get("name") or f"Section {index + 1}"),
+            "energy": float(section.get("energy", arrangement.get("energy", 0.5))),
+            "density": float(arrangement.get("density", 0.5)),
+            "tracks": enabled_tracks,
+        })
+    if not plan_sections:
+        plan_sections = [{
+            "name": "Full Song",
+            "energy": float(arrangement.get("energy", 0.5)),
+            "density": float(arrangement.get("density", 0.5)),
+            "tracks": enabled_tracks,
+        }]
     for number, audio in enumerate(audios):
         if not isinstance(audio, dict) or not isinstance(audio.get("path"), str):
             raise RunnerError("ACE-Step returned an invalid audio entry")
@@ -259,7 +285,12 @@ def run_job(request: dict[str, Any], checkpoint: Path,
         if work.resolve() not in artifact_path.resolve().parents:
             raise RunnerError("ACE-Step output escaped the durable job directory")
         artifact = artifact_descriptor(artifact_path, PROVIDER, work.name)
-        candidates.append({"id": f"candidate-{number + 1}", "seed": seed + number,
+        candidates.append({"id": f"candidate-{number + 1}",
+                           "label": f"Candidate {chr(65 + number)}",
+                           "score": 0.5, "confidence": 0.5,
+                           "summary": "ACE-Step generated accompaniment; independent quality analysis is pending.",
+                           "plan": {"sections": plan_sections},
+                           "seed": seed + number,
                            "artifact": artifact, "artifacts": [artifact],
                            "provenance": provenance(digest)})
     result = {"candidates": candidates, "provenance": provenance(digest)}

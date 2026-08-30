@@ -947,7 +947,7 @@ function canonicalJson(value: unknown): string {
   }
   return JSON.stringify(value);
 }
-function decodePcm16Wav(buffer: Buffer, expectedSampleRate: number): Float32Array {
+export function decodePcm16Wav(buffer: Buffer, expectedSampleRate: number): Float32Array {
   if (
     buffer.length < 44 ||
     buffer.toString("ascii", 0, 4) !== "RIFF" ||

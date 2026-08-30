@@ -13,13 +13,14 @@ import {
 } from "@workspace/db";
 import { createExportBundle, persistExportBundle } from "./export-pipeline";
 import {
+  type GeneratedExportFile,
   renderArrangementExport,
   rendererEvidenceTechnicalMetadata,
 } from "./exportEngine";
 import { resolveExportSongModel } from "./exportLineage";
 import { applyArrangementEditorChanges } from "./musicEngines";
 import { validateCanonicalTrackModels } from "./musicProviders";
-import { deleteExportObject } from "./objectStorage";
+import { deleteExportObject, getPrivateObject } from "./objectStorage";
 import {
   claimProductionJob,
   completeProductionJob,
@@ -43,6 +44,57 @@ type ExportInputSnapshot = {
 };
 
 const sha256 = (value: Buffer | string) => createHash("sha256").update(value).digest("hex");
+
+async function selectedProviderAudioExport(
+  arrangement: typeof arrangementsTable.$inferSelect,
+  artifacts: Array<typeof musicArtifactsTable.$inferSelect>,
+): Promise<GeneratedExportFile[]> {
+  const evaluation = arrangement.generationProvenance?.evaluation;
+  if (!evaluation || evaluation.status !== "evaluated") return [];
+  const audioReference = evaluation.artifacts.find((artifact) =>
+    artifact.type === "AUDIO_TRACK" &&
+    evaluation.renderArtifactIds.includes(artifact.id)
+  );
+  if (!audioReference) return [];
+  const artifact = artifacts.find((item) => item.id === audioReference.id);
+  if (!artifact || artifact.createdBy !== "gpu-provider-output-ingest") return [];
+  const prefix = "/api/storage/objects/";
+  if (!artifact.storageUri?.startsWith(`${prefix}exports/`)) {
+    throw new Error("Selected provider audio has an invalid storage location");
+  }
+  const object = await getPrivateObject(artifact.storageUri.slice(prefix.length));
+  if (!object) throw new Error("Selected provider audio is unavailable");
+  const [wav] = await object.download();
+  const checksum = sha256(wav);
+  if (
+    wav.byteLength <= 44 ||
+    wav.toString("ascii", 0, 4) !== "RIFF" ||
+    wav.toString("ascii", 8, 12) !== "WAVE" ||
+    checksum !== artifact.checksum ||
+    checksum !== artifact.hash
+  ) {
+    throw new Error("Selected provider audio failed export verification");
+  }
+  return [{
+    name: "mix/generated-accompaniment.wav",
+    type: "MIX",
+    format: "WAV",
+    contentType: "audio/wav",
+    data: wav,
+    provenance: {
+      model: arrangement.generationProvenance?.provider ?? artifact.provider,
+      version: arrangement.generationProvenance?.modelVersion ??
+        artifact.modelVersion,
+      parameters: {
+        candidateId: arrangement.generationProvenance?.candidateId,
+        sourceArtifactId: artifact.id,
+        checksum,
+      },
+      parentIds: [artifact.id],
+      createdBy: "export-engine",
+    },
+  }];
+}
 const artifactIdFor = (jobId: string, name: string) =>
   `export-file-${jobId}-${sha256(name).slice(0, 16)}`;
 
@@ -134,7 +186,7 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
     if (playabilityErrors.length) throw new Error("Arrangement editor changes are not playable");
 
     await heartbeat("rendering", 25);
-    const renderedFiles = (await renderArrangementExport({
+    const deterministicFiles = await renderArrangementExport({
       projectName: project.name, bpm, key, meter,
       arrangementName: arrangement.name, arrangementVersion: arrangement.version,
       masterProfile: input.masterProfile ?? "STREAMING", energy: arrangement.energy, density: arrangement.density,
@@ -148,7 +200,13 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
       parentIds: Object.values(trackModelArtifactIds).length ? Object.values(trackModelArtifactIds) : [planArtifact.id],
       planArtifactId: planArtifact.id, planParentIds: planArtifact.parentIds, trackModelArtifactIds,
       includeStems: input.includeStems ?? true, includeMidi: input.includeMidi ?? true,
-    })).filter((file) => (input.includeMix !== false || !["MIX", "PREMASTER", "MASTER"].includes(file.type)) &&
+    });
+    const providerAudioFiles = await selectedProviderAudioExport(
+      arrangement,
+      artifacts,
+    );
+    const renderedFiles = [...deterministicFiles, ...providerAudioFiles]
+      .filter((file) => (input.includeMix !== false || !["MIX", "PREMASTER", "MASTER"].includes(file.type)) &&
       (input.includeMetadata !== false || file.type !== "METADATA"));
     await heartbeat("packaging", 70);
     const fileArtifactIds = Object.fromEntries(renderedFiles.map((file) => [file.name, artifactIdFor(job.id, file.name)]));

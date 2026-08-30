@@ -27,6 +27,12 @@ Provider trust boundaries start before JSON parsing and continue through artifac
 
 **How to apply:** Stream and cap provider responses, copy provider artifacts into the current job's private namespace, probe media before recording it, and emit fusion provenance only when multiple evidence sources contribute.
 
+One-shot provider artifact capabilities must be consumed exactly once into project-owned storage before a candidate is persisted, and exports must reference that verified copy rather than re-rendering a substitute.
+
+**Why:** Capability downloads can be destructive and non-replayable; retrying after consumption or exporting a local fallback can lose the real GPU result while preserving misleading provider attribution.
+
+**How to apply:** Validate origin, metadata, byte count, checksum, and decoded media during the single download; transcode into a canonical project-owned format, then carry that artifact ID and checksum through candidate selection and export.
+
 Long-running analysis workers must hold a database fencing token for every state transition and terminal write; an in-memory lock or lease timestamp alone is insufficient.
 
 **Why:** After a restart or lease transfer, a stale worker can otherwise overwrite a newer worker's completed result or mark it failed.
