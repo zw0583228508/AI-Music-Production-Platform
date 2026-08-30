@@ -12,4 +12,8 @@ export interface ProviderProvenance {
   provider: string;
   version: string;
   status: ProviderProvenanceStatus;
+  /** @minimum 0 */
+  attempts?: number;
+  errorCode?: string;
+  errorMessage?: string;
 }

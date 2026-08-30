@@ -13,4 +13,5 @@ export const ProviderProvenanceStatus = {
   ready: 'ready',
   fallback: 'fallback',
   unavailable: 'unavailable',
+  failed: 'failed',
 } as const;

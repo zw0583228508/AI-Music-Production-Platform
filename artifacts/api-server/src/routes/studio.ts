@@ -794,6 +794,18 @@ router.post("/projects/:projectId/sources", async (req, res): Promise<void> => {
     res.status(415).json({ error: "Unsupported source file format" });
     return;
   }
+  const sourceTypeMatchesFormat =
+    (sourceFormat.mediaKind === "midi" && body.data.sourceType === "MIDI") ||
+    (sourceFormat.mediaKind === "video" && body.data.sourceType === "VIDEO") ||
+    (sourceFormat.mediaKind === "audio" &&
+      ["FULL_SONG", "VOCAL_ONLY", "SOLO_INSTRUMENT", "INSTRUMENTAL"]
+        .includes(body.data.sourceType));
+  if (!sourceTypeMatchesFormat) {
+    res.status(400).json({
+      error: `Source type ${body.data.sourceType} does not match the uploaded ${sourceFormat.mediaKind} file`,
+    });
+    return;
+  }
   if (!body.data.objectPath.startsWith("/objects/uploads/")) {
     res.status(400).json({ error: "Invalid uploaded object path" });
     return;

@@ -8,7 +8,7 @@ import {
 } from "./analysisProviders";
 
 test("parses valid harmony evidence and rejects out-of-range chords", () => {
-  const result = parseHarmony({
+  const result = parseHarmony("SHEETSAGE", {
     version: "1.2.0",
     confidence: 0.91,
     chords: [
@@ -16,9 +16,9 @@ test("parses valid harmony evidence and rejects out-of-range chords", () => {
       { start: 2, end: 4, symbol: "Am7", roman: "vi7", confidence: 0.88 },
     ],
   }, 4);
-  assert.equal(result.providerId, "SHEET_SAGE");
-  assert.equal(result.chords.length, 2);
-  assert.throws(() => parseHarmony({
+  assert.equal(result.providerId, "SHEETSAGE");
+  assert.equal(result.candidates.length, 2);
+  assert.throws(() => parseHarmony("SHEETSAGE", {
     version: "1.2.0",
     confidence: 0.91,
     chords: [
@@ -27,34 +27,39 @@ test("parses valid harmony evidence and rejects out-of-range chords", () => {
   }, 4), /invalid/);
 });
 
-test("accepts unique private stem outputs and rejects duplicate output paths", () => {
-  const result = parseSeparation({
-    version: "2026.08",
-    confidence: 0.93,
-    stems: [
-      {
-        role: "vocals",
-        objectPath: "/objects/analysis/job/vocals.wav",
-        durationSeconds: 10,
-        confidence: 0.94,
-      },
-      {
-        role: "instrumental",
-        objectPath: "/objects/analysis/job/instrumental.wav",
-        durationSeconds: 10,
-        confidence: 0.92,
-      },
-    ],
-  }, 10);
-  assert.equal(result.stems.length, 2);
-  assert.throws(() => parseSeparation({
-    version: "2026.08",
-    confidence: 0.9,
-    stems: [
-      { role: "vocals", objectPath: "/objects/analysis/same.wav", confidence: 0.9 },
-      { role: "drums", objectPath: "/objects/analysis/same.wav", confidence: 0.9 },
-    ],
-  }, 10), /duplicate/);
+test("accepts unique provider stem data and rejects duplicate roles", () => {
+  const previousEndpoint = process.env.BS_ROFORMER_API_URL;
+  process.env.BS_ROFORMER_API_URL = "https://provider.invalid";
+  try {
+    const result = parseSeparation({
+      version: "2026.08",
+      confidence: 0.93,
+      stems: [
+        {
+          role: "vocals",
+          contentBase64: "UklGRg==",
+          confidence: 0.94,
+        },
+        {
+          role: "instrumental",
+          contentBase64: "UklGRg==",
+          confidence: 0.92,
+        },
+      ],
+    });
+    assert.equal(result.stems.length, 2);
+    assert.throws(() => parseSeparation({
+      version: "2026.08",
+      confidence: 0.9,
+      stems: [
+        { role: "vocals", contentBase64: "UklGRg==", confidence: 0.9 },
+        { role: "vocals", contentBase64: "UklGRg==", confidence: 0.9 },
+      ],
+    }), /duplicate/);
+  } finally {
+    if (previousEndpoint === undefined) delete process.env.BS_ROFORMER_API_URL;
+    else process.env.BS_ROFORMER_API_URL = previousEndpoint;
+  }
 });
 
 test("keeps absent providers explicit without fabricating analysis results", async () => {
@@ -62,7 +67,11 @@ test("keeps absent providers explicit without fabricating analysis results", asy
     "ALL_IN_ONE_API_URL",
     "MT3_API_URL",
     "BS_ROFORMER_API_URL",
+    "BS_ROFORMER_SW_API_URL",
+    "SHEETSAGE_API_URL",
     "SHEET_SAGE_API_URL",
+    "CHROMA_API_URL",
+    "BASS_API_URL",
   ];
   const previous = new Map(keys.map((key) => [key, process.env[key]]));
   for (const key of keys) delete process.env[key];
@@ -73,12 +82,12 @@ test("keeps absent providers explicit without fabricating analysis results", asy
       durationSeconds: 60,
     });
     assert.equal(result.structure, null);
-    assert.equal(result.transcription, null);
+    assert.deepEqual(result.transcriptions, []);
     assert.equal(result.separation, null);
-    assert.equal(result.harmony, null);
+    assert.deepEqual(result.harmony, []);
     assert.deepEqual(
       new Set(result.provenance.map((item) => item.provider)),
-      new Set(["ALL_IN_ONE", "MT3", "BS_ROFORMER", "SHEET_SAGE"]),
+      new Set(["ALL_IN_ONE", "MT3", "BS_ROFORMER", "SHEETSAGE", "CHROMA", "BASS"]),
     );
     assert.ok(result.provenance.every((item) => item.status === "unavailable"));
   } finally {
@@ -130,8 +139,8 @@ test("polls an asynchronous provider job and returns its completed result", asyn
       sourceType: "VOCAL_ONLY",
       durationSeconds: 10,
     });
-    assert.equal(result.transcription?.providerId, "BASIC_PITCH");
-    assert.equal(result.transcription?.notes[0]?.pitch, 60);
+    assert.equal(result.transcriptions[0]?.providerId, "BASIC_PITCH");
+    assert.equal(result.transcriptions[0]?.notes[0]?.pitch, 60);
     assert.equal(polls, 1);
   } finally {
     if (previousBasicPitch === undefined) delete process.env.BASIC_PITCH_API_URL;

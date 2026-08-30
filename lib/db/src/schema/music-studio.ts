@@ -129,7 +129,10 @@ export type SongModelData = SongModelCore & {
     capability: string;
     provider: string;
     version: string;
-    status: "ready" | "fallback" | "unavailable";
+    status: "ready" | "fallback" | "unavailable" | "failed";
+    attempts?: number;
+    errorCode?: string;
+    errorMessage?: string;
   }>;
 };
 

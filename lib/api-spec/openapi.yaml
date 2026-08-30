@@ -1012,7 +1012,10 @@ components:
         version: { type: string }
         status:
           type: string
-          enum: [ready, fallback, unavailable]
+          enum: [ready, fallback, unavailable, failed]
+        attempts: { type: number, minimum: 0 }
+        errorCode: { type: string }
+        errorMessage: { type: string }
     AnalysisJob:
       type: object
       required: [id, projectId, sourceId, status, stage, progress, attempt, error, startedAt, finishedAt, createdAt, updatedAt]
@@ -1173,7 +1176,7 @@ components:
       properties:
         provider:
           type: string
-          enum: [BS_ROFORMER_SW, ALL_IN_ONE, MT3, BASIC_PITCH, FUSION]
+          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, SHEETSAGE, CHROMA, BASS, FUSION]
         refresh:
           type: boolean
     Analysis:
@@ -2591,7 +2594,7 @@ x-task-components-archive:
       properties:
         provider:
           type: string
-          enum: [BS_ROFORMER_SW, ALL_IN_ONE, MT3, BASIC_PITCH, FUSION]
+          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, SHEETSAGE, CHROMA, BASS, FUSION]
         refresh:
           type: boolean
     Analysis:

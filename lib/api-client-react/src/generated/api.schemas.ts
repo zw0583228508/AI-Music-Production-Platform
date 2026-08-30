@@ -350,6 +350,7 @@ export const ProviderProvenanceStatus = {
   ready: 'ready',
   fallback: 'fallback',
   unavailable: 'unavailable',
+  failed: 'failed',
 } as const;
 
 export interface ProviderProvenance {
@@ -357,6 +358,10 @@ export interface ProviderProvenance {
   provider: string;
   version: string;
   status: ProviderProvenanceStatus;
+  /** @minimum 0 */
+  attempts?: number;
+  errorCode?: string;
+  errorMessage?: string;
 }
 
 export type SongModelCorrectionFieldsItem = typeof SongModelCorrectionFieldsItem[keyof typeof SongModelCorrectionFieldsItem];
@@ -832,10 +837,13 @@ export type AnalysisInputProvider = typeof AnalysisInputProvider[keyof typeof An
 
 
 export const AnalysisInputProvider = {
-  BS_ROFORMER_SW: 'BS_ROFORMER_SW',
+  BS_ROFORMER: 'BS_ROFORMER',
   ALL_IN_ONE: 'ALL_IN_ONE',
   MT3: 'MT3',
   BASIC_PITCH: 'BASIC_PITCH',
+  SHEETSAGE: 'SHEETSAGE',
+  CHROMA: 'CHROMA',
+  BASS: 'BASS',
   FUSION: 'FUSION',
 } as const;
 

@@ -9,6 +9,12 @@ Never attribute musical output to an external model unless that provider is actu
 
 **How to apply:** Keep unavailable providers visible as unavailable, validate canonical contracts before persistence, and preserve provider/version provenance with every result.
 
+Provider trust boundaries start before JSON parsing and continue through artifact persistence: bound response bytes, validate copied media locally, and never treat provider-reported object paths as ownership proof. Fusion provenance requires independent corroborating evidence.
+
+**Why:** A syntactically plausible payload can still exhaust a worker, reference another job's private data, contain invalid media, or make one provider look like a multi-provider consensus.
+
+**How to apply:** Stream and cap provider responses, copy provider artifacts into the current job's private namespace, probe media before recording it, and emit fusion provenance only when multiple evidence sources contribute.
+
 Long-running analysis workers must hold a database fencing token for every state transition and terminal write; an in-memory lock or lease timestamp alone is insufficient.
 
 **Why:** After a restart or lease transfer, a stale worker can otherwise overwrite a newer worker's completed result or mark it failed.

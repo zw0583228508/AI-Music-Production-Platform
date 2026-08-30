@@ -317,7 +317,7 @@ export const AnalyzeProjectParams = zod.object({
 })
 
 export const AnalyzeProjectBody = zod.object({
-  "provider": zod.enum(['BS_ROFORMER_SW', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'FUSION']).optional(),
+  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'SHEETSAGE', 'CHROMA', 'BASS', 'FUSION']).optional(),
   "refresh": zod.boolean().optional()
 })
 
@@ -457,6 +457,8 @@ export const getProjectSongModelResponseKeyMapItemConfidenceMax = 1;
 export const getProjectSongModelResponseStemsItemConfidenceMin = 0;
 export const getProjectSongModelResponseStemsItemConfidenceMax = 1;
 
+export const getProjectSongModelResponseProvenanceItemAttemptsMin = 0;
+
 export const getProjectSongModelResponseConfidenceMin = 0;
 export const getProjectSongModelResponseConfidenceMax = 1;
 
@@ -588,7 +590,10 @@ export const GetProjectSongModelResponse = zod.object({
   "capability": zod.string(),
   "provider": zod.string(),
   "version": zod.string(),
-  "status": zod.enum(['ready', 'fallback', 'unavailable'])
+  "status": zod.enum(['ready', 'fallback', 'unavailable', 'failed']),
+  "attempts": zod.number().min(getProjectSongModelResponseProvenanceItemAttemptsMin).optional(),
+  "errorCode": zod.string().optional(),
+  "errorMessage": zod.string().optional()
 })),
   "providers": zod.array(zod.string()),
   "confidence": zod.number().min(getProjectSongModelResponseConfidenceMin).max(getProjectSongModelResponseConfidenceMax),
@@ -674,6 +679,8 @@ export const correctProjectSongModelResponseKeyMapItemConfidenceMax = 1;
 
 export const correctProjectSongModelResponseStemsItemConfidenceMin = 0;
 export const correctProjectSongModelResponseStemsItemConfidenceMax = 1;
+
+export const correctProjectSongModelResponseProvenanceItemAttemptsMin = 0;
 
 export const correctProjectSongModelResponseConfidenceMin = 0;
 export const correctProjectSongModelResponseConfidenceMax = 1;
@@ -806,7 +813,10 @@ export const CorrectProjectSongModelResponse = zod.object({
   "capability": zod.string(),
   "provider": zod.string(),
   "version": zod.string(),
-  "status": zod.enum(['ready', 'fallback', 'unavailable'])
+  "status": zod.enum(['ready', 'fallback', 'unavailable', 'failed']),
+  "attempts": zod.number().min(correctProjectSongModelResponseProvenanceItemAttemptsMin).optional(),
+  "errorCode": zod.string().optional(),
+  "errorMessage": zod.string().optional()
 })),
   "providers": zod.array(zod.string()),
   "confidence": zod.number().min(correctProjectSongModelResponseConfidenceMin).max(correctProjectSongModelResponseConfidenceMax),

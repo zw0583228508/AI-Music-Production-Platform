@@ -10,9 +10,12 @@ export type AnalysisInputProvider = typeof AnalysisInputProvider[keyof typeof An
 
 
 export const AnalysisInputProvider = {
-  BS_ROFORMER_SW: 'BS_ROFORMER_SW',
+  BS_ROFORMER: 'BS_ROFORMER',
   ALL_IN_ONE: 'ALL_IN_ONE',
   MT3: 'MT3',
   BASIC_PITCH: 'BASIC_PITCH',
+  SHEETSAGE: 'SHEETSAGE',
+  CHROMA: 'CHROMA',
+  BASS: 'BASS',
   FUSION: 'FUSION',
 } as const;

@@ -17,7 +17,11 @@ const genericTypes = new Set(["", "application/octet-stream"]);
 export function validateSourceFileMetadata(
   fileName: string,
   contentType: string,
-): { valid: true; normalizedContentType: string } | { valid: false } {
+): {
+  valid: true;
+  normalizedContentType: string;
+  mediaKind: "audio" | "video" | "midi";
+} | { valid: false } {
   const extension = fileName.toLowerCase().split(".").pop() ?? "";
   const allowedTypes = FORMATS[extension as keyof typeof FORMATS];
   const normalizedType = contentType.split(";", 1)[0].trim().toLowerCase();
@@ -26,5 +30,14 @@ export function validateSourceFileMetadata(
   ))) {
     return { valid: false };
   }
-  return { valid: true, normalizedContentType: allowedTypes[0] };
+  const normalizedContentType = genericTypes.has(normalizedType)
+    ? allowedTypes[0]
+    : normalizedType;
+  const mediaKind = extension === "mid" || extension === "midi"
+    ? "midi"
+    : extension === "mp4" || extension === "mov" ||
+        normalizedContentType.startsWith("video/")
+      ? "video"
+      : "audio";
+  return { valid: true, normalizedContentType, mediaKind };
 }

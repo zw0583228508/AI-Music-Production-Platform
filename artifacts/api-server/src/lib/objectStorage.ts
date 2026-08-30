@@ -145,6 +145,32 @@ export async function saveExportObject(
   return `/api/storage/objects/exports/${safePath}`;
 }
 
+export async function saveAnalysisObject(
+  projectId: string,
+  analysisJobId: string,
+  fileName: string,
+  data: Buffer,
+  contentType: string,
+): Promise<string> {
+  const safePart = (value: string): string =>
+    value.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^\.+/, "") || "item";
+  const relativePath = [
+    "analysis",
+    safePart(projectId),
+    safePart(analysisJobId),
+    safePart(fileName),
+  ].join("/");
+  const fullPath = `${privateObjectDir()}/${relativePath}`;
+  const { bucketName, objectName } = parseObjectPath(fullPath);
+  await objectStorageClient.bucket(bucketName).file(objectName).save(data, {
+    resumable: false,
+    metadata: {
+      contentType,
+      cacheControl: "private, no-store",
+    },
+  });
+  return `/objects/${relativePath}`;
+}
 export async function getPrivateObject(
   wildcardPath: string,
 ): Promise<File | null> {
@@ -164,4 +190,25 @@ export async function deleteExportObject(downloadUrl: string): Promise<void> {
   if (!downloadUrl.startsWith(`${prefix}exports/`)) return;
   const file = await getPrivateObject(downloadUrl.slice(prefix.length));
   if (file) await file.delete({ ignoreNotFound: true });
+}
+
+export async function deleteAnalysisObjects(
+  projectId: string,
+  analysisJobId: string,
+): Promise<void> {
+  const safePart = (value: string): string =>
+    value.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^\.+/, "") || "item";
+  const relativePrefix = [
+    "analysis",
+    safePart(projectId),
+    safePart(analysisJobId),
+    "",
+  ].join("/");
+  const { bucketName, objectName } = parseObjectPath(
+    `${privateObjectDir()}/${relativePrefix}`,
+  );
+  await objectStorageClient.bucket(bucketName).deleteFiles({
+    prefix: objectName,
+    force: true,
+  });
 }

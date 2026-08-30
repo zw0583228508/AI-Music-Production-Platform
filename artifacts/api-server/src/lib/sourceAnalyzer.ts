@@ -16,15 +16,21 @@ import {
   type AnalysisSection,
   type SongModelData,
 } from "@workspace/db";
-import { runAnalysisProviders } from "./analysisProviders";
+import {
+  fuseCanonicalNotes,
+  runAnalysisProviders,
+  type SeparationAnalysisResult,
+} from "./analysisProviders";
 import { fuseProviderSongModels } from "./songModelValidation";
 import {
   createSourceDownloadUrl,
+  deleteAnalysisObjects,
   getSourceObject,
+  saveAnalysisObject,
   saveSourceProxyObject,
 } from "./objectStorage";
 import { execFile, spawn } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 
 const execFileAsync = promisify(execFile);
 const activeSourceJobs = new Set<string>();
@@ -162,6 +168,124 @@ function makeSections(
   });
 }
 
+async function providerStemData(
+  stem: SeparationAnalysisResult["stems"][number],
+): Promise<Buffer> {
+  const maxBytes = 512 * 1024 * 1024;
+  if (stem.contentBase64) {
+    const normalized = stem.contentBase64.replace(/^data:[^;]+;base64,/, "");
+    if (!normalized || !/^[a-zA-Z0-9+/]*={0,2}$/.test(normalized)) {
+      throw new Error(`BS_ROFORMER returned invalid base64 for ${stem.role}`);
+    }
+    if (normalized.length * 0.75 > maxBytes) {
+      throw new Error(`BS_ROFORMER ${stem.role} stem is too large`);
+    }
+    const data = Buffer.from(normalized, "base64");
+    if (!data.length) throw new Error(`BS_ROFORMER returned an empty ${stem.role} stem`);
+    return data;
+  }
+  if (!stem.downloadUrl) {
+    throw new Error(`BS_ROFORMER did not provide audio for ${stem.role}`);
+  }
+  const response = await fetch(stem.downloadUrl, {
+    signal: AbortSignal.timeout(10 * 60_000),
+  });
+  if (!response.ok) {
+    throw new Error(`BS_ROFORMER ${stem.role} download returned HTTP ${response.status}`);
+  }
+  const providerEndpoint = process.env.BS_ROFORMER_API_URL ??
+    process.env.BS_ROFORMER_SW_API_URL;
+  if (
+    !providerEndpoint ||
+    new URL(response.url).origin !== new URL(providerEndpoint).origin
+  ) {
+    throw new Error(`BS_ROFORMER ${stem.role} download left the provider origin`);
+  }
+  const length = Number(response.headers.get("content-length") || 0);
+  if (length > maxBytes) {
+    throw new Error(`BS_ROFORMER ${stem.role} stem is too large`);
+  }
+  if (!response.body) {
+    throw new Error(`BS_ROFORMER returned an empty ${stem.role} response`);
+  }
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      throw new Error(`BS_ROFORMER ${stem.role} stem is too large`);
+    }
+    chunks.push(Buffer.from(value));
+  }
+  const data = Buffer.concat(chunks, total);
+  if (!data.length) throw new Error(`BS_ROFORMER returned an empty ${stem.role} stem`);
+  return data;
+}
+
+async function validateStemAudio(
+  data: Buffer,
+  path: string,
+  role: string,
+  sourceDurationSeconds: number,
+): Promise<void> {
+  await writeFile(path, data);
+  const { stdout } = await execFileAsync("ffprobe", [
+    "-v", "error",
+    "-show_entries", "format=duration:stream=codec_type",
+    "-of", "json",
+    path,
+  ], { maxBuffer: 4 * 1024 * 1024 });
+  const probe = JSON.parse(stdout) as Probe;
+  const duration = Number(probe.format?.duration || 0);
+  const hasAudio = probe.streams?.some((stream) => stream.codec_type === "audio");
+  const minimumDuration = Math.max(0.25, sourceDurationSeconds * 0.7);
+  const maximumDuration = sourceDurationSeconds +
+    Math.max(5, sourceDurationSeconds * 0.1);
+  if (
+    !hasAudio ||
+    !Number.isFinite(duration) ||
+    duration < minimumDuration ||
+    duration > maximumDuration
+  ) {
+    throw new Error(`BS_ROFORMER ${role} stem failed audio validation`);
+  }
+}
+
+async function persistSeparationStems(
+  result: SeparationAnalysisResult,
+  projectId: string,
+  analysisJobId: string,
+  directory: string,
+  sourceDurationSeconds: number,
+): Promise<SongModelData["sourceStems"]> {
+  return Promise.all(result.stems.map(async (stem) => {
+    const data = await providerStemData(stem);
+    await validateStemAudio(
+      data,
+      join(directory, `verified-${stem.role}.${stem.extension}`),
+      stem.role,
+      sourceDurationSeconds,
+    );
+    const objectPath = await saveAnalysisObject(
+      projectId,
+      analysisJobId,
+      `${stem.role}.${stem.extension}`,
+      data,
+      stem.contentType,
+    );
+    return {
+      role: stem.role,
+      objectPath,
+      provider: result.providerId,
+      confidence: stem.confidence,
+    };
+  }));
+}
+
 type MidiEvent = { tick: number; type: "tempo" | "meter" | "key" | "note"; data: number[]; channel?: number };
 async function analyzeProjectSourceBeforeTask1(sourceId: string): Promise<void> {
   if (activeSourceJobs.has(sourceId)) return;
@@ -263,6 +387,7 @@ async function analyzeProjectSourceBeforeTask1(sourceId: string): Promise<void> 
   }, 30_000);
   heartbeat.unref();
   let directory: string | null = null;
+  let hasUncommittedAnalysisObjects = false;
   const suffix = extname(source.name).replace(/[^a-zA-Z0-9.]/g, "") || ".bin";
   try {
     directory = await mkdtemp(join(tmpdir(), "studio-source-"));
@@ -374,6 +499,7 @@ async function analyzeProjectSourceBeforeTask1(sourceId: string): Promise<void> 
       sourceType: source.sourceType,
       durationSeconds,
     });
+    const primaryTranscription = providerResults.transcriptions[0] ?? null;
     if (providerResults.structure) {
       bpm = providerResults.structure.bpm;
       meter = providerResults.structure.meter;
@@ -386,20 +512,20 @@ async function analyzeProjectSourceBeforeTask1(sourceId: string): Promise<void> 
     if (providerResults.structure) {
       successfulAnalysisProviders.push(providerResults.structure.providerId);
     }
-    if (providerResults.transcription) {
-      successfulAnalysisProviders.push(providerResults.transcription.providerId);
+    if (primaryTranscription) {
+      successfulAnalysisProviders.push(primaryTranscription.providerId);
     }
     if (providerResults.separation) {
       successfulAnalysisProviders.push(providerResults.separation.providerId);
     }
-    if (providerResults.harmony) {
-      successfulAnalysisProviders.push(providerResults.harmony.providerId);
-    }
+    successfulAnalysisProviders.push(
+      ...providerResults.harmony.map((item) => item.providerId),
+    );
     const providerConfidences = [
       providerResults.structure?.confidence,
-      providerResults.transcription?.confidence,
+      primaryTranscription?.confidence,
       providerResults.separation?.confidence,
-      providerResults.harmony?.confidence,
+      providerResults.harmonyConfidence,
     ].filter((value): value is number => value !== undefined);
     const candidateConfidence = providerConfidences.length
       ? Number(
@@ -427,20 +553,20 @@ async function analyzeProjectSourceBeforeTask1(sourceId: string): Promise<void> 
       keyMap: [{ time: 0, key, confidence: Math.max(0.5, confidence - 0.12) }],
       beats,
       bars,
-      melody: providerResults.transcription?.notes ?? [],
-      chords: providerResults.harmony?.chords ?? [],
+      melody: fuseCanonicalNotes(providerResults.transcriptions),
+      chords: providerResults.chords,
       sections,
       energy,
       dynamics: energy,
-      sourceStems: providerResults.separation?.stems ?? [],
+      sourceStems: [],
       lyrics: [],
       confidenceByField: {
         tempo: providerResults.structure?.confidence ?? confidence,
         meter: providerResults.structure?.confidence ?? 0.74,
         key: Math.max(0.5, confidence - 0.12),
         structure: providerResults.structure?.confidence ?? 0.58,
-        melody: providerResults.transcription?.confidence ?? 0,
-        harmony: providerResults.harmony?.confidence ?? 0,
+        melody: primaryTranscription?.confidence ?? 0,
+        harmony: providerResults.harmonyConfidence,
       },
       provenance: [
         {
@@ -689,6 +815,7 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
   }, 30_000);
   heartbeat.unref();
   let directory: string | null = null;
+  let hasUncommittedAnalysisObjects = false;
   const suffix = extname(source.name).replace(/[^a-zA-Z0-9.]/g, "") || ".bin";
   try {
     directory = await mkdtemp(join(tmpdir(), "studio-source-"));
@@ -794,11 +921,16 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
       Math.min(0.94, 0.62 + Math.log10(Math.max(10, samples.length)) / 30).toFixed(2),
     );
     await updateOwnedStage("provider_analysis", 68);
-    const needsProviderSource = !midi && (
-      (["FULL_SONG", "INSTRUMENTAL", "VIDEO"].includes(source.sourceType) &&
-        Boolean(process.env.ALL_IN_ONE_API_URL)) ||
-      (["VOCAL_ONLY", "SOLO_INSTRUMENT"].includes(source.sourceType) &&
-        Boolean(process.env.BASIC_PITCH_API_URL)));
+    const needsProviderSource = !midi && [
+      "BS_ROFORMER",
+      "BS_ROFORMER_SW",
+      "ALL_IN_ONE",
+      "BASIC_PITCH",
+      "MT3",
+      "SHEETSAGE",
+      "CHROMA",
+      "BASS",
+    ].some((provider) => Boolean(process.env[`${provider}_API_URL`]));
     let sourceUrl: string | null = null;
     if (needsProviderSource) {
       try {
@@ -812,6 +944,50 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
       sourceType: source.sourceType,
       durationSeconds,
     });
+    let sourceStems: SongModelData["sourceStems"] =
+      midi?.sourceStems.map((stem) => ({
+        ...stem,
+        objectPath: source.objectPath,
+      })) ??
+      (normalizedObjectPath ? [{
+        role: "MIX",
+        objectPath: normalizedObjectPath,
+        provider: "FFMPEG",
+        confidence: 1,
+      }] : []);
+    if (!midi && providerResults.separation) {
+      try {
+        sourceStems = await persistSeparationStems(
+          providerResults.separation,
+          source.projectId,
+          job.id,
+          directory,
+          durationSeconds,
+        );
+        hasUncommittedAnalysisObjects = sourceStems.length > 0;
+      } catch (error) {
+        await deleteAnalysisObjects(source.projectId, job.id).catch(() => undefined);
+        hasUncommittedAnalysisObjects = false;
+        const message = error instanceof Error
+          ? error.message
+          : "Stem persistence failed";
+        const provenance = providerResults.provenance.find((item) =>
+          item.provider === providerResults.separation?.providerId
+        );
+        if (provenance) {
+          provenance.status = "failed";
+          provenance.errorCode = "stem-persistence-failed";
+          provenance.errorMessage = message;
+        }
+        providerResults.separation = null;
+        sourceStems = normalizedObjectPath ? [{
+          role: "MIX",
+          objectPath: normalizedObjectPath,
+          provider: "FFMPEG",
+          confidence: 1,
+        }] : [];
+      }
+    }
     if (!midi && providerResults.structure) {
       bpm = providerResults.structure.bpm;
       meter = providerResults.structure.meter;
@@ -820,13 +996,32 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
       sections = providerResults.structure.sections;
       secondsPerBeat = 60 / bpm;
     }
-    const successfulAnalysisProviders: string[] = [];
-    if (providerResults.structure) {
-      successfulAnalysisProviders.push(providerResults.structure.providerId);
-    }
-    if (providerResults.transcription) {
-      successfulAnalysisProviders.push(providerResults.transcription.providerId);
-    }
+    const melody = midi?.melody ??
+      fuseCanonicalNotes(providerResults.transcriptions);
+    const confidenceByField = {
+      tempo: midi ? 1 : providerResults.structure?.confidence ?? confidence,
+      meter: midi ? 1 : providerResults.structure?.confidence ?? 0.74,
+      key: midi ? 1 : Math.max(0.5, confidence - 0.12),
+      structure: midi ? 1 : providerResults.structure?.confidence ?? 0.58,
+      melody: midi
+        ? 1
+        : providerResults.transcriptions.length
+          ? Math.max(...providerResults.transcriptions.map((item) => item.confidence))
+          : 0,
+      harmony: midi ? 0 : providerResults.harmonyConfidence,
+      separation: midi ? 1 : providerResults.separation?.confidence ?? 0,
+    };
+    const verifiedConfidences = Object.values(confidenceByField)
+      .filter((value) => value > 0);
+    const candidateConfidence = midi ? 1 : Number((
+      verifiedConfidences.reduce((sum, value) => sum + value, 0) /
+      Math.max(1, verifiedConfidences.length)
+    ).toFixed(4));
+    const successfulAnalysisProviders = [
+      ...new Set(providerResults.provenance
+        .filter((item) => item.status === "ready")
+        .map((item) => item.provider)),
+    ];
     const analysisCoverage = Number(
       (analysisDurationSeconds / durationSeconds).toFixed(4),
     );
@@ -847,72 +1042,64 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
       analysisStartSeconds,
       analysisDurationSeconds,
       analysisCoverage,
-      tempoMap: midi?.tempoMap ?? [{ time: 0, bpm, confidence }],
-      meterMap: midi?.meterMap.length ? midi.meterMap : [{
-        bar: 1,
-        meter,
-        confidence: providerResults.structure?.confidence ?? 0.74,
-      }],
+      tempoMap: midi?.tempoMap ??
+        providerResults.structure?.tempoMap ??
+        [{ time: 0, bpm, confidence }],
+      meterMap: midi?.meterMap.length
+        ? midi.meterMap
+        : providerResults.structure?.meterMap ?? [{
+            bar: 1,
+            meter,
+            confidence: providerResults.structure?.confidence ?? 0.74,
+          }],
       keyMap: midi?.keyMap ?? [{ time: 0, key, confidence: Math.max(0.5, confidence - 0.12) }],
       beats,
       bars,
-      melody: midi?.melody ?? providerResults.transcription?.notes ?? [],
-      chords: [],
+      melody,
+      chords: midi ? [] : providerResults.chords,
       sections,
       energy,
       dynamics: energy,
       waveform,
-      stems: midi?.sourceStems.map((stem) => ({
+      stems: sourceStems.map((stem) => ({
         name: stem.role,
         role: stem.role,
-        source: source.objectPath,
+        source: stem.objectPath,
         channels: 1,
         confidence: stem.confidence,
-      })) ?? (normalizedObjectPath ? [{
-        name: "Lossless mix proxy",
-        role: "MIX",
-        source: normalizedObjectPath,
-        channels,
-        confidence: 1,
-      }] : []),
-      sourceStems: midi?.sourceStems.map((stem) => ({ ...stem, objectPath: source.objectPath })) ??
-        (normalizedObjectPath ? [{
-          role: "MIX",
-          objectPath: normalizedObjectPath,
-          provider: "FFMPEG",
-          confidence: 1,
-        }] : []),
+      })),
+      sourceStems,
       lyrics: [],
-      confidenceByField: {
-        tempo: providerResults.structure?.confidence ?? confidence,
-        meter: providerResults.structure?.confidence ?? 0.74,
-        key: Math.max(0.5, confidence - 0.12),
-        structure: providerResults.structure?.confidence ?? 0.58,
-        melody: providerResults.transcription?.confidence ?? 0,
-        harmony: 0,
-      },
+      confidenceByField,
       provenance: [
         {
           capability: "preprocessing",
-          provider: "FFMPEG",
+          provider: midi ? "STANDARD_MIDI" : "FFMPEG",
           version: "system",
           status: "ready",
         },
         {
-          capability: providerResults.structure ? "key_analysis" : "structure",
-          provider: "LOCAL_SIGNAL_ANALYZER_V1",
+          capability: "key_analysis",
+          provider: midi ? "STANDARD_MIDI" : "LOCAL_SIGNAL_ANALYZER_V1",
           version: "1.0.0",
-          status: "fallback",
+          status: midi ? "ready" : "fallback",
         },
-        ...providerResults.provenance,
-        ...(["FULL_SONG", "INSTRUMENTAL", "VIDEO"].includes(source.sourceType)
+        ...(midi
           ? [{
-              capability: "transcription",
-              provider: "MT3",
-              version: "not-configured",
-              status: "unavailable" as const,
+              capability: "structure",
+              provider: "STANDARD_MIDI",
+              version: "1.0.0",
+              status: "ready" as const,
             }]
-          : []),
+          : !providerResults.structure
+            ? [{
+                capability: "structure",
+                provider: "LOCAL_SIGNAL_ANALYZER_V1",
+                version: "1.0.0",
+                status: "fallback" as const,
+              }]
+            : []),
+        ...providerResults.provenance,
       ],
     };
     const fusion = fuseProviderSongModels([{
@@ -920,7 +1107,7 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
         ? "STANDARD_MIDI"
         : successfulAnalysisProviders.join("+") || "LOCAL_SIGNAL_ANALYZER_V1",
       output: candidate,
-      confidence,
+      confidence: candidateConfidence,
     }]);
     if (!fusion.accepted) {
       throw new Error(
@@ -933,7 +1120,13 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
     bpm = model.tempoMap[0].bpm;
     meter = model.meterMap[0].meter;
     sections = model.sections;
-    const persistedProviders = fusion.decisions.map((decision) => decision.provider);
+    const persistedProviders = midi
+      ? ["STANDARD_MIDI"]
+      : [
+          "FFMPEG",
+          "LOCAL_SIGNAL_ANALYZER_V1",
+          ...successfulAnalysisProviders,
+        ];
     const fusedConfidence = model.fusion.confidence;
     await updateOwnedStage("persisting_song_model", 88);
     const songModelId = randomUUID();
@@ -1019,6 +1212,18 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
           format: "FLAC",
           url: normalizedObjectPath,
         }] : []),
+        ...sourceStems
+          .filter((stem) => stem.provider === "BS_ROFORMER")
+          .map((stem) => ({
+            id: randomUUID(),
+            projectId: source.projectId,
+            type: "STEM",
+            label: stem.role.replace(/_/g, " "),
+            version,
+            size: "Private audio",
+            format: "AUDIO",
+            url: stem.objectPath,
+          })),
       ]);
       await tx.insert(studioActivitiesTable).values({
         id: randomUUID(),
@@ -1028,7 +1233,12 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
         type: "analysis",
       });
     });
+    hasUncommittedAnalysisObjects = false;
   } catch (error) {
+    if (hasUncommittedAnalysisObjects) {
+      await deleteAnalysisObjects(source.projectId, job.id).catch(() => undefined);
+      hasUncommittedAnalysisObjects = false;
+    }
     if (error instanceof LeaseLostError) return;
     const message = error instanceof Error ? error.message : "Source analysis failed";
     await db.transaction(async (tx) => {
