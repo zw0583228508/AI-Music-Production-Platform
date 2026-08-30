@@ -126,7 +126,7 @@ import { queueProjectSourceAnalysis } from "../lib/sourceAnalyzer";
 import { validateSourceFileMetadata } from "../lib/sourceFormats";
 import { interpretCopilotCommand } from "../lib/copilotInterpreter";
 import {
-  MUSIC_PROVIDERS,
+  verifiedProviderDescriptorCatalog,
   validateCanonicalTrackModels,
 } from "../lib/musicProviders";
 import {
@@ -1857,8 +1857,10 @@ router.get("/projects/:projectId/analysis-jobs", async (req, res): Promise<void>
   res.json(ListAnalysisJobsResponse.parse(jobs.map(analysisJobResponse)));
 });
 
-router.get("/providers", (_req, res): void => {
-  res.json(ListMusicProvidersResponse.parse(MUSIC_PROVIDERS));
+router.get("/providers", async (_req, res): Promise<void> => {
+  res.json(ListMusicProvidersResponse.parse(
+    await verifiedProviderDescriptorCatalog(),
+  ));
 });
 
 router.get("/projects/:projectId/arrangements", async (req, res): Promise<void> => {
@@ -2337,8 +2339,8 @@ router.post(
   },
 );
 
-router.get("/music-providers", (_req, res): void => {
-  res.json(ListGenerationProvidersResponse.parse(listProviderCatalog()));
+router.get("/music-providers", async (_req, res): Promise<void> => {
+  res.json(ListGenerationProvidersResponse.parse(await listProviderCatalog()));
 });
 
 router.post("/arrangements/:arrangementId/export", async (req, res): Promise<void> => {

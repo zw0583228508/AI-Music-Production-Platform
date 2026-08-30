@@ -596,6 +596,25 @@ export const MusicProviderStatus = {
   unavailable: 'unavailable',
 } as const;
 
+export type ProviderHealthResultStatus = typeof ProviderHealthResultStatus[keyof typeof ProviderHealthResultStatus];
+
+
+export const ProviderHealthResultStatus = {
+  healthy: 'healthy',
+  unhealthy: 'unhealthy',
+  unknown: 'unknown',
+} as const;
+
+export interface ProviderHealthResult {
+  status: ProviderHealthResultStatus;
+  /** @nullable */
+  checkedAt: string | null;
+  /** @nullable */
+  latencyMs: number | null;
+  /** @nullable */
+  message: string | null;
+}
+
 export interface MusicProvider {
   id: string;
   name: string;
@@ -605,6 +624,12 @@ export interface MusicProvider {
   inputTypes: string[];
   execution: MusicProviderExecution;
   status: MusicProviderStatus;
+  configured: boolean;
+  checkpointReady: boolean;
+  runtimeReady: boolean;
+  /** @nullable */
+  reportedVersion: string | null;
+  lastHealth: ProviderHealthResult;
   /** @nullable */
   license: string | null;
   priority: number;
@@ -1332,6 +1357,40 @@ export const GenerationJobSpeed = {
 
 export type GenerationJobParameters = { [key: string]: unknown };
 
+export type ProviderRuntimeSnapshotAvailability = typeof ProviderRuntimeSnapshotAvailability[keyof typeof ProviderRuntimeSnapshotAvailability];
+
+
+export const ProviderRuntimeSnapshotAvailability = {
+  ready: 'ready',
+  configured: 'configured',
+  unavailable: 'unavailable',
+} as const;
+
+export type ProviderRuntimeSnapshotHealthStatus = typeof ProviderRuntimeSnapshotHealthStatus[keyof typeof ProviderRuntimeSnapshotHealthStatus];
+
+
+export const ProviderRuntimeSnapshotHealthStatus = {
+  healthy: 'healthy',
+  unhealthy: 'unhealthy',
+  unknown: 'unknown',
+} as const;
+
+export interface ProviderRuntimeSnapshot {
+  availability: ProviderRuntimeSnapshotAvailability;
+  configurationReady: boolean;
+  checkpointReady: boolean;
+  runtimeReady: boolean;
+  healthStatus: ProviderRuntimeSnapshotHealthStatus;
+  /** @nullable */
+  checkedAt: string | null;
+  /** @nullable */
+  latencyMs: number | null;
+  /** @nullable */
+  message: string | null;
+  /** @nullable */
+  reportedVersion: string | null;
+}
+
 export interface GenerationJob {
   id: string;
   projectId: string;
@@ -1340,6 +1399,7 @@ export interface GenerationJob {
   status: GenerationJobStatus;
   provider: GenerationJobProvider;
   modelVersion: string;
+  providerRuntime: ProviderRuntimeSnapshot | null;
   hardware: GenerationJobHardware;
   speed: GenerationJobSpeed;
   /**
@@ -1585,6 +1645,15 @@ export const GenerationProviderSpeedsItem = {
   QUALITY: 'QUALITY',
 } as const;
 
+export type GenerationProviderStatus = typeof GenerationProviderStatus[keyof typeof GenerationProviderStatus];
+
+
+export const GenerationProviderStatus = {
+  ready: 'ready',
+  configured: 'configured',
+  unavailable: 'unavailable',
+} as const;
+
 export interface GenerationProvider {
   id: GenerationProviderId;
   name: string;
@@ -1593,6 +1662,13 @@ export interface GenerationProvider {
   hardware: GenerationProviderHardwareItem[];
   speeds: GenerationProviderSpeedsItem[];
   available: boolean;
+  status: GenerationProviderStatus;
+  configured: boolean;
+  checkpointReady: boolean;
+  runtimeReady: boolean;
+  /** @nullable */
+  reportedVersion: string | null;
+  lastHealth: ProviderHealthResult;
 }
 
 export interface GenerationResult {

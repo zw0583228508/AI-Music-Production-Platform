@@ -9,6 +9,12 @@ Never attribute musical output to an external model unless that provider is actu
 
 **How to apply:** Keep unavailable providers visible as unavailable, validate canonical contracts before persistence, and preserve provider/version provenance with every result. Assign interpreter provenance on the server after execution; never accept a model's own claim about which interpreter ran. If validation removes every provider contribution and local logic supplies the result, classify the whole result as fallback.
 
+A configured endpoint is not an executable music model. Route work only after a fresh health result verifies the checkpoint, runtime, and reported model version.
+
+**Why:** Adapter configuration can outlive a deleted checkpoint, restarting GPU worker, or incompatible runtime; treating configuration as readiness creates false capability claims.
+
+**How to apply:** Expose configured-but-unhealthy separately from ready and unavailable. Recheck before queueing and execution, persist the fresh result under the job fence before failing, retry transport/runtime outages, and make confirmed missing checkpoints explicit.
+
 Provider trust boundaries start before JSON parsing and continue through artifact persistence: bound response bytes, validate copied media locally, and never treat provider-reported object paths as ownership proof. Fusion provenance requires independent corroborating evidence.
 
 **Why:** A syntactically plausible payload can still exhaust a worker, reference another job's private data, contain invalid media, or make one provider look like a multi-provider consensus.

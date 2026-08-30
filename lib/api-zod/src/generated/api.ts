@@ -1241,6 +1241,16 @@ export const ListMusicProvidersResponseItem = zod.object({
   "inputTypes": zod.array(zod.string()),
   "execution": zod.enum(['local', 'remote']),
   "status": zod.enum(['ready', 'configured', 'unavailable']),
+  "configured": zod.boolean(),
+  "checkpointReady": zod.boolean(),
+  "runtimeReady": zod.boolean(),
+  "reportedVersion": zod.string().nullable(),
+  "lastHealth": zod.object({
+  "status": zod.enum(['healthy', 'unhealthy', 'unknown']),
+  "checkedAt": zod.string().nullable(),
+  "latencyMs": zod.number().nullable(),
+  "message": zod.string().nullable()
+}),
   "license": zod.string().nullable(),
   "priority": zod.number(),
   "notes": zod.string()
@@ -2058,6 +2068,17 @@ export const GenerateArrangementResponse = zod.object({
   "status": zod.enum(['queued', 'running', 'cancel_requested', 'cancelled', 'succeeded', 'failed']),
   "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR', 'MIDI_SAG']),
   "modelVersion": zod.string(),
+  "providerRuntime": zod.union([zod.object({
+  "availability": zod.enum(['ready', 'configured', 'unavailable']),
+  "configurationReady": zod.boolean(),
+  "checkpointReady": zod.boolean(),
+  "runtimeReady": zod.boolean(),
+  "healthStatus": zod.enum(['healthy', 'unhealthy', 'unknown']),
+  "checkedAt": zod.string().nullable(),
+  "latencyMs": zod.number().nullable(),
+  "message": zod.string().nullable(),
+  "reportedVersion": zod.string().nullable()
+}),zod.null()]),
   "hardware": zod.enum(['AUTO', 'CPU', 'GPU']),
   "speed": zod.enum(['FAST', 'BALANCED', 'QUALITY']),
   "progress": zod.number().min(generateArrangementResponseProgressMin).max(generateArrangementResponseProgressMax),
@@ -2102,6 +2123,17 @@ export const GetGenerationJobResponse = zod.object({
   "status": zod.enum(['queued', 'running', 'cancel_requested', 'cancelled', 'succeeded', 'failed']),
   "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR', 'MIDI_SAG']),
   "modelVersion": zod.string(),
+  "providerRuntime": zod.union([zod.object({
+  "availability": zod.enum(['ready', 'configured', 'unavailable']),
+  "configurationReady": zod.boolean(),
+  "checkpointReady": zod.boolean(),
+  "runtimeReady": zod.boolean(),
+  "healthStatus": zod.enum(['healthy', 'unhealthy', 'unknown']),
+  "checkedAt": zod.string().nullable(),
+  "latencyMs": zod.number().nullable(),
+  "message": zod.string().nullable(),
+  "reportedVersion": zod.string().nullable()
+}),zod.null()]),
   "hardware": zod.enum(['AUTO', 'CPU', 'GPU']),
   "speed": zod.enum(['FAST', 'BALANCED', 'QUALITY']),
   "progress": zod.number().min(getGenerationJobResponseProgressMin).max(getGenerationJobResponseProgressMax),
@@ -2146,6 +2178,17 @@ export const CancelGenerationJobResponse = zod.object({
   "status": zod.enum(['queued', 'running', 'cancel_requested', 'cancelled', 'succeeded', 'failed']),
   "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR', 'MIDI_SAG']),
   "modelVersion": zod.string(),
+  "providerRuntime": zod.union([zod.object({
+  "availability": zod.enum(['ready', 'configured', 'unavailable']),
+  "configurationReady": zod.boolean(),
+  "checkpointReady": zod.boolean(),
+  "runtimeReady": zod.boolean(),
+  "healthStatus": zod.enum(['healthy', 'unhealthy', 'unknown']),
+  "checkedAt": zod.string().nullable(),
+  "latencyMs": zod.number().nullable(),
+  "message": zod.string().nullable(),
+  "reportedVersion": zod.string().nullable()
+}),zod.null()]),
   "hardware": zod.enum(['AUTO', 'CPU', 'GPU']),
   "speed": zod.enum(['FAST', 'BALANCED', 'QUALITY']),
   "progress": zod.number().min(cancelGenerationJobResponseProgressMin).max(cancelGenerationJobResponseProgressMax),
@@ -2190,6 +2233,17 @@ export const RetryGenerationJobResponse = zod.object({
   "status": zod.enum(['queued', 'running', 'cancel_requested', 'cancelled', 'succeeded', 'failed']),
   "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR', 'MIDI_SAG']),
   "modelVersion": zod.string(),
+  "providerRuntime": zod.union([zod.object({
+  "availability": zod.enum(['ready', 'configured', 'unavailable']),
+  "configurationReady": zod.boolean(),
+  "checkpointReady": zod.boolean(),
+  "runtimeReady": zod.boolean(),
+  "healthStatus": zod.enum(['healthy', 'unhealthy', 'unknown']),
+  "checkedAt": zod.string().nullable(),
+  "latencyMs": zod.number().nullable(),
+  "message": zod.string().nullable(),
+  "reportedVersion": zod.string().nullable()
+}),zod.null()]),
   "hardware": zod.enum(['AUTO', 'CPU', 'GPU']),
   "speed": zod.enum(['FAST', 'BALANCED', 'QUALITY']),
   "progress": zod.number().min(retryGenerationJobResponseProgressMin).max(retryGenerationJobResponseProgressMax),
@@ -2547,7 +2601,18 @@ export const ListGenerationProvidersResponseItem = zod.object({
   "tasks": zod.array(zod.enum(['SEPARATION', 'TRANSCRIPTION', 'ACCOMPANIMENT', 'ORCHESTRATION', 'ARRANGEMENT'])),
   "hardware": zod.array(zod.enum(['CPU', 'GPU'])),
   "speeds": zod.array(zod.enum(['FAST', 'BALANCED', 'QUALITY'])),
-  "available": zod.boolean()
+  "available": zod.boolean(),
+  "status": zod.enum(['ready', 'configured', 'unavailable']),
+  "configured": zod.boolean(),
+  "checkpointReady": zod.boolean(),
+  "runtimeReady": zod.boolean(),
+  "reportedVersion": zod.string().nullable(),
+  "lastHealth": zod.object({
+  "status": zod.enum(['healthy', 'unhealthy', 'unknown']),
+  "checkedAt": zod.string().nullable(),
+  "latencyMs": zod.number().nullable(),
+  "message": zod.string().nullable()
+})
 })
 export const ListGenerationProvidersResponse = zod.array(ListGenerationProvidersResponseItem)
 

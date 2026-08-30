@@ -8,7 +8,9 @@
 import type { GenerationProviderHardwareItem } from './generationProviderHardwareItem';
 import type { GenerationProviderId } from './generationProviderId';
 import type { GenerationProviderSpeedsItem } from './generationProviderSpeedsItem';
+import type { GenerationProviderStatus } from './generationProviderStatus';
 import type { GenerationProviderTasksItem } from './generationProviderTasksItem';
+import type { ProviderHealthResult } from './providerHealthResult';
 
 export interface GenerationProvider {
   id: GenerationProviderId;
@@ -18,4 +20,11 @@ export interface GenerationProvider {
   hardware: GenerationProviderHardwareItem[];
   speeds: GenerationProviderSpeedsItem[];
   available: boolean;
+  status: GenerationProviderStatus;
+  configured: boolean;
+  checkpointReady: boolean;
+  runtimeReady: boolean;
+  /** @nullable */
+  reportedVersion: string | null;
+  lastHealth: ProviderHealthResult;
 }

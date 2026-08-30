@@ -7,6 +7,7 @@
  */
 import type { MusicProviderExecution } from './musicProviderExecution';
 import type { MusicProviderStatus } from './musicProviderStatus';
+import type { ProviderHealthResult } from './providerHealthResult';
 
 export interface MusicProvider {
   id: string;
@@ -17,6 +18,12 @@ export interface MusicProvider {
   inputTypes: string[];
   execution: MusicProviderExecution;
   status: MusicProviderStatus;
+  configured: boolean;
+  checkpointReady: boolean;
+  runtimeReady: boolean;
+  /** @nullable */
+  reportedVersion: string | null;
+  lastHealth: ProviderHealthResult;
   /** @nullable */
   license: string | null;
   priority: number;

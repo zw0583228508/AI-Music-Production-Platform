@@ -8,6 +8,7 @@ import {
   useGetGenerationJob,
   useListGenerationCandidates,
   useListGenerationProviders,
+  getListGenerationProvidersQueryKey,
   useSelectGenerationCandidate,
   useUpdateArrangement,
   useListTracks,
@@ -95,7 +96,13 @@ export default function ProjectWorkspace() {
   const { data: arrangements } = useListArrangements(projectId);
   const { data: tracks } = useListTracks(projectId);
   const { data: artifacts } = useListArtifacts(projectId);
-  const { data: generationProviders } = useListGenerationProviders();
+  const { data: generationProviders } = useListGenerationProviders({
+    query: {
+      queryKey: getListGenerationProvidersQueryKey(),
+      refetchInterval: 30_000,
+      staleTime: 10_000,
+    },
+  });
   
   const createArrangement = useCreateArrangement();
   const updateArrangement = useUpdateArrangement();
@@ -188,11 +195,13 @@ export default function ProjectWorkspace() {
       : activeArrangement?.mode === "PRO_SCORE"
         ? "QUALITY"
         : "BALANCED";
-  const availableArrangementProviders = generationProviders?.filter(
+  const compatibleArrangementProviders = generationProviders?.filter(
     (provider) =>
-      provider.available &&
       provider.tasks.includes(requestedGenerationTask) &&
       provider.speeds.includes(requestedGenerationSpeed),
+  );
+  const availableArrangementProviders = compatibleArrangementProviders?.filter(
+    (provider) => provider.status === "ready" && provider.available,
   );
   const generationJobQuery = useGetGenerationJob(generationJobId ?? "", {
     query: {
@@ -776,6 +785,53 @@ export default function ProjectWorkspace() {
                         </div>
                       </CardContent>
                     </Card>
+
+                    <Card className="shadow-sm">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-sm flex items-center gap-2">
+                          <Activity className="h-4 w-4 text-primary" />
+                          Generation runtimes
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2">
+                        {compatibleArrangementProviders?.map((provider) => {
+                          const ready = provider.status === "ready";
+                          const configured = provider.status === "configured";
+                          const label = ready
+                            ? "Ready"
+                            : configured
+                              ? "Configured · unhealthy"
+                              : "Unavailable";
+                          return (
+                            <div
+                              key={provider.id}
+                              className="flex items-start justify-between gap-4 rounded-md border bg-muted/20 px-3 py-2"
+                            >
+                              <div className="min-w-0">
+                                <div className="text-sm font-medium">
+                                  {provider.name}
+                                </div>
+                                <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                                  {provider.reportedVersion ?? provider.modelVersion}
+                                  {" · "}
+                                  {provider.lastHealth.message}
+                                </div>
+                              </div>
+                              <Badge
+                                variant={ready ? "default" : configured ? "destructive" : "outline"}
+                                className={cn(
+                                  "shrink-0",
+                                  ready && "bg-emerald-600 hover:bg-emerald-600",
+                                  !configured && !ready && "text-muted-foreground",
+                                )}
+                              >
+                                {label}
+                              </Badge>
+                            </div>
+                          );
+                        })}
+                      </CardContent>
+                    </Card>
                     
                     <div className="flex justify-end">
                       <Button 
@@ -797,11 +853,14 @@ export default function ProjectWorkspace() {
                     {availableArrangementProviders?.length === 0 && (
                       <Alert>
                         <Activity className="h-4 w-4" />
-                        <AlertTitle>No generation worker is online</AlertTitle>
+                        <AlertTitle>No verified generation runtime is ready</AlertTitle>
                         <AlertDescription>
-                          Connect an ACE-Step, AnyAccomp, SymphonyGen, or METEOR
-                          worker to generate real candidates. The studio will not
-                          substitute fabricated output.
+                          {compatibleArrangementProviders?.some(
+                            (provider) => provider.status === "configured",
+                          )
+                            ? "A worker is configured, but its checkpoint or runtime health check failed. Restore the worker before generating."
+                            : "Connect an ACE-Step, AnyAccomp, SymphonyGen, or METEOR worker to generate real candidates."}
+                          {" "}The studio will not substitute fabricated output.
                         </AlertDescription>
                       </Alert>
                     )}

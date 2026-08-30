@@ -1333,7 +1333,7 @@ components:
         updatedAt: { type: string }
     MusicProvider:
       type: object
-      required: [id, name, provider, version, capabilities, inputTypes, execution, status, license, priority, notes]
+      required: [id, name, provider, version, capabilities, inputTypes, execution, status, configured, checkpointReady, runtimeReady, reportedVersion, lastHealth, license, priority, notes]
       properties:
         id: { type: string }
         name: { type: string }
@@ -1351,6 +1351,13 @@ components:
         status:
           type: string
           enum: [ready, configured, unavailable]
+        configured: { type: boolean }
+        checkpointReady: { type: boolean }
+        runtimeReady: { type: boolean }
+        reportedVersion:
+          type: [string, "null"]
+        lastHealth:
+          $ref: "#/components/schemas/ProviderHealthResult"
         license: { type: ["string", "null"] }
         priority: { type: number }
         notes: { type: string }
@@ -1783,7 +1790,7 @@ components:
           items: { type: string }
     GenerationJob:
       type: object
-      required: [id, projectId, arrangementId, task, status, provider, modelVersion, hardware, speed, progress, stage, requestedCandidates, seed, parameters, parentArtifactIds, retryable, attempt, maxAttempts, createdAt, updatedAt]
+      required: [id, projectId, arrangementId, task, status, provider, modelVersion, providerRuntime, hardware, speed, progress, stage, requestedCandidates, seed, parameters, parentArtifactIds, retryable, attempt, maxAttempts, createdAt, updatedAt]
       properties:
         id: { type: string }
         projectId: { type: string }
@@ -1798,6 +1805,10 @@ components:
           type: string
           enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, ANYACCOMP, SYMPHONYGEN, METEOR, MIDI_SAG]
         modelVersion: { type: string }
+        providerRuntime:
+          oneOf:
+            - $ref: "#/components/schemas/ProviderRuntimeSnapshot"
+            - type: "null"
         hardware:
           type: string
           enum: [AUTO, CPU, GPU]
@@ -1883,7 +1894,7 @@ components:
         createdAt: { type: string }
     GenerationProvider:
       type: object
-      required: [id, name, modelVersion, tasks, hardware, speeds, available]
+      required: [id, name, modelVersion, tasks, hardware, speeds, available, status, configured, checkpointReady, runtimeReady, reportedVersion, lastHealth]
       properties:
         id:
           type: string
@@ -1906,6 +1917,50 @@ components:
             type: string
             enum: [FAST, BALANCED, QUALITY]
         available: { type: boolean }
+        status:
+          type: string
+          enum: [ready, configured, unavailable]
+        configured: { type: boolean }
+        checkpointReady: { type: boolean }
+        runtimeReady: { type: boolean }
+        reportedVersion:
+          type: [string, "null"]
+        lastHealth:
+          $ref: "#/components/schemas/ProviderHealthResult"
+    ProviderHealthResult:
+      type: object
+      required: [status, checkedAt, latencyMs, message]
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy, unknown]
+        checkedAt:
+          type: [string, "null"]
+        latencyMs:
+          type: [number, "null"]
+        message:
+          type: [string, "null"]
+    ProviderRuntimeSnapshot:
+      type: object
+      required: [availability, configurationReady, checkpointReady, runtimeReady, healthStatus, checkedAt, latencyMs, message, reportedVersion]
+      properties:
+        availability:
+          type: string
+          enum: [ready, configured, unavailable]
+        configurationReady: { type: boolean }
+        checkpointReady: { type: boolean }
+        runtimeReady: { type: boolean }
+        healthStatus:
+          type: string
+          enum: [healthy, unhealthy, unknown]
+        checkedAt:
+          type: [string, "null"]
+        latencyMs:
+          type: [number, "null"]
+        message:
+          type: [string, "null"]
+        reportedVersion:
+          type: [string, "null"]
     GenerationResult:
       type: object
       required: [arrangement, candidates, selectedCandidate, provider]

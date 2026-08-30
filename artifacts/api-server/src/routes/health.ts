@@ -14,7 +14,7 @@ const router: IRouter = Router();
 router.get("/healthz", async (_req, res) => {
   try {
     await db.execute(sql`select 1`);
-    const [pipelineQueues, analysisQueues, generationQueues] = await Promise.all([
+    const [pipelineQueues, analysisQueues, generationQueues, providers] = await Promise.all([
       productionQueueMetrics(),
       db.select({
         status: analysisJobsTable.status,
@@ -24,13 +24,13 @@ router.get("/healthz", async (_req, res) => {
         status: musicGenerationJobsTable.status,
         count: sql<number>`count(*)::int`,
       }).from(musicGenerationJobsTable).groupBy(musicGenerationJobsTable.status),
+      listProviderCatalog(),
     ]);
-    const providers = listProviderCatalog();
     const data = HealthCheckResponse.parse({
       status: "ok",
       database: "ok",
       providers: {
-        configured: providers.length,
+        configured: providers.filter((provider) => provider.configured).length,
         available: providers.filter((provider) => provider.available).length,
       },
       queues: {

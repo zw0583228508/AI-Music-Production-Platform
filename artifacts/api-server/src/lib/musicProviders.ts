@@ -5,6 +5,7 @@ import type {
   GenerationParameters,
   MusicGenerationTask,
   ModelCapability,
+  ProviderRuntimeSnapshot,
   SongModelData,
   TrackModel,
 } from "@workspace/db";
@@ -23,6 +24,38 @@ export type MusicProviderDescriptor = {
   license: string | null;
   priority: number;
   notes: string;
+};
+
+export type ProviderReadiness = ProviderRuntimeSnapshot & {
+  configured: boolean;
+  checkpoint: {
+    required: boolean;
+    configured: boolean;
+    ready: boolean;
+  };
+  runtime: {
+    ready: boolean;
+    execution: "local" | "remote";
+  };
+  health: {
+    status: ProviderRuntimeSnapshot["healthStatus"];
+    checkedAt: string | null;
+    latencyMs: number | null;
+    message: string | null;
+  };
+};
+
+type ProviderDescriptorCatalogEntry = MusicProviderDescriptor & {
+  configured: boolean;
+  checkpointReady: boolean;
+  runtimeReady: boolean;
+  reportedVersion: string | null;
+  lastHealth: {
+    status: ProviderRuntimeSnapshot["healthStatus"];
+    checkedAt: string | null;
+    latencyMs: number | null;
+    message: string | null;
+  };
 };
 
 export type ArrangementProviderInput = {
@@ -325,6 +358,67 @@ export const MUSIC_PROVIDERS: MusicProviderDescriptor[] = [
     notes: "Requires BASS_API_URL; supplies bass-note evidence used to score chord roots.",
   },
 ];
+
+export function providerDescriptorCatalog(): ProviderDescriptorCatalogEntry[] {
+  return MUSIC_PROVIDERS.map((provider) => {
+    const localReady =
+      provider.execution === "local" && provider.status === "ready";
+    const configured = localReady || provider.status === "configured";
+    return {
+      ...provider,
+      configured,
+      checkpointReady: localReady,
+      runtimeReady: localReady,
+      reportedVersion: localReady ? provider.version : null,
+      lastHealth: {
+        status: localReady ? "healthy" as const : "unknown" as const,
+        checkedAt: localReady ? new Date(0).toISOString() : null,
+        latencyMs: localReady ? 0 : null,
+        message: localReady
+          ? "Local runtime is built into the API worker."
+          : configured
+            ? "Configured endpoint has not passed a runtime health check."
+            : "Provider endpoint is not configured.",
+      },
+    };
+  });
+}
+
+export async function verifiedProviderDescriptorCatalog() {
+  const descriptors = providerDescriptorCatalog();
+  const generationRegistry = await verifyProviderRegistry();
+  const byId = new Map(descriptors.map((provider) => [provider.id, provider]));
+  for (const generationProvider of generationRegistry) {
+    const definition = generationProvider.definition;
+    const readiness = generationProvider.readiness;
+    const existing = byId.get(definition.id);
+    byId.set(definition.id, {
+      id: definition.id,
+      name: definition.displayName,
+      provider: existing?.provider ?? definition.displayName,
+      version: definition.modelVersion,
+      capabilities: [...new Set(definition.tasks.map(taskCapability))],
+      inputTypes: existing?.inputTypes ?? ["Song Model", "Arrangement"],
+      execution: "remote",
+      status: readiness.availability,
+      configured: readiness.configurationReady,
+      checkpointReady: readiness.checkpointReady,
+      runtimeReady: readiness.runtimeReady,
+      reportedVersion: readiness.reportedVersion,
+      lastHealth: {
+        status: readiness.healthStatus,
+        checkedAt: readiness.checkedAt,
+        latencyMs: readiness.latencyMs,
+        message: readiness.message,
+      },
+      license: existing?.license ?? "Provider terms",
+      priority: existing?.priority ?? 100,
+      notes: existing?.notes ??
+        "Provider-backed generation runtime; readiness requires a verified checkpoint and worker health result.",
+    });
+  }
+  return [...byId.values()];
+}
 
 export class ModelRouter {
   select(
@@ -699,6 +793,8 @@ function finiteNumber(value: unknown, field: string): number {
 }
 export async function syncModelRegistry(): Promise<void> {
   for (const provider of MUSIC_PROVIDERS) {
+    const localReady = provider.execution === "local" && provider.status === "ready";
+    const configurationReady = localReady || provider.status === "configured";
     await db.insert(modelRegistryTable).values(provider).onConflictDoUpdate({
       target: modelRegistryTable.id,
       set: {
@@ -709,12 +805,86 @@ export async function syncModelRegistry(): Promise<void> {
         inputTypes: provider.inputTypes,
         execution: provider.execution,
         status: provider.status,
+        configurationReady,
+        checkpointReady: localReady,
+        runtimeReady: localReady,
+        healthStatus: localReady ? "healthy" : "unknown",
+        healthCheckedAt: localReady ? new Date() : null,
+        healthLatencyMs: localReady ? 0 : null,
+        healthMessage: localReady
+          ? "Local runtime is built into the API worker."
+          : configurationReady
+            ? "Configured endpoint has not passed a runtime health check."
+            : "Provider endpoint is not configured.",
+        reportedVersion: localReady ? provider.version : null,
         license: provider.license,
         priority: provider.priority,
         notes: provider.notes,
         updatedAt: new Date(),
       },
     });
+  }
+  const generationProviders = await verifyProviderRegistry(
+    createProviderRegistry(),
+    true,
+  );
+  for (const provider of generationProviders) {
+    const snapshot = provider.readiness;
+    const capabilities = provider.definition.tasks.map(taskCapability);
+    await db.insert(modelRegistryTable).values({
+      id: provider.definition.id,
+      name: provider.definition.displayName,
+      provider: provider.definition.displayName,
+      version: provider.definition.modelVersion,
+      capabilities: [...new Set(capabilities)],
+      inputTypes: [],
+      execution: "remote",
+      status: snapshot.availability,
+      configurationReady: snapshot.configurationReady,
+      checkpointReady: snapshot.checkpointReady,
+      runtimeReady: snapshot.runtimeReady,
+      healthStatus: snapshot.healthStatus,
+      healthCheckedAt: snapshot.checkedAt ? new Date(snapshot.checkedAt) : null,
+      healthLatencyMs: snapshot.latencyMs,
+      healthMessage: snapshot.message,
+      reportedVersion: snapshot.reportedVersion,
+      license: "Provider terms",
+      priority: 100,
+      notes: "Provider-backed generation runtime; readiness requires a verified checkpoint and worker health result.",
+    }).onConflictDoUpdate({
+      target: modelRegistryTable.id,
+      set: {
+        name: provider.definition.displayName,
+        provider: provider.definition.displayName,
+        version: provider.definition.modelVersion,
+        capabilities: [...new Set(capabilities)],
+        execution: "remote",
+        status: snapshot.availability,
+        configurationReady: snapshot.configurationReady,
+        checkpointReady: snapshot.checkpointReady,
+        runtimeReady: snapshot.runtimeReady,
+        healthStatus: snapshot.healthStatus,
+        healthCheckedAt: snapshot.checkedAt ? new Date(snapshot.checkedAt) : null,
+        healthLatencyMs: snapshot.latencyMs,
+        healthMessage: snapshot.message,
+        reportedVersion: snapshot.reportedVersion,
+        updatedAt: new Date(),
+      },
+    });
+  }
+}
+
+function taskCapability(task: MusicGenerationTask): ModelCapability {
+  switch (task) {
+    case "SEPARATION":
+      return "separation";
+    case "TRANSCRIPTION":
+      return "transcription";
+    case "ORCHESTRATION":
+      return "orchestration";
+    case "ACCOMPANIMENT":
+    case "ARRANGEMENT":
+      return "arrangement";
   }
 }
 
@@ -731,14 +901,23 @@ export const musicProviderIds = [
 ] as const;
 
 class HttpMusicGenerationProvider implements MusicGenerationProvider {
-  readonly available: boolean;
+  readiness: ProviderRuntimeSnapshot;
 
   constructor(
     readonly definition: ProviderDefinition,
     private readonly endpoint: string | undefined,
     private readonly token: string | undefined,
   ) {
-    this.available = Boolean(endpoint);
+    const cached = endpoint
+      ? providerHealthCache.get(`${definition.id}:${endpoint}`)
+      : undefined;
+    this.readiness = cached?.snapshot ?? initialProviderReadiness(
+      Boolean(endpoint),
+    );
+  }
+
+  get available(): boolean {
+    return this.readiness.availability === "ready";
   }
 
   private headers(): Record<string, string> {
@@ -746,6 +925,101 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
       "Content-Type": "application/json",
       ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
     };
+  }
+
+  async checkHealth(force = false): Promise<ProviderRuntimeSnapshot> {
+    if (!this.endpoint) {
+      this.readiness = initialProviderReadiness(false);
+      return this.readiness;
+    }
+    const cacheKey = `${this.definition.id}:${this.endpoint}`;
+    const cached = providerHealthCache.get(cacheKey);
+    if (!force && cached && cached.expiresAt > Date.now()) {
+      this.readiness = cached.snapshot;
+      return this.readiness;
+    }
+    const startedAt = Date.now();
+    const checkedAt = new Date().toISOString();
+    try {
+      const healthUrl = providerHealthUrl(this.definition.id, this.endpoint);
+      const response = await fetch(healthUrl, {
+        headers: this.headers(),
+        signal: AbortSignal.timeout(providerHealthTimeoutMs()),
+      });
+      if (!response.ok) {
+        throw new Error(`health check returned HTTP ${response.status}`);
+      }
+      const payload = await response.json() as unknown;
+      if (!isRecord(payload)) {
+        throw new Error("health response must be a JSON object");
+      }
+      const checkpoint = isRecord(payload["checkpoint"])
+        ? payload["checkpoint"]
+        : {};
+      const runtime = isRecord(payload["runtime"]) ? payload["runtime"] : {};
+      const status = typeof payload["status"] === "string"
+        ? payload["status"].toLowerCase()
+        : "";
+      const checkpointReady =
+        payload["checkpointReady"] === true || checkpoint["ready"] === true;
+      const runtimeReady =
+        payload["runtimeReady"] === true ||
+        payload["ready"] === true ||
+        runtime["ready"] === true;
+      const healthy =
+        ["ok", "healthy", "ready"].includes(status) ||
+        payload["healthy"] === true;
+      const reportedVersion = [
+        payload["modelVersion"],
+        payload["version"],
+        checkpoint["version"],
+      ].find((value): value is string =>
+        typeof value === "string" && Boolean(value.trim())
+      )?.trim() ?? null;
+      const ready = healthy && checkpointReady && runtimeReady &&
+        Boolean(reportedVersion);
+      const message = ready
+        ? "Checkpoint and provider runtime are ready."
+        : typeof payload["message"] === "string" && payload["message"].trim()
+          ? payload["message"].trim()
+          : !checkpointReady
+            ? "Configured worker has not verified its model checkpoint."
+            : !runtimeReady
+              ? "Configured worker runtime is not ready."
+              : !reportedVersion
+                ? "Configured worker did not report a model version."
+                : "Configured worker health check is unhealthy.";
+      this.readiness = {
+        availability: ready ? "ready" : "configured",
+        configurationReady: true,
+        checkpointReady,
+        runtimeReady,
+        healthStatus: ready ? "healthy" : "unhealthy",
+        checkedAt,
+        latencyMs: Math.max(0, Date.now() - startedAt),
+        message,
+        reportedVersion,
+      };
+    } catch (error) {
+      this.readiness = {
+        availability: "configured",
+        configurationReady: true,
+        checkpointReady: false,
+        runtimeReady: false,
+        healthStatus: "unhealthy",
+        checkedAt,
+        latencyMs: Math.max(0, Date.now() - startedAt),
+        message: error instanceof Error
+          ? `Provider health check failed: ${error.message}`
+          : "Provider health check failed.",
+        reportedVersion: null,
+      };
+    }
+    providerHealthCache.set(cacheKey, {
+      expiresAt: Date.now() + PROVIDER_HEALTH_TTL_MS,
+      snapshot: this.readiness,
+    });
+    return this.readiness;
   }
 
   private normalizeResult(
@@ -913,6 +1187,8 @@ export type ProviderProgress = {
 export interface MusicGenerationProvider {
   readonly definition: ProviderDefinition;
   readonly available: boolean;
+  readiness: ProviderRuntimeSnapshot;
+  checkHealth(force?: boolean): Promise<ProviderRuntimeSnapshot>;
   generate(
     input: ProviderGenerationInput,
     onProgress?: (progress: ProviderProgress) => Promise<void>,
@@ -946,6 +1222,9 @@ export function selectMusicProvider(
     const definition = provider.definition;
     return (
       provider.available &&
+      provider.readiness.checkpointReady &&
+      provider.readiness.runtimeReady &&
+      provider.readiness.healthStatus === "healthy" &&
       definition.tasks.includes(request.task) &&
       definition.speeds.includes(request.speed) &&
       (request.hardware === "AUTO" ||
@@ -1069,6 +1348,61 @@ export function createProviderRegistry(): MusicGenerationProvider[] {
   });
 }
 
+const PROVIDER_HEALTH_TTL_MS = 30_000;
+const providerHealthCache = new Map<string, {
+  expiresAt: number;
+  snapshot: ProviderRuntimeSnapshot;
+}>();
+
+function providerHealthTimeoutMs(): number {
+  const configured = Number.parseInt(
+    process.env["MUSIC_PROVIDER_HEALTH_TIMEOUT_MS"] ?? "5000",
+    10,
+  );
+  return Number.isFinite(configured)
+    ? Math.max(100, Math.min(30_000, configured))
+    : 5_000;
+}
+
+function initialProviderReadiness(configured: boolean): ProviderRuntimeSnapshot {
+  return {
+    availability: configured ? "configured" : "unavailable",
+    configurationReady: configured,
+    checkpointReady: false,
+    runtimeReady: false,
+    healthStatus: "unknown",
+    checkedAt: null,
+    latencyMs: null,
+    message: configured
+      ? "Configured endpoint has not passed a runtime health check."
+      : "Provider endpoint is not configured.",
+    reportedVersion: null,
+  };
+}
+
+function providerHealthUrl(
+  providerId: MusicProviderId,
+  endpoint: string,
+): URL {
+  const key = providerEnvKey(providerId);
+  const configured = process.env[`MUSIC_PROVIDER_${key}_HEALTH_URL`];
+  const url = configured
+    ? new URL(configured)
+    : new URL("/health", endpoint);
+  if (!configured && process.env["MUSIC_PROVIDER_GATEWAY_URL"]) {
+    url.searchParams.set("provider", providerId);
+  }
+  return url;
+}
+
+export async function verifyProviderRegistry(
+  registry = createProviderRegistry(),
+  force = false,
+): Promise<MusicGenerationProvider[]> {
+  await Promise.all(registry.map((provider) => provider.checkHealth(force)));
+  return registry;
+}
+
 export type GenerationSpeed = "FAST" | "BALANCED" | "QUALITY";
 
 type ProviderDefinition = {
@@ -1123,6 +1457,17 @@ export function providerCatalog(registry: MusicGenerationProvider[]) {
     hardware: provider.definition.hardware,
     speeds: provider.definition.speeds,
     available: provider.available,
+    status: provider.readiness.availability,
+    configured: provider.readiness.configurationReady,
+    checkpointReady: provider.readiness.checkpointReady,
+    runtimeReady: provider.readiness.runtimeReady,
+    reportedVersion: provider.readiness.reportedVersion,
+    lastHealth: {
+      status: provider.readiness.healthStatus,
+      checkedAt: provider.readiness.checkedAt,
+      latencyMs: provider.readiness.latencyMs,
+      message: provider.readiness.message,
+    },
   }));
 }
 

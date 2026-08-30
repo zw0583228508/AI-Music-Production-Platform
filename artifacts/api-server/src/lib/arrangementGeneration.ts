@@ -21,6 +21,7 @@ import {
   providerCatalog,
   selectMusicProvider,
   validateCanonicalTrackModels,
+  verifyProviderRegistry,
   type GenerationHardware,
   type GenerationSpeed,
   type MusicProviderId,
@@ -56,6 +57,7 @@ export const generationJobResponse = (
   status: row.status,
   provider: row.provider,
   modelVersion: row.modelVersion,
+  providerRuntime: row.providerRuntime,
   hardware: row.hardware,
   speed: row.speed,
   progress: row.progress,
@@ -99,8 +101,8 @@ export const generationCandidateResponse = (
   createdAt: row.createdAt.toISOString(),
 });
 
-export function listProviderCatalog() {
-  return providerCatalog(createProviderRegistry());
+export async function listProviderCatalog() {
+  return providerCatalog(await verifyProviderRegistry());
 }
 
 export async function queueArrangementGeneration(
@@ -149,7 +151,7 @@ export async function queueArrangementGeneration(
       : arrangement.mode === "PRO_SCORE"
         ? "QUALITY"
         : "BALANCED");
-  const registry = createProviderRegistry();
+  const registry = await verifyProviderRegistry(createProviderRegistry(), true);
   const provider = selectMusicProvider(registry, {
     requestedProvider: input.provider,
     task,
@@ -213,6 +215,7 @@ export async function queueArrangementGeneration(
       status: "queued",
       provider: provider.definition.id,
       modelVersion: provider.definition.modelVersion,
+      providerRuntime: provider.readiness,
       hardware,
       speed,
       progress: 0,
@@ -309,12 +312,19 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
     const provider = createProviderRegistry().find(
       (candidate) => candidate.definition.id === job.provider,
     );
-    if (!provider?.available) {
-      throw new Error(`${job.provider} worker is no longer available`);
+    if (!provider) {
+      throw new Error(`${job.provider} worker is not registered`);
     }
+    const providerRuntime = await provider.checkHealth(true);
     const [owned] = await db
       .update(musicGenerationJobsTable)
-      .set({ progress: 30, stage: "running_model" })
+      .set({
+        progress: provider.available ? 30 : 12,
+        stage: provider.available
+          ? "running_model"
+          : "provider_runtime_unavailable",
+        providerRuntime,
+      })
       .where(
         and(
           eq(musicGenerationJobsTable.id, job.id),
@@ -326,6 +336,16 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
       )
       .returning({ id: musicGenerationJobsTable.id });
     if (!owned) throw new Error("Generation job lease was lost");
+    if (!provider.available) {
+      throw new ProviderRuntimeUnavailableError(
+        job.provider,
+        providerRuntime.message ??
+          "The configured provider has no verified checkpoint runtime.",
+        providerRuntime.checkpointReady ||
+          providerRuntime.message?.startsWith("Provider health check failed:") ===
+            true,
+      );
+    }
     heartbeat = setInterval(() => {
       void db
         .update(musicGenerationJobsTable)
@@ -461,6 +481,8 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
         const candidateId = randomUUID();
         const serializedPlan = JSON.stringify(candidate.plan);
         const checksum = sha256(serializedPlan);
+        const providerRequestId =
+          candidate.providerRequestId ?? result.requestId;
         await tx.insert(musicArtifactsTable).values({
           id: artifactId,
           projectId: job.projectId,
@@ -473,13 +495,23 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           checksum,
           parentIds: job.parentArtifactIds,
           createdBy: "arrangement-provider",
-          modelVersion: `${provider.definition.id}@${result.modelVersion}`,
+          modelVersion: `${provider.definition.id}@${job.modelVersion}`,
           provider: provider.definition.id,
+          parameters: {
+            generationJobId: job.id,
+            generationCandidateId: candidateId,
+            seed: job.seed,
+            leaseVersion,
+            providerRequestId: providerRequestId ?? "",
+          },
           retentionPolicy: "project",
           technicalMetadata: {
             mediaType: "application/json",
             candidateRank: index + 1,
             confidence: candidate.confidence,
+            expectedModelVersion: job.modelVersion,
+            reportedModelVersion: result.modelVersion,
+            runtimeVersion: providerRuntime.reportedVersion,
           },
         });
         await tx.insert(musicGenerationCandidatesTable).values({
@@ -488,7 +520,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           projectId: job.projectId,
           arrangementId: job.arrangementId,
           artifactId,
-          providerRequestId: candidate.providerRequestId ?? result.requestId,
+          providerRequestId,
           provider: provider.definition.id,
           modelVersion: job.modelVersion,
           reportedModelVersion: result.modelVersion,
@@ -524,7 +556,9 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
     const cancelled =
       error instanceof ProviderCancellationAcknowledgedError ||
       (abortController.signal.aborted && !cancellationUnconfirmed);
+    const runtimeUnavailable = error instanceof ProviderRuntimeUnavailableError;
     const retryable = !cancelled && !cancellationUnconfirmed &&
+      (!runtimeUnavailable || error.retryable) &&
       !/invalid|unauthorized|forbidden|not configured|license/i.test(message);
     const willRetry = retryable && job.attempt < job.maxAttempts;
     const originalStatus = job.inputSnapshot.arrangement.status === "ready"
@@ -558,7 +592,9 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
             ? "CANCELLED"
             : cancellationUnconfirmed
               ? "PROVIDER_CANCELLATION_UNCONFIRMED"
-              : "PROVIDER_EXECUTION_FAILED",
+              : runtimeUnavailable
+                ? "PROVIDER_RUNTIME_UNAVAILABLE"
+                : "PROVIDER_EXECUTION_FAILED",
           retryable,
           workerId: willRetry || cancellationUnconfirmed ? null : workerId,
           completedAt: cancelled || (!willRetry && !cancellationUnconfirmed)
@@ -594,6 +630,16 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
   } finally {
     if (heartbeat) clearInterval(heartbeat);
     if (cancellationWatcher) clearInterval(cancellationWatcher);
+  }
+}
+
+class ProviderRuntimeUnavailableError extends Error {
+  constructor(
+    providerId: string,
+    detail: string,
+    readonly retryable: boolean,
+  ) {
+    super(`${providerId} is configured but unavailable: ${detail}`);
   }
 }
 

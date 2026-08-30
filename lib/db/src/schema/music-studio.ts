@@ -221,6 +221,28 @@ export type ModelCapability =
   | "orchestration"
   | "audio_generation";
 
+export type ProviderAvailabilityStatus =
+  | "ready"
+  | "configured"
+  | "unavailable";
+
+export type ProviderHealthStatus =
+  | "healthy"
+  | "unhealthy"
+  | "unknown";
+
+export type ProviderRuntimeSnapshot = {
+  availability: ProviderAvailabilityStatus;
+  configurationReady: boolean;
+  checkpointReady: boolean;
+  runtimeReady: boolean;
+  healthStatus: ProviderHealthStatus;
+  checkedAt: string | null;
+  latencyMs: number | null;
+  message: string | null;
+  reportedVersion: string | null;
+};
+
 export const musicProjectsTable = pgTable("music_projects", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -339,7 +361,21 @@ export const modelRegistryTable = pgTable("music_model_registry", {
   capabilities: jsonb("capabilities").$type<ModelCapability[]>().notNull().default([]),
   inputTypes: jsonb("input_types").$type<string[]>().notNull().default([]),
   execution: text("execution").notNull(),
-  status: text("status").notNull().default("unavailable"),
+  status: text("status")
+    .$type<ProviderAvailabilityStatus>()
+    .notNull()
+    .default("unavailable"),
+  configurationReady: boolean("configuration_ready").notNull().default(false),
+  checkpointReady: boolean("checkpoint_ready").notNull().default(false),
+  runtimeReady: boolean("runtime_ready").notNull().default(false),
+  healthStatus: text("health_status")
+    .$type<ProviderHealthStatus>()
+    .notNull()
+    .default("unknown"),
+  healthCheckedAt: timestamp("health_checked_at", { withTimezone: true }),
+  healthLatencyMs: integer("health_latency_ms"),
+  healthMessage: text("health_message"),
+  reportedVersion: text("reported_version"),
   license: text("license"),
   priority: integer("priority").notNull().default(100),
   notes: text("notes"),
@@ -457,6 +493,7 @@ export const musicGenerationJobsTable = pgTable("music_generation_jobs", {
   status: text("status").notNull().default("queued"),
   provider: text("provider").notNull(),
   modelVersion: text("model_version").notNull(),
+  providerRuntime: jsonb("provider_runtime").$type<ProviderRuntimeSnapshot | null>(),
   hardware: text("hardware").notNull(),
   speed: text("speed").notNull(),
   progress: integer("progress").notNull().default(0),

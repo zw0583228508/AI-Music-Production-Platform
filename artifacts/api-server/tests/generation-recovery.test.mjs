@@ -53,11 +53,14 @@ const ids = {
   project: `generation-project-${process.pid}`,
   arrangement: `generation-arrangement-${process.pid}`,
   queuedArrangement: `queued-generation-arrangement-${process.pid}`,
+  unhealthyArrangement: `unhealthy-generation-arrangement-${process.pid}`,
   job: `generation-job-${process.pid}`,
 };
 let providerServer;
 let stopRecovery;
 let receivedIdempotencyKey;
+let healthMode = "ready";
+let healthCheckCount = 0;
 
 function waitForListen(server) {
   return new Promise((resolve, reject) => {
@@ -80,6 +83,22 @@ async function waitForCompletedJob(jobId) {
 
 before(async () => {
   providerServer = createServer((request, response) => {
+    if (request.method === "GET" && request.url?.startsWith("/health")) {
+      healthCheckCount += 1;
+      if (healthMode === "ready-once" && healthCheckCount > 1) {
+        response.writeHead(503, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ message: "worker is restarting" }));
+        return;
+      }
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({
+        status: "ready",
+        checkpointReady: true,
+        runtimeReady: true,
+        modelVersion: "mock-meteor-v9",
+      }));
+      return;
+    }
     receivedIdempotencyKey = request.headers["idempotency-key"];
     request.resume();
     request.on("end", () => {
@@ -244,4 +263,37 @@ test("recurring recovery reclaims a lease that expires after startup and persist
   assert.equal(queuedCandidates[0].label, "Top Choice");
   assert.equal(queuedCandidates[0].rank, 1);
   assert.deepEqual(queuedCandidates[0].parameters, { temperature: 0.7 });
+});
+
+test("an unhealthy runtime replaces the queued health snapshot and retries under the lease", async () => {
+  await db.insert(arrangementsTable).values({
+    id: ids.unhealthyArrangement,
+    projectId: ids.project,
+    name: "Runtime loss arrangement",
+    style: "orchestral",
+    mode: "STUDIO",
+    version: 3,
+    sections: [],
+  });
+  healthMode = "ready-once";
+  healthCheckCount = 0;
+  const queued = await queueArrangementGeneration(
+    ids.unhealthyArrangement,
+    {
+      candidates: 2,
+      provider: "METEOR",
+      task: "ARRANGEMENT",
+      speed: "BALANCED",
+      seed: 2222,
+    },
+    `generation-owner-${process.pid}`,
+  );
+  const failed = await waitForCompletedJob(queued.id);
+  assert.equal(failed.status, "failed");
+  assert.equal(failed.errorCode, "PROVIDER_RUNTIME_UNAVAILABLE");
+  assert.equal(failed.providerRuntime.availability, "configured");
+  assert.equal(failed.providerRuntime.healthStatus, "unhealthy");
+  assert.match(failed.providerRuntime.message, /HTTP 503/);
+  assert.equal(failed.attempt, failed.maxAttempts);
+  healthMode = "ready";
 });

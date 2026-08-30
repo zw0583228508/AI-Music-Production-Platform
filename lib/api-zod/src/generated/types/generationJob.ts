@@ -11,6 +11,7 @@ import type { GenerationJobProvider } from './generationJobProvider';
 import type { GenerationJobSpeed } from './generationJobSpeed';
 import type { GenerationJobStatus } from './generationJobStatus';
 import type { GenerationJobTask } from './generationJobTask';
+import type { ProviderRuntimeSnapshot } from './providerRuntimeSnapshot';
 
 export interface GenerationJob {
   id: string;
@@ -20,6 +21,7 @@ export interface GenerationJob {
   status: GenerationJobStatus;
   provider: GenerationJobProvider;
   modelVersion: string;
+  providerRuntime: ProviderRuntimeSnapshot | null;
   hardware: GenerationJobHardware;
   speed: GenerationJobSpeed;
   /**
