@@ -23,7 +23,7 @@ export const SUPPORTED_SOURCE_FORMATS: readonly SupportedSourceFormat[] = [
   {
     extension: "m4a",
     contentType: "audio/mp4",
-    mimeTypes: ["audio/mp4", "audio/x-m4a"],
+    mimeTypes: ["audio/mp4", "audio/x-m4a", "video/mp4"],
   },
   {
     extension: "aac",

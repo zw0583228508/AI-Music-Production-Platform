@@ -910,8 +910,10 @@ export type ArticulationEvent = {
 export type ArrangementRevisionSummary = {
   affectedSections: string[];
   affectedTracks: string[];
+  trackMembershipChanges: number;
   chordChanges: number;
   noteChanges: number;
+  ccChanges: number;
   conductorControls: string[];
   candidateSelectionChanged: boolean;
 };

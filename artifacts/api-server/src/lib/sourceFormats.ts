@@ -1,18 +1,23 @@
 const FORMATS = {
-  wav: ["audio/wav", "audio/x-wav", "audio/wave"],
+  wav: ["audio/wav", "audio/x-wav", "audio/wave", "audio/vnd.wave"],
   flac: ["audio/flac", "audio/x-flac"],
-  mp3: ["audio/mpeg", "audio/mp3"],
+  mp3: ["audio/mpeg", "audio/mp3", "audio/x-mp3"],
   m4a: ["audio/mp4", "audio/x-m4a", "video/mp4"],
   aac: ["audio/aac", "audio/x-aac"],
-  ogg: ["audio/ogg", "application/ogg"],
-  mp4: ["video/mp4", "audio/mp4"],
+  ogg: ["audio/ogg", "audio/vorbis", "application/ogg"],
+  mp4: ["video/mp4", "audio/mp4", "application/mp4"],
   mov: ["video/quicktime"],
   webm: ["video/webm", "audio/webm"],
   mid: ["audio/midi", "audio/x-midi", "application/x-midi"],
   midi: ["audio/midi", "audio/x-midi", "application/x-midi"],
 } as const;
 
-const genericTypes = new Set(["", "application/octet-stream"]);
+const genericTypes = new Set([
+  "",
+  "application/octet-stream",
+  "binary/octet-stream",
+  "application/binary",
+]);
 
 export function validateSourceFileMetadata(
   fileName: string,
@@ -35,7 +40,7 @@ export function validateSourceFileMetadata(
     : normalizedType;
   const mediaKind = extension === "mid" || extension === "midi"
     ? "midi"
-    : extension === "mp4" || extension === "mov" ||
+    : extension === "mp4" || extension === "mov" || extension === "webm" ||
         normalizedContentType.startsWith("video/")
       ? "video"
       : "audio";

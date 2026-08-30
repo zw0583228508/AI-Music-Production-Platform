@@ -1261,9 +1261,13 @@ export interface ArrangementRevisionSummary {
   affectedSections: string[];
   affectedTracks: string[];
   /** @minimum 0 */
+  trackMembershipChanges: number;
+  /** @minimum 0 */
   chordChanges: number;
   /** @minimum 0 */
   noteChanges: number;
+  /** @minimum 0 */
+  ccChanges: number;
   conductorControls: string[];
   candidateSelectionChanged: boolean;
 }

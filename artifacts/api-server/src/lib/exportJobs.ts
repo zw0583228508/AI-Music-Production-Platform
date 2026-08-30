@@ -13,6 +13,7 @@ import {
 } from "@workspace/db";
 import { createExportBundle, persistExportBundle } from "./export-pipeline";
 import { renderArrangementExport } from "./exportEngine";
+import { resolveExportSongModel } from "./exportLineage";
 import { applyArrangementEditorChanges } from "./musicEngines";
 import { validateCanonicalTrackModels } from "./musicProviders";
 import { deleteExportObject } from "./objectStorage";
@@ -105,8 +106,11 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
       await completeProductionJob(job.id, workerId, leaseVersion, [input.exportId]);
       return;
     }
-    const songModel = songModels.find((model) => model.version === arrangement.songModelVersion) ?? songModels[0];
-    if (!songModel || !arrangement.plan || !arrangement.styleSpec || !arrangement.trackModels.length) {
+    const { songModel, bpm, key, meter } = resolveExportSongModel(
+      songModels,
+      arrangement.songModelVersion,
+    );
+    if (!arrangement.plan || !arrangement.styleSpec || !arrangement.trackModels.length) {
       throw new Error("The selected arrangement has no persisted Song Model, plan, style, or TrackModels");
     }
     const planArtifact = artifacts.find((artifact) => artifact.type === "ARRANGEMENT_PLAN" &&
@@ -121,19 +125,22 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
       throw new Error("One or more selected TrackModel artifacts are unavailable");
     }
     const exportTrackModels = applyArrangementEditorChanges({
-      trackModels: arrangement.trackModels, sections: arrangement.sections, tracks, bpm: project.bpm, meter: project.meter,
+      trackModels: arrangement.trackModels, sections: arrangement.sections, tracks, bpm, meter,
     });
     const playabilityErrors = validateCanonicalTrackModels(exportTrackModels, [...expectedTrackIds]);
     if (playabilityErrors.length) throw new Error("Arrangement editor changes are not playable");
 
     await heartbeat("rendering", 25);
     const renderedFiles = (await renderArrangementExport({
-      projectName: project.name, bpm: project.bpm, key: project.key, meter: project.meter,
+      projectName: project.name, bpm, key, meter,
       arrangementName: arrangement.name, arrangementVersion: arrangement.version,
       masterProfile: input.masterProfile ?? "STREAMING", energy: arrangement.energy, density: arrangement.density,
       harmonyComplexity: arrangement.harmonyComplexity, sections: arrangement.sections, tracks, songModel: songModel.model,
       plan: arrangement.plan, trackModels: exportTrackModels, styleSpec: arrangement.styleSpec, seed: arrangement.seed ?? undefined,
       generationProvider: arrangement.generationProvenance?.provider ?? arrangement.generationProvider ?? "ARRANGEMENT_ENGINE",
+      generationModelVersion: arrangement.generationProvenance?.modelVersion ?? arrangement.modelVersion ?? undefined,
+      candidateId: arrangement.generationProvenance?.candidateId ?? arrangement.sourceCandidateId ?? undefined,
+      providerRequestId: arrangement.generationProvenance?.providerRequestId ?? undefined,
       parentIds: Object.values(trackModelArtifactIds).length ? Object.values(trackModelArtifactIds) : [planArtifact.id],
       planArtifactId: planArtifact.id, planParentIds: planArtifact.parentIds, trackModelArtifactIds,
       includeStems: input.includeStems ?? true, includeMidi: input.includeMidi ?? true,
@@ -145,7 +152,8 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
       artifactId: fileArtifactIds[file.name],
       parentIds: file.provenance.parentIds,
     }]));
-    const bundle = createExportBundle(project, arrangement, tracks, input, input.version, "", input.exportId, renderedFiles, artifactGraph);
+    const exportProject = { ...project, bpm, key, meter };
+    const bundle = createExportBundle(exportProject, arrangement, tracks, input, input.version, "", input.exportId, renderedFiles, artifactGraph);
     const storageObjectId = `${input.exportId}-${sha256(bundle.zip)}`;
     const storageObjectPath = `/api/storage/objects/exports/${storageObjectId}.zip`;
     await heartbeat("persisting", 85);
@@ -154,7 +162,17 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
       size: file.size, format: file.format, url: bundle.package.url, hash: sha256(bundle.files.get(file.name) ?? file.name),
       checksum: sha256(bundle.files.get(file.name) ?? file.name), parentIds: renderedFiles.find((item) => item.name === file.name)?.provenance.parentIds ?? [],
       createdBy: "export-engine", modelVersion: "EXPORT_ENGINE@2.0.0",
-      parameters: { arrangementId: arrangement.id, exportId: input.exportId }, storageUri: bundle.package.url,
+       parameters: {
+         arrangementId: arrangement.id,
+         exportId: input.exportId,
+         generationProvider: arrangement.generationProvenance?.provider ??
+           arrangement.generationProvider ?? "ARRANGEMENT_ENGINE",
+         generationModelVersion: arrangement.generationProvenance?.modelVersion ??
+           arrangement.modelVersion ?? "unknown",
+         generationCandidateId: arrangement.generationProvenance?.candidateId ??
+           arrangement.sourceCandidateId ?? "none",
+         seed: arrangement.seed ?? 0,
+       }, storageUri: bundle.package.url,
       provider: arrangement.generationProvenance?.provider ?? arrangement.generationProvider ?? "ARRANGEMENT_ENGINE",
       license: "Project-owned output", retentionPolicy: "project",
       technicalMetadata: { mediaType: file.format, bytes: bundle.files.get(file.name)?.length ?? 0, arrangementVersion: arrangement.version },

@@ -94,7 +94,6 @@ import {
   studioActivitiesTable,
   tracksTable,
   type ArrangementRevisionSnapshot,
-  type ArrangementRevisionSummary,
   type SongModelData,
   type SongModelField,
   type SongModelFieldStatus,
@@ -147,6 +146,7 @@ import {
   evaluateArrangementEligibility,
   fuseProviderSongModels,
   isLegacySongModel,
+  refreshSongModelValidation,
   validateCanonicalSongModel,
 } from "../lib/songModelValidation";
 import {
@@ -160,6 +160,7 @@ import {
   retryGenerationJob,
   selectGenerationCandidate,
 } from "../lib/arrangementGeneration";
+import { revisionSummary } from "../lib/arrangementRevisions";
 
 const router: IRouter = Router();
 const exportBundles = new Map<string, ExportBundle>();
@@ -321,86 +322,6 @@ const arrangementRevisionSnapshot = (
   sections: arrangement.sections,
 });
 
-function changedEventCount<T>(
-  before: Array<[string, T]>,
-  after: Array<[string, T]>,
-): number {
-  const beforeByKey = new Map(before);
-  const afterByKey = new Map(after);
-  return Array.from(new Set([...beforeByKey.keys(), ...afterByKey.keys()]))
-    .filter((key) =>
-      JSON.stringify(beforeByKey.get(key)) !== JSON.stringify(afterByKey.get(key))
-    )
-    .length;
-}
-
-function revisionSummary(
-  before: ArrangementRevisionSnapshot | null,
-  after: ArrangementRevisionSnapshot,
-): ArrangementRevisionSummary {
-  const beforeSections = new Map((before?.sections ?? []).map((section) => [section.name, section]));
-  const afterSections = new Map(after.sections.map((section) => [section.name, section]));
-  const affectedSections = Array.from(
-    new Set([...beforeSections.keys(), ...afterSections.keys()]),
-  )
-    .filter((name) =>
-      JSON.stringify(beforeSections.get(name)) !== JSON.stringify(afterSections.get(name))
-    );
-  const affectedTracks = new Set<string>();
-  for (const sectionName of new Set([...beforeSections.keys(), ...afterSections.keys()])) {
-    const previous = beforeSections.get(sectionName);
-    const next = afterSections.get(sectionName);
-    const previousMembership = new Set(previous?.tracks ?? []);
-    const nextMembership = new Set(next?.tracks ?? []);
-    for (const trackName of new Set([...previousMembership, ...nextMembership])) {
-      if (previousMembership.has(trackName) !== nextMembership.has(trackName)) {
-        affectedTracks.add(trackName);
-      }
-    }
-    const previousMidi = previous?.midiTracks ?? {};
-    const nextMidi = next?.midiTracks ?? {};
-    for (const trackName of new Set([...Object.keys(previousMidi), ...Object.keys(nextMidi)])) {
-      if (JSON.stringify(previousMidi[trackName]) !== JSON.stringify(nextMidi[trackName])) {
-        affectedTracks.add(trackName);
-      }
-    }
-  }
-  const chordEvents = (snapshot: ArrangementRevisionSnapshot | null) =>
-    (snapshot?.sections ?? []).flatMap((section) =>
-      (section.chords ?? []).map((chord) => [`${section.name}:${chord.id}`, chord] as [string, typeof chord])
-    );
-  const noteEvents = (snapshot: ArrangementRevisionSnapshot | null) =>
-    (snapshot?.sections ?? []).flatMap((section) => [
-      ...(section.midiNotes ?? []).map((note) =>
-        [`${section.name}:legacy:${note.id}`, note] as [string, typeof note]
-      ),
-      ...Object.entries(section.midiTracks ?? {}).flatMap(([trackName, editor]) =>
-        editor.notes.map((note) =>
-          [`${section.name}:${trackName}:${note.id}`, note] as [string, typeof note]
-        )
-      ),
-    ]);
-  const conductorControls = [
-    ["name", "Name"],
-    ["harmonyComplexity", "Harmony complexity"],
-    ["energy", "Energy"],
-    ["density", "Density"],
-    ["orchestraSize", "Orchestra size"],
-    ["rhythmIntensity", "Rhythm intensity"],
-  ] as const;
-  return {
-    affectedSections,
-    affectedTracks: [...affectedTracks].sort(),
-    chordChanges: changedEventCount(chordEvents(before), chordEvents(after)),
-    noteChanges: changedEventCount(noteEvents(before), noteEvents(after)),
-    conductorControls: conductorControls
-      .filter(([key]) => before === null || before[key] !== after[key])
-      .map(([, label]) => label),
-    candidateSelectionChanged:
-      before !== null && before.selectedCandidateId !== after.selectedCandidateId,
-  };
-}
-
 const arrangementRevisionResponse = (
   revision: typeof arrangementRevisionsTable.$inferSelect,
 ) => ({
@@ -411,6 +332,8 @@ const arrangementRevisionResponse = (
   },
   summary: {
     ...revision.summary,
+    trackMembershipChanges: revision.summary.trackMembershipChanges ?? 0,
+    ccChanges: revision.summary.ccChanges ?? 0,
     candidateSelectionChanged: revision.summary.candidateSelectionChanged ?? false,
   },
   createdAt: iso(revision.createdAt),
@@ -1750,15 +1673,40 @@ router.patch("/projects/:projectId/song-model", async (req, res): Promise<void> 
     }
   }
 
+  const sectionsChanged = correction.sections !== undefined &&
+    JSON.stringify(correction.sections.map(({ name, startBar, endBar }) => ({
+      name,
+      startBar,
+      endBar,
+    }))) !== JSON.stringify(latest.model.sections.map(({ name, startBar, endBar }) => ({
+      name,
+      startBar,
+      endBar,
+    })));
+  const hasCorrection = (
+    (correction.bpm !== undefined && correction.bpm !== latest.model.tempoMap[0]?.bpm) ||
+    (correction.key !== undefined && correction.key !== latest.model.keyMap[0]?.key) ||
+    (correction.meter !== undefined && correction.meter !== latest.model.meterMap[0]?.meter) ||
+    sectionsChanged
+  );
+  if (!hasCorrection) {
+    res.status(400).json({ error: "Song Model corrections must change at least one value" });
+    return;
+  }
   const fields = (["bpm", "key", "meter", "sections"] as const)
-    .filter((field) => correction[field] !== undefined);
+    .filter((field) =>
+      field === "bpm" ? correction.bpm !== undefined && correction.bpm !== latest.model.tempoMap[0]?.bpm :
+      field === "key" ? correction.key !== undefined && correction.key !== latest.model.keyMap[0]?.key :
+      field === "meter" ? correction.meter !== undefined && correction.meter !== latest.model.meterMap[0]?.meter :
+      sectionsChanged,
+    );
   const now = new Date();
   const existingTempo = latest.model.tempoMap[0];
   const existingKey = latest.model.keyMap[0];
   const existingMeter = latest.model.meterMap[0];
   const editedFieldStatus = {
     ...latest.model.fieldStatus,
-    ...(correction.bpm === undefined
+    ...(!fields.includes("bpm")
       ? {}
       : {
           tempo: {
@@ -1770,7 +1718,7 @@ router.patch("/projects/:projectId/song-model", async (req, res): Promise<void> 
             edited: true,
           },
         }),
-    ...(correction.key === undefined
+    ...(!fields.includes("key")
       ? {}
       : {
           key: {
@@ -1782,7 +1730,7 @@ router.patch("/projects/:projectId/song-model", async (req, res): Promise<void> 
             edited: true,
           },
         }),
-    ...(correction.meter === undefined
+    ...(!fields.includes("meter")
       ? {}
       : {
           meter: {
@@ -1794,7 +1742,7 @@ router.patch("/projects/:projectId/song-model", async (req, res): Promise<void> 
             edited: true,
           },
         }),
-    ...(correction.sections === undefined
+    ...(!fields.includes("sections")
       ? {}
       : {
           sections: {
@@ -1807,16 +1755,16 @@ router.patch("/projects/:projectId/song-model", async (req, res): Promise<void> 
           },
         }),
   };
-  const correctedModel: SongModelData = {
+  const correctedModelDraft: SongModelData = {
     ...latest.model,
     fieldStatus: editedFieldStatus,
-    ...(correction.bpm === undefined
+    ...(!fields.includes("bpm")
       ? {}
       : {
           tempoMap: [
             {
               time: existingTempo?.time ?? 0,
-              bpm: correction.bpm,
+              bpm: correction.bpm!,
               confidence: existingTempo?.confidence
                 ?? latest.model.confidenceByField.tempo
                 ?? latest.confidence,
@@ -1824,13 +1772,13 @@ router.patch("/projects/:projectId/song-model", async (req, res): Promise<void> 
             ...latest.model.tempoMap.slice(1),
           ],
         }),
-    ...(correction.key === undefined
+    ...(!fields.includes("key")
       ? {}
       : {
           keyMap: [
             {
               time: existingKey?.time ?? 0,
-              key: correction.key,
+              key: correction.key!,
               confidence: existingKey?.confidence
                 ?? latest.model.confidenceByField.key
                 ?? latest.confidence,
@@ -1838,13 +1786,13 @@ router.patch("/projects/:projectId/song-model", async (req, res): Promise<void> 
             ...latest.model.keyMap.slice(1),
           ],
         }),
-    ...(correction.meter === undefined
+    ...(!fields.includes("meter")
       ? {}
       : {
           meterMap: [
             {
               bar: existingMeter?.bar ?? 1,
-              meter: correction.meter,
+              meter: correction.meter!,
               confidence: existingMeter?.confidence
                 ?? latest.model.confidenceByField.meter
                 ?? latest.confidence,
@@ -1852,15 +1800,16 @@ router.patch("/projects/:projectId/song-model", async (req, res): Promise<void> 
             ...latest.model.meterMap.slice(1),
           ],
         }),
-    ...(correction.sections === undefined
+    ...(!fields.includes("sections")
       ? {}
       : {
-          sections: correction.sections.map((section, index) => ({
+          sections: correction.sections!.map((section, index) => ({
             ...section,
             energy: latest.model.sections[index].energy,
           })),
         }),
   };
+  const correctedModel = refreshSongModelValidation(correctedModelDraft);
 
   const created = await db.transaction(async (tx) => {
     await tx.execute(
@@ -1903,12 +1852,10 @@ router.patch("/projects/:projectId/song-model", async (req, res): Promise<void> 
       .update(musicProjectsTable)
       .set({
         ownerId: project.ownerId ?? req.user.id,
-        ...(correction.bpm === undefined ? {} : { bpm: correction.bpm }),
-        ...(correction.key === undefined ? {} : { key: correction.key }),
-        ...(correction.meter === undefined ? {} : { meter: correction.meter }),
-        ...(correctedModel.sections === latest.model.sections
-          ? {}
-          : { sections: correctedModel.sections }),
+        ...(!fields.includes("bpm") ? {} : { bpm: correction.bpm! }),
+        ...(!fields.includes("key") ? {} : { key: correction.key! }),
+        ...(!fields.includes("meter") ? {} : { meter: correction.meter! }),
+        ...(!fields.includes("sections") ? {} : { sections: correctedModel.sections }),
         updatedAt: now,
       })
       .where(eq(musicProjectsTable.id, project.id));
@@ -2126,6 +2073,9 @@ router.patch("/arrangements/:arrangementId", async (req, res): Promise<void> => 
     eq(arrangementsTable.version, expectedVersion),
   );
   const result = await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${params.data.arrangementId}))`,
+    );
     const [before] = await tx
       .select()
       .from(arrangementsTable)
@@ -2199,6 +2149,9 @@ router.post(
       return;
     }
     const result = await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${params.data.arrangementId}))`,
+      );
       const [revision] = await tx
         .select()
         .from(arrangementRevisionsTable)
@@ -2928,6 +2881,12 @@ router.post("/projects/:projectId/export", async (req, res): Promise<void> => {
       seed: arrangement.seed ?? undefined,
       generationProvider: arrangement.generationProvenance?.provider ??
         arrangement.generationProvider ?? "ARRANGEMENT_ENGINE",
+      generationModelVersion: arrangement.generationProvenance?.modelVersion ??
+        arrangement.modelVersion ?? undefined,
+      candidateId: arrangement.generationProvenance?.candidateId ??
+        arrangement.sourceCandidateId ?? undefined,
+      providerRequestId: arrangement.generationProvenance?.providerRequestId ??
+        undefined,
       parentIds: renderParents.length ? renderParents : [planArtifact.id],
       planArtifactId: planArtifact.id,
       planParentIds: planArtifact.parentIds,
@@ -2971,7 +2930,17 @@ router.post("/projects/:projectId/export", async (req, res): Promise<void> => {
         parentIds: fileAllocations.get(file.name)!.parentIds,
         createdBy: "export-engine",
         modelVersion: "EXPORT_ENGINE@2.0.0",
-        parameters: { arrangementId: arrangement.id, exportId: allocation.exportId },
+        parameters: {
+          arrangementId: arrangement.id,
+          exportId: allocation.exportId,
+          generationProvider: arrangement.generationProvenance?.provider ??
+            arrangement.generationProvider ?? "ARRANGEMENT_ENGINE",
+          generationModelVersion: arrangement.generationProvenance?.modelVersion ??
+            arrangement.modelVersion ?? "unknown",
+          generationCandidateId: arrangement.generationProvenance?.candidateId ??
+            arrangement.sourceCandidateId ?? "none",
+          seed: arrangement.seed ?? 0,
+        },
         storageUri: bundle.package.url,
         provider: arrangement.generationProvenance?.provider ??
           arrangement.generationProvider ?? "ARRANGEMENT_ENGINE",

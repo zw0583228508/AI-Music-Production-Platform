@@ -14,7 +14,7 @@ await build({
         createStyleSpec,
         renderMusicPipeline,
       } from "./src/lib/musicEngines";
-      export { rankEvaluatedCandidates } from "./src/lib/candidateRanking";
+      export { hasCompleteQualityEvidence, isSelectableCandidate, rankEvaluatedCandidates } from "./src/lib/candidateRanking";
     `,
     resolveDir: apiDirectory,
     sourcefile: "candidate-quality-harness.ts",
@@ -29,6 +29,8 @@ const {
   createStyleSpec,
   renderMusicPipeline,
   rankEvaluatedCandidates,
+  hasCompleteQualityEvidence,
+  isSelectableCandidate,
 } =
   await import(pathToFileURL(bundlePath).href);
 after(() => unlink(bundlePath).catch(() => undefined));
@@ -250,8 +252,26 @@ test("failed quality evidence is unranked regardless of provider score", () => {
       status: "evaluated",
       providerScore,
       renderArtifactIds: ["audio", "midi"],
-      artifacts: [],
-      qualityReport: {},
+      artifacts: [
+        { id: "audio", type: "AUDIO_TRACK", label: "Audio", url: "export-object://audio" },
+        { id: "midi", type: "MIDI", label: "MIDI", url: "export-object://midi" },
+        { id: "quality", type: "QUALITY_REPORT", label: "Quality", url: "export-object://quality" },
+      ],
+      qualityReport: {
+        score,
+        checks: {
+          silence: 1, clipping: 1, notePlayability: 1, timing: 1,
+          sectionCoverage: 1, lineage: 1,
+        },
+        weights: {
+          silence: 0.15, clipping: 0.15, notePlayability: 0.2, timing: 0.15,
+          sectionCoverage: 0.15, lineage: 0.2,
+        },
+        strengths: [], weaknesses: [], warnings: [],
+        evaluatedAt: "2026-08-30T00:00:00.000Z",
+        renderArtifactIds: ["audio", "midi"],
+        lineageComplete: true,
+      },
       error: null,
     },
   });
@@ -262,7 +282,11 @@ test("failed quality evidence is unranked regardless of provider score", () => {
       status: "analysis_failed",
       providerScore: 0.99,
       renderArtifactIds: [],
-      artifacts: [],
+      artifacts: [
+        { id: "audio", type: "AUDIO_TRACK", label: "Audio", url: "export-object://audio" },
+        { id: "midi", type: "MIDI", label: "MIDI", url: "export-object://midi" },
+        { id: "quality", type: "QUALITY_REPORT", label: "Quality", url: "export-object://quality" },
+      ],
       qualityReport: null,
       error: "quality unavailable",
     },
@@ -280,4 +304,31 @@ test("failed quality evidence is unranked regardless of provider score", () => {
       { label: "provider favorite without evidence", rank: null },
     ],
   );
+});
+
+test("an evaluated row without complete quality evidence is unranked", () => {
+  const incomplete = {
+    status: "evaluated",
+    providerScore: 1,
+    renderArtifactIds: ["audio", "midi"],
+    artifacts: [
+      { id: "audio", type: "AUDIO_TRACK", label: "Audio", url: "export-object://audio" },
+      { id: "midi", type: "MIDI", label: "MIDI", url: "export-object://midi" },
+    ],
+    qualityReport: {
+      score: 1, checks: {}, weights: {}, strengths: [], weaknesses: [], warnings: [],
+      evaluatedAt: "2026-08-30T00:00:00.000Z", renderArtifactIds: ["audio", "midi"],
+      lineageComplete: false,
+    },
+    error: null,
+  };
+  assert.equal(hasCompleteQualityEvidence(incomplete), false);
+  assert.equal(rankEvaluatedCandidates([{ score: 1, evaluation: incomplete }])[0].rank, null);
+  assert.equal(isSelectableCandidate({
+    status: "validated",
+    evaluation: incomplete,
+    trackModels: [],
+    evaluatedPlan: {},
+    evaluatedStyleSpec: {},
+  }), false);
 });

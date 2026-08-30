@@ -123,6 +123,7 @@ export function SongModelInspector({ projectId }: SongModelInspectorProps) {
     endBar: string;
   }>>([]);
   const [correctionError, setCorrectionError] = useState<string | null>(null);
+  const [correctionNotice, setCorrectionNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (latestSource?.status !== "ready" || readySourceRef.current === latestSource.id) return;
@@ -192,6 +193,10 @@ export function SongModelInspector({ projectId }: SongModelInspectorProps) {
       setCorrectionError("Section names and ordered, non-overlapping bar boundaries are required.");
       return;
     }
+    if (normalizedSections.length !== model.sections.length) {
+      setCorrectionError("Section corrections must retain the detected section count.");
+      return;
+    }
     const data: {
       baseVersion: number;
       bpm?: number;
@@ -202,7 +207,7 @@ export function SongModelInspector({ projectId }: SongModelInspectorProps) {
     if (parsedBpm !== model.tempoMap[0]?.bpm) data.bpm = parsedBpm;
     if (key.trim() !== (model.keyMap[0]?.key ?? "")) data.key = key.trim();
     if (meter !== (model.meterMap[0]?.meter ?? "")) data.meter = meter;
-    if (normalizedSections.some((section, index) => {
+    if (normalizedSections.length !== model.sections.length || normalizedSections.some((section, index) => {
       const current = model.sections[index];
       return !current ||
         section.name !== current.name ||
@@ -216,9 +221,22 @@ export function SongModelInspector({ projectId }: SongModelInspectorProps) {
       return;
     }
     setCorrectionError(null);
+    setCorrectionNotice(null);
     correctModel.mutate({ projectId, data }, {
-      onSuccess: () => {
-        void queryClient.invalidateQueries({ queryKey: getGetProjectSongModelQueryKey(projectId) });
+      onSuccess: (corrected) => {
+        queryClient.setQueryData(
+          getGetProjectSongModelQueryKey(projectId),
+          corrected,
+        );
+        setBpm(corrected.tempoMap[0]?.bpm?.toString() ?? "");
+        setKey(corrected.keyMap[0]?.key ?? "");
+        setMeter(corrected.meterMap[0]?.meter ?? "");
+        setSections(corrected.sections.map((section) => ({
+          name: section.name,
+          startBar: section.startBar.toString(),
+          endBar: section.endBar.toString(),
+        })));
+        setCorrectionNotice(`Saved Song Model v${corrected.version}.`);
         void queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(projectId) });
       },
       onError: (error) => {
@@ -602,7 +620,7 @@ export function SongModelInspector({ projectId }: SongModelInspectorProps) {
         <CardHeader className="p-4 pb-2">
           <CardTitle className="text-sm">Correct before arranging</CardTitle>
           <p className="text-xs font-normal text-muted-foreground">
-            Saves an auditable Song Model version while retaining detected provider provenance.
+            Correct misheard tempo, key, meter, or section labels and boundaries. Saves an auditable Song Model version while retaining detected provider provenance.
           </p>
         </CardHeader>
         <CardContent className="space-y-4 p-4 pt-0">
@@ -630,9 +648,10 @@ export function SongModelInspector({ projectId }: SongModelInspectorProps) {
               </div>
             ))}
           </div>
-          {correctionError && <p className="text-xs text-destructive">{correctionError}</p>}
+          {correctionError && <p className="text-xs text-destructive" role="alert">{correctionError}</p>}
+          {correctionNotice && <p className="text-xs text-emerald-600" role="status">{correctionNotice}</p>}
           <div className="flex justify-end">
-            <Button onClick={saveCorrections} disabled={correctModel.isPending}>
+            <Button onClick={saveCorrections} disabled={correctModel.isPending} data-testid="button-save-song-model-corrections">
               {correctModel.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Save corrections
             </Button>

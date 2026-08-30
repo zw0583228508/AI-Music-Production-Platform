@@ -35,6 +35,9 @@ import {
 import { execFile, spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { logger } from "./logger";
+import { isEffectivelySilent } from "./audioSignal";
+
+export { isEffectivelySilent };
 
 const execFileAsync = promisify(execFile);
 const activeSourceJobs = new Set<string>();
@@ -254,32 +257,6 @@ function energyCurve(samples: Float32Array, bins = 24): number[] {
   });
   const max = Math.max(...values, 0.0001);
   return values.map((value) => Number(Math.min(1, value / max).toFixed(3)));
-}
-
-/**
- * Treat decoded PCM as silent only when both its overall level and its peak
- * are far below normal recording levels. Requiring both measurements keeps a
- * quiet recording (or one with a short audible transient) from being rejected,
- * while catching empty decodes and codec-level digital silence deterministically.
- */
-export function isEffectivelySilent(samples: Float32Array): boolean {
-  if (samples.length === 0) return true;
-
-  let sumOfSquares = 0;
-  let peak = 0;
-  let finiteSamples = 0;
-  for (const sample of samples) {
-    if (!Number.isFinite(sample)) continue;
-    const magnitude = Math.abs(sample);
-    peak = Math.max(peak, magnitude);
-    sumOfSquares += sample * sample;
-    finiteSamples += 1;
-  }
-
-  if (finiteSamples === 0) return true;
-  const rms = Math.sqrt(sumOfSquares / finiteSamples);
-  // -90 dBFS RMS and -66 dBFS peak: well below a normally quiet recording.
-  return rms < 0.000_032 && peak < 0.000_5;
 }
 
 function estimateBpm(samples: Float32Array, sampleRate: number): number {
@@ -964,19 +941,40 @@ export async function analyzeProjectSource(
     return;
   }
   const attemptStartedAt = attempt.startedAt ?? new Date();
-  const [job] = await db.update(analysisJobsTable)
-    .set({
-      status: "running",
-      stage: "downloading",
-      progress: 8,
-      error: null,
-      workerId: attempt.id,
-      leaseExpiresAt: leaseDeadline(),
-      startedAt: attemptStartedAt,
-      finishedAt: null,
-    })
-    .where(eq(analysisJobsTable.id, attempt.id))
-    .returning();
+  // Claim both records atomically.  The source lease is authoritative for an
+  // analysis attempt; without this fence a stale process that read the source
+  // just before recovery could still start its old analysis job and publish a
+  // competing Song Model.
+  const job = await db.transaction(async (tx) => {
+    const now = new Date();
+    const [ownedSource] = await tx.update(projectSourcesTable)
+      .set({ analysisLeaseExpiresAt: leaseDeadline(now), updatedAt: now })
+      .where(and(
+        eq(projectSourcesTable.id, source.id),
+        eq(projectSourcesTable.analysisLeaseId, attempt.id),
+        gt(projectSourcesTable.analysisLeaseExpiresAt, now),
+      ))
+      .returning({ id: projectSourcesTable.id });
+    if (!ownedSource) return null;
+    const [claimedJob] = await tx.update(analysisJobsTable)
+      .set({
+        status: "running",
+        stage: "downloading",
+        progress: 8,
+        error: null,
+        workerId: attempt.id,
+        leaseExpiresAt: leaseDeadline(now),
+        startedAt: attemptStartedAt,
+        finishedAt: null,
+      })
+      .where(and(
+        eq(analysisJobsTable.id, attempt.id),
+        eq(analysisJobsTable.workerId, attempt.id),
+        eq(analysisJobsTable.status, "queued"),
+      ))
+      .returning();
+    return claimedJob ?? null;
+  });
   if (!job) {
     activeSourceJobs.delete(sourceId);
     return;
@@ -985,6 +983,7 @@ export async function analyzeProjectSource(
   const ownedLease = () => and(
     eq(analysisJobsTable.id, attempt.id),
     eq(analysisJobsTable.workerId, attempt.id),
+    eq(analysisJobsTable.leaseVersion, job.leaseVersion),
     eq(analysisJobsTable.status, "running"),
     gt(analysisJobsTable.leaseExpiresAt, new Date()),
   );
@@ -1117,8 +1116,15 @@ export async function analyzeProjectSource(
       ], { encoding: "buffer", maxBuffer: 16 * 1024 * 1024 });
       samples = new Float32Array(pcmBuffer.buffer, pcmBuffer.byteOffset, Math.floor(pcmBuffer.byteLength / 4));
       await updateOwnedStage("validating_audio", 56);
-      if (isEffectivelySilent(samples)) throw new Error("No audible audio was detected in this upload. Please upload a recording with audible sound.");
-      waveform = await fullDurationEnergy(inputPath, durationSeconds);
+      const overview = await fullDurationEnergy(inputPath, durationSeconds);
+      // The detailed analysis window is deliberately capped. Do not reject a
+      // long recording just because its audible material is outside that
+      // representative window; reject only when both it and the complete
+      // decode contain no audible signal.
+      if (isEffectivelySilent(samples) && overview.isEffectivelySilent) {
+        throw new Error("No audible audio was detected in this upload. Please upload a recording with audible sound.");
+      }
+      waveform = overview.values;
       const normalizedPath = join(directory, "normalized.flac");
       await execFileAsync("ffmpeg", ["-v", "error", "-i", inputPath, "-map", "0:a:0", "-c:a", "flac", normalizedPath]);
       normalizedChecksum = await fingerprintFile(normalizedPath);
@@ -1841,7 +1847,9 @@ function parseMidi(path: string): Promise<MidiModelData> {
         else {
           const command = status >> 4; const channel = status & 15; const dataLength = command === 0xc || command === 0xd ? 1 : 2;
           const data = [...bytes.subarray(offset, offset + dataLength)]; offset += dataLength;
-          if ((command === 0x9 && data[1] > 0) || command === 0x8) {
+          // A note-on with velocity zero is the MIDI-standard shorthand for
+          // note-off and is emitted by many DAWs.
+          if (command === 0x9 || command === 0x8) {
             const identity = `${currentTrack}:${channel}:${data[0]}`;
             if (command === 0x9 && data[1] > 0) {
               const notes = active.get(identity) ?? [];
@@ -1908,18 +1916,47 @@ function parseMidi(path: string): Promise<MidiModelData> {
 
 const midiKeyNames = ["C", "G", "D", "A", "E", "B", "F♯", "C♯", "A♭", "E♭", "B♭", "F"];
 
-async function fullDurationEnergy(path: string, durationSeconds: number): Promise<number[]> {
+async function fullDurationEnergy(
+  path: string,
+  durationSeconds: number,
+): Promise<{ values: number[]; isEffectivelySilent: boolean }> {
   const bins = Math.max(24, Math.min(1_280, Math.ceil(durationSeconds / 2)));
   const sums = new Array<number>(bins).fill(0); const counts = new Array<number>(bins).fill(0);
+  let sumOfSquares = 0;
+  let peak = 0;
+  let finiteSamples = 0;
   await new Promise<void>((resolve, reject) => {
     const child = spawn("ffmpeg", ["-v", "error", "-i", path, "-ac", "1", "-ar", "200", "-f", "f32le", "pipe:1"]);
     let carry = Buffer.alloc(0); let sample = 0;
-    child.stdout.on("data", (chunk: Buffer) => { const data = Buffer.concat([carry, chunk]); const complete = data.length - data.length % 4; for (let i = 0; i < complete; i += 4, sample++) { const bin = Math.min(bins - 1, Math.floor(sample / Math.max(1, durationSeconds * 200) * bins)); const value = data.readFloatLE(i); if (Number.isFinite(value)) { sums[bin] += value * value; counts[bin]++; } } carry = data.subarray(complete); });
+    child.stdout.on("data", (chunk: Buffer) => {
+      const data = Buffer.concat([carry, chunk]);
+      const complete = data.length - data.length % 4;
+      for (let i = 0; i < complete; i += 4, sample++) {
+        const bin = Math.min(
+          bins - 1,
+          Math.floor(sample / Math.max(1, durationSeconds * 200) * bins),
+        );
+        const value = data.readFloatLE(i);
+        if (Number.isFinite(value)) {
+          const squared = value * value;
+          sums[bin] += squared;
+          counts[bin]++;
+          sumOfSquares += squared;
+          peak = Math.max(peak, Math.abs(value));
+          finiteSamples++;
+        }
+      }
+      carry = data.subarray(complete);
+    });
     child.once("error", reject); child.once("close", (code) => code === 0 ? resolve() : reject(new Error("Unable to decode audio overview")));
   });
   const raw = sums.map((sum, index) => Math.sqrt(sum / Math.max(1, counts[index])));
   const max = Math.max(...raw, 0.0001);
-  return raw.map((value) => Number(Math.min(1, value / max).toFixed(3)));
+  const rms = finiteSamples ? Math.sqrt(sumOfSquares / finiteSamples) : 0;
+  return {
+    values: raw.map((value) => Number(Math.min(1, value / max).toFixed(3))),
+    isEffectivelySilent: finiteSamples === 0 || (rms < 0.000_032 && peak < 0.000_5),
+  };
 }
 
 type MidiModelData = {

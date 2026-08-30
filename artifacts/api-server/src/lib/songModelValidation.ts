@@ -777,6 +777,17 @@ export function validateCanonicalSongModel(input: unknown): ValidationResult<Son
     : { success: true, data: input as SongModelData, issues };
 }
 
+export function refreshSongModelValidation(model: SongModelData): SongModelData {
+  const validation = validateSongModelCore(model);
+  return {
+    ...model,
+    validation: {
+      status: validation.issues.length ? "flagged" : "accepted",
+      issues: validation.issues,
+    },
+  };
+}
+
 export type ArrangementEligibility =
   | { eligible: true; model: SongModelData }
   | {

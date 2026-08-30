@@ -15,6 +15,7 @@ import {
   renderMusicPipeline,
   type RenderedTrack,
 } from "./musicEngines";
+import { validateCanonicalTrackModels } from "./musicProviders";
 
 export type ExportTrack = {
   id: string;
@@ -468,6 +469,9 @@ export async function renderArrangementExport(input: {
   styleSpec: StyleSpec;
   seed?: number;
   generationProvider: string;
+  generationModelVersion?: string;
+  candidateId?: string;
+  providerRequestId?: string;
   parentIds: string[];
   planArtifactId?: string;
   planParentIds?: string[];
@@ -518,6 +522,13 @@ export async function renderArrangementExport(input: {
     durationSeconds: authoritativeDuration,
     sampleRate: SAMPLE_RATE,
   });
+  const playabilityErrors = validateCanonicalTrackModels(
+    pipeline.tracks.map((track) => track.trackModel),
+    activeTracks.map((track) => track.id),
+  );
+  if (playabilityErrors.length) {
+    throw new Error(`Export refused unplayable TrackModels: ${playabilityErrors.join("; ")}`);
+  }
   const sfizzRenderer = new SfzRenderer();
   const pedalboardRenderer = new PedalboardRenderer();
   if (sfizzRenderer.isConfigured() || pedalboardRenderer.isConfigured()) {
@@ -546,7 +557,18 @@ export async function renderArrangementExport(input: {
     }));
     const mix = new MixGraph().mix(remoteTracks, input.styleSpec, Math.ceil(SAMPLE_RATE * pipeline.durationSeconds));
     const mastered = new MasterEngine().process(mix, input.masterProfile);
-    const quality = new QualityEngine().assess(remoteTracks.map((track) => track.trackModel), mix, input.plan);
+    const quality = new QualityEngine().assess(
+      remoteTracks.map((track) => track.trackModel),
+      mix,
+      input.plan,
+      {
+        lineageComplete: pipeline.quality.lineageComplete,
+        renderArtifactIds: pipeline.quality.renderArtifactIds,
+        evaluatedAt: pipeline.quality.evaluatedAt,
+        bpm: input.bpm,
+        meter: input.meter,
+      },
+    );
     pipeline = {
       ...pipeline,
       tracks: remoteTracks,
@@ -576,7 +598,14 @@ export async function renderArrangementExport(input: {
   ): ArtifactProvenance => ({
     model,
     version,
-    parameters,
+    parameters: {
+      ...parameters,
+      generationProvider: input.generationProvider,
+      generationModelVersion: input.generationModelVersion ?? "unknown",
+      seed: input.seed ?? 0,
+      ...(input.candidateId ? { candidateId: input.candidateId } : {}),
+      ...(input.providerRequestId ? { providerRequestId: input.providerRequestId } : {}),
+    },
     parentIds,
     createdBy: "export-engine",
   });
@@ -718,6 +747,16 @@ export async function renderArrangementExport(input: {
         parentIds,
       };
     }),
+    generation: {
+      provider: input.generationProvider,
+      modelVersion: input.generationModelVersion ?? null,
+      candidateId: input.candidateId ?? null,
+      providerRequestId: input.providerRequestId ?? null,
+      seed: input.seed ?? null,
+      parentArtifactIds: input.parentIds,
+      planArtifactId: input.planArtifactId ?? null,
+      trackModelArtifactIds: input.trackModelArtifactIds ?? {},
+    },
     generationProvider: input.generationProvider,
   };
   files.push({

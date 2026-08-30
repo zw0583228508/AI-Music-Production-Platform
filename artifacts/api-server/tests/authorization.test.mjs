@@ -275,6 +275,55 @@ async function createRaceUpload(label) {
   return { raceProjectId, reservation };
 }
 
+test("competing arrangement save and restore requests preserve one append-only successor", async () => {
+  const competingArrangementId = `revision-race-${process.pid}`;
+  await db.insert(arrangementsTable).values({
+    id: competingArrangementId,
+    projectId,
+    name: "Revision race",
+    style: "Test",
+    mode: "STUDIO",
+    sections: [],
+  });
+  const revisionsResponse = await request(
+    `/api/arrangements/${competingArrangementId}/revisions`,
+    ownerSession,
+  );
+  assert.equal(revisionsResponse.status, 200);
+  const revisions = await revisionsResponse.json();
+  const initialRevision = revisions.find((revision) => revision.version === 1);
+  assert.ok(initialRevision);
+
+  const [saveResponse, restoreResponse] = await Promise.all([
+    request(`/api/arrangements/${competingArrangementId}`, ownerSession, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ energy: 0.72, expectedVersion: 1 }),
+    }),
+    request(
+      `/api/arrangements/${competingArrangementId}/revisions/${initialRevision.id}/restore`,
+      ownerSession,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expectedVersion: 1 }),
+      },
+    ),
+  ]);
+  assert.deepEqual(
+    [saveResponse.status, restoreResponse.status].sort(),
+    [200, 409],
+  );
+
+  const historyResponse = await request(
+    `/api/arrangements/${competingArrangementId}/revisions`,
+    ownerSession,
+  );
+  assert.equal(historyResponse.status, 200);
+  const history = await historyResponse.json();
+  assert.deepEqual(history.map((revision) => revision.version), [2, 1]);
+});
+
 function putReservedSource(reservation) {
   return request(reservation.uploadURL, ownerSession, {
     method: "PUT",
@@ -396,6 +445,20 @@ test("project and export endpoints enforce owner authorization", async () => {
 
   assert.equal((await request(`/api/projects/${projectId}`, ownerSession)).status, 200);
   assert.equal((await request(`/api/projects/${projectId}`, otherSession)).status, 404);
+  assert.equal(
+    (await request(`/api/arrangements/${arrangementId}`, null, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expectedVersion: 1, name: "Anonymous edit" }),
+    })).status,
+    401,
+  );
+  assert.equal(
+    (await request(`/api/arrangements/${arrangementId}/export`, null, {
+      method: "POST",
+    })).status,
+    401,
+  );
 
   const [beforeCrossOwnerEdit] = await db
     .select({ sections: arrangementsTable.sections })
@@ -426,6 +489,18 @@ test("project and export endpoints enforce owner authorization", async () => {
     .from(arrangementsTable)
     .where(eq(arrangementsTable.id, arrangementId));
   assert.deepEqual(afterCrossOwnerEdit.sections, beforeCrossOwnerEdit.sections);
+
+  const ownerEdit = await request(
+    `/api/arrangements/${arrangementId}`,
+    ownerSession,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expectedVersion: 1, name: "Owner edit" }),
+    },
+  );
+  assert.equal(ownerEdit.status, 200);
+  assert.equal((await ownerEdit.json()).name, "Owner edit");
 
   const crossUserExport = await request(`/api/projects/${projectId}/export`, otherSession, {
     method: "POST",

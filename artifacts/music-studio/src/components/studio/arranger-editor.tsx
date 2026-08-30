@@ -1137,6 +1137,16 @@ export function ArrangerEditor({
                             {rev.summary.noteChanges} notes
                           </Badge>
                         )}
+                        {rev.summary.ccChanges > 0 && (
+                          <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-4 font-normal bg-background/50 border-muted-foreground/20 text-muted-foreground">
+                            {rev.summary.ccChanges} CC values
+                          </Badge>
+                        )}
+                        {rev.summary.trackMembershipChanges > 0 && (
+                          <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-4 font-normal bg-background/50 border-muted-foreground/20 text-muted-foreground">
+                            {rev.summary.trackMembershipChanges} track {rev.summary.trackMembershipChanges === 1 ? "membership" : "memberships"}
+                          </Badge>
+                        )}
                         {rev.summary.conductorControls?.length > 0 && (
                           <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-4 font-normal bg-background/50 border-muted-foreground/20 text-muted-foreground">
                             {rev.summary.conductorControls.join(', ')}

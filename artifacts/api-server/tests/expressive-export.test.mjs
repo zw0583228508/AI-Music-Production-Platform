@@ -121,6 +121,10 @@ test("expressive export preserves a silent trailing 6/8 section in WAV and MIDI"
     trackModels: [trackModel],
     styleSpec: plan.style,
     generationProvider: "TEST",
+    generationModelVersion: "test-model@2.1",
+    candidateId: "candidate-17",
+    providerRequestId: "provider-request-18",
+    seed: 42,
     parentIds: ["artifact-track-model"],
     planArtifactId: "artifact-plan",
     planParentIds: ["artifact-song-model"],
@@ -134,7 +138,23 @@ test("expressive export preserves a silent trailing 6/8 section in WAV and MIDI"
   const manifest = files.find((file) => file.type === "METADATA");
   assert.ok(master && midi && manifest);
   assert.equal(master.data.length, 44 + 44_100 * 6 * 2 * 2);
-  assert.equal(JSON.parse(manifest.data.toString()).durationSeconds, 6);
+  const manifestData = JSON.parse(manifest.data.toString());
+  assert.equal(manifestData.durationSeconds, 6);
+  assert.deepEqual(manifestData.generation, {
+    provider: "TEST",
+    modelVersion: "test-model@2.1",
+    candidateId: "candidate-17",
+    providerRequestId: "provider-request-18",
+    seed: 42,
+    parentArtifactIds: ["artifact-track-model"],
+    planArtifactId: "artifact-plan",
+    trackModelArtifactIds: { "track-piano": "artifact-track-model" },
+  });
+  assert.equal(master.provenance.parameters.generationProvider, "TEST");
+  assert.equal(master.provenance.parameters.generationModelVersion, "test-model@2.1");
+  assert.equal(master.provenance.parameters.seed, 42);
+  assert.equal(master.provenance.parameters.candidateId, "candidate-17");
+  assert.deepEqual(master.provenance.parentIds, ["artifact-track-model"]);
   const expectedFinalDelta = vlq(6 * 960 - 960);
   assert.notEqual(
     midi.data.indexOf(Buffer.concat([expectedFinalDelta, Buffer.from([0xff, 0x2f, 0x00])])),
@@ -180,6 +200,41 @@ test("saved editor MIDI and CC replace persisted performance data", () => {
   assert.equal(edited[0].articulations[0].name, "sustain");
   assert.equal(edited[0].source, "ARRANGEMENT_EDITOR");
   assert.deepEqual(validateCanonicalTrackModels(edited, ["track-piano"]), []);
+});
+
+test("export rejects unplayable saved TrackModels instead of synthesizing them", async () => {
+  const invalidTrack = {
+    id: "track-bass",
+    instrument: "bass",
+    instrumentDefinition: {
+      id: "bass", family: "strings", playableRange: { min: 28, max: 67 },
+      comfortableRange: { min: 36, max: 60 },
+      registers: [{ name: "full", min: 28, max: 67, character: "balanced" }],
+      polyphonic: false, maxVoices: 1, articulations: ["finger"],
+      constraints: { maxLeap: 12, minNoteDuration: 0.08, maxSimultaneousNotes: 1 },
+      controls: { dynamics: [1], expression: [11], pitchBend: true, aftertouch: false },
+    },
+    role: "bass",
+    notes: [{ id: "impossible", start: 0, duration: 1, pitch: 80, velocity: 90 }],
+    cc: [], articulations: [], automation: [], source: "TEST", version: 1,
+    provenance: { model: "TEST", version: "1", parameters: {}, parentIds: ["plan"], createdBy: "test" },
+  };
+  await assert.rejects(() => renderArrangementExport({
+    projectName: "No fake audio", bpm: 120, key: "C", meter: "4/4",
+    arrangementName: "Invalid", arrangementVersion: 1, masterProfile: "STREAMING",
+    energy: 0.5, density: 0.5, harmonyComplexity: 5, sections: [],
+    tracks: [{ id: "track-bass", name: "Bass", role: "bass", volume: 0, muted: false }],
+    songModel: {
+      audio: { name: "test.wav", contentType: "audio/wav", size: 1, durationSeconds: 2, sampleRate: 44_100, channels: 2 },
+      tempoMap: [{ time: 0, bpm: 120, confidence: 1 }], meterMap: [{ bar: 1, meter: "4/4", confidence: 1 }],
+      keyMap: [{ time: 0, key: "C", confidence: 1 }], melody: [], chords: [], sections: [],
+      energy: [], beats: [], bars: [], dynamics: [], sourceStems: [], lyrics: [], confidenceByField: {}, provenance: [],
+    },
+    plan: { id: "invalid", version: 1, sections: [], style: createStyleSpec("pop", { density: 0.5, harmonyComplexity: 5, energy: 0.5 }), songModelVersion: 1, parameters: {}, provenance: invalidTrack.provenance },
+    trackModels: [invalidTrack], styleSpec: createStyleSpec("pop", { density: 0.5, harmonyComplexity: 5, energy: 0.5 }),
+    generationProvider: "UNAVAILABLE_PROVIDER", parentIds: ["track-artifact"],
+    includeStems: false, includeMidi: false,
+  }), /Export refused unplayable TrackModels/);
 });
 
 test("local generation satisfies every declared instrument constraint", () => {

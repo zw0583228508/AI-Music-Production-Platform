@@ -1612,7 +1612,7 @@ components:
         createdAt: { type: string }
     ArrangementRevisionSummary:
       type: object
-      required: [affectedSections, affectedTracks, chordChanges, noteChanges, conductorControls, candidateSelectionChanged]
+      required: [affectedSections, affectedTracks, trackMembershipChanges, chordChanges, noteChanges, ccChanges, conductorControls, candidateSelectionChanged]
       properties:
         affectedSections:
           type: array
@@ -1620,8 +1620,10 @@ components:
         affectedTracks:
           type: array
           items: { type: string }
+        trackMembershipChanges: { type: number, minimum: 0 }
         chordChanges: { type: number, minimum: 0 }
         noteChanges: { type: number, minimum: 0 }
+        ccChanges: { type: number, minimum: 0 }
         conductorControls:
           type: array
           items: { type: string }

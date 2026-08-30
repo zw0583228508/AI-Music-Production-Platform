@@ -1914,9 +1914,13 @@ export const listArrangementRevisionsResponseSnapshotSectionsItemMidiTracksCcIte
 export const listArrangementRevisionsResponseSnapshotSectionsItemTransposeSemitonesMin = -24;
 export const listArrangementRevisionsResponseSnapshotSectionsItemTransposeSemitonesMax = 24;
 
+export const listArrangementRevisionsResponseSummaryTrackMembershipChangesMin = 0;
+
 export const listArrangementRevisionsResponseSummaryChordChangesMin = 0;
 
 export const listArrangementRevisionsResponseSummaryNoteChangesMin = 0;
+
+export const listArrangementRevisionsResponseSummaryCcChangesMin = 0;
 
 
 
@@ -1984,8 +1988,10 @@ export const ListArrangementRevisionsResponseItem = zod.object({
   "summary": zod.object({
   "affectedSections": zod.array(zod.string()),
   "affectedTracks": zod.array(zod.string()),
+  "trackMembershipChanges": zod.number().min(listArrangementRevisionsResponseSummaryTrackMembershipChangesMin),
   "chordChanges": zod.number().min(listArrangementRevisionsResponseSummaryChordChangesMin),
   "noteChanges": zod.number().min(listArrangementRevisionsResponseSummaryNoteChangesMin),
+  "ccChanges": zod.number().min(listArrangementRevisionsResponseSummaryCcChangesMin),
   "conductorControls": zod.array(zod.string()),
   "candidateSelectionChanged": zod.boolean()
 }),

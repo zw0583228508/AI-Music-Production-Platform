@@ -58,11 +58,13 @@ const ids = {
   arrangement: `generation-arrangement-${process.pid}`,
   queuedArrangement: `queued-generation-arrangement-${process.pid}`,
   unhealthyArrangement: `unhealthy-generation-arrangement-${process.pid}`,
+  duplicateArrangement: `duplicate-generation-arrangement-${process.pid}`,
   job: `generation-job-${process.pid}`,
 };
 let providerServer;
 let stopRecovery;
 let receivedIdempotencyKey;
+const providerRequestCounts = new Map();
 let healthMode = "ready";
 let healthCheckCount = 0;
 
@@ -104,6 +106,10 @@ before(async () => {
       return;
     }
     receivedIdempotencyKey = request.headers["idempotency-key"];
+    providerRequestCounts.set(
+      receivedIdempotencyKey,
+      (providerRequestCounts.get(receivedIdempotencyKey) ?? 0) + 1,
+    );
     request.resume();
     request.on("end", () => {
       response.writeHead(200, { "Content-Type": "application/json" });
@@ -382,4 +388,54 @@ test("an unhealthy runtime replaces the queued health snapshot and retries under
   assert.match(failed.providerRuntime.message, /HTTP 503/);
   assert.equal(failed.attempt, failed.maxAttempts);
   healthMode = "ready";
+});
+
+test("competing incompatible idempotency requests dispatch only one paid generation", async () => {
+  await db.insert(arrangementsTable).values({
+    id: ids.duplicateArrangement,
+    projectId: ids.project,
+    name: "Idempotency fence arrangement",
+    style: "orchestral",
+    mode: "STUDIO",
+    version: 4,
+    sections: [],
+  });
+  const requestKey = `generation-conflict-${process.pid}`;
+  const results = await Promise.allSettled([
+    queueArrangementGeneration(
+      ids.duplicateArrangement,
+      {
+        candidates: 1,
+        provider: "METEOR",
+        task: "ARRANGEMENT",
+        speed: "BALANCED",
+        seed: 101,
+        parameters: { temperature: 0.2 },
+        idempotencyKey: requestKey,
+      },
+      `generation-owner-${process.pid}`,
+    ),
+    queueArrangementGeneration(
+      ids.duplicateArrangement,
+      {
+        candidates: 1,
+        provider: "METEOR",
+        task: "ARRANGEMENT",
+        speed: "BALANCED",
+        seed: 101,
+        parameters: { temperature: 0.8 },
+        idempotencyKey: requestKey,
+      },
+      `generation-owner-${process.pid}`,
+    ),
+  ]);
+  const fulfilled = results.filter((result) => result.status === "fulfilled");
+  const rejected = results.filter((result) => result.status === "rejected");
+  assert.equal(fulfilled.length, 1);
+  assert.equal(rejected.length, 1);
+  assert.match(rejected[0].reason.message, /Idempotency key.*different generation input/);
+
+  const job = await waitForCompletedJob(fulfilled[0].value.id);
+  assert.equal(job.status, "succeeded", job.error ?? "generation failed");
+  assert.equal(providerRequestCounts.get(job.id), 1);
 });

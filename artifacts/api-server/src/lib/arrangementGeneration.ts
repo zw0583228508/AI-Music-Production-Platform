@@ -1,4 +1,5 @@
 import { createHash, randomInt, randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { and, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
 import {
   arrangementsTable,
@@ -40,7 +41,11 @@ import {
 } from "./musicEngines";
 import { createPerformanceMidi, encodeWav } from "./exportEngine";
 import { deleteExportObject, saveExportObject } from "./objectStorage";
-import { rankEvaluatedCandidates } from "./candidateRanking";
+import {
+  hasCompleteQualityEvidence,
+  isSelectableCandidate,
+  rankEvaluatedCandidates,
+} from "./candidateRanking";
 
 const sha256 = (value: string | Buffer): string =>
   createHash("sha256").update(value).digest("hex");
@@ -354,6 +359,15 @@ export async function queueArrangementGeneration(
       seed: input.seed ?? null,
       parameters: input.parameters ?? {},
     })).slice(0, 24)}`).slice(0, 200);
+  // A caller supplied idempotency key is a reservation for one exact paid
+  // request, not a general-purpose "return my last job" key.  In particular,
+  // never let a changed provider, task, seed, or parameters silently reuse a
+  // request that may already have reached a provider.
+  const normalizedParameters = input.parameters ?? {};
+  const normalizedSeed = input.seed === undefined
+    ? null
+    : Math.max(0, Math.min(2_147_483_647, Math.trunc(input.seed)));
+  const requestedCandidates = count;
   const [existingJob] = await db
     .select()
     .from(musicGenerationJobsTable)
@@ -362,11 +376,27 @@ export async function queueArrangementGeneration(
       eq(musicGenerationJobsTable.idempotencyKey, idempotencyKey),
     ))
     .limit(1);
-  if (existingJob) return existingJob;
+  if (existingJob) {
+    const sameRequest =
+      existingJob.task === task &&
+      existingJob.provider === provider.definition.id &&
+      existingJob.modelVersion === provider.definition.modelVersion &&
+      existingJob.hardware === hardware &&
+      existingJob.speed === speed &&
+      existingJob.requestedCandidates === requestedCandidates &&
+      existingJob.songModelVersion === (songModels[0]?.version ?? null) &&
+      existingJob.inputSnapshot.arrangement.version === arrangement.version &&
+      (normalizedSeed === null || existingJob.seed === normalizedSeed) &&
+      isDeepStrictEqual(existingJob.parameters, normalizedParameters);
+    if (!sameRequest) {
+      throw new Error("Idempotency key was already used with different generation input");
+    }
+    return existingJob;
+  }
   const seed =
-    input.seed === undefined
+    normalizedSeed === null
       ? randomInt(1, 2_147_483_647)
-      : Math.max(0, Math.min(2_147_483_647, Math.trunc(input.seed)));
+      : normalizedSeed;
   const relevantArtifacts = artifacts.filter((artifact) =>
     ["SOURCE", "STEM", "SONG_MODEL", "ARRANGEMENT_PLAN", "MIDI"].includes(
       artifact.type,
@@ -410,7 +440,7 @@ export async function queueArrangementGeneration(
       retryable: true,
       requestedCandidates: count,
       seed,
-      parameters: input.parameters ?? {},
+      parameters: normalizedParameters,
       parentArtifactIds,
       inputSnapshot: {
         arrangement: {
@@ -452,6 +482,20 @@ export async function queueArrangementGeneration(
       .limit(1);
     if (!racedJob) {
       throw new Error("Generation job disappeared after idempotent queueing");
+    }
+    const sameRequest =
+      racedJob.task === task &&
+      racedJob.provider === provider.definition.id &&
+      racedJob.modelVersion === provider.definition.modelVersion &&
+      racedJob.hardware === hardware &&
+      racedJob.speed === speed &&
+      racedJob.requestedCandidates === requestedCandidates &&
+      racedJob.songModelVersion === (songModels[0]?.version ?? null) &&
+      racedJob.inputSnapshot.arrangement.version === arrangement.version &&
+      (normalizedSeed === null || racedJob.seed === normalizedSeed) &&
+      isDeepStrictEqual(racedJob.parameters, normalizedParameters);
+    if (!sameRequest) {
+      throw new Error("Idempotency key was already used with different generation input");
     }
     return racedJob;
   }
@@ -569,6 +613,23 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
 
     const snapshot = job.inputSnapshot;
     const evaluationSongModel = normalizeSongModelSnapshot(snapshot.songModel);
+    // Check ownership immediately before the non-transactional provider call.
+    // Provider calls cannot be rolled back, so a recovered worker must not
+    // issue one after a newer lease has fenced it out.
+    const [providerCallOwner] = await db
+      .select({ id: musicGenerationJobsTable.id })
+      .from(musicGenerationJobsTable)
+      .where(and(
+        eq(musicGenerationJobsTable.id, job.id),
+        eq(musicGenerationJobsTable.workerId, workerId),
+        eq(musicGenerationJobsTable.leaseVersion, leaseVersion),
+        eq(musicGenerationJobsTable.status, "running"),
+        gt(musicGenerationJobsTable.leaseExpiresAt, new Date()),
+      ))
+      .limit(1);
+    if (!providerCallOwner || abortController.signal.aborted) {
+      throw new Error("Generation job lease was lost before provider dispatch");
+    }
     const result = await provider.generate(
       {
         jobId: job.id,
@@ -770,8 +831,12 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           "sectionCoverage",
           "lineage",
         ];
+        const renderArtifactIdSet = new Set<string>(renderArtifactIds);
         if (
           !Number.isFinite(pipeline.quality.score) ||
+          !pipeline.quality.lineageComplete ||
+          pipeline.quality.renderArtifactIds.length !== renderArtifactIds.length ||
+          pipeline.quality.renderArtifactIds.some((id) => !renderArtifactIdSet.has(id)) ||
           requiredDimensions.some((name) =>
             !Number.isFinite(pipeline.quality.checks[name]))
         ) {
@@ -942,7 +1007,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
     }
     const ranked = rankEvaluatedCandidates(candidateRows);
     const allEvaluationsFailed = ranked.every((candidate) =>
-      candidate.evaluation.status !== "evaluated");
+      !hasCompleteQualityEvidence(candidate.evaluation));
     const now = new Date();
     await db.transaction(async (tx) => {
       const [completed] = await tx
@@ -1378,9 +1443,7 @@ export async function selectGenerationCandidate(
     return existing ?? null;
   }
   if (
-    candidate.status !== "validated" ||
-    candidate.evaluation.status !== "evaluated" ||
-    candidate.evaluation.qualityReport === null ||
+    !isSelectableCandidate(candidate) ||
     candidate.trackModels === null ||
     candidate.evaluatedPlan === null ||
     candidate.evaluatedStyleSpec === null

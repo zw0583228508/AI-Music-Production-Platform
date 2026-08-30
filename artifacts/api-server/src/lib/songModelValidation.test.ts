@@ -12,6 +12,7 @@ import {
   evaluateArrangementEligibility,
   fuseProviderSongModels,
   isLegacySongModel,
+  refreshSongModelValidation,
   validateCanonicalSongModel,
   validateSongModelCore,
 } from "./songModelValidation";
@@ -47,6 +48,29 @@ test("rejects provider output with missing sections", () => {
   const result = validateSongModelCore(missingSectionsSongModel);
   assert.equal(result.success, false);
   assert.ok(issueCodes(result).includes("MISSING_SECTIONS"));
+});
+
+test("revalidation removes a stale missing-sections issue after correction", () => {
+  const fused = fuseProviderSongModels([
+    { provider: "valid", output: validSongModel, confidence: 0.9 },
+  ]);
+  assert.equal(fused.accepted, true);
+  if (!fused.accepted) return;
+  const stale = {
+    ...fused.model,
+    validation: {
+      status: "flagged" as const,
+      issues: [{
+        code: "MISSING_SECTIONS",
+        severity: "error" as const,
+        path: "sections",
+        message: "At least one structural section is required before arranging.",
+      }],
+    },
+  };
+  const refreshed = refreshSongModelValidation(stale);
+  assert.equal(refreshed.validation.status, "accepted");
+  assert.equal(issueCodes(refreshed.validation).includes("MISSING_SECTIONS"), false);
 });
 
 test("rejects high-confidence chord and melody conflicts", () => {
