@@ -653,6 +653,38 @@ export interface Candidate {
   provider: string;
 }
 
+export type GenerationProvenanceProvider = typeof GenerationProvenanceProvider[keyof typeof GenerationProvenanceProvider];
+
+
+export const GenerationProvenanceProvider = {
+  BS_ROFORMER: 'BS_ROFORMER',
+  ALL_IN_ONE: 'ALL_IN_ONE',
+  MT3: 'MT3',
+  BASIC_PITCH: 'BASIC_PITCH',
+  ACE_STEP: 'ACE_STEP',
+  ANYACCOMP: 'ANYACCOMP',
+  SYMPHONYGEN: 'SYMPHONYGEN',
+  METEOR: 'METEOR',
+} as const;
+
+export type GenerationProvenanceParameters = { [key: string]: unknown };
+
+export interface GenerationProvenance {
+  jobId: string;
+  candidateId: string;
+  provider: GenerationProvenanceProvider;
+  modelVersion: string;
+  /** @nullable */
+  reportedModelVersion?: string | null;
+  /** @nullable */
+  providerRequestId?: string | null;
+  /** @nullable */
+  songModelVersion?: number | null;
+  seed: number;
+  parameters: GenerationProvenanceParameters;
+  parentArtifactIds: string[];
+}
+
 export interface Arrangement {
   id: string;
   projectId: string;
@@ -672,6 +704,11 @@ export interface Arrangement {
   candidates: Candidate[];
   /** @nullable */
   selectedCandidateId: string | null;
+  /** @nullable */
+  sourceGenerationJobId?: string | null;
+  /** @nullable */
+  sourceCandidateId?: string | null;
+  generationProvenance?: GenerationProvenance | null;
   createdAt: string;
 }
 
@@ -863,13 +900,46 @@ export type GenerationInputProvider = typeof GenerationInputProvider[keyof typeo
 
 
 export const GenerationInputProvider = {
-  LOCAL_SYMBOLIC_DIRECTOR_V1: 'LOCAL_SYMBOLIC_DIRECTOR_V1',
-  ACE_STEP_BASE: 'ACE_STEP_BASE',
+  BS_ROFORMER: 'BS_ROFORMER',
+  ALL_IN_ONE: 'ALL_IN_ONE',
+  MT3: 'MT3',
+  BASIC_PITCH: 'BASIC_PITCH',
+  ACE_STEP: 'ACE_STEP',
   ANYACCOMP: 'ANYACCOMP',
   SYMPHONYGEN: 'SYMPHONYGEN',
   METEOR: 'METEOR',
-  CUSTOM: 'CUSTOM',
 } as const;
+
+export type GenerationInputTask = typeof GenerationInputTask[keyof typeof GenerationInputTask];
+
+
+export const GenerationInputTask = {
+  SEPARATION: 'SEPARATION',
+  TRANSCRIPTION: 'TRANSCRIPTION',
+  ACCOMPANIMENT: 'ACCOMPANIMENT',
+  ORCHESTRATION: 'ORCHESTRATION',
+  ARRANGEMENT: 'ARRANGEMENT',
+} as const;
+
+export type GenerationInputHardware = typeof GenerationInputHardware[keyof typeof GenerationInputHardware];
+
+
+export const GenerationInputHardware = {
+  AUTO: 'AUTO',
+  CPU: 'CPU',
+  GPU: 'GPU',
+} as const;
+
+export type GenerationInputSpeed = typeof GenerationInputSpeed[keyof typeof GenerationInputSpeed];
+
+
+export const GenerationInputSpeed = {
+  FAST: 'FAST',
+  BALANCED: 'BALANCED',
+  QUALITY: 'QUALITY',
+} as const;
+
+export type GenerationInputParameters = { [key: string]: unknown };
 
 export interface GenerationInput {
   /**
@@ -878,7 +948,206 @@ export interface GenerationInput {
      */
   candidates?: number;
   provider?: GenerationInputProvider;
+  task?: GenerationInputTask;
+  hardware?: GenerationInputHardware;
+  speed?: GenerationInputSpeed;
   seed?: number;
+  parameters?: GenerationInputParameters;
+}
+
+export type GenerationJobTask = typeof GenerationJobTask[keyof typeof GenerationJobTask];
+
+
+export const GenerationJobTask = {
+  SEPARATION: 'SEPARATION',
+  TRANSCRIPTION: 'TRANSCRIPTION',
+  ACCOMPANIMENT: 'ACCOMPANIMENT',
+  ORCHESTRATION: 'ORCHESTRATION',
+  ARRANGEMENT: 'ARRANGEMENT',
+} as const;
+
+export type GenerationJobStatus = typeof GenerationJobStatus[keyof typeof GenerationJobStatus];
+
+
+export const GenerationJobStatus = {
+  queued: 'queued',
+  running: 'running',
+  succeeded: 'succeeded',
+  failed: 'failed',
+} as const;
+
+export type GenerationJobProvider = typeof GenerationJobProvider[keyof typeof GenerationJobProvider];
+
+
+export const GenerationJobProvider = {
+  BS_ROFORMER: 'BS_ROFORMER',
+  ALL_IN_ONE: 'ALL_IN_ONE',
+  MT3: 'MT3',
+  BASIC_PITCH: 'BASIC_PITCH',
+  ACE_STEP: 'ACE_STEP',
+  ANYACCOMP: 'ANYACCOMP',
+  SYMPHONYGEN: 'SYMPHONYGEN',
+  METEOR: 'METEOR',
+} as const;
+
+export type GenerationJobHardware = typeof GenerationJobHardware[keyof typeof GenerationJobHardware];
+
+
+export const GenerationJobHardware = {
+  AUTO: 'AUTO',
+  CPU: 'CPU',
+  GPU: 'GPU',
+} as const;
+
+export type GenerationJobSpeed = typeof GenerationJobSpeed[keyof typeof GenerationJobSpeed];
+
+
+export const GenerationJobSpeed = {
+  FAST: 'FAST',
+  BALANCED: 'BALANCED',
+  QUALITY: 'QUALITY',
+} as const;
+
+export type GenerationJobParameters = { [key: string]: unknown };
+
+export interface GenerationJob {
+  id: string;
+  projectId: string;
+  arrangementId: string;
+  task: GenerationJobTask;
+  status: GenerationJobStatus;
+  provider: GenerationJobProvider;
+  modelVersion: string;
+  hardware: GenerationJobHardware;
+  speed: GenerationJobSpeed;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  progress: number;
+  stage: string;
+  /** @nullable */
+  providerRequestId?: string | null;
+  requestedCandidates: number;
+  seed: number;
+  parameters: GenerationJobParameters;
+  parentArtifactIds: string[];
+  /** @nullable */
+  error?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** @nullable */
+  completedAt?: string | null;
+}
+
+export type GenerationCandidateProvider = typeof GenerationCandidateProvider[keyof typeof GenerationCandidateProvider];
+
+
+export const GenerationCandidateProvider = {
+  BS_ROFORMER: 'BS_ROFORMER',
+  ALL_IN_ONE: 'ALL_IN_ONE',
+  MT3: 'MT3',
+  BASIC_PITCH: 'BASIC_PITCH',
+  ACE_STEP: 'ACE_STEP',
+  ANYACCOMP: 'ANYACCOMP',
+  SYMPHONYGEN: 'SYMPHONYGEN',
+  METEOR: 'METEOR',
+} as const;
+
+export type GenerationCandidateStatus = typeof GenerationCandidateStatus[keyof typeof GenerationCandidateStatus];
+
+
+export const GenerationCandidateStatus = {
+  validated: 'validated',
+  selected: 'selected',
+  rejected: 'rejected',
+} as const;
+
+export type GenerationCandidateParameters = { [key: string]: unknown };
+
+export type GenerationCandidatePlanTracksItem = {
+  name: string;
+  role: string;
+  kind: string;
+};
+
+export type GenerationCandidatePlan = {
+  sections: ArrangementSection[];
+  tracks?: GenerationCandidatePlanTracksItem[];
+};
+
+export interface GenerationCandidate {
+  id: string;
+  jobId: string;
+  provider: GenerationCandidateProvider;
+  modelVersion: string;
+  /** @nullable */
+  reportedModelVersion?: string | null;
+  /** @nullable */
+  providerRequestId?: string | null;
+  seed: number;
+  rank: number;
+  label: string;
+  score: number;
+  confidence: number;
+  summary: string;
+  status: GenerationCandidateStatus;
+  parameters: GenerationCandidateParameters;
+  parentArtifactIds: string[];
+  plan: GenerationCandidatePlan;
+  createdAt: string;
+}
+
+export type GenerationProviderId = typeof GenerationProviderId[keyof typeof GenerationProviderId];
+
+
+export const GenerationProviderId = {
+  BS_ROFORMER: 'BS_ROFORMER',
+  ALL_IN_ONE: 'ALL_IN_ONE',
+  MT3: 'MT3',
+  BASIC_PITCH: 'BASIC_PITCH',
+  ACE_STEP: 'ACE_STEP',
+  ANYACCOMP: 'ANYACCOMP',
+  SYMPHONYGEN: 'SYMPHONYGEN',
+  METEOR: 'METEOR',
+} as const;
+
+export type GenerationProviderTasksItem = typeof GenerationProviderTasksItem[keyof typeof GenerationProviderTasksItem];
+
+
+export const GenerationProviderTasksItem = {
+  SEPARATION: 'SEPARATION',
+  TRANSCRIPTION: 'TRANSCRIPTION',
+  ACCOMPANIMENT: 'ACCOMPANIMENT',
+  ORCHESTRATION: 'ORCHESTRATION',
+  ARRANGEMENT: 'ARRANGEMENT',
+} as const;
+
+export type GenerationProviderHardwareItem = typeof GenerationProviderHardwareItem[keyof typeof GenerationProviderHardwareItem];
+
+
+export const GenerationProviderHardwareItem = {
+  CPU: 'CPU',
+  GPU: 'GPU',
+} as const;
+
+export type GenerationProviderSpeedsItem = typeof GenerationProviderSpeedsItem[keyof typeof GenerationProviderSpeedsItem];
+
+
+export const GenerationProviderSpeedsItem = {
+  FAST: 'FAST',
+  BALANCED: 'BALANCED',
+  QUALITY: 'QUALITY',
+} as const;
+
+export interface GenerationProvider {
+  id: GenerationProviderId;
+  name: string;
+  modelVersion: string;
+  tasks: GenerationProviderTasksItem[];
+  hardware: GenerationProviderHardwareItem[];
+  speeds: GenerationProviderSpeedsItem[];
+  available: boolean;
 }
 
 export interface GenerationResult {
@@ -996,4 +1265,3 @@ returnTo?: string;
 export type LogoutBrowserSessionParams = {
 returnTo?: string;
 };
-

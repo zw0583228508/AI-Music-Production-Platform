@@ -23,6 +23,13 @@ import {
   GenerateArrangementBody,
   GenerateArrangementParams,
   GenerateArrangementResponse,
+  GetGenerationJobParams,
+  GetGenerationJobResponse,
+  ListGenerationCandidatesParams,
+  ListGenerationCandidatesResponse,
+  ListGenerationProvidersResponse,
+  SelectGenerationCandidateParams,
+  SelectGenerationCandidateResponse,
   GetDashboardResponse,
   GetProjectParams,
   GetProjectResponse,
@@ -71,10 +78,6 @@ import { analyzeProjectSource } from "../lib/sourceAnalyzer";
 import { validateSourceFileMetadata } from "../lib/sourceFormats";
 import {
   MUSIC_PROVIDERS,
-  ProviderUnavailableError,
-  runArrangementProvider,
-  selectArrangementProvider,
-  validateArrangementProviderOutput,
 } from "../lib/musicProviders";
 import {
   createExportBundle,
@@ -89,6 +92,15 @@ import {
   isLegacySongModel,
   validateCanonicalSongModel,
 } from "../lib/songModelValidation";
+import {
+  generationCandidateResponse,
+  generationJobResponse,
+  getGenerationJobForOwner,
+  listGenerationCandidatesForOwner,
+  listProviderCatalog,
+  queueArrangementGeneration,
+  selectGenerationCandidate,
+} from "../lib/arrangementGeneration";
 
 const router: IRouter = Router();
 const exportBundles = new Map<string, ExportBundle>();
@@ -1187,25 +1199,6 @@ router.post("/arrangements/:arrangementId/generate", async (req, res): Promise<v
     res.status(404).json({ error: "Arrangement not found" });
     return;
   }
-  const [project] = await db
-    .select()
-    .from(musicProjectsTable)
-    .where(eq(musicProjectsTable.id, existingArrangement.projectId))
-    .limit(1);
-  if (!project) {
-    res.status(404).json({ error: "Project not found" });
-    return;
-  }
-  if (project.ownerId) {
-    if (!req.isAuthenticated()) {
-      res.status(401).json({ error: "Unauthorized" });
-      return;
-    }
-    if (project.ownerId !== req.user.id) {
-      res.status(403).json({ error: "Forbidden" });
-      return;
-    }
-  }
   const [songModel] = await db
     .select()
     .from(songModelsTable)
@@ -1235,79 +1228,105 @@ router.post("/arrangements/:arrangementId/generate", async (req, res): Promise<v
     });
     return;
   }
-  const [source] = await db
-    .select({ sourceType: projectSourcesTable.sourceType })
-    .from(projectSourcesTable)
-    .where(eq(projectSourcesTable.id, songModel.sourceId))
-    .limit(1);
-  const sourceType = source?.sourceType ?? "FULL_SONG";
-  const count = Math.max(1, Math.min(3, Math.round(body.data.candidates ?? 3)));
-  let provider;
   try {
-    provider = selectArrangementProvider(body.data.provider, sourceType);
-    await db.update(arrangementsTable)
-      .set({ status: "generating" })
-      .where(eq(arrangementsTable.id, existingArrangement.id));
-    const output = await runArrangementProvider(provider, {
-      projectId: existingArrangement.projectId,
-      arrangementId: existingArrangement.id,
-      style: existingArrangement.style,
-      mode: existingArrangement.mode,
-      sourceType,
-      harmonyComplexity: existingArrangement.harmonyComplexity,
-      energy: existingArrangement.energy,
-      density: existingArrangement.density,
-      candidateCount: count,
-      seed: body.data.seed,
-      songModel: songModel.model,
-    });
-    const validationErrors = validateArrangementProviderOutput(output, count);
-    if (validationErrors.length) {
-      await db.update(arrangementsTable)
-        .set({ status: "draft" })
-        .where(eq(arrangementsTable.id, existingArrangement.id));
-      res.status(422).json({
-        error: "Provider output failed validation",
-        details: validationErrors,
-      });
+    const job = await queueArrangementGeneration(
+      params.data.arrangementId,
+      body.data,
+      req.user!.id,
+    );
+    if (!job) {
+      res.status(404).json({ error: "Arrangement not found" });
       return;
     }
-    const [arrangement] = await db.update(arrangementsTable).set({
-      status: "ready",
-      sections: output.sections,
-      generationProvider: provider.id,
-      candidates: output.candidates,
-      selectedCandidateId: output.candidates[0].id,
-    }).where(eq(arrangementsTable.id, existingArrangement.id)).returning();
-    await db.insert(musicArtifactsTable).values({
-      id: randomUUID(),
-      projectId: arrangement.projectId,
-      type: "ARRANGEMENT_PLAN",
-      label: `${arrangement.name} · v${arrangement.version} · ${provider.id}`,
-      version: arrangement.version,
-      size: `${Math.max(1, Math.round(JSON.stringify(output).length / 1024))} KB`,
-      format: "JSON",
-    });
-    res.json(GenerateArrangementResponse.parse({
-      arrangement: arrangementResponse(arrangement),
-      candidates: output.candidates,
-      selectedCandidate: output.candidates[0].id,
-      provider,
-    }));
+    res
+      .status(202)
+      .json(GenerateArrangementResponse.parse(generationJobResponse(job)));
   } catch (error) {
-    await db.update(arrangementsTable)
-      .set({ status: "draft" })
-      .where(eq(arrangementsTable.id, existingArrangement.id));
-    if (error instanceof ProviderUnavailableError) {
-      res.status(503).json({
-        error: error.message,
-        provider: error.providerId,
-      });
+    res.status(503).json({
+      error:
+        error instanceof Error
+          ? error.message
+          : "No compatible music provider is available",
+    });
+  }
+});
+
+router.get("/generation-jobs/:jobId", async (req, res): Promise<void> => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const params = GetGenerationJobParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const job = await getGenerationJobForOwner(params.data.jobId, req.user.id);
+  if (!job) {
+    res.status(404).json({ error: "Generation job not found" });
+    return;
+  }
+  res.json(GetGenerationJobResponse.parse(generationJobResponse(job)));
+});
+
+router.get(
+  "/generation-jobs/:jobId/candidates",
+  async (req, res): Promise<void> => {
+    if (!req.isAuthenticated()) {
+      res.status(401).json({ error: "Unauthorized" });
       return;
     }
-    req.log.error({ err: error, provider: provider?.id }, "Arrangement provider failed");
-    res.status(502).json({ error: "Arrangement provider failed" });
-  }
+    const params = ListGenerationCandidatesParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const candidates = await listGenerationCandidatesForOwner(
+      params.data.jobId,
+      req.user.id,
+    );
+    if (!candidates) {
+      res.status(404).json({ error: "Generation job not found" });
+      return;
+    }
+    res.json(
+      ListGenerationCandidatesResponse.parse(
+        candidates.map(generationCandidateResponse),
+      ),
+    );
+  },
+);
+
+router.post(
+  "/generation-candidates/:candidateId/select",
+  async (req, res): Promise<void> => {
+    if (!req.isAuthenticated()) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const params = SelectGenerationCandidateParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const arrangement = await selectGenerationCandidate(
+      params.data.candidateId,
+      req.user.id,
+    );
+    if (!arrangement) {
+      res.status(404).json({ error: "Validated candidate not found" });
+      return;
+    }
+    res.json(
+      SelectGenerationCandidateResponse.parse(
+        arrangementResponse(arrangement),
+      ),
+    );
+  },
+);
+
+router.get("/music-providers", (_req, res): void => {
+  res.json(ListGenerationProvidersResponse.parse(listProviderCatalog()));
 });
 
 router.post("/arrangements/:arrangementId/export", async (req, res): Promise<void> => {

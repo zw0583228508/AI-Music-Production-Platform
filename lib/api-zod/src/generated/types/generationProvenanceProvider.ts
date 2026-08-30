@@ -6,10 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type GenerationInputProvider = typeof GenerationInputProvider[keyof typeof GenerationInputProvider];
+export type GenerationProvenanceProvider = typeof GenerationProvenanceProvider[keyof typeof GenerationProvenanceProvider];
 
 
-export const GenerationInputProvider = {
+export const GenerationProvenanceProvider = {
   BS_ROFORMER: 'BS_ROFORMER',
   ALL_IN_ONE: 'ALL_IN_ONE',
   MT3: 'MT3',

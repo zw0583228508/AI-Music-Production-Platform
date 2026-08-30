@@ -239,6 +239,20 @@ export const GetProjectResponse = zod.object({
   "provider": zod.string()
 })),
   "selectedCandidateId": zod.string().nullable(),
+  "sourceGenerationJobId": zod.string().nullish(),
+  "sourceCandidateId": zod.string().nullish(),
+  "generationProvenance": zod.union([zod.object({
+  "jobId": zod.string(),
+  "candidateId": zod.string(),
+  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR']),
+  "modelVersion": zod.string(),
+  "reportedModelVersion": zod.string().nullish(),
+  "providerRequestId": zod.string().nullish(),
+  "songModelVersion": zod.number().nullish(),
+  "seed": zod.number(),
+  "parameters": zod.record(zod.string(), zod.unknown()),
+  "parentArtifactIds": zod.array(zod.string())
+}),zod.null()]).optional(),
   "createdAt": zod.string()
 })),
   "tracks": zod.array(zod.object({
@@ -908,6 +922,20 @@ export const ListArrangementsResponseItem = zod.object({
   "provider": zod.string()
 })),
   "selectedCandidateId": zod.string().nullable(),
+  "sourceGenerationJobId": zod.string().nullish(),
+  "sourceCandidateId": zod.string().nullish(),
+  "generationProvenance": zod.union([zod.object({
+  "jobId": zod.string(),
+  "candidateId": zod.string(),
+  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR']),
+  "modelVersion": zod.string(),
+  "reportedModelVersion": zod.string().nullish(),
+  "providerRequestId": zod.string().nullish(),
+  "songModelVersion": zod.number().nullish(),
+  "seed": zod.number(),
+  "parameters": zod.record(zod.string(), zod.unknown()),
+  "parentArtifactIds": zod.array(zod.string())
+}),zod.null()]).optional(),
   "createdAt": zod.string()
 })
 export const ListArrangementsResponse = zod.array(ListArrangementsResponseItem)
@@ -960,6 +988,20 @@ export const CreateArrangementResponse = zod.object({
   "provider": zod.string()
 })),
   "selectedCandidateId": zod.string().nullable(),
+  "sourceGenerationJobId": zod.string().nullish(),
+  "sourceCandidateId": zod.string().nullish(),
+  "generationProvenance": zod.union([zod.object({
+  "jobId": zod.string(),
+  "candidateId": zod.string(),
+  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR']),
+  "modelVersion": zod.string(),
+  "reportedModelVersion": zod.string().nullish(),
+  "providerRequestId": zod.string().nullish(),
+  "songModelVersion": zod.number().nullish(),
+  "seed": zod.number(),
+  "parameters": zod.record(zod.string(), zod.unknown()),
+  "parentArtifactIds": zod.array(zod.string())
+}),zod.null()]).optional(),
   "createdAt": zod.string()
 })
 
@@ -1025,12 +1067,26 @@ export const UpdateArrangementResponse = zod.object({
   "provider": zod.string()
 })),
   "selectedCandidateId": zod.string().nullable(),
+  "sourceGenerationJobId": zod.string().nullish(),
+  "sourceCandidateId": zod.string().nullish(),
+  "generationProvenance": zod.union([zod.object({
+  "jobId": zod.string(),
+  "candidateId": zod.string(),
+  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR']),
+  "modelVersion": zod.string(),
+  "reportedModelVersion": zod.string().nullish(),
+  "providerRequestId": zod.string().nullish(),
+  "songModelVersion": zod.number().nullish(),
+  "seed": zod.number(),
+  "parameters": zod.record(zod.string(), zod.unknown()),
+  "parentArtifactIds": zod.array(zod.string())
+}),zod.null()]).optional(),
   "createdAt": zod.string()
 })
 
 
 /**
- * @summary Generate arrangement candidates
+ * @summary Queue provider-backed arrangement generation
  */
 export const GenerateArrangementParams = zod.object({
   "arrangementId": zod.coerce.string()
@@ -1042,12 +1098,128 @@ export const generateArrangementBodyCandidatesMax = 3;
 
 export const GenerateArrangementBody = zod.object({
   "candidates": zod.number().min(1).max(generateArrangementBodyCandidatesMax).optional(),
-  "provider": zod.enum(['LOCAL_SYMBOLIC_DIRECTOR_V1', 'ACE_STEP_BASE', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR', 'CUSTOM']).optional(),
-  "seed": zod.number().optional()
+  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR']).optional(),
+  "task": zod.enum(['SEPARATION', 'TRANSCRIPTION', 'ACCOMPANIMENT', 'ORCHESTRATION', 'ARRANGEMENT']).optional(),
+  "hardware": zod.enum(['AUTO', 'CPU', 'GPU']).optional(),
+  "speed": zod.enum(['FAST', 'BALANCED', 'QUALITY']).optional(),
+  "seed": zod.number().optional(),
+  "parameters": zod.record(zod.string(), zod.unknown()).optional()
 })
 
+export const generateArrangementResponseProgressMin = 0;
+export const generateArrangementResponseProgressMax = 100;
+
+
+
 export const GenerateArrangementResponse = zod.object({
-  "arrangement": zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "arrangementId": zod.string(),
+  "task": zod.enum(['SEPARATION', 'TRANSCRIPTION', 'ACCOMPANIMENT', 'ORCHESTRATION', 'ARRANGEMENT']),
+  "status": zod.enum(['queued', 'running', 'succeeded', 'failed']),
+  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR']),
+  "modelVersion": zod.string(),
+  "hardware": zod.enum(['AUTO', 'CPU', 'GPU']),
+  "speed": zod.enum(['FAST', 'BALANCED', 'QUALITY']),
+  "progress": zod.number().min(generateArrangementResponseProgressMin).max(generateArrangementResponseProgressMax),
+  "stage": zod.string(),
+  "providerRequestId": zod.string().nullish(),
+  "requestedCandidates": zod.number(),
+  "seed": zod.number(),
+  "parameters": zod.record(zod.string(), zod.unknown()),
+  "parentArtifactIds": zod.array(zod.string()),
+  "error": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string(),
+  "completedAt": zod.string().nullish()
+})
+
+
+/**
+ * @summary Get live provider generation progress
+ */
+export const GetGenerationJobParams = zod.object({
+  "jobId": zod.coerce.string()
+})
+
+export const getGenerationJobResponseProgressMin = 0;
+export const getGenerationJobResponseProgressMax = 100;
+
+
+
+export const GetGenerationJobResponse = zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "arrangementId": zod.string(),
+  "task": zod.enum(['SEPARATION', 'TRANSCRIPTION', 'ACCOMPANIMENT', 'ORCHESTRATION', 'ARRANGEMENT']),
+  "status": zod.enum(['queued', 'running', 'succeeded', 'failed']),
+  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR']),
+  "modelVersion": zod.string(),
+  "hardware": zod.enum(['AUTO', 'CPU', 'GPU']),
+  "speed": zod.enum(['FAST', 'BALANCED', 'QUALITY']),
+  "progress": zod.number().min(getGenerationJobResponseProgressMin).max(getGenerationJobResponseProgressMax),
+  "stage": zod.string(),
+  "providerRequestId": zod.string().nullish(),
+  "requestedCandidates": zod.number(),
+  "seed": zod.number(),
+  "parameters": zod.record(zod.string(), zod.unknown()),
+  "parentArtifactIds": zod.array(zod.string()),
+  "error": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string(),
+  "completedAt": zod.string().nullish()
+})
+
+
+/**
+ * @summary List ranked provider generation candidates
+ */
+export const ListGenerationCandidatesParams = zod.object({
+  "jobId": zod.coerce.string()
+})
+
+export const ListGenerationCandidatesResponseItem = zod.object({
+  "id": zod.string(),
+  "jobId": zod.string(),
+  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR']),
+  "modelVersion": zod.string(),
+  "reportedModelVersion": zod.string().nullish(),
+  "providerRequestId": zod.string().nullish(),
+  "seed": zod.number(),
+  "rank": zod.number(),
+  "label": zod.string(),
+  "score": zod.number(),
+  "confidence": zod.number(),
+  "summary": zod.string(),
+  "status": zod.enum(['validated', 'selected', 'rejected']),
+  "parameters": zod.record(zod.string(), zod.unknown()),
+  "parentArtifactIds": zod.array(zod.string()),
+  "plan": zod.object({
+  "sections": zod.array(zod.object({
+  "name": zod.string(),
+  "energy": zod.number(),
+  "density": zod.number(),
+  "tracks": zod.array(zod.string())
+})),
+  "tracks": zod.array(zod.object({
+  "name": zod.string(),
+  "role": zod.string(),
+  "kind": zod.string()
+})).optional()
+}),
+  "createdAt": zod.string()
+})
+export const ListGenerationCandidatesResponse = zod.array(ListGenerationCandidatesResponseItem)
+
+
+/**
+ * @summary Select a validated candidate as a new arrangement version
+ */
+export const SelectGenerationCandidateParams = zod.object({
+  "candidateId": zod.coerce.string()
+})
+
+export const SelectGenerationCandidateResponse = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
   "name": zod.string(),
@@ -1075,30 +1247,37 @@ export const GenerateArrangementResponse = zod.object({
   "provider": zod.string()
 })),
   "selectedCandidateId": zod.string().nullable(),
+  "sourceGenerationJobId": zod.string().nullish(),
+  "sourceCandidateId": zod.string().nullish(),
+  "generationProvenance": zod.union([zod.object({
+  "jobId": zod.string(),
+  "candidateId": zod.string(),
+  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR']),
+  "modelVersion": zod.string(),
+  "reportedModelVersion": zod.string().nullish(),
+  "providerRequestId": zod.string().nullish(),
+  "songModelVersion": zod.number().nullish(),
+  "seed": zod.number(),
+  "parameters": zod.record(zod.string(), zod.unknown()),
+  "parentArtifactIds": zod.array(zod.string())
+}),zod.null()]).optional(),
   "createdAt": zod.string()
-}),
-  "candidates": zod.array(zod.object({
-  "id": zod.string(),
-  "label": zod.string(),
-  "score": zod.number(),
-  "summary": zod.string(),
-  "provider": zod.string()
-})),
-  "selectedCandidate": zod.string(),
-  "provider": zod.object({
-  "id": zod.string(),
+})
+
+
+/**
+ * @summary List generation provider capabilities and availability
+ */
+export const ListGenerationProvidersResponseItem = zod.object({
+  "id": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR']),
   "name": zod.string(),
-  "provider": zod.string(),
-  "version": zod.string(),
-  "capabilities": zod.array(zod.string()),
-  "inputTypes": zod.array(zod.string()),
-  "execution": zod.enum(['local', 'remote']),
-  "status": zod.enum(['ready', 'configured', 'unavailable']),
-  "license": zod.string().nullable(),
-  "priority": zod.number(),
-  "notes": zod.string()
+  "modelVersion": zod.string(),
+  "tasks": zod.array(zod.enum(['SEPARATION', 'TRANSCRIPTION', 'ACCOMPANIMENT', 'ORCHESTRATION', 'ARRANGEMENT'])),
+  "hardware": zod.array(zod.enum(['CPU', 'GPU'])),
+  "speeds": zod.array(zod.enum(['FAST', 'BALANCED', 'QUALITY'])),
+  "available": zod.boolean()
 })
-})
+export const ListGenerationProvidersResponse = zod.array(ListGenerationProvidersResponseItem)
 
 
 /**
@@ -1274,5 +1453,3 @@ export const RunCopilotResponse = zod.object({
 })),
   "affectedSections": zod.array(zod.string())
 })
-
-

@@ -5,6 +5,10 @@ import {
   useListArrangements, 
   useCreateArrangement,
   useGenerateArrangement,
+  useGetGenerationJob,
+  useListGenerationCandidates,
+  useListGenerationProviders,
+  useSelectGenerationCandidate,
   useUpdateArrangement,
   useListTracks,
   useListArtifacts,
@@ -13,8 +17,10 @@ import {
   useGetProjectSongModel,
   getGetProjectSongModelQueryKey,
   getListArtifactsQueryKey,
+  getGetGenerationJobQueryKey,
+  getListGenerationCandidatesQueryKey,
   ExportResult,
-  GenerationResult,
+  GenerationCandidate,
   ArrangementMode,
   ArrangementStatus,
   Arrangement
@@ -48,6 +54,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Progress } from "@/components/ui/progress";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { SourceImport } from "@/components/studio/source-import";
@@ -79,22 +87,23 @@ export default function ProjectWorkspace() {
   const { data: arrangements } = useListArrangements(projectId);
   const { data: tracks } = useListTracks(projectId);
   const { data: artifacts } = useListArtifacts(projectId);
+  const { data: generationProviders } = useListGenerationProviders();
   
   const createArrangement = useCreateArrangement();
   const updateArrangement = useUpdateArrangement();
   const generateArrangement = useGenerateArrangement();
+  const selectGenerationCandidate = useSelectGenerationCandidate();
   const createExport = useCreateProjectExport();
   // const runCopilot = useRunCopilot(); // We'll mock copilot if it's not exported, but let's assume it is
 
   const [activeTab, setActiveTab] = useState("model");
   const [selectedArrangementId, setSelectedArrangementId] = useState<string | null>(null);
+  const [generationJobId, setGenerationJobId] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [includeStems, setIncludeStems] = useState(true);
   const [includeMidi, setIncludeMidi] = useState(true);
   const [masterProfile, setMasterProfile] = useState("STREAMING");
   const [exportResult, setExportResult] = useState<ExportResult | null>(null);
-  const [generationResult, setGenerationResult] = useState<GenerationResult | null>(null);
-  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
 
   const [copilotCommand, setCopilotCommand] = useState("");
   const runCopilot = useRunCopilot();
@@ -110,6 +119,80 @@ export default function ProjectWorkspace() {
   }, [arrangements, selectedArrangementId]);
 
   const activeArrangement = arrangements?.find(a => a.id === selectedArrangementId);
+  const requestedGenerationTask =
+    activeArrangement?.mode === "PRO_SCORE" ? "ORCHESTRATION" : "ARRANGEMENT";
+  const requestedGenerationSpeed =
+    activeArrangement?.mode === "QUICK_ARRANGE"
+      ? "FAST"
+      : activeArrangement?.mode === "PRO_SCORE"
+        ? "QUALITY"
+        : "BALANCED";
+  const availableArrangementProviders = generationProviders?.filter(
+    (provider) =>
+      provider.available &&
+      provider.tasks.includes(requestedGenerationTask) &&
+      provider.speeds.includes(requestedGenerationSpeed),
+  );
+  const generationJobQuery = useGetGenerationJob(generationJobId ?? "", {
+    query: {
+      queryKey: getGetGenerationJobQueryKey(generationJobId ?? ""),
+      enabled: Boolean(generationJobId),
+      refetchInterval: (query) => {
+        const status = query.state.data?.status;
+        return status === "queued" || status === "running" ? 1_000 : false;
+      },
+    },
+  });
+  const generationJob = generationJobQuery.data;
+  const generationCandidatesQuery = useListGenerationCandidates(
+    generationJobId ?? "",
+    {
+      query: {
+        queryKey: getListGenerationCandidatesQueryKey(generationJobId ?? ""),
+        enabled: Boolean(generationJobId) && generationJob?.status === "succeeded",
+      },
+    },
+  );
+  const generationCandidates = generationCandidatesQuery.data ?? [];
+  const generationRunning =
+    generateArrangement.isPending ||
+    generationJob?.status === "queued" ||
+    generationJob?.status === "running";
+  const handledTerminalJobRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!activeArrangement) {
+      setGenerationJobId(null);
+      return;
+    }
+    setGenerationJobId(
+      window.sessionStorage.getItem(
+        `music-studio:generation-job:${activeArrangement.id}`,
+      ),
+    );
+  }, [activeArrangement?.id]);
+
+  useEffect(() => {
+    if (!generationJob || handledTerminalJobRef.current === generationJob.id) return;
+    if (generationJob.status === "succeeded") {
+      handledTerminalJobRef.current = generationJob.id;
+      queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(projectId) });
+      queryClient.invalidateQueries({ queryKey: getListArrangementsQueryKey(projectId) });
+      queryClient.invalidateQueries({ queryKey: getListArtifactsQueryKey(projectId) });
+      toast({
+        title: "Candidates ready",
+        description: `${generationJob.provider} returned ranked arrangement candidates.`,
+      });
+    } else if (generationJob.status === "failed") {
+      handledTerminalJobRef.current = generationJob.id;
+      queryClient.invalidateQueries({ queryKey: getListArrangementsQueryKey(projectId) });
+      toast({
+        title: "Generation failed",
+        description: generationJob.error ?? "The provider worker could not finish this job.",
+        variant: "destructive",
+      });
+    }
+  }, [generationJob, projectId, queryClient, toast]);
 
   // Auto-save logic for arrangement parameters
   const [localHarmony, setLocalHarmony] = useState<number>(5);
@@ -124,7 +207,6 @@ export default function ProjectWorkspace() {
       setLocalHarmony(activeArrangement.harmonyComplexity);
       setLocalEnergy(activeArrangement.energy);
       setLocalDensity(activeArrangement.density);
-      setSelectedCandidateId(activeArrangement.selectedCandidateId);
     }
   }, [activeArrangement]);
 
@@ -152,17 +234,25 @@ export default function ProjectWorkspace() {
     if (!activeArrangement) return;
     generateArrangement.mutate({
       arrangementId: activeArrangement.id,
-      data: { candidates: 3 }
+      data: {
+        candidates: 3,
+        task: requestedGenerationTask,
+        hardware: "AUTO",
+        speed: requestedGenerationSpeed,
+      }
     }, {
-      onSuccess: (result) => {
-        setGenerationResult(result);
-        setSelectedCandidateId(result.selectedCandidate);
+      onSuccess: (job) => {
+        setGenerationJobId(job.id);
+        window.sessionStorage.setItem(
+          `music-studio:generation-job:${activeArrangement.id}`,
+          job.id,
+        );
+        handledTerminalJobRef.current = null;
         setActiveTab("candidates");
         toast({
-          title: "Arrangement candidates ready",
-          description: `${result.candidates.length} candidates generated by ${result.provider.name}.`,
+          title: "Generation queued",
+          description: `${job.provider} is preparing ${job.requestedCandidates} candidates.`,
         });
-        queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(projectId) });
         queryClient.invalidateQueries({ queryKey: getListArrangementsQueryKey(projectId) });
       },
       onError: (error) => {
@@ -174,6 +264,40 @@ export default function ProjectWorkspace() {
         });
       }
     });
+  };
+
+  const handleSelectCandidate = (candidate: GenerationCandidate) => {
+    selectGenerationCandidate.mutate(
+      { candidateId: candidate.id },
+      {
+        onSuccess: (arrangement) => {
+          setSelectedArrangementId(arrangement.id);
+          setActiveTab("arrangement");
+          queryClient.invalidateQueries({
+            queryKey: getListArrangementsQueryKey(projectId),
+          });
+          queryClient.invalidateQueries({
+            queryKey: getGetProjectQueryKey(projectId),
+          });
+          if (generationJobId) {
+            queryClient.invalidateQueries({
+              queryKey: getListGenerationCandidatesQueryKey(generationJobId),
+            });
+          }
+          toast({
+            title: "Candidate selected",
+            description: `${candidate.label} is now arrangement v${arrangement.version}.`,
+          });
+        },
+        onError: () => {
+          toast({
+            title: "Candidate could not be selected",
+            description: "Only validated provider candidates can become arrangements.",
+            variant: "destructive",
+          });
+        },
+      },
+    );
   };
 
   const downloadFile = (url: string) => {
@@ -279,12 +403,6 @@ export default function ProjectWorkspace() {
   }
 
   const { project, analysis } = workspace;
-  const visibleCandidates = generationResult && generationResult.arrangement.id === activeArrangement?.id
-    ? generationResult.candidates
-    : activeArrangement?.candidates ?? [];
-  const visibleProvider = generationResult && generationResult.arrangement.id === activeArrangement?.id
-    ? generationResult.provider.name
-    : activeArrangement?.generationProvider;
 
   return (
     <div className="flex flex-col h-full bg-background relative overflow-hidden">
@@ -524,16 +642,30 @@ export default function ProjectWorkspace() {
                       <Button 
                         size="lg" 
                         onClick={handleGenerate} 
-                        disabled={activeArrangement.status === 'generating'}
+                        disabled={
+                          generationRunning ||
+                          availableArrangementProviders?.length === 0
+                        }
                         className="shadow-md shadow-primary/20 text-md px-8"
                       >
-                        {activeArrangement.status === 'generating' ? (
+                        {generationRunning ? (
                           <><Activity className="mr-2 h-5 w-5 animate-pulse" /> Generating...</>
                         ) : (
                           <><Wand2 className="mr-2 h-5 w-5" /> Generate Variations</>
                         )}
                       </Button>
                     </div>
+                    {availableArrangementProviders?.length === 0 && (
+                      <Alert>
+                        <Activity className="h-4 w-4" />
+                        <AlertTitle>No generation worker is online</AlertTitle>
+                        <AlertDescription>
+                          Connect an ACE-Step, AnyAccomp, SymphonyGen, or METEOR
+                          worker to generate real candidates. The studio will not
+                          substitute fabricated output.
+                        </AlertDescription>
+                      </Alert>
+                    )}
                   </div>
                 ) : (
                   <EmptyState 
@@ -549,59 +681,70 @@ export default function ProjectWorkspace() {
             <TabsContent value="candidates" className="flex-1 m-0 p-6 min-h-0 overflow-auto">
                <div className="max-w-3xl mx-auto">
                  <h2 className="text-xl font-bold mb-6">Generated Candidates</h2>
-                 {visibleCandidates.length > 0 ? (
+                  {generationJob && generationRunning ? (
+                    <Card>
+                      <CardContent className="space-y-4 p-6">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <div className="font-semibold">
+                              {generationJob.stage.replaceAll("_", " ")}
+                            </div>
+                            <div className="mt-1 text-sm text-muted-foreground">
+                              {generationJob.provider} · {generationJob.modelVersion}
+                            </div>
+                          </div>
+                          <Badge variant="secondary">{generationJob.progress}%</Badge>
+                        </div>
+                        <Progress value={generationJob.progress} />
+                        <div className="flex justify-between text-xs text-muted-foreground">
+                          <span>{generationJob.hardware} hardware</span>
+                          <span>{generationJob.speed.toLowerCase()} routing</span>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ) : generationJob?.status === "failed" ? (
+                    <Alert variant="destructive">
+                      <Activity className="h-4 w-4" />
+                      <AlertTitle>Provider generation failed</AlertTitle>
+                      <AlertDescription>
+                        {generationJob.error ?? "The worker returned an unknown error."}
+                      </AlertDescription>
+                    </Alert>
+                  ) : generationJob?.status === "succeeded" &&
+                    generationCandidates.length > 0 ? (
                    <div className="space-y-4">
-                     <div className="flex items-center gap-2 mb-2 text-xs text-muted-foreground">
-                       <Badge variant="outline">{visibleProvider}</Badge>
-                       <span>validated provider output</span>
-                     </div>
-                     {visibleCandidates.map(candidate => (
-                       <Card
-                         key={candidate.id}
-                         className={cn(
-                           "group transition-colors shadow-sm",
-                           selectedCandidateId === candidate.id
-                             ? "border-primary ring-1 ring-primary/30"
-                             : "hover:border-primary/50",
-                         )}
-                       >
-                         <CardContent className="p-4 flex items-center justify-between">
+                      {generationCandidates.map((candidate: GenerationCandidate) => (
+                        <Card key={candidate.id} className="group hover:border-primary/50 transition-colors shadow-sm">
+                          <CardContent className="p-4 flex items-center justify-between gap-4">
                            <div className="flex items-center gap-4">
                              <div className="h-10 w-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-mono text-xs font-bold">
                                {Math.round(candidate.score * 100)}
                              </div>
                              <div>
-                               <div className="font-semibold">{candidate.label}</div>
-                               <div className="text-xs text-muted-foreground mt-0.5">{candidate.summary}</div>
-                               <div className="text-[10px] font-mono text-muted-foreground mt-1">{candidate.provider}</div>
+                                <div className="flex items-center gap-2">
+                                  <div className="font-semibold">{candidate.label}</div>
+                                  <Badge variant={candidate.rank === 1 ? "default" : "outline"}>
+                                    #{candidate.rank}
+                                  </Badge>
+                                </div>
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                  {candidate.provider} · {candidate.modelVersion}
+                                </div>
+                                <p className="mt-2 max-w-xl text-sm">{candidate.summary}</p>
+                                <div className="mt-2 text-xs text-muted-foreground">
+                                  {candidate.plan.sections.length} sections · {Math.round(candidate.confidence * 100)}% confidence · seed {candidate.seed}
+                                </div>
                              </div>
                            </div>
                            <Button
-                             variant={selectedCandidateId === candidate.id ? "secondary" : "default"}
                              size="sm"
-                             onClick={() => {
-                               setSelectedCandidateId(candidate.id);
-                               if (activeArrangement) {
-                                 updateArrangement.mutate({
-                                   arrangementId: activeArrangement.id,
-                                   data: { selectedCandidateId: candidate.id },
-                                 }, {
-                                   onSuccess: () => {
-                                     queryClient.invalidateQueries({
-                                       queryKey: getListArrangementsQueryKey(projectId),
-                                     });
-                                   },
-                                 });
-                               }
-                               toast({
-                                 title: `${candidate.label} selected`,
-                                 description: "Candidate selection saved to this arrangement.",
-                               });
-                             }}
+                              disabled={
+                                candidate.status !== "validated" ||
+                                selectGenerationCandidate.isPending
+                              }
+                              onClick={() => handleSelectCandidate(candidate)}
                            >
-                             {selectedCandidateId === candidate.id ? (
-                               <><Check className="h-3.5 w-3.5 mr-1.5" /> Selected</>
-                             ) : "Select"}
+                              {candidate.status === "selected" ? "Selected" : "Select"}
                            </Button>
                          </CardContent>
                        </Card>

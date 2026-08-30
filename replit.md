@@ -11,6 +11,10 @@ A versioned AI arrangement workspace that turns songs, vocals, and melodies into
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - Required env: `DATABASE_URL` — Postgres connection string
+- Provider workers: set `MUSIC_PROVIDER_<PROVIDER>_URL` (and optional
+  `MUSIC_PROVIDER_<PROVIDER>_TOKEN`) per model, or
+  `MUSIC_PROVIDER_GATEWAY_URL` / `MUSIC_PROVIDER_GATEWAY_TOKEN` for a shared
+  provider gateway.
 
 ## Stack
 
@@ -37,6 +41,16 @@ A versioned AI arrangement workspace that turns songs, vocals, and melodies into
 - Real source uploads use authenticated presigned Object Storage URLs; raw objects remain private.
 - Song Models are persisted as immutable versions so a new source analysis does not overwrite prior model output.
 - The baseline analyzer uses FFmpeg/FFprobe plus local rhythm, key, energy, and section extraction; GPU providers can replace individual stages behind the same contract.
+- Generation workers receive one provider-neutral JSON payload and return
+  ranked candidates with canonical arrangement sections. Jobs persist the
+  selected provider/model, seed, parameters, progress, confidence, and parent
+  artifact IDs; the studio never fabricates candidates when workers are offline.
+- Provider workers must treat the generation job ID / `Idempotency-Key` as an
+  idempotency key. Long-running workers may return `202` with a same-origin
+  status URL so provider-reported stages and progress can be persisted.
+- Selecting a validated candidate creates a new arrangement version with
+  immutable job, candidate, model, seed, Song Model, and parent-artifact
+  provenance; it never mutates the source arrangement.
 
 ## Product
 

@@ -414,7 +414,7 @@ paths:
     post:
       operationId: generateArrangement
       tags: [arrangements]
-      summary: Generate arrangement candidates
+      summary: Queue provider-backed arrangement generation
       parameters:
         - $ref: "#/components/parameters/ArrangementId"
       requestBody:
@@ -424,12 +424,12 @@ paths:
             schema:
               $ref: "#/components/schemas/GenerationInput"
       responses:
-        "200":
-          description: Generated arrangement
+        "202":
+          description: Generation job accepted
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/GenerationResult"
+                $ref: "#/components/schemas/GenerationJob"
         "404":
           $ref: "#/components/responses/NotFound"
         "422":
@@ -438,6 +438,72 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GenerationBlockedError"
+        "503":
+          description: No compatible provider worker is available
+  /generation-jobs/{jobId}:
+    get:
+      operationId: getGenerationJob
+      tags: [arrangements]
+      summary: Get live provider generation progress
+      parameters:
+        - $ref: "#/components/parameters/GenerationJobId"
+      responses:
+        "200":
+          description: Current generation job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerationJob"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /generation-jobs/{jobId}/candidates:
+    get:
+      operationId: listGenerationCandidates
+      tags: [arrangements]
+      summary: List ranked provider generation candidates
+      parameters:
+        - $ref: "#/components/parameters/GenerationJobId"
+      responses:
+        "200":
+          description: Ranked generated candidates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GenerationCandidate"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /generation-candidates/{candidateId}/select:
+    post:
+      operationId: selectGenerationCandidate
+      tags: [arrangements]
+      summary: Select a validated candidate as a new arrangement version
+      parameters:
+        - $ref: "#/components/parameters/GenerationCandidateId"
+      responses:
+        "200":
+          description: Newly selected arrangement version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Arrangement"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /music-providers:
+    get:
+      operationId: listGenerationProviders
+      tags: [arrangements]
+      summary: List generation provider capabilities and availability
+      responses:
+        "200":
+          description: Generation provider catalog
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GenerationProvider"
   /arrangements/{arrangementId}/export:
     post:
       operationId: exportArrangement
@@ -568,6 +634,18 @@ components:
         type: string
     SourceId:
       name: sourceId
+      in: path
+      required: true
+      schema:
+        type: string
+    GenerationJobId:
+      name: jobId
+      in: path
+      required: true
+      schema:
+        type: string
+    GenerationCandidateId:
+      name: candidateId
       in: path
       required: true
       schema:
@@ -1174,6 +1252,14 @@ components:
           items:
             $ref: "#/components/schemas/Candidate"
         selectedCandidateId: { type: ["string", "null"] }
+        sourceGenerationJobId:
+          type: [string, "null"]
+        sourceCandidateId:
+          type: [string, "null"]
+        generationProvenance:
+          oneOf:
+            - $ref: "#/components/schemas/GenerationProvenance"
+            - { type: "null" }
         createdAt: { type: string }
     ArrangementSection:
       type: object
@@ -1191,8 +1277,156 @@ components:
         candidates: { type: number, minimum: 1, maximum: 3 }
         provider:
           type: string
-          enum: [LOCAL_SYMBOLIC_DIRECTOR_V1, ACE_STEP_BASE, ANYACCOMP, SYMPHONYGEN, METEOR, CUSTOM]
+          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, ANYACCOMP, SYMPHONYGEN, METEOR]
+        task:
+          type: string
+          enum: [SEPARATION, TRANSCRIPTION, ACCOMPANIMENT, ORCHESTRATION, ARRANGEMENT]
+        hardware:
+          type: string
+          enum: [AUTO, CPU, GPU]
+        speed:
+          type: string
+          enum: [FAST, BALANCED, QUALITY]
         seed: { type: number }
+        parameters:
+          type: object
+          additionalProperties: true
+    GenerationProvenance:
+      type: object
+      required: [jobId, candidateId, provider, modelVersion, seed, parameters, parentArtifactIds]
+      properties:
+        jobId: { type: string }
+        candidateId: { type: string }
+        provider:
+          type: string
+          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, ANYACCOMP, SYMPHONYGEN, METEOR]
+        modelVersion: { type: string }
+        reportedModelVersion:
+          type: [string, "null"]
+        providerRequestId:
+          type: [string, "null"]
+        songModelVersion:
+          type: [number, "null"]
+        seed: { type: number }
+        parameters:
+          type: object
+          additionalProperties: true
+        parentArtifactIds:
+          type: array
+          items: { type: string }
+    GenerationJob:
+      type: object
+      required: [id, projectId, arrangementId, task, status, provider, modelVersion, hardware, speed, progress, stage, requestedCandidates, seed, parameters, parentArtifactIds, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        projectId: { type: string }
+        arrangementId: { type: string }
+        task:
+          type: string
+          enum: [SEPARATION, TRANSCRIPTION, ACCOMPANIMENT, ORCHESTRATION, ARRANGEMENT]
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed]
+        provider:
+          type: string
+          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, ANYACCOMP, SYMPHONYGEN, METEOR]
+        modelVersion: { type: string }
+        hardware:
+          type: string
+          enum: [AUTO, CPU, GPU]
+        speed:
+          type: string
+          enum: [FAST, BALANCED, QUALITY]
+        progress: { type: number, minimum: 0, maximum: 100 }
+        stage: { type: string }
+        providerRequestId:
+          type: [string, "null"]
+        requestedCandidates: { type: number }
+        seed: { type: number }
+        parameters:
+          type: object
+          additionalProperties: true
+        parentArtifactIds:
+          type: array
+          items: { type: string }
+        error:
+          type: [string, "null"]
+        createdAt: { type: string }
+        updatedAt: { type: string }
+        completedAt:
+          type: [string, "null"]
+    GenerationCandidate:
+      type: object
+      required: [id, jobId, provider, modelVersion, seed, rank, label, score, confidence, summary, status, parameters, parentArtifactIds, plan, createdAt]
+      properties:
+        id: { type: string }
+        jobId: { type: string }
+        provider:
+          type: string
+          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, ANYACCOMP, SYMPHONYGEN, METEOR]
+        modelVersion: { type: string }
+        reportedModelVersion:
+          type: [string, "null"]
+        providerRequestId:
+          type: [string, "null"]
+        seed: { type: number }
+        rank: { type: number }
+        label: { type: string }
+        score: { type: number }
+        confidence: { type: number }
+        summary: { type: string }
+        status:
+          type: string
+          enum: [validated, selected, rejected]
+        parameters:
+          type: object
+          additionalProperties: true
+        parentArtifactIds:
+          type: array
+          items: { type: string }
+        plan:
+          type: object
+          required: [sections]
+          properties:
+            sections:
+              type: array
+              items:
+                $ref: "#/components/schemas/ArrangementSection"
+            tracks:
+              type: array
+              items:
+                type: object
+                required: [name, role, kind]
+                properties:
+                  name: { type: string }
+                  role: { type: string }
+                  kind: { type: string }
+        createdAt: { type: string }
+    GenerationProvider:
+      type: object
+      required: [id, name, modelVersion, tasks, hardware, speeds, available]
+      properties:
+        id:
+          type: string
+          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, ANYACCOMP, SYMPHONYGEN, METEOR]
+        name: { type: string }
+        modelVersion: { type: string }
+        tasks:
+          type: array
+          items:
+            type: string
+            enum: [SEPARATION, TRANSCRIPTION, ACCOMPANIMENT, ORCHESTRATION, ARRANGEMENT]
+        hardware:
+          type: array
+          items:
+            type: string
+            enum: [CPU, GPU]
+        speeds:
+          type: array
+          items:
+            type: string
+            enum: [FAST, BALANCED, QUALITY]
+        available: { type: boolean }
     GenerationResult:
       type: object
       required: [arrangement, candidates, selectedCandidate, provider]

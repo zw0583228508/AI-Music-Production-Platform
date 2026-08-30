@@ -2,6 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { resumePendingSourceJobs } from "./lib/sourceAnalyzer";
 import { syncModelRegistry } from "./lib/musicProviders";
+import { startGenerationRecoveryScheduler } from "./lib/arrangementGeneration";
 
 const rawPort = process.env["PORT"];
 
@@ -33,6 +34,9 @@ app.listen(port, (err) => {
         });
       }, 60_000);
       recoveryTimer.unref();
+      startGenerationRecoveryScheduler(60_000, (error: unknown) => {
+        logger.error({ err: error }, "Failed to recover pending generation jobs");
+      });
     })
     .catch((error: unknown) => {
       logger.error({ err: error }, "Failed to initialize music model registry and job recovery");

@@ -6,8 +6,10 @@
   "scripts": {
     "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
     "build": "node ./build.mjs",
+    "pretest": "pnpm --filter @workspace/db run push",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "test": "pnpm run build && node --test tests/*.test.mjs && pnpm run test:validation && pnpm run test:analysis-providers",
+    "pretest:auth": "pnpm --filter @workspace/db run push",
     "test:auth": "pnpm run build && node --test tests/authorization.test.mjs",
     "test:export": "node --test tests/export-pipeline.test.mjs",
     "test:validation": "esbuild src/lib/songModelValidation.test.ts --bundle --platform=node --format=esm --outfile=/tmp/music-studio-song-model-validation.test.mjs && node --test /tmp/music-studio-song-model-validation.test.mjs",

@@ -5,7 +5,11 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { GenerationInputHardware } from './generationInputHardware';
+import type { GenerationInputParameters } from './generationInputParameters';
 import type { GenerationInputProvider } from './generationInputProvider';
+import type { GenerationInputSpeed } from './generationInputSpeed';
+import type { GenerationInputTask } from './generationInputTask';
 
 export interface GenerationInput {
   /**
@@ -14,5 +18,9 @@ export interface GenerationInput {
      */
   candidates?: number;
   provider?: GenerationInputProvider;
+  task?: GenerationInputTask;
+  hardware?: GenerationInputHardware;
+  speed?: GenerationInputSpeed;
   seed?: number;
+  parameters?: GenerationInputParameters;
 }

@@ -35,8 +35,10 @@ import type {
   ExportInput,
   ExportPackage,
   GenerationBlockedError,
+  GenerationCandidate,
   GenerationInput,
-  GenerationResult,
+  GenerationJob,
+  GenerationProvider,
   HealthStatus,
   LogoutBrowserSessionParams,
   LogoutSuccess,
@@ -1827,12 +1829,12 @@ export const getGenerateArrangementUrl = (arrangementId: string,) => {
 }
 
 /**
- * @summary Generate arrangement candidates
+ * @summary Queue provider-backed arrangement generation
  */
 export const generateArrangement = async (arrangementId: string,
-    generationInput?: GenerationInput, options?: Parameters<typeof customFetch>[1]): Promise<GenerationResult> => {
+    generationInput?: GenerationInput, options?: Parameters<typeof customFetch>[1]): Promise<GenerationJob> => {
 
-  return customFetch<GenerationResult>(getGenerateArrangementUrl(arrangementId),
+  return customFetch<GenerationJob>(getGenerateArrangementUrl(arrangementId),
   {
     ...options,
     method: 'POST',
@@ -1845,7 +1847,7 @@ export const generateArrangement = async (arrangementId: string,
 
 
 
-export const getGenerateArrangementMutationOptions = <TError = ErrorType<NotFoundResponse | GenerationBlockedError>,
+export const getGenerateArrangementMutationOptions = <TError = ErrorType<NotFoundResponse | GenerationBlockedError | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateArrangement>>, TError,{arrangementId: string;data?: BodyType<GenerationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof generateArrangement>>, TError,{arrangementId: string;data?: BodyType<GenerationInput>}, TContext> => {
 
@@ -1874,12 +1876,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type GenerateArrangementMutationResult = NonNullable<Awaited<ReturnType<typeof generateArrangement>>>
     export type GenerateArrangementMutationBody = BodyType<GenerationInput> | undefined
-    export type GenerateArrangementMutationError = ErrorType<NotFoundResponse | GenerationBlockedError>
+    export type GenerateArrangementMutationError = ErrorType<NotFoundResponse | GenerationBlockedError | void>
 
     /**
- * @summary Generate arrangement candidates
+ * @summary Queue provider-backed arrangement generation
  */
-export const useGenerateArrangement = <TError = ErrorType<NotFoundResponse | GenerationBlockedError>,
+export const useGenerateArrangement = <TError = ErrorType<NotFoundResponse | GenerationBlockedError | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateArrangement>>, TError,{arrangementId: string;data?: BodyType<GenerationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof generateArrangement>>,
@@ -1889,6 +1891,308 @@ export const useGenerateArrangement = <TError = ErrorType<NotFoundResponse | Gen
       > => {
       return useMutation(getGenerateArrangementMutationOptions(options));
     }
+
+export const getGetGenerationJobUrl = (jobId: string,) => {
+
+
+
+
+  return `/api/generation-jobs/${jobId}`
+}
+
+/**
+ * @summary Get live provider generation progress
+ */
+export const getGenerationJob = async (jobId: string, options?: Parameters<typeof customFetch>[1]): Promise<GenerationJob> => {
+
+  return customFetch<GenerationJob>(getGetGenerationJobUrl(jobId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetGenerationJobQueryKey = (jobId: string,) => {
+    return [
+    `/api/generation-jobs/${jobId}`
+    ] as const;
+    }
+
+
+export const getGetGenerationJobQueryOptions = <TData = Awaited<ReturnType<typeof getGenerationJob>>, TError = ErrorType<NotFoundResponse>>(jobId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGenerationJob>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetGenerationJobQueryKey(jobId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getGenerationJob>>> = ({ signal }) => getGenerationJob(jobId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: jobId !== null && jobId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGenerationJob>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetGenerationJobQueryResult = NonNullable<Awaited<ReturnType<typeof getGenerationJob>>>
+export type GetGenerationJobQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Get live provider generation progress
+ */
+
+export function useGetGenerationJob<TData = Awaited<ReturnType<typeof getGenerationJob>>, TError = ErrorType<NotFoundResponse>>(
+ jobId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGenerationJob>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetGenerationJobQueryOptions(jobId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListGenerationCandidatesUrl = (jobId: string,) => {
+
+
+
+
+  return `/api/generation-jobs/${jobId}/candidates`
+}
+
+/**
+ * @summary List ranked provider generation candidates
+ */
+export const listGenerationCandidates = async (jobId: string, options?: Parameters<typeof customFetch>[1]): Promise<GenerationCandidate[]> => {
+
+  return customFetch<GenerationCandidate[]>(getListGenerationCandidatesUrl(jobId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListGenerationCandidatesQueryKey = (jobId: string,) => {
+    return [
+    `/api/generation-jobs/${jobId}/candidates`
+    ] as const;
+    }
+
+
+export const getListGenerationCandidatesQueryOptions = <TData = Awaited<ReturnType<typeof listGenerationCandidates>>, TError = ErrorType<NotFoundResponse>>(jobId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGenerationCandidates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListGenerationCandidatesQueryKey(jobId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listGenerationCandidates>>> = ({ signal }) => listGenerationCandidates(jobId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: jobId !== null && jobId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listGenerationCandidates>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListGenerationCandidatesQueryResult = NonNullable<Awaited<ReturnType<typeof listGenerationCandidates>>>
+export type ListGenerationCandidatesQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary List ranked provider generation candidates
+ */
+
+export function useListGenerationCandidates<TData = Awaited<ReturnType<typeof listGenerationCandidates>>, TError = ErrorType<NotFoundResponse>>(
+ jobId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGenerationCandidates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListGenerationCandidatesQueryOptions(jobId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSelectGenerationCandidateUrl = (candidateId: string,) => {
+
+
+
+
+  return `/api/generation-candidates/${candidateId}/select`
+}
+
+/**
+ * @summary Select a validated candidate as a new arrangement version
+ */
+export const selectGenerationCandidate = async (candidateId: string, options?: Parameters<typeof customFetch>[1]): Promise<Arrangement> => {
+
+  return customFetch<Arrangement>(getSelectGenerationCandidateUrl(candidateId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getSelectGenerationCandidateMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof selectGenerationCandidate>>, TError,{candidateId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof selectGenerationCandidate>>, TError,{candidateId: string}, TContext> => {
+
+const mutationKey = ['selectGenerationCandidate'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof selectGenerationCandidate>>, {candidateId: string}> = (props) => {
+          const {candidateId} = props ?? {};
+
+          return  selectGenerationCandidate(candidateId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SelectGenerationCandidateMutationResult = NonNullable<Awaited<ReturnType<typeof selectGenerationCandidate>>>
+
+    export type SelectGenerationCandidateMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Select a validated candidate as a new arrangement version
+ */
+export const useSelectGenerationCandidate = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof selectGenerationCandidate>>, TError,{candidateId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof selectGenerationCandidate>>,
+        TError,
+        {candidateId: string},
+        TContext
+      > => {
+      return useMutation(getSelectGenerationCandidateMutationOptions(options));
+    }
+
+export const getListGenerationProvidersUrl = () => {
+
+
+
+
+  return `/api/music-providers`
+}
+
+/**
+ * @summary List generation provider capabilities and availability
+ */
+export const listGenerationProviders = async ( options?: Parameters<typeof customFetch>[1]): Promise<GenerationProvider[]> => {
+
+  return customFetch<GenerationProvider[]>(getListGenerationProvidersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListGenerationProvidersQueryKey = () => {
+    return [
+    `/api/music-providers`
+    ] as const;
+    }
+
+
+export const getListGenerationProvidersQueryOptions = <TData = Awaited<ReturnType<typeof listGenerationProviders>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGenerationProviders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListGenerationProvidersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listGenerationProviders>>> = ({ signal }) => listGenerationProviders({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listGenerationProviders>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListGenerationProvidersQueryResult = NonNullable<Awaited<ReturnType<typeof listGenerationProviders>>>
+export type ListGenerationProvidersQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List generation provider capabilities and availability
+ */
+
+export function useListGenerationProviders<TData = Awaited<ReturnType<typeof listGenerationProviders>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGenerationProviders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListGenerationProvidersQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getExportArrangementUrl = (arrangementId: string,) => {
 
@@ -2338,4 +2642,3 @@ export const useRunCopilot = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getRunCopilotMutationOptions(options));
     }
-

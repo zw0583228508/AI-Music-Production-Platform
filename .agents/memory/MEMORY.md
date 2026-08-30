@@ -1,4 +1,5 @@
 - [Arrangement export semantics](arrangement-export-semantics.md) — deterministic exports must still follow section structure, controls, and track activation rather than generic audio.
 - [Object Storage stream warnings](object-storage-stream-warnings.md) — analysis downloads can emit benign PassThrough listener-limit warnings despite successful completion.
 - [Provider truth and job fencing](provider-truth-and-job-fencing.md) — unavailable music models stay explicit; durable jobs require database fencing before any musical result is committed.
+- [Managed database schema flow](managed-database-schema-flow.md) — use Drizzle push for dev/test and Replit Publish’s schema diff for production; never run startup or deploy DDL.
 - [Generated-code verification](generated-code-verification.md) — restart the frontend workflow after API code generation before trusting browser HMR or module-loading logs.

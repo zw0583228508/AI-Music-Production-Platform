@@ -9,6 +9,7 @@ import type { ArrangementMode } from './arrangementMode';
 import type { ArrangementSection } from './arrangementSection';
 import type { ArrangementStatus } from './arrangementStatus';
 import type { Candidate } from './candidate';
+import type { GenerationProvenance } from './generationProvenance';
 
 export interface Arrangement {
   id: string;
@@ -29,5 +30,10 @@ export interface Arrangement {
   candidates: Candidate[];
   /** @nullable */
   selectedCandidateId: string | null;
+  /** @nullable */
+  sourceGenerationJobId?: string | null;
+  /** @nullable */
+  sourceCandidateId?: string | null;
+  generationProvenance?: GenerationProvenance | null;
   createdAt: string;
 }

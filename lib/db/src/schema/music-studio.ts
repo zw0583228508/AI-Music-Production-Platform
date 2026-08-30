@@ -23,6 +23,12 @@ export type ArrangementSection = {
   tracks: string[];
 };
 
+export type MusicGenerationTask =
+  | "SEPARATION"
+  | "TRANSCRIPTION"
+  | "ACCOMPANIMENT"
+  | "ORCHESTRATION"
+  | "ARRANGEMENT";
 export type TrackPerformance = {
   tempoMap: Array<{ tick: number; bpm: number }>;
   meterMap: Array<{ tick: number; numerator: number; denominator: number }>;
@@ -260,28 +266,89 @@ export const analysisJobsTable = pgTable("music_analysis_jobs", {
   uniqueIndex("music_analysis_jobs_source_attempt_idx").on(table.sourceId, table.attempt),
 ]);
 
-export const arrangementsTable = pgTable("music_arrangements", {
+export const arrangementsTable = pgTable(
+  "music_arrangements",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => musicProjectsTable.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    style: text("style").notNull(),
+    mode: text("mode").notNull(),
+    version: integer("version").notNull().default(1),
+    status: text("status").notNull().default("draft"),
+    harmonyComplexity: integer("harmony_complexity").notNull().default(5),
+    energy: doublePrecision("energy").notNull().default(0.6),
+    density: doublePrecision("density").notNull().default(0.55),
+    orchestraSize: doublePrecision("orchestra_size").notNull().default(0.5),
+    rhythmIntensity: doublePrecision("rhythm_intensity").notNull().default(0.6),
+    sections: jsonb("sections").$type<ArrangementSection[]>().notNull().default([]),
+    generationProvider: text("generation_provider"),
+    candidates: jsonb("candidates").$type<ArrangementCandidateData[]>().notNull().default([]),
+    selectedCandidateId: text("selected_candidate_id"),
+    sourceGenerationJobId: text("source_generation_job_id"),
+    sourceCandidateId: text("source_candidate_id"),
+    generationProvenance: jsonb("generation_provenance")
+      .$type<ArrangementGenerationProvenance>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("music_arrangements_project_version_unique").on(
+      table.projectId,
+      table.version,
+    ),
+    uniqueIndex("music_arrangements_source_candidate_unique").on(
+      table.sourceCandidateId,
+    ),
+  ],
+);
+
+export const musicGenerationJobsTable = pgTable("music_generation_jobs", {
   id: text("id").primaryKey(),
   projectId: text("project_id")
     .notNull()
     .references(() => musicProjectsTable.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  style: text("style").notNull(),
-  mode: text("mode").notNull(),
-  version: integer("version").notNull().default(1),
-  status: text("status").notNull().default("draft"),
-  harmonyComplexity: integer("harmony_complexity").notNull().default(5),
-  energy: doublePrecision("energy").notNull().default(0.6),
-  density: doublePrecision("density").notNull().default(0.55),
-  orchestraSize: doublePrecision("orchestra_size").notNull().default(0.5),
-  rhythmIntensity: doublePrecision("rhythm_intensity").notNull().default(0.6),
-  sections: jsonb("sections").$type<ArrangementSection[]>().notNull().default([]),
-  generationProvider: text("generation_provider"),
-  candidates: jsonb("candidates").$type<ArrangementCandidateData[]>().notNull().default([]),
-  selectedCandidateId: text("selected_candidate_id"),
+  arrangementId: text("arrangement_id")
+    .notNull()
+    .references(() => arrangementsTable.id, { onDelete: "cascade" }),
+  songModelId: text("song_model_id").references(() => songModelsTable.id, {
+    onDelete: "set null",
+  }),
+  songModelVersion: integer("song_model_version"),
+  task: text("task").$type<MusicGenerationTask>().notNull(),
+  status: text("status").notNull().default("queued"),
+  provider: text("provider").notNull(),
+  modelVersion: text("model_version").notNull(),
+  hardware: text("hardware").notNull(),
+  speed: text("speed").notNull(),
+  progress: integer("progress").notNull().default(0),
+  stage: text("stage").notNull().default("queued"),
+  providerRequestId: text("provider_request_id"),
+  workerId: text("worker_id"),
+  heartbeatAt: timestamp("heartbeat_at", { withTimezone: true }),
+  leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+  requestedCandidates: integer("requested_candidates").notNull().default(1),
+  seed: integer("seed").notNull(),
+  parameters: jsonb("parameters")
+    .$type<GenerationParameters>()
+    .notNull()
+    .default({}),
+  parentArtifactIds: jsonb("parent_artifact_ids")
+    .$type<string[]>()
+    .notNull()
+    .default([]),
+  inputSnapshot: jsonb("input_snapshot")
+    .$type<GenerationInputSnapshot>()
+    .notNull(),
+  error: text("error"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
 });
-
 const emptyTrackPerformance: TrackPerformance = {
   tempoMap: [],
   meterMap: [],
@@ -352,6 +419,21 @@ export const studioActivitiesTable = pgTable("studio_activities", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export type GenerationInputSnapshot = {
+  arrangement: {
+    id: string;
+    version: number;
+    style: string;
+    mode: string;
+    status: string;
+    harmonyComplexity: number;
+    energy: number;
+    density: number;
+    orchestraSize: number;
+    rhythmIntensity: number;
+  };
+  songModel: unknown;
+};
 export type ProviderFusionDecision = {
   provider: string;
   status: "selected" | "accepted" | "flagged" | "rejected";
@@ -390,3 +472,65 @@ export type SongModelCore = {
   sections: AnalysisSection[];
   energy: number[];
 };
+
+export type ArrangementGenerationProvenance = {
+  jobId: string;
+  candidateId: string;
+  provider: string;
+  modelVersion: string;
+  reportedModelVersion: string | null;
+  providerRequestId: string | null;
+  songModelVersion: number | null;
+  seed: number;
+  parameters: GenerationParameters;
+  parentArtifactIds: string[];
+};
+
+export type CandidatePlan = {
+  sections: ArrangementSection[];
+  tracks?: Array<{
+    name: string;
+    role: string;
+    kind: string;
+  }>;
+};
+
+export const musicGenerationCandidatesTable = pgTable(
+  "music_generation_candidates",
+  {
+    id: text("id").primaryKey(),
+    jobId: text("job_id")
+      .notNull()
+      .references(() => musicGenerationJobsTable.id, { onDelete: "cascade" }),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => musicProjectsTable.id, { onDelete: "cascade" }),
+    arrangementId: text("arrangement_id")
+      .notNull()
+      .references(() => arrangementsTable.id, { onDelete: "cascade" }),
+    artifactId: text("artifact_id"),
+    providerRequestId: text("provider_request_id"),
+    reportedModelVersion: text("reported_model_version"),
+    provider: text("provider").notNull(),
+    modelVersion: text("model_version").notNull(),
+    seed: integer("seed").notNull(),
+    rank: integer("rank").notNull(),
+    label: text("label").notNull(),
+    score: doublePrecision("score").notNull(),
+    confidence: doublePrecision("confidence").notNull(),
+    summary: text("summary").notNull(),
+    status: text("status").notNull().default("validated"),
+    parameters: jsonb("parameters")
+      .$type<GenerationParameters>()
+      .notNull()
+      .default({}),
+    parentArtifactIds: jsonb("parent_artifact_ids")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    plan: jsonb("plan").$type<CandidatePlan>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+);
+
+export type GenerationParameters = Record<string, unknown>;

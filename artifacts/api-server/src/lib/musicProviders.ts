@@ -1,10 +1,13 @@
 import type {
   AnalysisSection,
+  ArrangementSection,
+  CandidatePlan,
+  GenerationParameters,
+  MusicGenerationTask,
   ModelCapability,
   SongModelData,
 } from "@workspace/db";
 import { db, modelRegistryTable } from "@workspace/db";
-
 export type ProviderStatus = "ready" | "configured" | "unavailable";
 
 export type MusicProviderDescriptor = {
@@ -410,6 +413,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function finiteNumber(value: unknown, field: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`Provider candidate field "${field}" must be a finite number`);
+  }
+  return value;
+}
 export async function syncModelRegistry(): Promise<void> {
   for (const provider of MUSIC_PROVIDERS) {
     await db.insert(modelRegistryTable).values(provider).onConflictDoUpdate({
@@ -429,4 +438,439 @@ export async function syncModelRegistry(): Promise<void> {
       },
     });
   }
+}
+
+export const musicProviderIds = [
+  "BS_ROFORMER",
+  "ALL_IN_ONE",
+  "MT3",
+  "BASIC_PITCH",
+  "ACE_STEP",
+  "ANYACCOMP",
+  "SYMPHONYGEN",
+  "METEOR",
+] as const;
+
+class HttpMusicGenerationProvider implements MusicGenerationProvider {
+  readonly available: boolean;
+
+  constructor(
+    readonly definition: ProviderDefinition,
+    private readonly endpoint: string | undefined,
+    private readonly token: string | undefined,
+  ) {
+    this.available = Boolean(endpoint);
+  }
+
+  private headers(): Record<string, string> {
+    return {
+      "Content-Type": "application/json",
+      ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+    };
+  }
+
+  private normalizeResult(
+    payload: unknown,
+    input: ProviderGenerationInput,
+  ): ProviderGenerationResult {
+    if (!isRecord(payload) || !Array.isArray(payload["candidates"])) {
+      throw new Error(`${this.definition.displayName} worker response is invalid`);
+    }
+    const candidates = payload["candidates"]
+      .slice(0, input.candidates)
+      .map((candidate, index) => normalizeCandidate(candidate, index, input));
+    if (candidates.length === 0) {
+      throw new Error(`${this.definition.displayName} worker returned no candidates`);
+    }
+    return {
+      requestId: typeof payload["requestId"] === "string" ? payload["requestId"] : null,
+      modelVersion:
+        typeof payload["modelVersion"] === "string"
+          ? payload["modelVersion"]
+          : this.definition.modelVersion,
+      candidates,
+    };
+  }
+
+  async generate(
+    input: ProviderGenerationInput,
+    onProgress?: (progress: ProviderProgress) => Promise<void>,
+  ): Promise<ProviderGenerationResult> {
+    if (!this.endpoint) {
+      throw new Error(`${this.definition.displayName} worker is not configured`);
+    }
+    const response = await fetch(this.endpoint, {
+      method: "POST",
+      headers: {
+        ...this.headers(),
+        "Idempotency-Key": input.jobId,
+      },
+      body: JSON.stringify({
+        provider: this.definition.id,
+        modelVersion: this.definition.modelVersion,
+        ...input,
+      }),
+      signal: AbortSignal.timeout(10 * 60 * 1000),
+    });
+    if (!response.ok && response.status !== 202) {
+      throw new Error(
+        `${this.definition.displayName} worker returned HTTP ${response.status}`,
+      );
+    }
+    const payload = await response.json() as unknown;
+    if (response.status !== 202) {
+      return this.normalizeResult(payload, input);
+    }
+    if (!isRecord(payload) || typeof payload["statusUrl"] !== "string") {
+      throw new Error(
+        `${this.definition.displayName} worker did not return a status URL`,
+      );
+    }
+    const endpointUrl = new URL(this.endpoint);
+    const statusUrl = new URL(payload["statusUrl"], endpointUrl);
+    if (statusUrl.origin !== endpointUrl.origin) {
+      throw new Error("Provider status URL must use the configured worker origin");
+    }
+    const requestId =
+      typeof payload["requestId"] === "string" ? payload["requestId"] : undefined;
+    await onProgress?.({ progress: 35, stage: "provider_queued", requestId });
+    const deadline = Date.now() + 10 * 60 * 1000;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      const statusResponse = await fetch(statusUrl, {
+        headers: this.headers(),
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!statusResponse.ok) {
+        throw new Error(
+          `${this.definition.displayName} status returned HTTP ${statusResponse.status}`,
+        );
+      }
+      const statusPayload = await statusResponse.json() as unknown;
+      if (!isRecord(statusPayload)) {
+        throw new Error(`${this.definition.displayName} status response is invalid`);
+      }
+      const progress = typeof statusPayload["progress"] === "number"
+        ? Math.max(35, Math.min(90, Math.round(statusPayload["progress"])))
+        : 50;
+      const stage = typeof statusPayload["stage"] === "string"
+        ? statusPayload["stage"]
+        : "running_model";
+      await onProgress?.({ progress, stage, requestId });
+      if (statusPayload["status"] === "failed") {
+        throw new Error(
+          typeof statusPayload["error"] === "string"
+            ? statusPayload["error"]
+            : `${this.definition.displayName} worker failed`,
+        );
+      }
+      if (statusPayload["status"] === "succeeded") {
+        return this.normalizeResult(statusPayload, input);
+      }
+    }
+    throw new Error(`${this.definition.displayName} worker timed out`);
+  }
+}
+
+export type ProviderProgress = {
+  progress: number;
+  stage: string;
+  requestId?: string;
+};
+
+export interface MusicGenerationProvider {
+  readonly definition: ProviderDefinition;
+  readonly available: boolean;
+  generate(
+    input: ProviderGenerationInput,
+    onProgress?: (progress: ProviderProgress) => Promise<void>,
+  ): Promise<ProviderGenerationResult>;
+}
+
+function routeScore(provider: MusicGenerationProvider, request: RoutingRequest): number {
+  const definition = provider.definition;
+  let score = 0;
+  if (definition.tasks.includes(request.task)) score += 100;
+  if (
+    request.hardware === "AUTO" ||
+    definition.hardware.includes(request.hardware)
+  ) {
+    score += 20;
+  }
+  if (definition.speeds.includes(request.speed)) score += 12;
+  const style = request.style.toLowerCase();
+  if (definition.styles.some((candidate) => style.includes(candidate))) score += 24;
+  if (request.speed === "FAST" && definition.hardware.includes("CPU")) score += 4;
+  if (request.speed === "QUALITY" && definition.hardware.includes("GPU")) score += 4;
+  return score;
+}
+
+export function selectMusicProvider(
+  registry: MusicGenerationProvider[],
+  request: RoutingRequest,
+): MusicGenerationProvider {
+  const compatible = registry.filter((provider) => {
+    const definition = provider.definition;
+    return (
+      provider.available &&
+      definition.tasks.includes(request.task) &&
+      definition.speeds.includes(request.speed) &&
+      (request.hardware === "AUTO" ||
+        definition.hardware.includes(request.hardware))
+    );
+  });
+  if (request.requestedProvider) {
+    const requested = compatible.find(
+      (provider) => provider.definition.id === request.requestedProvider,
+    );
+    if (requested) return requested;
+    throw new Error(
+      `${request.requestedProvider} is unavailable or incompatible with ${request.task}`,
+    );
+  }
+  const selected = compatible.sort(
+    (left, right) => routeScore(right, request) - routeScore(left, request),
+  )[0];
+  if (!selected) {
+    throw new Error(
+      `No configured provider is available for ${request.task} (${request.hardware}, ${request.speed})`,
+    );
+  }
+  return selected;
+}
+
+export const providerDefinitions: ProviderDefinition[] = [
+  {
+    id: "BS_ROFORMER",
+    displayName: "BS-RoFormer",
+    modelVersion: "bs-roformer-sw",
+    tasks: ["SEPARATION"],
+    hardware: ["GPU"],
+    speeds: ["BALANCED", "QUALITY"],
+    styles: [],
+  },
+  {
+    id: "ALL_IN_ONE",
+    displayName: "All-In-One",
+    modelVersion: "all-in-one-infer",
+    tasks: ["SEPARATION", "TRANSCRIPTION"],
+    hardware: ["CPU", "GPU"],
+    speeds: ["FAST", "BALANCED"],
+    styles: [],
+  },
+  {
+    id: "MT3",
+    displayName: "MT3",
+    modelVersion: "mt3-infer",
+    tasks: ["TRANSCRIPTION"],
+    hardware: ["GPU"],
+    speeds: ["BALANCED", "QUALITY"],
+    styles: [],
+  },
+  {
+    id: "BASIC_PITCH",
+    displayName: "Basic Pitch",
+    modelVersion: "basic-pitch",
+    tasks: ["TRANSCRIPTION"],
+    hardware: ["CPU", "GPU"],
+    speeds: ["FAST", "BALANCED"],
+    styles: [],
+  },
+  {
+    id: "ACE_STEP",
+    displayName: "ACE-Step",
+    modelVersion: "ace-step-1.5-base",
+    tasks: ["ACCOMPANIMENT", "ARRANGEMENT"],
+    hardware: ["GPU"],
+    speeds: ["FAST", "BALANCED"],
+    styles: ["pop", "electronic", "ambient", "cinematic"],
+  },
+  {
+    id: "ANYACCOMP",
+    displayName: "AnyAccomp",
+    modelVersion: "anyaccomp",
+    tasks: ["ACCOMPANIMENT", "ARRANGEMENT"],
+    hardware: ["GPU"],
+    speeds: ["BALANCED", "QUALITY"],
+    styles: ["vocal", "solo", "acoustic"],
+  },
+  {
+    id: "SYMPHONYGEN",
+    displayName: "SymphonyGen",
+    modelVersion: "symphonygen-2026",
+    tasks: ["ORCHESTRATION", "ARRANGEMENT"],
+    hardware: ["GPU"],
+    speeds: ["BALANCED", "QUALITY"],
+    styles: ["cinematic", "classical", "orchestral", "ensemble"],
+  },
+  {
+    id: "METEOR",
+    displayName: "METEOR",
+    modelVersion: "meteor",
+    tasks: ["ORCHESTRATION", "ARRANGEMENT"],
+    hardware: ["CPU", "GPU"],
+    speeds: ["FAST", "BALANCED", "QUALITY"],
+    styles: ["orchestral", "re-orchestration", "score"],
+  },
+];
+
+export function createProviderRegistry(): MusicGenerationProvider[] {
+  return providerDefinitions.map((definition) => {
+    const key = providerEnvKey(definition.id);
+    const endpoint =
+      process.env[`MUSIC_PROVIDER_${key}_URL`] ??
+      process.env["MUSIC_PROVIDER_GATEWAY_URL"];
+    const token =
+      process.env[`MUSIC_PROVIDER_${key}_TOKEN`] ??
+      process.env["MUSIC_PROVIDER_GATEWAY_TOKEN"];
+    return new HttpMusicGenerationProvider(definition, endpoint, token);
+  });
+}
+
+export type GenerationSpeed = "FAST" | "BALANCED" | "QUALITY";
+
+type ProviderDefinition = {
+  id: MusicProviderId;
+  displayName: string;
+  modelVersion: string;
+  tasks: MusicGenerationTask[];
+  hardware: Exclude<GenerationHardware, "AUTO">[];
+  speeds: GenerationSpeed[];
+  styles: string[];
+};
+
+export type ProviderGenerationInput = {
+  jobId: string;
+  projectId: string;
+  arrangementId: string;
+  task: MusicGenerationTask;
+  style: string;
+  mode: string;
+  hardware: GenerationHardware;
+  speed: GenerationSpeed;
+  candidates: number;
+  seed: number;
+  parameters: GenerationParameters;
+  parentArtifactIds: string[];
+  songModel: unknown;
+  arrangement: {
+    version: number;
+    harmonyComplexity: number;
+    energy: number;
+    density: number;
+    orchestraSize: number;
+    rhythmIntensity: number;
+  };
+};
+
+export type GenerationHardware = "AUTO" | "CPU" | "GPU";
+
+export type ProviderGenerationResult = {
+  requestId: string | null;
+  modelVersion: string;
+  candidates: ProviderCandidate[];
+};
+
+export function providerCatalog(registry: MusicGenerationProvider[]) {
+  return registry.map((provider) => ({
+    id: provider.definition.id,
+    name: provider.definition.displayName,
+    modelVersion: provider.definition.modelVersion,
+    tasks: provider.definition.tasks,
+    hardware: provider.definition.hardware,
+    speeds: provider.definition.speeds,
+    available: provider.available,
+  }));
+}
+
+function normalizeSections(value: unknown): ArrangementSection[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error("Provider candidate plan must contain at least one section");
+  }
+  return value.map((section, index) => {
+    if (!isRecord(section)) {
+      throw new Error(`Provider section ${index + 1} is invalid`);
+    }
+    const tracks = section["tracks"];
+    if (!Array.isArray(tracks) || tracks.some((track) => typeof track !== "string")) {
+      throw new Error(`Provider section ${index + 1} must contain track names`);
+    }
+    return {
+      name: stringValue(section["name"], `sections[${index}].name`),
+      energy: finiteNumber(section["energy"], `sections[${index}].energy`),
+      density: finiteNumber(section["density"], `sections[${index}].density`),
+      tracks,
+    };
+  });
+}
+
+export type MusicProviderId = (typeof musicProviderIds)[number];
+
+type RoutingRequest = {
+  requestedProvider?: MusicProviderId;
+  task: MusicGenerationTask;
+  style: string;
+  hardware: GenerationHardware;
+  speed: GenerationSpeed;
+};
+
+function normalizeCandidate(
+  value: unknown,
+  index: number,
+  input: ProviderGenerationInput,
+): ProviderCandidate {
+  if (!isRecord(value)) throw new Error(`Provider candidate ${index + 1} is invalid`);
+  const plan = value["plan"];
+  if (!isRecord(plan)) throw new Error(`Provider candidate ${index + 1} has no plan`);
+  const parameters = isRecord(value["parameters"])
+    ? value["parameters"] as GenerationParameters
+    : input.parameters;
+  const parents = Array.isArray(value["parentArtifactIds"])
+    ? value["parentArtifactIds"].filter((item): item is string => typeof item === "string")
+    : input.parentArtifactIds;
+  return {
+    providerRequestId:
+      typeof value["providerRequestId"] === "string" ? value["providerRequestId"] : null,
+    label: stringValue(value["label"], `candidates[${index}].label`),
+    score: finiteNumber(value["score"], `candidates[${index}].score`),
+    confidence: finiteNumber(
+      value["confidence"],
+      `candidates[${index}].confidence`,
+    ),
+    summary: stringValue(value["summary"], `candidates[${index}].summary`),
+    plan: {
+      sections: normalizeSections(plan["sections"]),
+      tracks: Array.isArray(plan["tracks"])
+        ? plan["tracks"].filter(isRecord).map((track) => ({
+            name: stringValue(track["name"], "track.name"),
+            role: stringValue(track["role"], "track.role"),
+            kind: stringValue(track["kind"], "track.kind"),
+          }))
+        : undefined,
+    },
+    parameters,
+    parentArtifactIds: parents,
+  };
+}
+
+export type ProviderCandidate = {
+  providerRequestId: string | null;
+  label: string;
+  score: number;
+  confidence: number;
+  summary: string;
+  plan: CandidatePlan;
+  parameters: GenerationParameters;
+  parentArtifactIds: string[];
+};
+
+function providerEnvKey(id: MusicProviderId): string {
+  return id.replace(/[^A-Z0-9]/g, "_");
+}
+
+function stringValue(value: unknown, field: string): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`Provider candidate field "${field}" must be a non-empty string`);
+  }
+  return value.trim();
 }
