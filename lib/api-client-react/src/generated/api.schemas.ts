@@ -69,6 +69,7 @@ export type LicensedInstrumentPackCatalogHistory = {
   vst3: LicensedInstrumentPack[];
   sfz: LicensedInstrumentPack[];
 };
+
 export interface LicensedInstrumentPackCatalog {
   active: LicensedInstrumentPackCatalogActive;
   candidates: LicensedInstrumentPack[];
@@ -1513,6 +1514,21 @@ export const ProviderRuntimeSnapshotHealthStatus = {
   unknown: 'unknown',
 } as const;
 
+/**
+ * Immutable worker attestation captured from live health and required to match the completion payload.
+ */
+export interface ProviderRuntimeProvenance {
+  model: string;
+  /** @pattern ^[a-fA-F0-9]{64}$ */
+  checkpointSha256: string;
+  revision: string;
+  /** @pattern ^sha256:[a-fA-F0-9]{64}$ */
+  containerDigest: string;
+  cudaVersion: string;
+  pytorchVersion: string;
+  gpu: string;
+}
+
 export interface ProviderRuntimeSnapshot {
   availability: ProviderRuntimeSnapshotAvailability;
   configurationReady: boolean;
@@ -1527,6 +1543,9 @@ export interface ProviderRuntimeSnapshot {
   message: string | null;
   /** @nullable */
   reportedVersion: string | null;
+  /** @nullable */
+  reportedChecksum?: string | null;
+  runtimeProvenance?: ProviderRuntimeProvenance | null;
 }
 
 export interface GenerationJob {
@@ -1810,6 +1829,9 @@ export interface GenerationProvider {
   runtimeReady: boolean;
   /** @nullable */
   reportedVersion: string | null;
+  /** @nullable */
+  reportedChecksum?: string | null;
+  runtimeProvenance?: ProviderRuntimeProvenance | null;
   lastHealth: ProviderHealthResult;
 }
 

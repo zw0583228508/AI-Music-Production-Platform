@@ -1,5 +1,5 @@
 export type VerifiedLocalAnalysisProviderId = "BASIC_PITCH" | "DEMUCS";
-export type VerifiedGpuAnalysisProviderId = "BS_ROFORMER" | "MT3";
+export type VerifiedGpuAnalysisProviderId = "BS_ROFORMER" | "ALL_IN_ONE" | "MT3";
 
 export type AnalysisProviderManifestEntry = {
   version: string;
@@ -25,6 +25,9 @@ export const VERIFIED_GPU_ANALYSIS_PROVIDERS: Readonly<
 > = {
   BS_ROFORMER: {
     version: "bs-roformer-viperx-v1",
+  },
+  ALL_IN_ONE: {
+    version: "all-in-one-infer",
   },
   MT3: {
     version: "mt3-ismir2021",
@@ -84,12 +87,23 @@ export function attestAnalysisProviderHealth(
     const expectedChecksum = process.env[
       `${requestedProvider}_CHECKPOINT_SHA256`
     ]?.trim().toLowerCase();
+    const runtime = record(payload.runtime) ? payload.runtime : {};
+    const requiredRuntimeProvenance = [
+      payload.revision ?? payload.checkpointRevision ?? runtime.revision,
+      payload.containerDigest ?? runtime.containerDigest,
+      payload.cudaVersion ?? runtime.cudaVersion,
+      payload.pytorchVersion ?? payload.torchVersion ?? runtime.pytorchVersion ?? runtime.torchVersion,
+      payload.gpu ?? payload.gpuModel ?? runtime.gpu ?? runtime.gpuModel,
+    ].every((value) =>
+      typeof value === "string" && value.trim().length > 0 && value.trim().length <= 256
+    );
     if (
       version !== gpuExpected.version ||
       !/^[a-f0-9]{64}$/i.test(checksum) ||
       !expectedChecksum ||
       checksum.toLowerCase() !== expectedChecksum ||
-      payload.gpuReady !== true
+      payload.gpuReady !== true ||
+      !requiredRuntimeProvenance
     ) {
       throw new Error(
         `health response does not match the verified GPU ${requestedProvider} identity`,

@@ -10,6 +10,7 @@
   "providers": {
     "ACE_STEP": {
       "model_version": "ace-step-1.5-base",
+      "revision": "ace-step/ACE-Step-1.5@ca1e85fe9430179831e6bc6be790c332190a3866",
       "checkpoint_path": "ace-step-1.5-base",
       "checkpoint_sha256": null,
       "runner_env": "MUSIC_GPU_RUNNER_ACE_STEP",
@@ -24,6 +25,7 @@
     },
     "BS_ROFORMER": {
       "model_version": "bs-roformer-viperx-v1",
+      "revision": "openmirlab/bs-roformer-infer@b0f1386fcced25f559f3e61c9f08a73cd9bddf80",
       "checkpoint_path": "bs-roformer-viperx-v1.ckpt",
       "checkpoint_sha256": null,
       "runner_env": "MUSIC_GPU_RUNNER_BS_ROFORMER",
@@ -31,10 +33,19 @@
     },
     "MT3": {
       "model_version": "mt3-ismir2021",
+      "revision": "openmirlab/mt3-infer@331519f1951d3d198aef01664bb0406512f97c77",
       "checkpoint_path": "mt3-ismir2021",
       "checkpoint_sha256": null,
       "runner_env": "MUSIC_GPU_RUNNER_MT3",
       "smoke_env": "MUSIC_GPU_SMOKE_MT3"
+    },
+    "ALL_IN_ONE": {
+      "model_version": "all-in-one-infer-3.1.0",
+      "revision": "openmirlab/all-in-one-infer@3c93b4ae389328544dd5955af7497030cb1bca3a",
+      "checkpoint_path": "all-in-one",
+      "checkpoint_sha256": null,
+      "runner_env": "MUSIC_GPU_RUNNER_ALL_IN_ONE",
+      "smoke_env": "MUSIC_GPU_SMOKE_ALL_IN_ONE"
     }
   }
 }

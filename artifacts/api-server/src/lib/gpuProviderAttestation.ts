@@ -14,7 +14,10 @@ export function isGpuAttestedProvider(providerId: string): boolean {
 
 export function expectedGpuCheckpointSha256(providerId: string): string | null {
   const key = providerId.replace(/[^A-Z0-9]/g, "_");
-  const value = process.env[`MUSIC_PROVIDER_${key}_CHECKPOINT_SHA256`]?.trim();
+  const value = (
+    process.env[`MUSIC_PROVIDER_${key}_CHECKPOINT_SHA256`] ??
+    process.env[`${key}_CHECKPOINT_SHA256`]
+  )?.trim();
   return typeof value === "string" && /^[a-f0-9]{64}$/i.test(value)
     ? value.toLowerCase()
     : null;
@@ -27,8 +30,22 @@ export function expectedGpuModelVersion(
   registryVersion: string,
 ): string | null {
   const key = providerId.replace(/[^A-Z0-9]/g, "_");
-  const configured = process.env[`MUSIC_PROVIDER_${key}_MODEL_VERSION`]?.trim();
+  const configured = (
+    process.env[`MUSIC_PROVIDER_${key}_MODEL_VERSION`] ??
+    process.env[`${key}_MODEL_VERSION`]
+  )?.trim();
   return configured && configured !== registryVersion ? null : registryVersion;
+}
+
+export function expectedGpuContainerDigest(providerId: string): string | null {
+  const key = providerId.replace(/[^A-Z0-9]/g, "_");
+  const value = (
+    process.env[`MUSIC_PROVIDER_${key}_CONTAINER_DIGEST`] ??
+    process.env[`${key}_CONTAINER_DIGEST`]
+  )?.trim();
+  return typeof value === "string" && /^sha256:[a-f0-9]{64}$/i.test(value)
+    ? value.toLowerCase()
+    : null;
 }
 
 export function anyAccompCommercialUseAuthorized(): boolean {

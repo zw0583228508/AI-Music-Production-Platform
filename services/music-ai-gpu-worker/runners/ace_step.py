@@ -8,51 +8,68 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .common import (RunnerError, checkpoint_sha256, durable_job_dir, emit,
-                     require_cuda, validate_audio)
+from .common import (RunnerError, artifact_descriptor, attest_checkpoint, cached_result,
+                     durable_job_dir, emit, require_cuda, runtime_provenance, save_result)
 
 PROVIDER = "ACE_STEP"
 MODEL_VERSION = "ace-step-1.5-base"
 BACKEND_DISTRIBUTION = "ace-step"
-BACKEND_VERSION = "1.5.0"
-BACKEND_SOURCE_REVISION = "ACE-Step/ACE-Step@v1.5.0"
+BACKEND_VERSION = "ca1e85fe9430179831e6bc6be790c332190a3866"
+BACKEND_SOURCE_REVISION = "ace-step/ACE-Step-1.5@ca1e85fe9430179831e6bc6be790c332190a3866"
+MODEL_SOURCE = "ACE-Step/acestep-v15-base"
 MAX_CANDIDATES = 4
 MAX_SECONDS = 120
 
 
 class OfficialAceStepBackend:
-    """Thin adapter around ACE-Step's official local-checkpoint pipeline."""
+    """Adapter for the documented official inference API at the pinned revision."""
     def __init__(self, checkpoint: Path) -> None:
-        torch = require_cuda()
+        require_cuda()
         if not checkpoint.is_dir():
             raise RunnerError("ACE-Step checkpoint is not a mounted directory")
         try:
-            # The official package exposes this pipeline; no remote-code loader is used.
-            from acestep.pipeline_ace_step import ACEStepPipeline
+            from acestep.handler import AceStepHandler
+            from acestep.inference import GenerationConfig, GenerationParams, generate_music
+            from acestep.llm_inference import LLMHandler
         except ImportError as exc:
             raise RunnerError("official ace-step package is not installed") from exc
         try:
-            self.pipeline = ACEStepPipeline.from_pretrained(
-                str(checkpoint), local_files_only=True, torch_dtype=torch.float16
-            ).to("cuda")
+            self.dit_handler = AceStepHandler()
+            self.llm_handler = LLMHandler()
+            self.dit_handler.initialize_service(
+                checkpoint_dir=str(checkpoint),
+                config_path=os.environ.get("MUSIC_PROVIDER_ACE_STEP_CONFIG_PATH",
+                                           "acestep-v15-base"),
+                device="cuda",
+            )
         except Exception as exc:
             raise RunnerError(f"unable to load mounted ACE-Step checkpoint: {type(exc).__name__}") from exc
+        self.GenerationConfig = GenerationConfig
+        self.GenerationParams = GenerationParams
+        self.generate_music = generate_music
 
     def generate(self, *, prompt: str, seed: int, duration_seconds: float,
-                 candidates: int) -> tuple[list[Any], int]:
+                 candidates: int, output_dir: Path) -> list[dict[str, Any]]:
         try:
-            result = self.pipeline.generate(
-                prompt=prompt, seed=seed, duration=duration_seconds,
-                num_samples=candidates,
+            params = self.GenerationParams(
+                task_type="text2music", caption=prompt, duration=duration_seconds,
+                thinking=False,
+            )
+            config = self.GenerationConfig(
+                batch_size=candidates, audio_format="flac", use_random_seed=False,
+                seeds=[seed + index for index in range(candidates)],
+            )
+            result = self.generate_music(
+                self.dit_handler, self.llm_handler, params, config,
+                save_dir=str(output_dir),
             )
         except Exception as exc:
             raise RunnerError(f"ACE-Step inference failed: {type(exc).__name__}") from exc
-        # Official pipeline releases return either ``audios`` or a list of samples.
-        audios = getattr(result, "audios", result)
-        sample_rate = int(getattr(result, "sample_rate", 44100))
-        if not isinstance(audios, (list, tuple)):
-            audios = [audios]
-        return list(audios), sample_rate
+        if not result.success:
+            raise RunnerError(f"ACE-Step generation failed: {result.error or 'unknown error'}")
+        if not isinstance(result.audios, list):
+            raise RunnerError("ACE-Step returned invalid audio metadata")
+        return result.audios
 
 
 def _parameters(request: dict[str, Any]) -> tuple[str, int, float, int]:
@@ -75,52 +92,45 @@ def _parameters(request: dict[str, Any]) -> tuple[str, int, float, int]:
     return prompt.strip(), seed, float(duration), count
 
 
-def _write_audio(value: Any, sample_rate: int, path: Path) -> None:
-    try:
-        import numpy as np
-        import soundfile as sf
-        if hasattr(value, "detach"):
-            value = value.detach().float().cpu().numpy()
-        data = np.asarray(value)
-        if data.ndim == 1:
-            data = data[:, None]
-        elif data.ndim == 2 and data.shape[0] <= 8 and data.shape[1] > data.shape[0]:
-            data = data.T
-        if data.ndim != 2:
-            raise RunnerError("ACE-Step returned audio with an invalid shape")
-        sf.write(str(path), data, sample_rate, format="FLAC")
-    except RunnerError:
-        raise
-    except Exception as exc:
-        raise RunnerError(f"could not persist ACE-Step output: {type(exc).__name__}") from exc
-
-
-def provenance(checkpoint: Path) -> dict[str, str]:
+def provenance(digest: str) -> dict[str, str]:
     return {"provider": PROVIDER, "modelVersion": MODEL_VERSION,
-            "checkpointSha256": checkpoint_sha256(checkpoint),
+            "checkpointSha256": digest,
             "backend": BACKEND_DISTRIBUTION, "backendVersion": BACKEND_VERSION,
-            "sourceRevision": BACKEND_SOURCE_REVISION, "device": "cuda"}
+            "revision": BACKEND_SOURCE_REVISION, "sourceRevision": BACKEND_SOURCE_REVISION,
+            "model": MODEL_SOURCE, "device": "cuda", **runtime_provenance()}
 
 
 def run_job(request: dict[str, Any], checkpoint: Path,
             backend_cls=OfficialAceStepBackend) -> dict[str, Any]:
-    require_cuda()
     prompt, seed, duration, count = _parameters(request)
+    digest = attest_checkpoint(checkpoint, PROVIDER)
     work = durable_job_dir(request, PROVIDER)
-    audios, sample_rate = backend_cls(checkpoint).generate(
-        prompt=prompt, seed=seed, duration_seconds=duration, candidates=count
+    prior = cached_result(work)
+    if prior is not None:
+        return prior
+    require_cuda()
+    audios = backend_cls(checkpoint).generate(
+        prompt=prompt, seed=seed, duration_seconds=duration, candidates=count,
+        output_dir=work,
     )
     if len(audios) != count:
         raise RunnerError("ACE-Step returned a different number of candidates")
     candidates = []
     for number, audio in enumerate(audios):
-        artifact_path = work / f"candidate-{number + 1}.flac"
-        _write_audio(audio, sample_rate, artifact_path)
-        artifact = validate_audio(artifact_path)
+        if not isinstance(audio, dict) or not isinstance(audio.get("path"), str):
+            raise RunnerError("ACE-Step returned an invalid audio entry")
+        artifact_path = Path(audio["path"])
+        if not artifact_path.is_absolute():
+            artifact_path = work / artifact_path
+        if work.resolve() not in artifact_path.resolve().parents:
+            raise RunnerError("ACE-Step output escaped the durable job directory")
+        artifact = artifact_descriptor(artifact_path, PROVIDER, work.name)
         candidates.append({"id": f"candidate-{number + 1}", "seed": seed + number,
                            "artifact": artifact, "artifacts": [artifact],
-                           "provenance": provenance(checkpoint)})
-    return {"candidates": candidates, "provenance": provenance(checkpoint)}
+                           "provenance": provenance(digest)})
+    result = {"candidates": candidates, "provenance": provenance(digest)}
+    save_result(work, result)
+    return result
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -142,7 +152,7 @@ def main(argv: list[str] | None = None) -> int:
                 raise RunnerError("MUSIC_GPU_SMOKE_PROMPT is required for real smoke inference")
             result = run_job({"requestId": f"smoke-{os.urandom(8).hex()}", "prompt": prompt,
                               "seed": 0, "durationSeconds": 2, "candidateCount": 1}, checkpoint)
-            emit({"smokeTested": True, **provenance(checkpoint),
+            emit({"smokeTested": True, **result["provenance"],
                   "output": {"samples": len(result["candidates"])}})
         else:
             emit(run_job(json.load(sys.stdin), checkpoint))

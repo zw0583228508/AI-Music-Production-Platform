@@ -13,12 +13,14 @@ import { db, modelRegistryTable } from "@workspace/db";
 import { attestAnalysisProviderHealth } from "./analysisProviderManifest";
 import {
   anyAccompCommercialUseAuthorized,
+  expectedGpuContainerDigest,
   expectedGpuCheckpointSha256,
   expectedGpuModelVersion,
   isGpuAttestedProvider,
 } from "./gpuProviderAttestation";
 export {
   anyAccompCommercialUseAuthorized,
+  expectedGpuContainerDigest,
   expectedGpuCheckpointSha256,
   expectedGpuModelVersion,
   isGpuAttestedProvider,
@@ -110,6 +112,14 @@ export type ArrangementProviderOutput = {
 export class ProviderUnavailableError extends Error {
   constructor(public readonly providerId: string) {
     super(`Provider ${providerId} is not configured or available`);
+  }
+}
+
+function assertProviderCommercialUseAuthorized(providerId: string): void {
+  if (providerId === "ANYACCOMP" && !anyAccompCommercialUseAuthorized()) {
+    throw new ProviderUnavailableError(
+      "ANYACCOMP (commercial-use authorization is required)",
+    );
   }
 }
 
@@ -398,7 +408,9 @@ export const MUSIC_PROVIDERS: MusicProviderDescriptor[] = [
 
 export function providerDescriptorCatalog(): ProviderDescriptorCatalogEntry[] {
   return MUSIC_PROVIDERS.map((provider) => {
-    const status = ["BASIC_PITCH", "DEMUCS"].includes(provider.id)
+    const status = provider.id === "ANYACCOMP" && !anyAccompCommercialUseAuthorized()
+      ? "unavailable"
+      : ["BASIC_PITCH", "DEMUCS"].includes(provider.id)
       ? remoteConfigured(provider.id) ? "configured" : "unavailable"
       : provider.status;
     const localReady = provider.execution === "local" && status === "ready";
@@ -544,6 +556,7 @@ export class ModelRouter {
     context?: { style?: string; mode?: string; hasExistingArrangement?: boolean },
   ): MusicProviderDescriptor {
     if (requested && requested !== "CUSTOM") {
+      assertProviderCommercialUseAuthorized(requested);
       const exact = MUSIC_PROVIDERS.find((provider) => provider.id === requested);
       if (!exact || exact.status === "unavailable") {
         throw new ProviderUnavailableError(requested);
@@ -564,6 +577,7 @@ export class ModelRouter {
     for (const id of preferredIds) {
       const provider = MUSIC_PROVIDERS.find((candidate) =>
         candidate.id === id &&
+        (candidate.id !== "ANYACCOMP" || anyAccompCommercialUseAuthorized()) &&
         candidate.status !== "unavailable" &&
         candidate.capabilities.includes("arrangement") &&
         candidate.inputTypes.includes(sourceType));
@@ -776,6 +790,7 @@ export async function runArrangementProvider(
   provider: MusicProviderDescriptor,
   input: ArrangementProviderInput,
 ): Promise<ArrangementProviderOutput> {
+  assertProviderCommercialUseAuthorized(provider.id);
   if (provider.execution === "local") {
     return generateLocalArrangement(provider, input);
   }
@@ -1111,6 +1126,9 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
       const expectedChecksum = strictGpuAttestation
         ? expectedGpuCheckpointSha256(this.definition.id)
         : null;
+      const expectedContainerDigest = strictGpuAttestation
+        ? expectedGpuContainerDigest(this.definition.id)
+        : null;
       const reportedProvider = typeof payload["provider"] === "string"
         ? payload["provider"].trim()
         : null;
@@ -1127,6 +1145,7 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
         exactModel &&
         isSha256(reportedChecksum) &&
         reportedChecksum.toLowerCase() === expectedChecksum &&
+        runtimeProvenance?.containerDigest === expectedContainerDigest &&
         smokeTested &&
         gpuReady &&
         runtimeProvenance !== null &&
@@ -1152,6 +1171,10 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
                   reportedChecksum.toLowerCase() !== expectedChecksum
                 )
                 ? "GPU worker checkpoint SHA-256 does not match the deployment pin."
+                : strictGpuAttestation &&
+                    (!expectedContainerDigest ||
+                      runtimeProvenance?.containerDigest !== expectedContainerDigest)
+                  ? "GPU worker container digest does not match the deployment pin."
                 : strictGpuAttestation && !smokeTested
                   ? "GPU worker has not completed a real smoke inference."
                   : strictGpuAttestation && !gpuReady
@@ -1166,8 +1189,8 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
                 ? "Configured worker did not report a model version."
                 : "Configured worker health check is unhealthy.";
       this.readiness = {
-        availability: ready ? "ready" : "configured",
-        configurationReady: true,
+        availability: ready ? "ready" : commercialUseAuthorized ? "configured" : "unavailable",
+        configurationReady: commercialUseAuthorized,
         checkpointReady,
         runtimeReady,
         healthStatus: ready ? "healthy" : "unhealthy",
@@ -1186,8 +1209,12 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
     } catch (error) {
       this.attestedChecksum = null;
       this.readiness = {
-        availability: "configured",
-        configurationReady: true,
+        availability: this.definition.id === "ANYACCOMP" &&
+            !anyAccompCommercialUseAuthorized()
+          ? "unavailable"
+          : "configured",
+        configurationReady: this.definition.id !== "ANYACCOMP" ||
+          anyAccompCommercialUseAuthorized(),
         checkpointReady: false,
         runtimeReady: false,
         healthStatus: "unhealthy",
@@ -1215,16 +1242,20 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
     if (!isRecord(payload) || !Array.isArray(payload["candidates"])) {
       throw new Error(`${this.definition.displayName} worker response is invalid`);
     }
+    const resultModelVersion = typeof payload["modelVersion"] === "string"
+      ? payload["modelVersion"]
+      : null;
+    const resultCheckpointSha256 = payload["checkpointSha256"] ?? payload["checksum"];
+    const runtimeProvenance = parseRuntimeProvenance(
+      payload,
+      resultModelVersion,
+      resultCheckpointSha256,
+    );
     if (isGpuAttestedProvider(this.definition.id)) {
       const provider = payload["provider"];
       const modelVersion = payload["modelVersion"];
       const checkpointSha256 = payload["checkpointSha256"] ??
         payload["checksum"];
-      const runtimeProvenance = parseRuntimeProvenance(
-        payload,
-        typeof modelVersion === "string" ? modelVersion : null,
-        checkpointSha256,
-      );
       if (
         provider !== this.definition.id ||
         modelVersion !== this.definition.modelVersion ||
@@ -1267,6 +1298,7 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
     onProgress?: (progress: ProviderProgress) => Promise<void>,
     signal?: AbortSignal,
   ): Promise<ProviderGenerationResult> {
+    assertProviderCommercialUseAuthorized(this.definition.id);
     if (!this.endpoint) {
       throw new Error(`${this.definition.displayName} worker is not configured`);
     }
@@ -1443,6 +1475,7 @@ export function selectMusicProvider(
       provider.readiness.checkpointReady &&
       provider.readiness.runtimeReady &&
       provider.readiness.healthStatus === "healthy" &&
+      (definition.id !== "ANYACCOMP" || anyAccompCommercialUseAuthorized()) &&
       definition.tasks.includes(request.task) &&
       definition.speeds.includes(request.speed) &&
       (request.hardware === "AUTO" ||
@@ -1707,7 +1740,9 @@ function parseRuntimeProvenance(
   const cudaVersion = provenanceText(payload["cudaVersion"] ?? runtime["cudaVersion"]);
   const pytorchVersion = provenanceText(payload["pytorchVersion"] ?? payload["torchVersion"] ?? runtime["pytorchVersion"] ?? runtime["torchVersion"]);
   const gpu = provenanceText(payload["gpu"] ?? payload["gpuModel"] ?? runtime["gpu"] ?? runtime["gpuModel"]);
-  return model && checkpointSha256 && revision && containerDigest && cudaVersion && pytorchVersion && gpu
+  return model && checkpointSha256 && revision &&
+      containerDigest && /^sha256:[a-f0-9]{64}$/i.test(containerDigest) &&
+      cudaVersion && pytorchVersion && gpu
     ? { model, checkpointSha256, revision, containerDigest, cudaVersion, pytorchVersion, gpu }
     : null;
 }
@@ -1745,6 +1780,7 @@ export function providerCatalog(registry: MusicGenerationProvider[]) {
     runtimeReady: provider.readiness.runtimeReady,
     reportedVersion: provider.readiness.reportedVersion,
     reportedChecksum: provider.readiness.reportedChecksum ?? null,
+    runtimeProvenance: provider.readiness.runtimeProvenance ?? null,
     lastHealth: {
       status: provider.readiness.healthStatus,
       checkedAt: provider.readiness.checkedAt,

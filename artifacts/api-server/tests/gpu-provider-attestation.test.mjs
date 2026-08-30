@@ -14,6 +14,7 @@ await build({
         createProviderRegistry,
         cancelRemoteProviderJob,
         providerCatalog,
+        runArrangementProvider,
         selectMusicProvider,
         verifyProviderRegistry,
       } from "./src/lib/musicProviders";
@@ -36,6 +37,7 @@ const {
   cancelRemoteProviderJob,
   createProviderRegistry,
   providerCatalog,
+  runArrangementProvider,
   selectMusicProvider,
   verifyProviderRegistry,
 } = await import(pathToFileURL(harnessPath).href);
@@ -43,6 +45,7 @@ const {
 after(async () => {
   delete process.env.MUSIC_PROVIDER_ACE_STEP_URL;
   delete process.env.MUSIC_PROVIDER_ACE_STEP_CHECKPOINT_SHA256;
+  delete process.env.MUSIC_PROVIDER_ACE_STEP_CONTAINER_DIGEST;
   delete process.env.MUSIC_PROVIDER_ACE_STEP_TOKEN;
   await unlink(harnessPath).catch(() => undefined);
 });
@@ -74,11 +77,13 @@ async function withWorker(health, run) {
   process.env.MUSIC_PROVIDER_ACE_STEP_URL =
     `http://127.0.0.1:${address.port}/generate`;
   process.env.MUSIC_PROVIDER_ACE_STEP_CHECKPOINT_SHA256 = "a".repeat(64);
+  process.env.MUSIC_PROVIDER_ACE_STEP_CONTAINER_DIGEST = `sha256:${"c".repeat(64)}`;
   try {
     await run();
   } finally {
     delete process.env.MUSIC_PROVIDER_ACE_STEP_URL;
     delete process.env.MUSIC_PROVIDER_ACE_STEP_CHECKPOINT_SHA256;
+    delete process.env.MUSIC_PROVIDER_ACE_STEP_CONTAINER_DIGEST;
     await new Promise((resolve) => server.close(resolve));
   }
 }
@@ -101,9 +106,28 @@ const attestedHealth = {
   modelVersion: "ace-step-1.5-base",
   checkpointSha256: "a".repeat(64),
   smokeTested: true,
+  revision: "ace-step-1.5-base-r42",
+  containerDigest: `sha256:${"c".repeat(64)}`,
+  cudaVersion: "12.4",
+  pytorchVersion: "2.5.1",
+  gpu: "NVIDIA A100",
 };
 
 test("GPU providers require exact checksum, model, GPU, and smoke attestation", async () => {
+  await withWorker(attestedHealth, async () => {
+    delete process.env.MUSIC_PROVIDER_ACE_STEP_CONTAINER_DIGEST;
+    const [provider] = await verifyProviderRegistry([aceStepProvider()], true);
+    assert.equal(providerCatalog([provider])[0].status, "configured");
+  });
+
+  await withWorker({
+    ...attestedHealth,
+    containerDigest: `sha256:${"f".repeat(64)}`,
+  }, async () => {
+    const [provider] = await verifyProviderRegistry([aceStepProvider()], true);
+    assert.equal(providerCatalog([provider])[0].status, "configured");
+  });
+
   await withWorker({ ...attestedHealth, smokeTested: false }, async () => {
     const [provider] = await verifyProviderRegistry([aceStepProvider()], true);
     assert.equal(providerCatalog([provider])[0].status, "configured");
@@ -171,6 +195,56 @@ test("authenticated cancellation uses the generation provider configuration", as
   } finally {
     delete process.env.MUSIC_PROVIDER_ACE_STEP_URL;
     delete process.env.MUSIC_PROVIDER_ACE_STEP_TOKEN;
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("AnyAccomp cannot be selected or invoked without commercial-use authorization", async () => {
+  const server = createServer((request, response) => {
+    response.writeHead(200, { "Content-Type": "application/json" });
+    if (request.url?.startsWith("/health")) {
+      response.end(JSON.stringify({
+        status: "ready",
+        provider: "ANYACCOMP",
+        runtimeReady: true,
+        gpuReady: true,
+        checkpointReady: true,
+        modelVersion: "anyaccomp",
+        checkpointSha256: "d".repeat(64),
+        containerDigest: `sha256:${"e".repeat(64)}`,
+        revision: "anyaccomp-r42",
+        cudaVersion: "12.4",
+        pytorchVersion: "2.5.1",
+        gpu: "NVIDIA A100",
+        smokeTested: true,
+      }));
+      return;
+    }
+    response.end(JSON.stringify({ candidates: [] }));
+  });
+  await listen(server);
+  const address = server.address();
+  process.env.MUSIC_PROVIDER_ANYACCOMP_URL = `http://127.0.0.1:${address.port}/generate`;
+  process.env.MUSIC_PROVIDER_ANYACCOMP_CHECKPOINT_SHA256 = "d".repeat(64);
+  process.env.MUSIC_PROVIDER_ANYACCOMP_CONTAINER_DIGEST = `sha256:${"e".repeat(64)}`;
+  delete process.env.MUSIC_PROVIDER_ANYACCOMP_COMMERCIAL_USE_AUTHORIZED;
+  delete process.env.ANYACCOMP_COMMERCIAL_USE_AUTHORIZED;
+  try {
+    const registry = await verifyProviderRegistry(createProviderRegistry(), true);
+    assert.throws(() => selectMusicProvider(registry, {
+      task: "ARRANGEMENT", requestedProvider: "ANYACCOMP", hardware: "GPU", speed: "BALANCED",
+    }), /unavailable/i);
+    await assert.rejects(() => registry.find((item) =>
+      item.definition.id === "ANYACCOMP")?.generate({}), /commercial-use authorization/i);
+    await assert.rejects(() => runArrangementProvider({
+      id: "ANYACCOMP", name: "AnyAccomp", provider: "AnyAccomp", version: "anyaccomp",
+      capabilities: ["arrangement"], inputTypes: ["VOCAL_ONLY"], execution: "remote",
+      status: "configured", license: "CC-BY-NC-ND", priority: 1, notes: "",
+    }, {}), /commercial-use authorization/i);
+  } finally {
+    delete process.env.MUSIC_PROVIDER_ANYACCOMP_URL;
+    delete process.env.MUSIC_PROVIDER_ANYACCOMP_CHECKPOINT_SHA256;
+    delete process.env.MUSIC_PROVIDER_ANYACCOMP_CONTAINER_DIGEST;
     await new Promise((resolve) => server.close(resolve));
   }
 });

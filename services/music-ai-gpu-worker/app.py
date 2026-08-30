@@ -9,20 +9,25 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import json
 import os
+import re
 import shlex
 import sqlite3
 import subprocess
 import sys
 import time
 import uuid
+from urllib.parse import urlsplit
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 from pydantic import BaseModel, ConfigDict, Field
 
 ROOT = Path(__file__).resolve().parent
@@ -37,6 +42,14 @@ MAX_REQUEST_BYTES = int(os.getenv("MUSIC_GPU_MAX_REQUEST_BYTES", 8 * 1024 * 1024
 MAX_CONCURRENT_JOBS = max(1, int(os.getenv("MUSIC_GPU_MAX_CONCURRENT_JOBS", "1")))
 JOB_TIMEOUT_SECONDS = max(30, int(os.getenv("MUSIC_GPU_JOB_TIMEOUT_SECONDS", "1800")))
 HEALTH_TIMEOUT_SECONDS = max(5, int(os.getenv("MUSIC_GPU_HEALTH_TIMEOUT_SECONDS", "180")))
+OUTPUT_ROOT = Path(os.getenv(
+    "MUSIC_GPU_JOB_OUTPUT_ROOT", str(CHECKPOINT_ROOT / "job-outputs")
+))
+ARTIFACT_MAX_BYTES = 1024 * 1024 * 1024
+ARTIFACT_TTL_SECONDS = max(
+    60, min(24 * 60 * 60, int(os.getenv("MUSIC_GPU_ARTIFACT_TTL_SECONDS", "3600")))
+)
+SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 ENABLED = {
     value.strip()
     for value in os.getenv("MUSIC_GPU_ENABLED_PROVIDERS", "").split(",")
@@ -81,6 +94,24 @@ def _db() -> sqlite3.Connection:
         """
     )
     return connection
+
+
+def _durable_commit(kind: str) -> None:
+    """Flush a mounted Modal Volume; local/OCI execution deliberately no-ops."""
+    volume_name = os.getenv(f"MUSIC_GPU_MODAL_{kind.upper()}_VOLUME_NAME", "").strip()
+    if not volume_name:
+        return
+    if kind == "job" and JOB_DB.exists():
+        connection = sqlite3.connect(JOB_DB, timeout=30)
+        try:
+            connection.execute("PRAGMA wal_checkpoint(PASSIVE)")
+        finally:
+            connection.close()
+    try:
+        import modal
+        modal.Volume.from_name(volume_name, create_if_missing=False).commit()
+    except Exception as exc:
+        raise RuntimeError(f"durable {kind} volume commit failed: {type(exc).__name__}") from exc
 
 
 def _row(row: sqlite3.Row) -> dict[str, Any]:
@@ -187,6 +218,18 @@ def _provider_health(provider: str, run_smoke: bool = True) -> dict[str, Any]:
     )
     actual_hash = _checkpoint_digest(checkpoint)
     runtime_ready, runtime_message = _gpu_runtime()
+    try:
+        import torch
+        pytorch_version = str(torch.__version__)
+        cuda_version = str(torch.version.cuda or "")
+        gpu_model = str(torch.cuda.get_device_name(0)) if torch.cuda.is_available() else ""
+    except Exception:
+        pytorch_version = cuda_version = gpu_model = ""
+    revision = str(os.getenv(
+        f"MUSIC_PROVIDER_{provider}_REVISION", details.get("revision", "")
+    )).strip()
+    container_digest = os.getenv("MUSIC_GPU_CONTAINER_DIGEST", "").strip()
+    immutable_container = bool(re.fullmatch(r"sha256:[a-fA-F0-9]{64}", container_digest))
     checksum_ready = bool(expected_hash and actual_hash and actual_hash.lower() == expected_hash.lower())
     runner = os.getenv(details["runner_env"], "").strip()
     smoke_command = os.getenv(details["smoke_env"], "").strip() or runner
@@ -215,6 +258,10 @@ def _provider_health(provider: str, run_smoke: bool = True) -> dict[str, Any]:
                     and proof.get("provider") == provider
                     and proof.get("modelVersion") == version
                     and proof.get("checkpointSha256", "").lower() == actual_hash.lower()
+                    and _provenance_matches(
+                        proof, version, actual_hash, revision, container_digest,
+                        cuda_version, pytorch_version, gpu_model,
+                    )
                     and bool(proof.get("output"))
                 )
                 if smoke_tested and actual_hash:
@@ -237,6 +284,8 @@ def _provider_health(provider: str, run_smoke: bool = True) -> dict[str, Any]:
         reasons.append("checkpoint SHA-256 does not match the manifest")
     if not runner:
         reasons.append("model runner is not configured")
+    if not immutable_container:
+        reasons.append("immutable container digest is not configured")
     if not smoke_tested:
         reasons.append(smoke_message)
     ready = not reasons
@@ -253,9 +302,51 @@ def _provider_health(provider: str, run_smoke: bool = True) -> dict[str, Any]:
         "checkpointSha256": actual_hash,
         "smokeTested": smoke_tested,
         "framework": MANIFEST["runtime"],
+        "revision": revision,
+        "containerDigest": container_digest,
+        "cudaVersion": cuda_version,
+        "pytorchVersion": pytorch_version,
+        "gpu": gpu_model,
+        "runtime": {
+            "revision": revision,
+            "containerDigest": container_digest,
+            "cudaVersion": cuda_version,
+            "pytorchVersion": pytorch_version,
+            "gpu": gpu_model,
+            "pythonVersion": ".".join(str(part) for part in sys.version_info[:3]),
+        },
         "message": "GPU checkpoint, runtime, checksum, and smoke test are verified"
         if ready else "; ".join(reasons),
     }
+
+
+def _provenance_matches(
+    provenance: Any,
+    model_version: str,
+    checkpoint: str | None,
+    revision: str,
+    container_digest: str,
+    cuda_version: str,
+    pytorch_version: str,
+    gpu: str,
+) -> bool:
+    """Compare a runner/smoke runtime identity to the live loaded worker."""
+    if not isinstance(provenance, dict) or not checkpoint:
+        return False
+    expected = {
+        "modelVersion": model_version,
+        "checkpointSha256": checkpoint.lower(),
+        "revision": revision,
+        "containerDigest": container_digest,
+        "cudaVersion": cuda_version,
+        "pytorchVersion": pytorch_version,
+        "gpu": gpu,
+    }
+    return all(
+        isinstance(provenance.get(key), str)
+        and hmac.compare_digest(provenance[key].lower(), value.lower())
+        for key, value in expected.items()
+    )
 
 
 class JobRequest(BaseModel):
@@ -281,16 +372,38 @@ def _result_from_runner(provider: str, health: dict[str, Any], output: str) -> d
         raise RuntimeError("model runner returned invalid JSON") from exc
     if not isinstance(result, dict):
         raise RuntimeError("model runner result must be an object")
+    provenance = result.get("provenance")
+    if not _provenance_matches(
+        provenance,
+        health["modelVersion"],
+        health["checkpointSha256"],
+        health["revision"],
+        health["containerDigest"],
+        health["cudaVersion"],
+        health["pytorchVersion"],
+        health["gpu"],
+    ):
+        raise RuntimeError("model runner provenance does not match live worker identity")
     candidates = result.get("candidates")
     if provider in {"ACE_STEP", "MUSICGEN"} and (
         not isinstance(candidates, list) or not candidates
     ):
         raise RuntimeError("generation runner returned no candidates")
-    result["provider"] = provider
-    result["modelVersion"] = health["modelVersion"]
-    result["version"] = health["modelVersion"]
-    result["checkpointSha256"] = health["checkpointSha256"]
-    result["smokeTested"] = True
+    # Only promote values after exact comparison above; never overwrite an
+    # untrusted runner claim into an apparently attested result.
+    result.update({
+        "provider": provider,
+        "modelVersion": health["modelVersion"],
+        "version": health["modelVersion"],
+        "checkpointSha256": health["checkpointSha256"],
+        "revision": health["revision"],
+        "containerDigest": health["containerDigest"],
+        "cudaVersion": health["cudaVersion"],
+        "pytorchVersion": health["pytorchVersion"],
+        "gpu": health["gpu"],
+        "runtimeProvenance": provenance,
+        "smokeTested": True,
+    })
     return result
 
 
@@ -321,7 +434,7 @@ async def _execute(job_id: str) -> None:
                 (time.time(), job_id),
             )
             return
-        request = json.loads(row["request_json"])
+        request = _runner_payload(json.loads(row["request_json"]), job_id)
         runner = os.getenv(PROVIDERS[provider]["runner_env"], "").strip()
         connection.execute(
             "UPDATE jobs SET progress=35, stage='running_model', updated_at=? WHERE id=?",
@@ -352,6 +465,10 @@ async def _execute(job_id: str) -> None:
                 env={
                     **os.environ,
                     "CUDA_VISIBLE_DEVICES": os.getenv("CUDA_VISIBLE_DEVICES", "0"),
+                    "MUSIC_GPU_ARTIFACT_BASE_URL": request.get("_artifactBaseUrl", ""),
+                    "MUSIC_GPU_ARTIFACT_CAPABILITY_EXPIRES": str(
+                        int(time.time()) + ARTIFACT_TTL_SECONDS
+                    ),
                 },
             )
             PROCESSES[job_id] = process
@@ -369,6 +486,7 @@ async def _execute(job_id: str) -> None:
             code = process.returncode
             output = stdout.decode(errors="replace")[-4 * 1024 * 1024:]
             error = stderr.decode(errors="replace")[-4096:]
+            _durable_commit("output")
         latest = connection.execute("SELECT status FROM jobs WHERE id=?", (job_id,)).fetchone()
         if latest and latest["status"] == "cancel_requested":
             connection.execute(
@@ -388,6 +506,7 @@ async def _execute(job_id: str) -> None:
                 "UPDATE jobs SET status='cancelled', progress=100, stage='cancelled', updated_at=? WHERE id=? AND status='cancel_requested'",
                 (time.time(), job_id),
             )
+        _durable_commit("job")
     except HTTPException as exc:
         connection.execute(
             "UPDATE jobs SET status='failed', progress=100, stage='failed', error=?, error_code=?, updated_at=? WHERE id=? AND status='running'",
@@ -412,9 +531,23 @@ async def _execute(job_id: str) -> None:
         TASKS.pop(job_id, None)
         PROCESSES.pop(job_id, None)
         connection.close()
+        # Covers cancellation and failure transitions as well as the explicit
+        # completion commit above. In Modal a failed commit propagates, rather
+        # than allowing an uncommitted state to be reported as durable.
+        _durable_commit("job")
 
 
-def _queue(request: JobRequest, idempotency_key: str) -> dict[str, Any]:
+def _runner_payload(request: dict[str, Any], job_id: str) -> dict[str, Any]:
+    """Fence runner durable directories to the persisted worker job identity."""
+    payload = dict(request)
+    payload["jobId"] = job_id
+    payload["requestId"] = job_id
+    return payload
+
+
+def _queue(
+    request: JobRequest, idempotency_key: str, artifact_base_url: str | None = None
+) -> dict[str, Any]:
     if not idempotency_key.strip():
         raise HTTPException(400, "Idempotency-Key is required")
     details = PROVIDERS.get(request.provider)
@@ -426,6 +559,8 @@ def _queue(request: JobRequest, idempotency_key: str) -> dict[str, Any]:
     request_hash = hashlib.sha256(
         json.dumps(serialized, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
+    if artifact_base_url:
+        serialized["_artifactBaseUrl"] = artifact_base_url
     connection = _db()
     now = time.time()
     try:
@@ -450,6 +585,7 @@ def _queue(request: JobRequest, idempotency_key: str) -> dict[str, Any]:
             "SELECT * FROM jobs WHERE id=?", (job_id,)
         ).fetchone())
         connection.execute("COMMIT")
+        _durable_commit("job")
         return created
     except Exception:
         if connection.in_transaction:
@@ -472,6 +608,7 @@ async def lifespan(_: FastAPI):
     )
     rows = connection.execute("SELECT id FROM jobs WHERE status='queued'").fetchall()
     connection.close()
+    _durable_commit("job")
     for row in rows:
         TASKS[row["id"]] = asyncio.create_task(_execute(row["id"]))
     yield
@@ -496,6 +633,106 @@ async def size_limit(request: Request, call_next):
     return await call_next(request)
 
 
+def _artifact_metadata(value: Any, filename: str) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        if value.get("name") == filename and isinstance(value.get("sha256"), str):
+            return value
+        for child in value.values():
+            found = _artifact_metadata(child, filename)
+            if found:
+                return found
+    elif isinstance(value, list):
+        for child in value:
+            found = _artifact_metadata(child, filename)
+            if found:
+                return found
+    return None
+
+
+def _consume_artifact(
+    provider: str, job_id: str, filename: str, expires: int, capability: str
+) -> FileResponse:
+    """Atomically claim one capability-protected artifact for one download."""
+    secret = os.getenv("MUSIC_GPU_ARTIFACT_CAPABILITY_SECRET", "")
+    if not secret:
+        raise HTTPException(503, "artifact capability service is not configured")
+    providers_by_path = {name.lower(): name for name in PROVIDERS}
+    canonical_provider = providers_by_path.get(provider)
+    if (
+        not canonical_provider
+        or not SAFE_COMPONENT.fullmatch(job_id)
+        or not SAFE_COMPONENT.fullmatch(filename)
+        or Path(filename).suffix.lower() not in {".wav", ".flac"}
+    ):
+        raise HTTPException(404, "artifact not found")
+    now = int(time.time())
+    if expires <= now or expires > now + 24 * 60 * 60:
+        raise HTTPException(410, "artifact capability has expired")
+    job_dir = (OUTPUT_ROOT / provider / job_id).resolve()
+    root = OUTPUT_ROOT.resolve()
+    try:
+        job_dir.relative_to(root)
+    except ValueError:
+        raise HTTPException(404, "artifact not found")
+    path = (job_dir / filename).resolve()
+    if path.parent != job_dir:
+        raise HTTPException(404, "artifact not found")
+    try:
+        result = json.loads((job_dir / "result.json").read_text(encoding="utf-8"))
+        metadata = _artifact_metadata(result, filename)
+        size = path.stat().st_size
+    except (OSError, json.JSONDecodeError):
+        raise HTTPException(404, "artifact not found")
+    if (
+        not metadata
+        or not isinstance(metadata.get("bytes"), int)
+        or metadata["bytes"] != size
+        or size <= 0
+        or size > ARTIFACT_MAX_BYTES
+    ):
+        raise HTTPException(409, "artifact validation failed")
+    actual_sha = _checkpoint_digest(path)
+    expected_sha = str(metadata.get("sha256", "")).lower()
+    if not actual_sha or not hmac.compare_digest(actual_sha.lower(), expected_sha):
+        raise HTTPException(409, "artifact validation failed")
+    expected = hmac.new(
+        secret.encode(),
+        f"{canonical_provider}/{job_id}/{filename}/{expected_sha}/{expires}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(expected, capability):
+        raise HTTPException(401, "invalid artifact capability")
+    claimed = job_dir / f".download-{uuid.uuid4().hex}"
+    try:
+        path.rename(claimed)
+    except FileNotFoundError:
+        raise HTTPException(404, "artifact not found")
+    return FileResponse(
+        claimed,
+        media_type=str(metadata.get("contentType") or "application/octet-stream"),
+        filename=filename,
+        headers={"Cache-Control": "no-store"},
+        background=BackgroundTask(_delete_claimed_artifact, claimed),
+    )
+
+
+def _delete_claimed_artifact(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+        _durable_commit("output")
+    except Exception:
+        # A consumed capability must never be restored after a failed durable
+        # delete commit; the renamed path remains unreachable and fail-closed.
+        raise
+
+
+@app.get("/artifacts/{provider}/{job_id}/{filename}")
+def download_artifact(
+    provider: str, job_id: str, filename: str, expires: int, capability: str
+):
+    return _consume_artifact(provider, job_id, filename, expires, capability)
+
+
 @app.get("/health", dependencies=[Depends(_auth)])
 def health(provider: str | None = None):
     if provider:
@@ -505,7 +742,11 @@ def health(provider: str | None = None):
 
 async def submit(request: JobRequest, raw_request: Request):
     key = raw_request.headers.get("Idempotency-Key", "")
-    job = _queue(request, key)
+    base = str(raw_request.base_url).rstrip("/")
+    parsed = urlsplit(base)
+    if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
+        raise HTTPException(400, "artifact origin must be HTTPS")
+    job = _queue(request, key, f"{base}/artifacts")
     if job["id"] not in TASKS and job["status"] == "queued":
         TASKS[job["id"]] = asyncio.create_task(_execute(job["id"]))
     return JSONResponse(
@@ -550,8 +791,8 @@ async def transcribe(request: JobRequest, raw_request: Request):
 
 @app.post("/analyze", dependencies=[Depends(_auth)])
 async def analyze(request: JobRequest, raw_request: Request):
-    if request.provider != "MT3":
-        raise HTTPException(422, "analyze supports MT3")
+    if request.provider not in {"MT3", "ALL_IN_ONE"}:
+        raise HTTPException(422, "analyze supports MT3 and ALL_IN_ONE")
     return await submit(request, raw_request)
 
 
@@ -592,6 +833,7 @@ def cancel(job_id: str):
     )
     updated = connection.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
     connection.close()
+    _durable_commit("job")
     task = TASKS.get(job_id)
     if task and row["status"] == "queued":
         task.cancel()

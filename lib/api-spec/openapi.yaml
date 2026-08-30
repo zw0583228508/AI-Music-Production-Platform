@@ -2179,6 +2179,12 @@ components:
         runtimeReady: { type: boolean }
         reportedVersion:
           type: [string, "null"]
+        reportedChecksum:
+          type: [string, "null"]
+        runtimeProvenance:
+          oneOf:
+            - $ref: "#/components/schemas/ProviderRuntimeProvenance"
+            - type: "null"
         lastHealth:
           $ref: "#/components/schemas/ProviderHealthResult"
     ProviderHealthResult:
@@ -2215,6 +2221,24 @@ components:
           type: [string, "null"]
         reportedVersion:
           type: [string, "null"]
+        reportedChecksum:
+          type: [string, "null"]
+        runtimeProvenance:
+          oneOf:
+            - $ref: "#/components/schemas/ProviderRuntimeProvenance"
+            - type: "null"
+    ProviderRuntimeProvenance:
+      type: object
+      description: Immutable worker attestation captured from live health and required to match the completion payload.
+      required: [model, checkpointSha256, revision, containerDigest, cudaVersion, pytorchVersion, gpu]
+      properties:
+        model: { type: string }
+        checkpointSha256: { type: string, pattern: "^[a-fA-F0-9]{64}$" }
+        revision: { type: string }
+        containerDigest: { type: string, pattern: "^sha256:[a-fA-F0-9]{64}$" }
+        cudaVersion: { type: string }
+        pytorchVersion: { type: string }
+        gpu: { type: string }
     GenerationResult:
       type: object
       required: [arrangement, candidates, selectedCandidate, provider]

@@ -5,6 +5,7 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { ProviderRuntimeProvenance } from './providerRuntimeProvenance';
 import type { ProviderRuntimeSnapshotAvailability } from './providerRuntimeSnapshotAvailability';
 import type { ProviderRuntimeSnapshotHealthStatus } from './providerRuntimeSnapshotHealthStatus';
 
@@ -22,4 +23,7 @@ export interface ProviderRuntimeSnapshot {
   message: string | null;
   /** @nullable */
   reportedVersion: string | null;
+  /** @nullable */
+  reportedChecksum?: string | null;
+  runtimeProvenance?: ProviderRuntimeProvenance | null;
 }

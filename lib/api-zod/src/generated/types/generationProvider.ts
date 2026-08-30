@@ -11,6 +11,7 @@ import type { GenerationProviderSpeedsItem } from './generationProviderSpeedsIte
 import type { GenerationProviderStatus } from './generationProviderStatus';
 import type { GenerationProviderTasksItem } from './generationProviderTasksItem';
 import type { ProviderHealthResult } from './providerHealthResult';
+import type { ProviderRuntimeProvenance } from './providerRuntimeProvenance';
 
 export interface GenerationProvider {
   id: GenerationProviderId;
@@ -26,5 +27,8 @@ export interface GenerationProvider {
   runtimeReady: boolean;
   /** @nullable */
   reportedVersion: string | null;
+  /** @nullable */
+  reportedChecksum?: string | null;
+  runtimeProvenance?: ProviderRuntimeProvenance | null;
   lastHealth: ProviderHealthResult;
 }

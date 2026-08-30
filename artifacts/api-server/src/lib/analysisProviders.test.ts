@@ -75,6 +75,11 @@ test("prefers configured DEMUCS and records its actual separation provenance", a
         smokeTested: true,
         modelVersion: provider === "DEMUCS" ? "4.0.1" : "bs-roformer-viperx-v1",
         gpuReady: provider === "BS_ROFORMER",
+         revision: provider === "BS_ROFORMER" ? "bs-roformer-r42" : "demucs-r42",
+         containerDigest: "sha256:analysis-worker-r42",
+         cudaVersion: "12.4",
+         pytorchVersion: "2.5.1",
+         gpu: "NVIDIA A100",
         checksum: provider === "DEMUCS"
           ? "8726e21a993978c7ba086d3872e7608d7d5bfca646ca4aca459ffda844faa8b4"
           : "a".repeat(64),

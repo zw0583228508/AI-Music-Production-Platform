@@ -44,6 +44,8 @@ const {
 
 after(async () => {
   delete process.env.MUSIC_PROVIDER_METEOR_URL;
+  delete process.env.MUSIC_PROVIDER_METEOR_CHECKPOINT_SHA256;
+  delete process.env.MUSIC_PROVIDER_METEOR_CONTAINER_DIGEST;
   delete process.env.MUSIC_PROVIDER_METEOR_HEALTH_URL;
   delete process.env.MUSIC_PROVIDER_HEALTH_TIMEOUT_MS;
   delete process.env.DEMUCS_API_URL;
@@ -63,10 +65,14 @@ async function withHealthServer(handler, run) {
   const address = server.address();
   process.env.MUSIC_PROVIDER_METEOR_URL =
     `http://127.0.0.1:${address.port}/generate`;
+  process.env.MUSIC_PROVIDER_METEOR_CHECKPOINT_SHA256 = "b".repeat(64);
+  process.env.MUSIC_PROVIDER_METEOR_CONTAINER_DIGEST = `sha256:${"c".repeat(64)}`;
   try {
     await run();
   } finally {
     delete process.env.MUSIC_PROVIDER_METEOR_URL;
+    delete process.env.MUSIC_PROVIDER_METEOR_CHECKPOINT_SHA256;
+    delete process.env.MUSIC_PROVIDER_METEOR_CONTAINER_DIGEST;
     await new Promise((resolve) => server.close(resolve));
   }
 }
@@ -84,8 +90,18 @@ test("routes only to a worker with a verified checkpoint and runtime", async () 
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({
       status: "ready",
-      checkpoint: { ready: true, version: "meteor-checkpoint-9" },
-      runtime: { ready: true },
+      provider: "METEOR",
+      checkpoint: { ready: true, version: "meteor", sha256: "b".repeat(64) },
+      runtime: {
+        ready: true,
+        gpuReady: true,
+        revision: "meteor-r42",
+        containerDigest: `sha256:${"c".repeat(64)}`,
+        cudaVersion: "12.4",
+        pytorchVersion: "2.5.1",
+        gpu: "NVIDIA A100",
+      },
+      smokeTested: true,
     }));
   }, async () => {
     const registry = await verifyProviderRegistry([meteorProvider()], true);
@@ -93,7 +109,7 @@ test("routes only to a worker with a verified checkpoint and runtime", async () 
     assert.equal(catalogEntry.status, "ready");
     assert.equal(catalogEntry.checkpointReady, true);
     assert.equal(catalogEntry.runtimeReady, true);
-    assert.equal(catalogEntry.reportedVersion, "meteor-checkpoint-9");
+    assert.equal(catalogEntry.reportedVersion, "meteor");
     assert.equal(catalogEntry.lastHealth.status, "healthy");
     assert.equal(
       selectMusicProvider(registry, {

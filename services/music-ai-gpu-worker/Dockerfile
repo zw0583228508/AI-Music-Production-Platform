@@ -1,9 +1,12 @@
 FROM nvidia/cuda:12.4.1-cudnn9-runtime-ubuntu22.04
+ARG PROVIDER_REQUIREMENTS=""
+ARG MUSIC_GPU_SOURCE_IMAGE_DIGEST=""
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     MUSIC_GPU_CHECKPOINT_ROOT=/var/lib/music-ai-gpu/models \
-    MUSIC_GPU_CUDA_VERSION=12.4.1
+    MUSIC_GPU_CUDA_VERSION=12.4.1 \
+    MUSIC_GPU_CONTAINER_DIGEST=${MUSIC_GPU_SOURCE_IMAGE_DIGEST}
 
 COPY --from=ghcr.io/astral-sh/uv:0.6.1 /uv /uvx /bin/
 RUN uv python install 3.11.11
@@ -15,6 +18,8 @@ RUN uv pip install --python 3.11.11 \
 
 WORKDIR /app
 COPY services/music-ai-gpu-worker /app
+RUN test -z "$PROVIDER_REQUIREMENTS" || \
+    uv pip install --python 3.11.11 -r "/app/runners/${PROVIDER_REQUIREMENTS}"
 RUN groupadd --system music-ai && useradd --system --gid music-ai --home /app music-ai \
     && mkdir -p /var/lib/music-ai-gpu/models \
     && chown -R music-ai:music-ai /app /var/lib/music-ai-gpu

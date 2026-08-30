@@ -2,13 +2,19 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
+import ipaddress
 import json
 import math
 import os
 import shutil
+import socket
+from importlib.metadata import PackageNotFoundError, version
+import tempfile
+import time
 import urllib.parse
-import urllib.request
 import uuid
+from http.client import HTTPSConnection
 from pathlib import Path
 from typing import Any
 
@@ -22,14 +28,56 @@ class RunnerError(RuntimeError):
     """A deliberate, safe-to-report runner failure."""
 
 
+def finite_number(value: Any, label: str, low: float | None = None,
+                  high: float | None = None) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise RunnerError(f"{label} must be finite")
+    value = float(value)
+    if (low is not None and value < low) or (high is not None and value > high):
+        raise RunnerError(f"{label} is out of bounds")
+    return value
+
+
+def require_distribution_version(distribution: str, expected: str) -> None:
+    """Prevent a mutable/incorrect installed wheel from claiming pinned provenance."""
+    try:
+        actual = version(distribution)
+    except PackageNotFoundError as exc:
+        raise RunnerError(f"{distribution}=={expected} is not installed") from exc
+    if actual != expected:
+        raise RunnerError(f"{distribution} version {actual} does not match pinned {expected}")
+
+
 def checkpoint_sha256(path: Path) -> str:
-    if not path.is_file():
-        raise RunnerError("checkpoint is not a mounted file")
     digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
+    if path.is_file():
+        files = [path]
+    elif path.is_dir():
+        files = sorted(item for item in path.rglob("*") if item.is_file())
+        if not files:
+            raise RunnerError("checkpoint directory is empty")
+    else:
+        raise RunnerError("checkpoint is missing from durable storage")
+    for file in files:
+        if path.is_dir():
+            digest.update(file.relative_to(path).as_posix().encode())
+        with file.open("rb") as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(block)
     return digest.hexdigest()
+
+
+def attest_checkpoint(path: Path, provider: str) -> str:
+    """Require the same explicit pin used by the worker health contract."""
+    expected = os.environ.get(f"MUSIC_PROVIDER_{provider}_CHECKPOINT_SHA256", "").strip().lower()
+    if len(expected) != 64 or any(char not in "0123456789abcdef" for char in expected):
+        raise RunnerError(
+            f"MUSIC_PROVIDER_{provider}_CHECKPOINT_SHA256 must be an exact SHA-256"
+        )
+    actual = checkpoint_sha256(path)
+    if not hmac.compare_digest(actual, expected):
+        raise RunnerError("mounted checkpoint SHA-256 does not match its pinned environment value")
+    return actual
 
 
 def require_cuda() -> Any:
@@ -64,7 +112,16 @@ def durable_job_dir(request: dict[str, Any], provider: str) -> Path:
     if not job_id or len(job_id) > 128 or any(c not in "-_." and not c.isalnum() for c in job_id):
         raise RunnerError("requestId is invalid")
     path = root / provider.lower() / job_id
-    path.mkdir(mode=0o750, parents=True, exist_ok=False)
+    fingerprint = hashlib.sha256(json.dumps(request, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    try:
+        path.mkdir(mode=0o750, parents=True, exist_ok=False)
+        (path / ".request-sha256").write_text(fingerprint)
+    except FileExistsError:
+        try:
+            if not hmac.compare_digest((path / ".request-sha256").read_text().strip(), fingerprint):
+                raise RunnerError("durable job directory belongs to a different request")
+        except OSError as exc:
+            raise RunnerError("existing durable job directory has no request identity") from exc
     return path
 
 
@@ -72,14 +129,45 @@ def download_source(source_url: Any, destination: Path) -> Path:
     if not isinstance(source_url, str) or not source_url:
         raise RunnerError("canonical sourceUrl is required")
     parsed = urllib.parse.urlparse(source_url)
-    if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
         raise RunnerError("sourceUrl must be an absolute HTTPS URL")
-    suffix = Path(parsed.path).suffix.lower()
-    if suffix not in ALLOWED_AUDIO_SUFFIXES:
-        raise RunnerError("sourceUrl must name a supported audio file")
-    request = urllib.request.Request(source_url, headers={"User-Agent": "music-ai-gpu-runner/1"})
     try:
-        with urllib.request.urlopen(request, timeout=30) as response, destination.open("wb") as output:
+        port = parsed.port or 443
+        candidates = socket.getaddrinfo(parsed.hostname, port, type=socket.SOCK_STREAM)
+    except (OSError, ValueError) as exc:
+        raise RunnerError("source URL DNS lookup failed") from exc
+    vetted = []
+    for family, _, _, _, sockaddr in candidates:
+        if not ipaddress.ip_address(sockaddr[0]).is_global:
+            raise RunnerError("source URL resolves to a prohibited network address")
+        vetted.append((family, sockaddr))
+    if not vetted:
+        raise RunnerError("source URL has no public address")
+
+    class VettedHTTPSConnection(HTTPSConnection):
+        def connect(self) -> None:
+            family, sockaddr = vetted[0]
+            sock = socket.socket(family, socket.SOCK_STREAM)
+            try:
+                sock.settimeout(self.timeout)
+                sock.connect(sockaddr)
+                self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+            except Exception:
+                sock.close()
+                raise
+
+    connection = VettedHTTPSConnection(parsed.hostname, port, timeout=30)
+    try:
+        target = parsed.path or "/"
+        if parsed.query:
+            target += f"?{parsed.query}"
+        connection.request("GET", target, headers={"User-Agent": "music-ai-gpu-runner/1"})
+        response = connection.getresponse()
+        if 300 <= response.status < 400:
+            raise RunnerError("source redirects are not permitted")
+        if not 200 <= response.status < 300:
+            raise RunnerError("source server returned an unsuccessful response")
+        with response, destination.open("wb") as output:
             length = response.headers.get("Content-Length")
             if length and (not length.isdigit() or int(length) > MAX_INPUT_BYTES):
                 raise RunnerError("source audio exceeds input size limit")
@@ -139,6 +227,58 @@ def validate_audio(path: Path) -> dict[str, Any]:
         "bytes": path.stat().st_size,
         "sha256": file_sha256(path),
     }
+
+def artifact_descriptor(path: Path, provider: str, job_id: str) -> dict[str, Any]:
+    """Expose a signed capability, never a worker-local filesystem location."""
+    base = os.getenv("MUSIC_GPU_ARTIFACT_BASE_URL", "").rstrip("/")
+    secret = os.getenv("MUSIC_GPU_ARTIFACT_CAPABILITY_SECRET", "")
+    if not base.startswith("https://") or not secret:
+        raise RunnerError("artifact capability URL configuration is required")
+    try:
+        expires = int(os.getenv("MUSIC_GPU_ARTIFACT_CAPABILITY_EXPIRES", ""))
+    except ValueError as exc:
+        raise RunnerError("artifact capability expiration is invalid") from exc
+    if expires <= int(time.time()):
+        raise RunnerError("artifact capability expiration is invalid")
+    result = validate_audio(path)
+    result.pop("path", None)
+    name = path.name
+    token = hmac.new(secret.encode(), f"{provider}/{job_id}/{name}/{result['sha256']}/{expires}".encode(),
+                     hashlib.sha256).hexdigest()
+    result.update({"name": name, "contentType": f"audio/{result['format']}",
+                   "url": f"{base}/{provider.lower()}/{job_id}/{urllib.parse.quote(name)}"
+                          f"?expires={expires}&capability={token}",
+                   "capability": token, "expiresAt": expires})
+    return result
+
+
+def cached_result(work: Path) -> dict[str, Any] | None:
+    try:
+        value = json.loads((work / "result.json").read_text())
+    except FileNotFoundError:
+        return None
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RunnerError("existing durable job result is invalid") from exc
+    if not isinstance(value, dict):
+        raise RunnerError("existing durable job result is invalid")
+    return value
+
+
+def save_result(work: Path, value: dict[str, Any]) -> None:
+    temporary = work / ".result.json.tmp"
+    temporary.write_text(json.dumps(value, separators=(",", ":"), sort_keys=True))
+    temporary.chmod(0o600)
+    os.replace(temporary, work / "result.json")
+
+
+def runtime_provenance() -> dict[str, str]:
+    torch = require_cuda()
+    container = os.getenv("MUSIC_GPU_CONTAINER_DIGEST", "").strip()
+    if not container:
+        raise RunnerError("MUSIC_GPU_CONTAINER_DIGEST is required for provenance")
+    return {"containerDigest": container, "cudaVersion": str(torch.version.cuda or "unknown"),
+            "pytorchVersion": str(torch.__version__),
+            "gpu": torch.cuda.get_device_name(torch.cuda.current_device())}
 
 
 def file_sha256(path: Path) -> str:

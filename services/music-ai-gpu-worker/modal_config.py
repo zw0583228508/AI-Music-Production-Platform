@@ -7,6 +7,7 @@ definitions into Modal classes.
 from __future__ import annotations
 
 import json
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -32,6 +33,8 @@ class ProviderDeployment:
     idle_timeout_seconds: int
     checkpoint_path: str
     model_version: str
+    requirements_file: str
+    source_image_digest: str
 
     @property
     def enabled_providers(self) -> str:
@@ -54,16 +57,32 @@ def load_manifest(path: Path = MANIFEST_PATH) -> dict:
 
 MANIFEST = load_manifest()
 
-# These capacity limits are intentionally conservative. A provider gets one
-# process per container because app.py owns a SQLite-backed async job queue and
-# each process is limited to one GPU inference at a time.
+
+def provider_source_image_digest(provider: str, requirements_file: str) -> str:
+    """Hash immutable, reviewed provider-image inputs (not an OCI layer digest)."""
+    paths = [
+        ROOT / "Dockerfile", ROOT / "app.py", ROOT / "modal_config.py",
+        ROOT / "model_manifest.json", ROOT / "runners" / requirements_file,
+        ROOT / "runners" / f"{provider.lower()}.py", ROOT / "runners" / "common.py",
+        ROOT / "runners" / "_common.py",
+    ]
+    digest = hashlib.sha256()
+    for path in paths:
+        digest.update(path.relative_to(ROOT).as_posix().encode() + b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return "sha256:" + digest.hexdigest()
+
+# SQLite recovery and the in-process task registry are intentionally
+# single-container only. Scaling these HTTP workers horizontally would allow two
+# process-local schedulers to resume the same durable queue.
 _CAPACITY = {
-    "BS_ROFORMER": ("A10G", 2, 1_800, 300),
-    "ACE_STEP": ("L40S", 2, 1_800, 300),
-    "MT3": ("A10G", 2, 1_200, 180),
-    # Kept deployable for the existing worker contract, but not a task #46
-    # priority provider. It remains unavailable without an attested runner.
-    "MUSICGEN": ("L40S", 1, 1_800, 300),
+    # L4 and L40S are supported Modal GPU SKU strings.  ACE-Step's larger
+    # generation footprint receives L40S; bounded analysis/separation uses L4.
+    "BS_ROFORMER": ("L4", 1, 1_800, 300, "requirements-bs-roformer.txt"),
+    "ACE_STEP": ("L40S", 1, 1_800, 300, "requirements-ace-step.txt"),
+    "MT3": ("L4", 1, 1_200, 180, "requirements-mt3.txt"),
+    "ALL_IN_ONE": ("L4", 1, 1_200, 180, "requirements-all-in-one.txt"),
 }
 
 DEPLOYMENTS = {
@@ -76,6 +95,8 @@ DEPLOYMENTS = {
         idle_timeout_seconds=_CAPACITY[provider][3],
         checkpoint_path=details["checkpoint_path"],
         model_version=details["model_version"],
+        requirements_file=_CAPACITY[provider][4],
+        source_image_digest=provider_source_image_digest(provider, _CAPACITY[provider][4]),
     )
     for provider, details in MANIFEST["providers"].items()
     if provider in _CAPACITY
@@ -88,9 +109,14 @@ def worker_environment(deployment: ProviderDeployment) -> dict[str, str]:
     return {
         "MUSIC_GPU_CHECKPOINT_ROOT": MODEL_MOUNT,
         "MUSIC_GPU_JOB_DB": f"{JOB_MOUNT}/{deployment.provider.lower()}.sqlite3",
-        "MUSIC_GPU_OUTPUT_ROOT": f"{OUTPUT_MOUNT}/{deployment.provider.lower()}",
+        # Runner common.py reads this exact variable. It owns per-job
+        # subdirectories below the provider directory.
+        "MUSIC_GPU_JOB_OUTPUT_ROOT": OUTPUT_MOUNT,
         "MUSIC_GPU_ENABLED_PROVIDERS": deployment.enabled_providers,
         "MUSIC_GPU_CUDA_VERSION": runtime["cuda"],
+        "MUSIC_GPU_CONTAINER_DIGEST": deployment.source_image_digest,
+        "MUSIC_GPU_MODAL_JOB_VOLUME_NAME": JOB_VOLUME_NAME,
+        "MUSIC_GPU_MODAL_OUTPUT_VOLUME_NAME": OUTPUT_VOLUME_NAME,
         "MUSIC_GPU_MAX_CONCURRENT_JOBS": "1",
         "MUSIC_GPU_JOB_TIMEOUT_SECONDS": str(deployment.timeout_seconds),
         "MUSIC_GPU_HEALTH_TIMEOUT_SECONDS": "180",

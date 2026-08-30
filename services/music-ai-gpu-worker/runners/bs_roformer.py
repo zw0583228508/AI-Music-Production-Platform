@@ -3,48 +3,67 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
 
-from .common import (RunnerError, checkpoint_sha256, download_source, durable_job_dir,
-                     emit, move_artifact, request_value, require_cuda, validate_audio)
+from .common import (RunnerError, artifact_descriptor, attest_checkpoint, cached_result,
+                     download_source, durable_job_dir, emit, move_artifact, request_value,
+                     require_cuda, runtime_provenance, save_result)
 
 PROVIDER = "BS_ROFORMER"
 MODEL_VERSION = "bs-roformer-viperx-v1"
-BACKEND_DISTRIBUTION = "audio-separator"
-BACKEND_VERSION = "0.30.1"
-BACKEND_SOURCE_REVISION = "viperx/BS-Roformer@v1"
+BACKEND_DISTRIBUTION = "bs-roformer-infer"
+BACKEND_VERSION = "0.1.5"
+BACKEND_SOURCE_REVISION = "openmirlab/bs-roformer-infer@b0f1386fcced25f559f3e61c9f08a73cd9bddf80"
 
 
-class AudioSeparatorBackend:
-    """Approved audio-separator API; its model directory is always local."""
+class BSRoformerInferBackend:
+    """Official public session API with explicit local model/config paths."""
     def __init__(self, checkpoint: Path, output_dir: Path) -> None:
+        config = Path(os.environ.get("MUSIC_PROVIDER_BS_ROFORMER_CONFIG_PATH", ""))
+        if not config.is_file():
+            raise RunnerError("mounted BS-RoFormer config path is required")
         try:
-            from audio_separator.separator import Separator
+            from bs_roformer import BSRoformerSession
         except ImportError as exc:
-            raise RunnerError("audio-separator is not installed") from exc
-        self.separator = Separator(
-            log_level=30, model_file_dir=str(checkpoint.parent), output_dir=str(output_dir)
-        )
+            raise RunnerError("bs-roformer-infer is not installed") from exc
         try:
-            self.separator.load_model(model_filename=checkpoint.name)
+            self.session = BSRoformerSession(
+                model_path=checkpoint, config_path=config, device="cuda",
+                backend="torch", progress=False,
+            ).load()
         except Exception as exc:
             raise RunnerError(f"unable to load mounted BS-RoFormer checkpoint: {type(exc).__name__}") from exc
+        self.output_dir = output_dir
 
     def separate(self, source: Path) -> list[Path]:
         try:
-            values = self.separator.separate(str(source))
+            manifest = self.session.infer(
+                source.parent, store_dir=self.output_dir, output_format="flac16"
+            )
         except Exception as exc:
             raise RunnerError(f"BS-RoFormer inference failed: {type(exc).__name__}") from exc
-        return [Path(value) for value in values]
+        outputs = {
+            item.output_id: Path(item.output_path)
+            for item in manifest.outputs
+            if Path(item.input_path).resolve() == source.resolve()
+        }
+        if set(outputs) != {"vocals", "instrumental"}:
+            raise RunnerError("mounted BS-RoFormer config is not a two-stem model")
+        return [outputs["vocals"], outputs["instrumental"]]
 
 
-def run_job(request: dict[str, Any], checkpoint: Path, backend_cls=AudioSeparatorBackend) -> dict[str, Any]:
-    require_cuda()
+def run_job(request: dict[str, Any], checkpoint: Path, backend_cls=BSRoformerInferBackend) -> dict[str, Any]:
     if not checkpoint.is_file():
         raise RunnerError("BS-RoFormer checkpoint is missing from durable storage")
+    digest = attest_checkpoint(checkpoint, PROVIDER)
     work = durable_job_dir(request, PROVIDER)
+    prior = cached_result(work)
+    if prior is not None:
+        return prior
+    require_cuda()
     source = download_source(request_value(request, "sourceUrl"), work / "source.wav")
     outputs = backend_cls(checkpoint, work).separate(source)
     if len(outputs) != 2:
@@ -52,6 +71,7 @@ def run_job(request: dict[str, Any], checkpoint: Path, backend_cls=AudioSeparato
     artifacts = []
     seen: set[str] = set()
     for index, output in enumerate(outputs):
+        output = output if output.is_absolute() else work / output
         stem = "vocals" if "vocal" in output.name.lower() else "instrumental"
         if stem in seen:
             stem = f"stem{index + 1}"
@@ -60,17 +80,20 @@ def run_job(request: dict[str, Any], checkpoint: Path, backend_cls=AudioSeparato
         if suffix not in {".wav", ".flac"}:
             raise RunnerError("BS-RoFormer output must be WAV or FLAC")
         final = move_artifact(output, work / f"{stem}{suffix}")
-        artifact = validate_audio(final)
+        artifact = artifact_descriptor(final, PROVIDER, work.name)
         artifact["stem"] = stem
         artifacts.append(artifact)
-    return {"artifacts": artifacts, "stems": artifacts, "provenance": provenance(checkpoint)}
+    result = {"artifacts": artifacts, "stems": artifacts, "provenance": provenance(digest)}
+    save_result(work, result)
+    return result
 
 
-def provenance(checkpoint: Path) -> dict[str, str]:
+def provenance(digest: str) -> dict[str, str]:
     return {"provider": PROVIDER, "modelVersion": MODEL_VERSION,
-            "checkpointSha256": checkpoint_sha256(checkpoint),
+            "checkpointSha256": digest,
             "backend": BACKEND_DISTRIBUTION, "backendVersion": BACKEND_VERSION,
-            "sourceRevision": BACKEND_SOURCE_REVISION, "device": "cuda"}
+            "revision": BACKEND_SOURCE_REVISION, "sourceRevision": BACKEND_SOURCE_REVISION,
+            "model": MODEL_VERSION, "device": "cuda", **runtime_provenance()}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -91,7 +114,7 @@ def main(argv: list[str] | None = None) -> int:
             if not source:
                 raise RunnerError("MUSIC_GPU_SMOKE_INPUT is required for real smoke inference")
             result = run_job({"requestId": "smoke-bs-roformer", "sourceUrl": source}, checkpoint)
-            emit({"smokeTested": True, **provenance(checkpoint), "output": {"stems": len(result["stems"])}})
+            emit({"smokeTested": True, **result["provenance"], "output": {"stems": len(result["stems"])}})
         else:
             payload = json.load(sys.stdin)
             emit(run_job(payload, checkpoint))

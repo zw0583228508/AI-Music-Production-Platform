@@ -159,6 +159,7 @@ export * from './providerHealthResult';
 export * from './providerHealthResultStatus';
 export * from './providerProvenance';
 export * from './providerProvenanceStatus';
+export * from './providerRuntimeProvenance';
 export * from './providerRuntimeSnapshot';
 export * from './providerRuntimeSnapshotAvailability';
 export * from './providerRuntimeSnapshotHealthStatus';

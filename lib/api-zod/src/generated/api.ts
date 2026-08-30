@@ -311,6 +311,7 @@ export const ActivateLicensedInstrumentPackResponse = zod.object({
   "unavailableReason": zod.string().optional()
 })
 
+
 /**
  * Revalidates the historical asset and native-host checksums against its original smoke evidence before atomically switching the active manifest.
  * @summary Reactivate a previously verified licensed instrument pack
@@ -318,6 +319,44 @@ export const ActivateLicensedInstrumentPackResponse = zod.object({
 export const ReactivateLicensedInstrumentPackParams = zod.object({
   "historyId": zod.coerce.string()
 })
+
+export const ReactivateLicensedInstrumentPackResponse = zod.object({
+  "candidateId": zod.string().optional(),
+  "historyId": zod.string().optional(),
+  "kind": zod.enum(['vst3', 'sfz']).optional(),
+  "assetId": zod.string().optional(),
+  "id": zod.string().optional(),
+  "identity": zod.string().optional(),
+  "licenseOwner": zod.string().optional(),
+  "licenseReference": zod.string().optional(),
+  "rendererIdentity": zod.string().optional(),
+  "sha256": zod.string().optional(),
+  "rendererSha256": zod.string().optional(),
+  "status": zod.enum(['unavailable', 'verified', 'active']),
+  "smokeEvidence": zod.object({
+  "assetId": zod.string(),
+  "sha256": zod.string(),
+  "rendererIdentity": zod.string(),
+  "rendererSha256": zod.string(),
+  "trackModelRendered": zod.boolean(),
+  "audible": zod.boolean(),
+  "canonicalSensitivity": zod.boolean(),
+  "nativeHostAttested": zod.boolean(),
+  "outputSha256": zod.string(),
+  "pitchVariantSha256": zod.string(),
+  "expressionVariantSha256": zod.string(),
+  "peak": zod.number(),
+  "sampleRate": zod.number(),
+  "durationSeconds": zod.number(),
+  "format": zod.string()
+}).optional(),
+  "createdAt": zod.string().optional(),
+  "activatedAt": zod.string().optional(),
+  "deactivatedAt": zod.string().optional(),
+  "unavailableReason": zod.string().optional()
+})
+
+
 /**
  * @summary Get the current authentication state
  */
@@ -363,6 +402,10 @@ export const LogoutBrowserSessionResponse = zod.void()
  */
 
 
+
+
+
+
 export const ExchangeMobileAuthorizationCodeBody = zod.object({
   "code": zod.string().min(1),
   "code_verifier": zod.string().min(1),
@@ -392,6 +435,8 @@ export const LogoutMobileSessionResponse = zod.object({
 export const requestSourceUploadUrlBodySizeMax = 524288000;
 
 
+
+
 export const RequestSourceUploadUrlBody = zod.object({
   "projectId": zod.string().min(1),
   "name": zod.string().min(1),
@@ -400,7 +445,10 @@ export const RequestSourceUploadUrlBody = zod.object({
 })
 
 
+
 export const requestSourceUploadUrlResponseMetadataSizeMax = 524288000;
+
+
 
 
 export const RequestSourceUploadUrlResponse = zod.object({
@@ -435,6 +483,7 @@ export const ListProjectsResponse = zod.array(ListProjectsResponseItem)
 /**
  * @summary Create a music project
  */
+
 
 
 export const CreateProjectBody = zod.object({
@@ -498,6 +547,7 @@ export const getProjectResponseArrangementsItemSectionsItemTransposeSemitonesMax
 
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationQualityReportOneScoreMin = 0;
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
+
 
 
 export const GetProjectResponse = zod.object({
@@ -711,6 +761,7 @@ export const deleteProjectResponseAttemptsMin = 0;
 export const deleteProjectResponsePendingObjectCountMin = 0;
 
 
+
 export const DeleteProjectResponse = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -736,6 +787,7 @@ export const getProjectDeletionResponseAttemptsMin = 0;
 export const getProjectDeletionResponsePendingObjectCountMin = 0;
 
 
+
 export const GetProjectDeletionResponse = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -759,6 +811,7 @@ export const RetryProjectDeletionParams = zod.object({
 export const retryProjectDeletionResponseAttemptsMin = 0;
 
 export const retryProjectDeletionResponsePendingObjectCountMin = 0;
+
 
 
 export const RetryProjectDeletionResponse = zod.object({
@@ -817,6 +870,7 @@ export const listProjectSourcesResponseAttemptsItemProgressMin = 0;
 export const listProjectSourcesResponseAttemptsItemProgressMax = 100;
 
 
+
 export const ListProjectSourcesResponseItem = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -856,7 +910,10 @@ export const RegisterProjectSourceParams = zod.object({
 })
 
 
+
 export const registerProjectSourceBodySizeMax = 524288000;
+
+
 
 
 export const RegisterProjectSourceBody = zod.object({
@@ -872,6 +929,7 @@ export const registerProjectSourceResponseProgressMax = 100;
 
 export const registerProjectSourceResponseAttemptsItemProgressMin = 0;
 export const registerProjectSourceResponseAttemptsItemProgressMax = 100;
+
 
 
 export const RegisterProjectSourceResponse = zod.object({
@@ -917,6 +975,7 @@ export const retryProjectSourceAnalysisResponseProgressMax = 100;
 
 export const retryProjectSourceAnalysisResponseAttemptsItemProgressMin = 0;
 export const retryProjectSourceAnalysisResponseAttemptsItemProgressMax = 100;
+
 
 
 export const RetryProjectSourceAnalysisResponse = zod.object({
@@ -966,7 +1025,9 @@ export const getProjectSongModelResponseFusionDecisionsItemCompatibilityMin = 0;
 export const getProjectSongModelResponseFusionDecisionsItemCompatibilityMax = 1;
 
 
+
 export const getProjectSongModelResponseAudioDurationSecondsExclusiveMin = 0;
+
 
 
 export const getProjectSongModelResponseAnalysisStartSecondsMin = 0;
@@ -997,6 +1058,7 @@ export const getProjectSongModelResponseProviderProvenanceItemAttemptsMin = 0;
 
 export const getProjectSongModelResponseConfidenceMin = 0;
 export const getProjectSongModelResponseConfidenceMax = 1;
+
 
 
 export const GetProjectSongModelResponse = zod.object({
@@ -1220,6 +1282,10 @@ export const correctProjectSongModelBodyMeterRegExp = new RegExp('^[1-9][0-9]*/[
 export const correctProjectSongModelBodySectionsItemNameMax = 120;
 
 
+
+
+
+
 export const CorrectProjectSongModelBody = zod.object({
   "baseVersion": zod.number().min(1),
   "bpm": zod.number().min(correctProjectSongModelBodyBpmMin).max(correctProjectSongModelBodyBpmMax).optional(),
@@ -1242,7 +1308,9 @@ export const correctProjectSongModelResponseFusionDecisionsItemCompatibilityMin 
 export const correctProjectSongModelResponseFusionDecisionsItemCompatibilityMax = 1;
 
 
+
 export const correctProjectSongModelResponseAudioDurationSecondsExclusiveMin = 0;
+
 
 
 export const correctProjectSongModelResponseAnalysisStartSecondsMin = 0;
@@ -1273,6 +1341,7 @@ export const correctProjectSongModelResponseProviderProvenanceItemAttemptsMin = 
 
 export const correctProjectSongModelResponseConfidenceMin = 0;
 export const correctProjectSongModelResponseConfidenceMax = 1;
+
 
 
 export const CorrectProjectSongModelResponse = zod.object({
@@ -1575,6 +1644,7 @@ export const listArrangementsResponseGenerationProvenanceOneEvaluationQualityRep
 export const listArrangementsResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
 
 
+
 export const ListArrangementsResponseItem = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -1698,6 +1768,7 @@ export const CreateArrangementParams = zod.object({
 export const createArrangementBodyHarmonyComplexityMax = 10;
 
 
+
 export const CreateArrangementBody = zod.object({
   "name": zod.string().min(1),
   "style": zod.string(),
@@ -1740,6 +1811,7 @@ export const createArrangementResponseSectionsItemTransposeSemitonesMax = 24;
 
 export const createArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin = 0;
 export const createArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
+
 
 
 export const CreateArrangementResponse = zod.object({
@@ -1909,6 +1981,7 @@ export const updateArrangementBodySectionsItemTransposeSemitonesMin = -24;
 export const updateArrangementBodySectionsItemTransposeSemitonesMax = 24;
 
 
+
 export const UpdateArrangementBody = zod.object({
   "name": zod.string().optional(),
   "harmonyComplexity": zod.number().min(1).max(updateArrangementBodyHarmonyComplexityMax).optional(),
@@ -2003,6 +2076,7 @@ export const updateArrangementResponseSectionsItemTransposeSemitonesMax = 24;
 
 export const updateArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin = 0;
 export const updateArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
+
 
 
 export const UpdateArrangementResponse = zod.object({
@@ -2165,6 +2239,7 @@ export const listArrangementRevisionsResponseSummaryNoteChangesMin = 0;
 export const listArrangementRevisionsResponseSummaryCcChangesMin = 0;
 
 
+
 export const ListArrangementRevisionsResponseItem = zod.object({
   "id": zod.string(),
   "arrangementId": zod.string(),
@@ -2250,6 +2325,8 @@ export const RestoreArrangementRevisionParams = zod.object({
 })
 
 
+
+
 export const RestoreArrangementRevisionBody = zod.object({
   "expectedVersion": zod.number().min(1)
 })
@@ -2289,6 +2366,7 @@ export const restoreArrangementRevisionResponseSectionsItemTransposeSemitonesMax
 
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin = 0;
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
+
 
 
 export const RestoreArrangementRevisionResponse = zod.object({
@@ -2414,6 +2492,7 @@ export const generateArrangementBodyCandidatesMax = 3;
 export const generateArrangementBodyIdempotencyKeyMax = 200;
 
 
+
 export const GenerateArrangementBody = zod.object({
   "candidates": zod.number().min(1).max(generateArrangementBodyCandidatesMax).optional(),
   "idempotencyKey": zod.string().min(1).max(generateArrangementBodyIdempotencyKeyMax).optional(),
@@ -2425,10 +2504,14 @@ export const GenerateArrangementBody = zod.object({
   "parameters": zod.record(zod.string(), zod.unknown()).optional()
 })
 
+export const generateArrangementResponseProviderRuntimeOneRuntimeProvenanceOneCheckpointSha256RegExp = new RegExp('^[a-fA-F0-9]{64}$');
+export const generateArrangementResponseProviderRuntimeOneRuntimeProvenanceOneContainerDigestRegExp = new RegExp('^sha256:[a-fA-F0-9]{64}$');
 export const generateArrangementResponseProgressMin = 0;
 export const generateArrangementResponseProgressMax = 100;
 
 export const generateArrangementResponseAttemptMin = 0;
+
+
 
 
 export const GenerateArrangementResponse = zod.object({
@@ -2448,7 +2531,17 @@ export const GenerateArrangementResponse = zod.object({
   "checkedAt": zod.string().nullable(),
   "latencyMs": zod.number().nullable(),
   "message": zod.string().nullable(),
-  "reportedVersion": zod.string().nullable()
+  "reportedVersion": zod.string().nullable(),
+  "reportedChecksum": zod.string().nullish(),
+  "runtimeProvenance": zod.union([zod.object({
+  "model": zod.string(),
+  "checkpointSha256": zod.string().regex(generateArrangementResponseProviderRuntimeOneRuntimeProvenanceOneCheckpointSha256RegExp),
+  "revision": zod.string(),
+  "containerDigest": zod.string().regex(generateArrangementResponseProviderRuntimeOneRuntimeProvenanceOneContainerDigestRegExp),
+  "cudaVersion": zod.string(),
+  "pytorchVersion": zod.string(),
+  "gpu": zod.string()
+}).describe('Immutable worker attestation captured from live health and required to match the completion payload.'),zod.null()]).optional()
 }),zod.null()]),
   "hardware": zod.enum(['AUTO', 'CPU', 'GPU']),
   "speed": zod.enum(['FAST', 'BALANCED', 'QUALITY']),
@@ -2478,10 +2571,14 @@ export const GetGenerationJobParams = zod.object({
   "jobId": zod.coerce.string()
 })
 
+export const getGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneCheckpointSha256RegExp = new RegExp('^[a-fA-F0-9]{64}$');
+export const getGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneContainerDigestRegExp = new RegExp('^sha256:[a-fA-F0-9]{64}$');
 export const getGenerationJobResponseProgressMin = 0;
 export const getGenerationJobResponseProgressMax = 100;
 
 export const getGenerationJobResponseAttemptMin = 0;
+
+
 
 
 export const GetGenerationJobResponse = zod.object({
@@ -2501,7 +2598,17 @@ export const GetGenerationJobResponse = zod.object({
   "checkedAt": zod.string().nullable(),
   "latencyMs": zod.number().nullable(),
   "message": zod.string().nullable(),
-  "reportedVersion": zod.string().nullable()
+  "reportedVersion": zod.string().nullable(),
+  "reportedChecksum": zod.string().nullish(),
+  "runtimeProvenance": zod.union([zod.object({
+  "model": zod.string(),
+  "checkpointSha256": zod.string().regex(getGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneCheckpointSha256RegExp),
+  "revision": zod.string(),
+  "containerDigest": zod.string().regex(getGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneContainerDigestRegExp),
+  "cudaVersion": zod.string(),
+  "pytorchVersion": zod.string(),
+  "gpu": zod.string()
+}).describe('Immutable worker attestation captured from live health and required to match the completion payload.'),zod.null()]).optional()
 }),zod.null()]),
   "hardware": zod.enum(['AUTO', 'CPU', 'GPU']),
   "speed": zod.enum(['FAST', 'BALANCED', 'QUALITY']),
@@ -2531,10 +2638,14 @@ export const CancelGenerationJobParams = zod.object({
   "jobId": zod.coerce.string()
 })
 
+export const cancelGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneCheckpointSha256RegExp = new RegExp('^[a-fA-F0-9]{64}$');
+export const cancelGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneContainerDigestRegExp = new RegExp('^sha256:[a-fA-F0-9]{64}$');
 export const cancelGenerationJobResponseProgressMin = 0;
 export const cancelGenerationJobResponseProgressMax = 100;
 
 export const cancelGenerationJobResponseAttemptMin = 0;
+
+
 
 
 export const CancelGenerationJobResponse = zod.object({
@@ -2554,7 +2665,17 @@ export const CancelGenerationJobResponse = zod.object({
   "checkedAt": zod.string().nullable(),
   "latencyMs": zod.number().nullable(),
   "message": zod.string().nullable(),
-  "reportedVersion": zod.string().nullable()
+  "reportedVersion": zod.string().nullable(),
+  "reportedChecksum": zod.string().nullish(),
+  "runtimeProvenance": zod.union([zod.object({
+  "model": zod.string(),
+  "checkpointSha256": zod.string().regex(cancelGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneCheckpointSha256RegExp),
+  "revision": zod.string(),
+  "containerDigest": zod.string().regex(cancelGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneContainerDigestRegExp),
+  "cudaVersion": zod.string(),
+  "pytorchVersion": zod.string(),
+  "gpu": zod.string()
+}).describe('Immutable worker attestation captured from live health and required to match the completion payload.'),zod.null()]).optional()
 }),zod.null()]),
   "hardware": zod.enum(['AUTO', 'CPU', 'GPU']),
   "speed": zod.enum(['FAST', 'BALANCED', 'QUALITY']),
@@ -2584,10 +2705,14 @@ export const RetryGenerationJobParams = zod.object({
   "jobId": zod.coerce.string()
 })
 
+export const retryGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneCheckpointSha256RegExp = new RegExp('^[a-fA-F0-9]{64}$');
+export const retryGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneContainerDigestRegExp = new RegExp('^sha256:[a-fA-F0-9]{64}$');
 export const retryGenerationJobResponseProgressMin = 0;
 export const retryGenerationJobResponseProgressMax = 100;
 
 export const retryGenerationJobResponseAttemptMin = 0;
+
+
 
 
 export const RetryGenerationJobResponse = zod.object({
@@ -2607,7 +2732,17 @@ export const RetryGenerationJobResponse = zod.object({
   "checkedAt": zod.string().nullable(),
   "latencyMs": zod.number().nullable(),
   "message": zod.string().nullable(),
-  "reportedVersion": zod.string().nullable()
+  "reportedVersion": zod.string().nullable(),
+  "reportedChecksum": zod.string().nullish(),
+  "runtimeProvenance": zod.union([zod.object({
+  "model": zod.string(),
+  "checkpointSha256": zod.string().regex(retryGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneCheckpointSha256RegExp),
+  "revision": zod.string(),
+  "containerDigest": zod.string().regex(retryGenerationJobResponseProviderRuntimeOneRuntimeProvenanceOneContainerDigestRegExp),
+  "cudaVersion": zod.string(),
+  "pytorchVersion": zod.string(),
+  "gpu": zod.string()
+}).describe('Immutable worker attestation captured from live health and required to match the completion payload.'),zod.null()]).optional()
 }),zod.null()]),
   "hardware": zod.enum(['AUTO', 'CPU', 'GPU']),
   "speed": zod.enum(['FAST', 'BALANCED', 'QUALITY']),
@@ -2672,6 +2807,7 @@ export const listGenerationCandidatesResponsePlanSectionsItemTransposeSemitonesM
 
 export const listGenerationCandidatesResponseEvaluationQualityReportOneScoreMin = 0;
 export const listGenerationCandidatesResponseEvaluationQualityReportOneScoreMax = 1;
+
 
 
 export const ListGenerationCandidatesResponseItem = zod.object({
@@ -2895,6 +3031,7 @@ export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationQ
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
 
 
+
 export const SelectGenerationCandidateResponse = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -3009,6 +3146,10 @@ export const SelectGenerationCandidateResponse = zod.object({
 /**
  * @summary List generation provider capabilities and availability
  */
+export const listGenerationProvidersResponseRuntimeProvenanceOneCheckpointSha256RegExp = new RegExp('^[a-fA-F0-9]{64}$');
+export const listGenerationProvidersResponseRuntimeProvenanceOneContainerDigestRegExp = new RegExp('^sha256:[a-fA-F0-9]{64}$');
+
+
 export const ListGenerationProvidersResponseItem = zod.object({
   "id": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'MUSICGEN', 'ANYACCOMP', 'SYMPHONYGEN', 'METEOR', 'MIDI_SAG']),
   "name": zod.string(),
@@ -3022,6 +3163,16 @@ export const ListGenerationProvidersResponseItem = zod.object({
   "checkpointReady": zod.boolean(),
   "runtimeReady": zod.boolean(),
   "reportedVersion": zod.string().nullable(),
+  "reportedChecksum": zod.string().nullish(),
+  "runtimeProvenance": zod.union([zod.object({
+  "model": zod.string(),
+  "checkpointSha256": zod.string().regex(listGenerationProvidersResponseRuntimeProvenanceOneCheckpointSha256RegExp),
+  "revision": zod.string(),
+  "containerDigest": zod.string().regex(listGenerationProvidersResponseRuntimeProvenanceOneContainerDigestRegExp),
+  "cudaVersion": zod.string(),
+  "pytorchVersion": zod.string(),
+  "gpu": zod.string()
+}).describe('Immutable worker attestation captured from live health and required to match the completion payload.'),zod.null()]).optional(),
   "lastHealth": zod.object({
   "status": zod.enum(['healthy', 'unhealthy', 'unknown']),
   "checkedAt": zod.string().nullable(),
@@ -3041,6 +3192,7 @@ export const ExportArrangementParams = zod.object({
 })
 
 export const exportArrangementBodyIdempotencyKeyMax = 200;
+
 
 
 export const ExportArrangementBody = zod.object({
@@ -3161,6 +3313,7 @@ export const CreateProjectExportParams = zod.object({
 })
 
 export const createProjectExportBodyIdempotencyKeyMax = 200;
+
 
 
 export const CreateProjectExportBody = zod.object({
@@ -3300,6 +3453,10 @@ export const RunCopilotParams = zod.object({
 })
 
 
+
+
+
+
 export const RunCopilotBody = zod.object({
   "command": zod.string().min(1),
   "arrangementId": zod.string().optional(),
@@ -3308,6 +3465,9 @@ export const RunCopilotBody = zod.object({
   "startBar": zod.number().min(1).optional(),
   "endBar": zod.number().min(1).optional()
 })
+
+
+
 
 
 export const RunCopilotResponse = zod.object({
@@ -3322,41 +3482,4 @@ export const RunCopilotResponse = zod.object({
 })),
   "affectedSections": zod.array(zod.string()),
   "interpreter": zod.enum(['openai', 'deterministic'])
-})
-
-
-export const ReactivateLicensedInstrumentPackResponse = zod.object({
-  "candidateId": zod.string().optional(),
-  "historyId": zod.string().optional(),
-  "kind": zod.enum(['vst3', 'sfz']).optional(),
-  "assetId": zod.string().optional(),
-  "id": zod.string().optional(),
-  "identity": zod.string().optional(),
-  "licenseOwner": zod.string().optional(),
-  "licenseReference": zod.string().optional(),
-  "rendererIdentity": zod.string().optional(),
-  "sha256": zod.string().optional(),
-  "rendererSha256": zod.string().optional(),
-  "status": zod.enum(['unavailable', 'verified', 'active']),
-  "smokeEvidence": zod.object({
-  "assetId": zod.string(),
-  "sha256": zod.string(),
-  "rendererIdentity": zod.string(),
-  "rendererSha256": zod.string(),
-  "trackModelRendered": zod.boolean(),
-  "audible": zod.boolean(),
-  "canonicalSensitivity": zod.boolean(),
-  "nativeHostAttested": zod.boolean(),
-  "outputSha256": zod.string(),
-  "pitchVariantSha256": zod.string(),
-  "expressionVariantSha256": zod.string(),
-  "peak": zod.number(),
-  "sampleRate": zod.number(),
-  "durationSeconds": zod.number(),
-  "format": zod.string()
-}).optional(),
-  "createdAt": zod.string().optional(),
-  "activatedAt": zod.string().optional(),
-  "deactivatedAt": zod.string().optional(),
-  "unavailableReason": zod.string().optional()
 })

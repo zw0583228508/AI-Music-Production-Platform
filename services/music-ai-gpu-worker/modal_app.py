@@ -31,9 +31,19 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DOCKERFILE = Path(__file__).resolve().with_name("Dockerfile")
 app = modal.App(APP_NAME)
 
-# Build the checked-in OCI recipe rather than resolving packages at deploy
-# time. Dockerfile pins CUDA, Python, PyTorch and worker dependencies.
-image = modal.Image.from_dockerfile(DOCKERFILE, context_dir=REPOSITORY_ROOT)
+# Build a separate OCI image for every provider.  Its pinned runner
+# requirements are installed during the image build, never at request time.
+provider_images = {
+    provider: modal.Image.from_dockerfile(
+        DOCKERFILE,
+        context_dir=REPOSITORY_ROOT,
+        build_args={
+            "PROVIDER_REQUIREMENTS": deployment.requirements_file,
+            "MUSIC_GPU_SOURCE_IMAGE_DIGEST": deployment.source_image_digest,
+        },
+    )
+    for provider, deployment in DEPLOYMENTS.items()
+}
 model_volume = modal.Volume.from_name(MODEL_VOLUME_NAME, create_if_missing=False)
 job_volume = modal.Volume.from_name(JOB_VOLUME_NAME, create_if_missing=False)
 output_volume = modal.Volume.from_name(OUTPUT_VOLUME_NAME, create_if_missing=False)
@@ -48,19 +58,19 @@ volumes = {
 def _worker_options(provider: str) -> dict:
     deployment = DEPLOYMENTS[provider]
     return {
-        "image": image,
+        "image": provider_images[provider],
         "gpu": deployment.gpu,
         "secrets": [runtime_secret],
         "volumes": volumes,
         "timeout": deployment.timeout_seconds,
-        "container_idle_timeout": deployment.idle_timeout_seconds,
+        "scaledown_window": deployment.idle_timeout_seconds,
         "max_containers": deployment.max_containers,
-        "allow_concurrent_inputs": 1,
         "env": worker_environment(deployment),
     }
 
 
 @app.cls(**_worker_options("BS_ROFORMER"))
+@modal.concurrent(max_inputs=1)
 class BSRoFormerWorker:
     """Private-by-bearer provider URL; only BS_ROFORMER is enabled."""
 
@@ -72,6 +82,7 @@ class BSRoFormerWorker:
 
 
 @app.cls(**_worker_options("ACE_STEP"))
+@modal.concurrent(max_inputs=1)
 class AceStepWorker:
     """Private-by-bearer provider URL; only ACE_STEP is enabled."""
 
@@ -83,6 +94,7 @@ class AceStepWorker:
 
 
 @app.cls(**_worker_options("MT3"))
+@modal.concurrent(max_inputs=1)
 class MT3Worker:
     """Private-by-bearer provider URL; only MT3 is enabled."""
 
@@ -93,11 +105,12 @@ class MT3Worker:
         return fastapi_app
 
 
-@app.cls(**_worker_options("MUSICGEN"))
-class MusicGenWorker:
-    """Existing contract endpoint, deliberately not enabled by default."""
+@app.cls(**_worker_options("ALL_IN_ONE"))
+@modal.concurrent(max_inputs=1)
+class AllInOneWorker:
+    """Private-by-bearer provider URL; only ALL_IN_ONE is enabled."""
 
-    @modal.asgi_app(label="musicgen")
+    @modal.asgi_app(label="all-in-one")
     def endpoint(self):
         from app import app as fastapi_app
 

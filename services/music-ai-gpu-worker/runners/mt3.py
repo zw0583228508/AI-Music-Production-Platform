@@ -7,15 +7,24 @@ dependency: it is not replaced with heuristics, Basic Pitch, or CPU inference.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
 from typing import Any, Protocol
 
-from ._common import RunnerError, attest_checkpoint, fetch_source, finite, provenance, require_gpu, stdin_request
+from .common import (
+    RunnerError, attest_checkpoint, download_source, durable_job_dir, emit,
+    finite_number, request_value, require_cuda, require_distribution_version, runtime_provenance, validate_audio,
+)
 
-OFFICIAL_SOURCE = "https://github.com/magenta/mt3.git@0c4c67b5a4d12f1b2df73c4ad9de4de4887a4ff8"
+# This revision has not been independently verified in this repository.  It is
+# configuration documentation, not an attestation of an installed source tree.
+BACKEND_DISTRIBUTION = "mt3-infer"
+BACKEND_VERSION = "0.2.0"
+BACKEND_SOURCE_REVISION = "openmirlab/mt3-infer@331519f1951d3d198aef01664bb0406512f97c77"
+UPSTREAM_SOURCE_REVISION = "magenta/mt3@fa53e12321ac417d3baf01f43e6796a7d0775f55"
+PROVIDER = "MT3"
+MODEL_VERSION = "mt3-ismir2021"
 
 
 class Mt3Backend(Protocol):
@@ -24,18 +33,50 @@ class Mt3Backend(Protocol):
 
 
 class OfficialMt3Backend:
-    name = "magenta-mt3"
+    name = BACKEND_DISTRIBUTION
     def transcribe(self, audio: Path, checkpoint: Path) -> list[dict[str, Any]]:
+        require_distribution_version(BACKEND_DISTRIBUTION, BACKEND_VERSION)
         try:
-            # This adapter is shipped with our pinned checkout; it loads the
-            # official T5X checkpoint locally and always selects CUDA.
-            from mt3_gpu_adapter import transcribe_file
+            import soundfile as sf
+            from mt3_infer import transcribe
         except ImportError as exc:  # pragma: no cover - deployment dependency
-            raise RunnerError("pinned official MT3 adapter is not installed") from exc
-        events = transcribe_file(str(audio), str(checkpoint), device="cuda")
-        if not isinstance(events, list):
-            raise RunnerError("official MT3 adapter returned invalid events")
+            raise RunnerError("mt3-infer==0.2.0 is not installed") from exc
+        samples, sample_rate = sf.read(str(audio), dtype="float32")
+        midi = transcribe(
+            samples, sr=sample_rate, model=os.getenv("MT3_INFER_MODEL", "mt3_pytorch"),
+            checkpoint_path=str(checkpoint), device="cuda", auto_download=False,
+        )
+        events = _midi_notes(midi)
         return events
+
+
+def _midi_notes(midi: Any) -> list[dict[str, Any]]:
+    """Convert mido's timed MIDI evidence without synthesising note events."""
+    try:
+        import mido
+        messages = mido.merge_tracks(midi.tracks)
+    except (ImportError, AttributeError) as exc:
+        raise RunnerError("mt3-infer returned an invalid MIDI object") from exc
+    tempo, elapsed = 500000, 0.0
+    active: dict[tuple[int, int], list[tuple[float, int]]] = {}
+    notes: list[dict[str, Any]] = []
+    for message in messages:
+        elapsed += mido.tick2second(message.time, midi.ticks_per_beat, tempo)
+        if message.type == "set_tempo":
+            tempo = message.tempo
+        if message.type == "note_on" and message.velocity > 0:
+            active.setdefault((getattr(message, "channel", 0), message.note), []).append((elapsed, message.velocity))
+        elif message.type in {"note_off", "note_on"}:
+            key = (getattr(message, "channel", 0), message.note)
+            if active.get(key):
+                start, velocity = active[key].pop(0)
+                # mt3-infer's public output is MIDI and exposes no posterior;
+                # normalized MIDI velocity is retained as confidence evidence.
+                notes.append({"start": start, "end": elapsed, "pitch": message.note,
+                              "velocity": velocity, "confidence": velocity / 127})
+    if any(active.values()):
+        raise RunnerError("mt3-infer returned unterminated MIDI notes")
+    return notes
 
 
 def normalize_notes(events: list[dict[str, Any]], duration: float) -> list[dict[str, Any]]:
@@ -43,11 +84,11 @@ def normalize_notes(events: list[dict[str, Any]], duration: float) -> list[dict[
     for index, event in enumerate(events):
         if not isinstance(event, dict):
             raise RunnerError(f"MT3 event {index + 1} is not an object")
-        start = finite(event.get("start", event.get("onset")), f"MT3 event {index + 1} onset", 0, duration)
-        end = finite(event.get("end", event.get("offset")), f"MT3 event {index + 1} offset", 0, duration)
+        start = finite_number(event.get("start", event.get("onset")), f"MT3 event {index + 1} onset", 0, duration)
+        end = finite_number(event.get("end", event.get("offset")), f"MT3 event {index + 1} offset", 0, duration)
         pitch = event.get("pitch", event.get("midi"))
         velocity = event.get("velocity", 64)
-        confidence = finite(event.get("confidence", event.get("score")), f"MT3 event {index + 1} confidence", 0, 1)
+        confidence = finite_number(event.get("confidence", event.get("score")), f"MT3 event {index + 1} confidence", 0, 1)
         if end <= start or isinstance(pitch, bool) or not isinstance(pitch, int) or not 0 <= pitch <= 127:
             raise RunnerError(f"MT3 event {index + 1} has invalid note bounds")
         if isinstance(velocity, bool) or not isinstance(velocity, int) or not 1 <= velocity <= 127:
@@ -60,17 +101,24 @@ def normalize_notes(events: list[dict[str, Any]], duration: float) -> list[dict[
 
 
 def run_job(request: dict[str, Any], checkpoint: Path, backend: Mt3Backend | None = None) -> dict[str, Any]:
-    require_gpu()
-    digest = attest_checkpoint(checkpoint)
-    duration = finite(request.get("durationSeconds"), "durationSeconds", 0.001)
-    audio, temporary = fetch_source(request)
-    try:
-        active = backend or OfficialMt3Backend()
-        notes = normalize_notes(active.transcribe(audio, checkpoint), duration + 1)
-    finally:
-        temporary.cleanup()
+    require_cuda()
+    digest = attest_checkpoint(checkpoint, PROVIDER)
+    duration = finite_number(request_value(request, "durationSeconds"), "durationSeconds", 0.001)
+    work = durable_job_dir(request, PROVIDER)
+    audio = download_source(request_value(request, "sourceUrl"), work / "source.wav")
+    validate_audio(audio)
+    active = backend or OfficialMt3Backend()
+    notes = normalize_notes(active.transcribe(audio, checkpoint), duration + 1)
     overall = min((note["confidence"] for note in notes), default=0.0)
-    return {"notes": notes, "confidence": overall, "provenance": provenance(OFFICIAL_SOURCE, digest, active.name)}
+    return {"version": MODEL_VERSION, "modelVersion": MODEL_VERSION, "notes": notes, "confidence": overall,
+            "provenance": {"provider": PROVIDER, "modelVersion": MODEL_VERSION,
+                           "checkpointSha256": digest, "backend": active.name,
+                           "backendVersion": BACKEND_VERSION,
+                            "revision": BACKEND_SOURCE_REVISION,
+                           "sourceRevision": BACKEND_SOURCE_REVISION,
+                           "upstreamSourceRevision": UPSTREAM_SOURCE_REVISION,
+                            "confidenceBasis": "midi-velocity/127", "device": "cuda",
+                            **runtime_provenance()}}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -82,21 +130,35 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model-version", required=True)
     parser.add_argument("--checkpoint", required=True)
     args = parser.parse_args(argv)
-    if args.provider != "MT3" or args.model_version != "mt3-ismir2021":
+    if args.provider != PROVIDER or args.model_version != MODEL_VERSION:
         raise RunnerError("MT3 provider or model version is not pinned")
     checkpoint = Path(args.checkpoint)
     if args.smoke:
-        require_gpu()
-        digest = attest_checkpoint(checkpoint)
+        require_cuda()
+        digest = attest_checkpoint(checkpoint, PROVIDER)
         smoke = os.getenv("MT3_SMOKE_AUDIO")
         if not smoke or not Path(smoke).is_file():
             raise RunnerError("MT3_SMOKE_AUDIO must reference mounted real audio")
         events = OfficialMt3Backend().transcribe(Path(smoke), checkpoint)
         if not events:
             raise RunnerError("MT3 smoke inference returned no notes")
-        print(json.dumps({"smokeTested": True, "provider": "MT3", "modelVersion": args.model_version, "checkpointSha256": digest, "output": {"notes": len(events)}}))
+        proof_provenance = {"provider": PROVIDER, "modelVersion": MODEL_VERSION,
+              "checkpointSha256": digest, "backend": OfficialMt3Backend.name,
+              "backendVersion": BACKEND_VERSION, "revision": BACKEND_SOURCE_REVISION,
+              "sourceRevision": BACKEND_SOURCE_REVISION,
+              "upstreamSourceRevision": UPSTREAM_SOURCE_REVISION, "device": "cuda"}
+        proof_provenance.update(runtime_provenance())
+        emit({"smokeTested": True, "provider": PROVIDER, "modelVersion": args.model_version,
+              "version": args.model_version, "checkpointSha256": digest,
+              "backend": OfficialMt3Backend.name, "backendVersion": BACKEND_VERSION,
+              "sourceRevision": BACKEND_SOURCE_REVISION,
+              "upstreamSourceRevision": UPSTREAM_SOURCE_REVISION,
+              "device": "cuda", "provenance": proof_provenance,
+              "output": {"notes": len(events)}})
     else:
-        print(json.dumps(run_job(stdin_request(), checkpoint), allow_nan=False))
+        import sys
+        payload = json.load(sys.stdin)
+        emit(run_job(payload, checkpoint))
     return 0
 
 

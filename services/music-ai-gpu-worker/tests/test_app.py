@@ -1,8 +1,12 @@
 import asyncio
 import concurrent.futures
+import hashlib
+import hmac
 import importlib.util
+import json
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -12,6 +16,7 @@ ROOT = Path(__file__).parents[1]
 RUNTIME = tempfile.TemporaryDirectory()
 os.environ["MUSIC_GPU_CHECKPOINT_ROOT"] = RUNTIME.name
 os.environ["MUSIC_GPU_JOB_DB"] = str(Path(RUNTIME.name) / "jobs.sqlite3")
+os.environ["MUSIC_GPU_JOB_OUTPUT_ROOT"] = str(Path(RUNTIME.name) / "outputs")
 spec = importlib.util.spec_from_file_location("music_ai_gpu_worker", ROOT / "app.py")
 worker = importlib.util.module_from_spec(spec)
 assert spec and spec.loader
@@ -30,6 +35,33 @@ class GpuWorkerContractTests(unittest.TestCase):
         worker.TASKS.clear()
         worker.PROCESSES.clear()
         worker.SMOKE_ATTESTATIONS.clear()
+
+    def _artifact(self, name: str, job_id: str = "job-1"):
+        secret = "artifact-test-secret"
+        os.environ["MUSIC_GPU_ARTIFACT_CAPABILITY_SECRET"] = secret
+        directory = worker.OUTPUT_ROOT / "bs_roformer" / job_id
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / name
+        content = b"bounded-audio-test-content-" + name.encode()
+        path.write_bytes(content)
+        digest = hashlib.sha256(content).hexdigest()
+        metadata = {
+            "name": name,
+            "bytes": len(content),
+            "sha256": digest,
+            "contentType": "audio/flac",
+        }
+        result_path = directory / "result.json"
+        existing = json.loads(result_path.read_text()) if result_path.exists() else {"stems": []}
+        existing["stems"].append(metadata)
+        result_path.write_text(json.dumps(existing))
+        expires = int(time.time()) + 600
+        capability = hmac.new(
+            secret.encode(),
+            f"BS_ROFORMER/{job_id}/{name}/{digest}/{expires}".encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        return path, expires, capability
 
     def test_missing_gpu_and_checkpoint_never_report_ready(self):
         with mock.patch.object(worker, "ENABLED", {"ACE_STEP"}), mock.patch.object(
@@ -184,3 +216,78 @@ class GpuWorkerContractTests(unittest.TestCase):
             asyncio.run(worker._execute(job["id"]))
         launch.assert_not_called()
         self.assertEqual(worker.job_status(job["id"])["status"], "cancelled")
+
+    def test_runner_payload_fences_requeued_work_to_persisted_job_id(self):
+        job = worker._queue(worker.JobRequest(provider="MT3"), "stable-runner-id")
+        first = worker._runner_payload({"requestId": "caller-id"}, job["id"])
+        second = worker._runner_payload({"requestId": "different-caller-id"}, job["id"])
+        self.assertEqual(first["jobId"], job["id"])
+        self.assertEqual(first["requestId"], job["id"])
+        self.assertEqual(second["requestId"], job["id"])
+        self.assertEqual(
+            worker.OUTPUT_ROOT / "mt3" / first["requestId"],
+            worker.OUTPUT_ROOT / "mt3" / second["requestId"],
+        )
+
+    def test_runner_result_requires_exact_nested_runtime_provenance(self):
+        health = {
+            "modelVersion": "mt3-ismir2021",
+            "checkpointSha256": "a" * 64,
+            "revision": "repo@revision",
+            "containerDigest": "sha256:" + "b" * 64,
+            "cudaVersion": "12.4",
+            "pytorchVersion": "2.5.1+cu124",
+            "gpu": "NVIDIA L4",
+        }
+        provenance = {
+            "modelVersion": health["modelVersion"],
+            "checkpointSha256": health["checkpointSha256"],
+            "revision": health["revision"],
+            "containerDigest": health["containerDigest"],
+            "cudaVersion": health["cudaVersion"],
+            "pytorchVersion": health["pytorchVersion"],
+            "gpu": health["gpu"],
+        }
+        result = worker._result_from_runner("MT3", health, json.dumps({"provenance": provenance}))
+        self.assertEqual(result["containerDigest"], health["containerDigest"])
+        provenance["gpu"] = "different GPU"
+        with self.assertRaisesRegex(RuntimeError, "provenance"):
+            worker._result_from_runner("MT3", health, json.dumps({"provenance": provenance}))
+
+    def test_artifact_rejects_invalid_capability_and_traversal(self):
+        path, expires, _ = self._artifact("vocals.flac")
+        with self.assertRaises(worker.HTTPException) as invalid:
+            worker._consume_artifact(
+                "bs_roformer", "job-1", "vocals.flac", expires, "0" * 64
+            )
+        self.assertEqual(invalid.exception.status_code, 401)
+        self.assertTrue(path.exists())
+        with self.assertRaises(worker.HTTPException) as traversal:
+            worker._consume_artifact(
+                "bs_roformer", "job-1", "../vocals.flac", expires, "0" * 64
+            )
+        self.assertEqual(traversal.exception.status_code, 404)
+
+    def test_artifact_capability_is_one_time(self):
+        _, expires, capability = self._artifact("one-time.flac", "job-once")
+        response = worker._consume_artifact(
+            "bs_roformer", "job-once", "one-time.flac", expires, capability
+        )
+        with self.assertRaises(worker.HTTPException) as second:
+            worker._consume_artifact(
+                "bs_roformer", "job-once", "one-time.flac", expires, capability
+            )
+        self.assertEqual(second.exception.status_code, 404)
+        asyncio.run(response.background())
+
+    def test_two_stems_can_be_downloaded_sequentially(self):
+        _, expires_a, capability_a = self._artifact("vocals.flac", "job-stems")
+        _, expires_b, capability_b = self._artifact("instrumental.flac", "job-stems")
+        vocals = worker._consume_artifact(
+            "bs_roformer", "job-stems", "vocals.flac", expires_a, capability_a
+        )
+        instrumental = worker._consume_artifact(
+            "bs_roformer", "job-stems", "instrumental.flac", expires_b, capability_b
+        )
+        asyncio.run(vocals.background())
+        asyncio.run(instrumental.background())
