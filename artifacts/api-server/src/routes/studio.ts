@@ -38,6 +38,8 @@ import {
   CorrectProjectSongModelBody,
   CorrectProjectSongModelParams,
   CorrectProjectSongModelResponse,
+  ListArrangementRevisionsParams,
+  ListArrangementRevisionsResponse,
   ListArrangementsParams,
   ListArrangementsResponse,
   ListArtifactsParams,
@@ -58,12 +60,16 @@ import {
   RegisterProjectSourceResponse,
   RetryProjectSourceAnalysisParams,
   RetryProjectSourceAnalysisResponse,
+  RestoreArrangementRevisionBody,
+  RestoreArrangementRevisionParams,
+  RestoreArrangementRevisionResponse,
   UpdateArrangementBody,
   UpdateArrangementParams,
   UpdateArrangementResponse,
 } from "@workspace/api-zod";
 import {
   analysisJobsTable,
+  arrangementRevisionsTable,
   arrangementsTable,
   analysisAttemptsTable,
   db,
@@ -73,6 +79,8 @@ import {
   songModelsTable,
   studioActivitiesTable,
   tracksTable,
+  type ArrangementRevisionSnapshot,
+  type ArrangementRevisionSummary,
   type SongModelData,
   type SongModelField,
   type SongModelFieldStatus,
@@ -229,6 +237,135 @@ const arrangementResponse = (
   ...arrangement,
   createdAt: iso(arrangement.createdAt),
 });
+
+const arrangementRevisionSnapshot = (
+  arrangement: typeof arrangementsTable.$inferSelect,
+): ArrangementRevisionSnapshot => ({
+  name: arrangement.name,
+  harmonyComplexity: arrangement.harmonyComplexity,
+  energy: arrangement.energy,
+  density: arrangement.density,
+  orchestraSize: arrangement.orchestraSize,
+  rhythmIntensity: arrangement.rhythmIntensity,
+  selectedCandidateId: arrangement.selectedCandidateId,
+  sections: arrangement.sections,
+});
+
+function changedEventCount<T>(
+  before: Array<[string, T]>,
+  after: Array<[string, T]>,
+): number {
+  const beforeByKey = new Map(before);
+  const afterByKey = new Map(after);
+  return Array.from(new Set([...beforeByKey.keys(), ...afterByKey.keys()]))
+    .filter((key) =>
+      JSON.stringify(beforeByKey.get(key)) !== JSON.stringify(afterByKey.get(key))
+    )
+    .length;
+}
+
+function revisionSummary(
+  before: ArrangementRevisionSnapshot | null,
+  after: ArrangementRevisionSnapshot,
+): ArrangementRevisionSummary {
+  const beforeSections = new Map((before?.sections ?? []).map((section) => [section.name, section]));
+  const afterSections = new Map(after.sections.map((section) => [section.name, section]));
+  const affectedSections = Array.from(
+    new Set([...beforeSections.keys(), ...afterSections.keys()]),
+  )
+    .filter((name) =>
+      JSON.stringify(beforeSections.get(name)) !== JSON.stringify(afterSections.get(name))
+    );
+  const affectedTracks = new Set<string>();
+  for (const sectionName of new Set([...beforeSections.keys(), ...afterSections.keys()])) {
+    const previous = beforeSections.get(sectionName);
+    const next = afterSections.get(sectionName);
+    const previousMembership = new Set(previous?.tracks ?? []);
+    const nextMembership = new Set(next?.tracks ?? []);
+    for (const trackName of new Set([...previousMembership, ...nextMembership])) {
+      if (previousMembership.has(trackName) !== nextMembership.has(trackName)) {
+        affectedTracks.add(trackName);
+      }
+    }
+    const previousMidi = previous?.midiTracks ?? {};
+    const nextMidi = next?.midiTracks ?? {};
+    for (const trackName of new Set([...Object.keys(previousMidi), ...Object.keys(nextMidi)])) {
+      if (JSON.stringify(previousMidi[trackName]) !== JSON.stringify(nextMidi[trackName])) {
+        affectedTracks.add(trackName);
+      }
+    }
+  }
+  const chordEvents = (snapshot: ArrangementRevisionSnapshot | null) =>
+    (snapshot?.sections ?? []).flatMap((section) =>
+      (section.chords ?? []).map((chord) => [`${section.name}:${chord.id}`, chord] as [string, typeof chord])
+    );
+  const noteEvents = (snapshot: ArrangementRevisionSnapshot | null) =>
+    (snapshot?.sections ?? []).flatMap((section) => [
+      ...(section.midiNotes ?? []).map((note) =>
+        [`${section.name}:legacy:${note.id}`, note] as [string, typeof note]
+      ),
+      ...Object.entries(section.midiTracks ?? {}).flatMap(([trackName, editor]) =>
+        editor.notes.map((note) =>
+          [`${section.name}:${trackName}:${note.id}`, note] as [string, typeof note]
+        )
+      ),
+    ]);
+  const conductorControls = [
+    ["name", "Name"],
+    ["harmonyComplexity", "Harmony complexity"],
+    ["energy", "Energy"],
+    ["density", "Density"],
+    ["orchestraSize", "Orchestra size"],
+    ["rhythmIntensity", "Rhythm intensity"],
+  ] as const;
+  return {
+    affectedSections,
+    affectedTracks: [...affectedTracks].sort(),
+    chordChanges: changedEventCount(chordEvents(before), chordEvents(after)),
+    noteChanges: changedEventCount(noteEvents(before), noteEvents(after)),
+    conductorControls: conductorControls
+      .filter(([key]) => before === null || before[key] !== after[key])
+      .map(([, label]) => label),
+    candidateSelectionChanged:
+      before !== null && before.selectedCandidateId !== after.selectedCandidateId,
+  };
+}
+
+const arrangementRevisionResponse = (
+  revision: typeof arrangementRevisionsTable.$inferSelect,
+) => ({
+  ...revision,
+  snapshot: {
+    ...revision.snapshot,
+    selectedCandidateId: revision.snapshot.selectedCandidateId ?? null,
+  },
+  summary: {
+    ...revision.summary,
+    candidateSelectionChanged: revision.summary.candidateSelectionChanged ?? false,
+  },
+  createdAt: iso(revision.createdAt),
+});
+
+async function ensureCurrentArrangementRevision(
+  arrangement: typeof arrangementsTable.$inferSelect,
+): Promise<void> {
+  const snapshot = arrangementRevisionSnapshot(arrangement);
+  await db
+    .insert(arrangementRevisionsTable)
+    .values({
+      id: randomUUID(),
+      arrangementId: arrangement.id,
+      version: arrangement.version,
+      snapshot,
+      summary: revisionSummary(null, snapshot),
+    })
+    .onConflictDoNothing({
+      target: [
+        arrangementRevisionsTable.arrangementId,
+        arrangementRevisionsTable.version,
+      ],
+    });
+}
 
 const artifactResponse = (
   artifact: typeof musicArtifactsTable.$inferSelect,
@@ -1352,16 +1489,27 @@ router.post("/projects/:projectId/arrangements", async (req, res): Promise<void>
     return;
   }
   const existing = await db.select().from(arrangementsTable).where(eq(arrangementsTable.projectId, params.data.projectId));
-  const [arrangement] = await db.insert(arrangementsTable).values({
-    id: randomUUID(),
-    projectId: params.data.projectId,
-    name: body.data.name,
-    style: body.data.style,
-    mode: body.data.mode,
-    version: existing.length + 1,
-    harmonyComplexity: body.data.harmonyComplexity,
-    sections: [],
-  }).returning();
+  const arrangement = await db.transaction(async (tx) => {
+    const [created] = await tx.insert(arrangementsTable).values({
+      id: randomUUID(),
+      projectId: params.data.projectId,
+      name: body.data.name,
+      style: body.data.style,
+      mode: body.data.mode,
+      version: existing.length + 1,
+      harmonyComplexity: body.data.harmonyComplexity,
+      sections: [],
+    }).returning();
+    const snapshot = arrangementRevisionSnapshot(created);
+    await tx.insert(arrangementRevisionsTable).values({
+      id: randomUUID(),
+      arrangementId: created.id,
+      version: created.version,
+      snapshot,
+      summary: revisionSummary(null, snapshot),
+    });
+    return created;
+  });
   res.status(201).json(CreateArrangementResponse.parse(arrangementResponse(arrangement)));
 });
 
@@ -1407,11 +1555,11 @@ router.patch("/arrangements/:arrangementId", async (req, res): Promise<void> => 
     }
   }
   const { expectedVersion, ...updateData } = body.data;
+  if (expectedVersion === undefined) {
+    res.status(400).json({ error: "expectedVersion is required for arrangement edits" });
+    return;
+  }
   if (updateData.sections) {
-    if (expectedVersion === undefined) {
-      res.status(400).json({ error: "expectedVersion is required for timeline edits" });
-      return;
-    }
     let previousEnd = 0;
     for (const section of updateData.sections) {
       if (
@@ -1468,34 +1616,45 @@ router.patch("/arrangements/:arrangementId", async (req, res): Promise<void> => 
       }
     }
   }
-  const updates = updateData.sections
-    ? {
-        ...updateData,
-        version: sql<number>`${arrangementsTable.version} + 1`,
-      }
-    : updateData;
-  const where = updateData.sections
-    ? and(
-        eq(arrangementsTable.id, params.data.arrangementId),
-        eq(arrangementsTable.projectId, ownedArrangement.projectId),
-        eq(arrangementsTable.version, expectedVersion!),
-      )
-    : and(
-        eq(arrangementsTable.id, params.data.arrangementId),
-        eq(arrangementsTable.projectId, ownedArrangement.projectId),
-      );
-  const [arrangement] = await db.update(arrangementsTable).set(updates).where(where).returning();
-  if (!arrangement) {
-    const [existing] = await db
-      .select({ id: arrangementsTable.id })
+  const updates = {
+    ...updateData,
+    version: sql<number>`${arrangementsTable.version} + 1`,
+  };
+  const where = and(
+    eq(arrangementsTable.id, params.data.arrangementId),
+    eq(arrangementsTable.projectId, ownedArrangement.projectId),
+    eq(arrangementsTable.version, expectedVersion),
+  );
+  const result = await db.transaction(async (tx) => {
+    const [before] = await tx
+      .select()
       .from(arrangementsTable)
       .where(and(
         eq(arrangementsTable.id, params.data.arrangementId),
         eq(arrangementsTable.projectId, ownedArrangement.projectId),
       ))
       .limit(1);
-    res.status(existing ? 409 : 404).json({
-      error: existing
+    if (!before) return { kind: "not-found" as const };
+    const [arrangement] = await tx
+      .update(arrangementsTable)
+      .set(updates)
+      .where(where)
+      .returning();
+    if (!arrangement) return { kind: "conflict" as const };
+    const snapshot = arrangementRevisionSnapshot(arrangement);
+    await tx.insert(arrangementRevisionsTable).values({
+      id: randomUUID(),
+      arrangementId: arrangement.id,
+      version: arrangement.version,
+      snapshot,
+      summary: revisionSummary(arrangementRevisionSnapshot(before), snapshot),
+    });
+    return { kind: "updated" as const, arrangement };
+  });
+  const arrangement = result.kind === "updated" ? result.arrangement : null;
+  if (!arrangement) {
+    res.status(result.kind === "conflict" ? 409 : 404).json({
+      error: result.kind === "conflict"
         ? "Arrangement changed while this local edit was saving. Reload the latest version and try again."
         : "Arrangement not found",
     });
@@ -1503,6 +1662,96 @@ router.patch("/arrangements/:arrangementId", async (req, res): Promise<void> => 
   }
   res.json(UpdateArrangementResponse.parse(arrangementResponse(arrangement)));
 });
+
+router.get("/arrangements/:arrangementId/revisions", async (req, res): Promise<void> => {
+  const params = ListArrangementRevisionsParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [arrangement] = await db
+    .select()
+    .from(arrangementsTable)
+    .where(eq(arrangementsTable.id, params.data.arrangementId))
+    .limit(1);
+  if (!arrangement) {
+    res.status(404).json({ error: "Arrangement not found" });
+    return;
+  }
+  await ensureCurrentArrangementRevision(arrangement);
+  const revisions = await db
+    .select()
+    .from(arrangementRevisionsTable)
+    .where(eq(arrangementRevisionsTable.arrangementId, arrangement.id))
+    .orderBy(desc(arrangementRevisionsTable.version));
+  res.json(ListArrangementRevisionsResponse.parse(
+    revisions.map(arrangementRevisionResponse),
+  ));
+});
+
+router.post(
+  "/arrangements/:arrangementId/revisions/:revisionId/restore",
+  async (req, res): Promise<void> => {
+    const params = RestoreArrangementRevisionParams.safeParse(req.params);
+    const body = RestoreArrangementRevisionBody.safeParse(req.body);
+    if (!params.success || !body.success) {
+      res.status(400).json({ error: "Invalid arrangement restore request" });
+      return;
+    }
+    const result = await db.transaction(async (tx) => {
+      const [revision] = await tx
+        .select()
+        .from(arrangementRevisionsTable)
+        .where(and(
+          eq(arrangementRevisionsTable.id, params.data.revisionId),
+          eq(arrangementRevisionsTable.arrangementId, params.data.arrangementId),
+        ))
+        .limit(1);
+      if (!revision) return { kind: "not-found" as const };
+      const [current] = await tx
+        .select()
+        .from(arrangementsTable)
+        .where(eq(arrangementsTable.id, params.data.arrangementId))
+        .limit(1);
+      if (!current) return { kind: "not-found" as const };
+      const [restored] = await tx
+        .update(arrangementsTable)
+        .set({
+          ...revision.snapshot,
+          selectedCandidateId: revision.snapshot.selectedCandidateId ?? null,
+          version: sql<number>`${arrangementsTable.version} + 1`,
+        })
+        .where(and(
+          eq(arrangementsTable.id, params.data.arrangementId),
+          eq(arrangementsTable.version, body.data.expectedVersion),
+        ))
+        .returning();
+      if (!restored) return { kind: "conflict" as const };
+      const snapshot = arrangementRevisionSnapshot(restored);
+      await tx.insert(arrangementRevisionsTable).values({
+        id: randomUUID(),
+        arrangementId: restored.id,
+        version: restored.version,
+        snapshot,
+        summary: revisionSummary(arrangementRevisionSnapshot(current), snapshot),
+      });
+      return { kind: "restored" as const, arrangement: restored };
+    });
+    if (result.kind === "not-found") {
+      res.status(404).json({ error: "Arrangement revision not found" });
+      return;
+    }
+    if (result.kind === "conflict") {
+      res.status(409).json({
+        error: "Arrangement changed while this revision was being restored. Review the latest version and try again.",
+      });
+      return;
+    }
+    res.json(RestoreArrangementRevisionResponse.parse(
+      arrangementResponse(result.arrangement),
+    ));
+  },
+);
 
 router.post("/arrangements/:arrangementId/generate", async (req, res): Promise<void> => {
   await ensureSeeded();

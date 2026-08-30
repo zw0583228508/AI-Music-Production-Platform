@@ -1090,11 +1090,21 @@ export interface ArrangementUpdate {
   /** @nullable */
   selectedCandidateId?: string | null;
   /** @minimum 1 */
-  expectedVersion?: number;
+  expectedVersion: number;
   /** Local timeline and semantic edits for this arrangement */
   sections?: ArrangementSection[];
 }
 
+export interface ArrangementRevisionSummary {
+  affectedSections: string[];
+  affectedTracks: string[];
+  /** @minimum 0 */
+  chordChanges: number;
+  /** @minimum 0 */
+  noteChanges: number;
+  conductorControls: string[];
+  candidateSelectionChanged: boolean;
+}
 export type GenerationInputProvider = typeof GenerationInputProvider[keyof typeof GenerationInputProvider];
 
 
@@ -1652,3 +1662,28 @@ returnTo?: string;
 export type LogoutBrowserSessionParams = {
 returnTo?: string;
 };
+export interface RestoreArrangementRevisionInput {
+  /** @minimum 1 */
+  expectedVersion: number;
+}
+
+export interface ArrangementRevisionSnapshot {
+  name: string;
+  harmonyComplexity: number;
+  energy: number;
+  density: number;
+  orchestraSize: number;
+  rhythmIntensity: number;
+  /** @nullable */
+  selectedCandidateId: string | null;
+  sections: ArrangementSection[];
+}
+
+export interface ArrangementRevision {
+  id: string;
+  arrangementId: string;
+  version: number;
+  snapshot: ArrangementRevisionSnapshot;
+  summary: ArrangementRevisionSummary;
+  createdAt: string;
+}

@@ -37,7 +37,7 @@ export interface ArrangementUpdate {
   /** @nullable */
   selectedCandidateId?: string | null;
   /** @minimum 1 */
-  expectedVersion?: number;
+  expectedVersion: number;
   /** Local timeline and semantic edits for this arrangement */
   sections?: ArrangementSection[];
 }

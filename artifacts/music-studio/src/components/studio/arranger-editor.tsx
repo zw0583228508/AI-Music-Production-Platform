@@ -1,9 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type {
   Analysis,
   Arrangement,
   ArrangementSection,
   Track,
+  ArrangementRevision
+} from "@workspace/api-client-react";
+import {
+  useListArrangementRevisions,
+  useRestoreArrangementRevision,
+  getListArrangementRevisionsQueryKey,
+  getListArrangementsQueryKey
 } from "@workspace/api-client-react";
 import {
   ArrowDown,
@@ -14,6 +22,7 @@ import {
   Eraser,
   GitBranch,
   Grid3X3,
+  History,
   Magnet,
   MousePointer2,
   Music2,
@@ -35,6 +44,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import type {
   AutomationPoint,
@@ -51,12 +62,14 @@ type EditorTool = "select" | "draw" | "split" | "erase";
 type DetailPanel = "chord" | "piano" | null;
 
 type ArrangerEditorProps = {
+  projectId: string;
   arrangement?: Arrangement;
   analysis?: Analysis;
   tracks: Track[];
   copilotResult?: CopilotEditorResult | null;
   onSelectionChange: (selection: EditorSelection) => void;
   onSectionsChange: (sections: ArrangementSection[]) => Promise<void>;
+  onRevisionPreviewChange?: (previewing: boolean) => void;
 };
 
 const SECTION_COLORS = ["#fb7185", "#fbbf24", "#38bdf8", "#a78bfa", "#34d399", "#f97316"];
@@ -144,14 +157,59 @@ function sectionToApi(section: EditorSection): ArrangementSection {
   return section;
 }
 
+function revisionControlComparison(
+  revision: ArrangementRevision,
+  arrangement: Arrangement,
+) {
+  const controls = [
+    {
+      label: "Harmony",
+      revision: `${revision.snapshot.harmonyComplexity}/10`,
+      current: `${arrangement.harmonyComplexity}/10`,
+      changed: revision.snapshot.harmonyComplexity !== arrangement.harmonyComplexity,
+    },
+    ...([
+      ["Energy", revision.snapshot.energy, arrangement.energy],
+      ["Density", revision.snapshot.density, arrangement.density],
+      ["Orchestra", revision.snapshot.orchestraSize, arrangement.orchestraSize],
+      ["Rhythm", revision.snapshot.rhythmIntensity, arrangement.rhythmIntensity],
+    ] as const).map(([label, previous, current]) => ({
+      label,
+      revision: `${Math.round(previous * 100)}%`,
+      current: `${Math.round(current * 100)}%`,
+      changed: previous !== current,
+    })),
+    {
+      label: "Candidate",
+      revision: revision.snapshot.selectedCandidateId ?? "None",
+      current: arrangement.selectedCandidateId ?? "None",
+      changed: revision.snapshot.selectedCandidateId !== arrangement.selectedCandidateId,
+    },
+  ];
+  const currentSections = new Map(arrangement.sections.map((section) => [section.name, section]));
+  const revisionSections = new Map(revision.snapshot.sections.map((section) => [section.name, section]));
+  const affectedSections = Array.from(
+    new Set([...currentSections.keys(), ...revisionSections.keys()]),
+  ).filter((name) =>
+    JSON.stringify(currentSections.get(name)) !== JSON.stringify(revisionSections.get(name))
+  );
+  return {
+    controls: controls.filter((control) => control.changed),
+    affectedSections,
+  };
+}
+
 export function ArrangerEditor({
+  projectId,
   arrangement,
   analysis,
   tracks,
   copilotResult,
   onSelectionChange,
   onSectionsChange,
+  onRevisionPreviewChange,
 }: ArrangerEditorProps) {
+  const { toast } = useToast();
   const [tool, setTool] = useState<EditorTool>("select");
   const [snap, setSnap] = useState(true);
   const [snapValue, setSnapValue] = useState("1/16");
@@ -175,10 +233,117 @@ export function ArrangerEditor({
 
   const [sections, setSections] = useState<EditorSection[]>(initialSections);
 
+  const queryClient = useQueryClient();
+  const [showHistory, setShowHistory] = useState(false);
+  const [previewRevisionId, setPreviewRevisionId] = useState<string | null>(null);
+  const stashedSections = useRef<EditorSection[] | null>(null);
+
+  const { data: revisions, isLoading: isLoadingRevisions } = useListArrangementRevisions(arrangement?.id || "", {
+    query: {
+      enabled: showHistory && !!arrangement?.id,
+      queryKey: getListArrangementRevisionsQueryKey(arrangement?.id || ""),
+    }
+  });
+
+  const restoreMutation = useRestoreArrangementRevision();
+
+  const startPreview = (revision: ArrangementRevision) => {
+    if (revision.version === arrangement?.version) {
+      cancelPreview();
+      return;
+    }
+    if (!previewRevisionId) {
+      stashedSections.current = sections;
+    }
+    const normalized = normalizeSections(revision.snapshot.sections, analysis?.sections, tracks);
+    const hydratedSection = normalized.find((section) => section.name === selectedSectionName) ?? normalized[0];
+    const defaultTrackName = tracks.find((track) => track.kind === "midi")?.name ?? "MIDI";
+    const trackName = hydratedSection?.midiTracks[selectedTrackName]
+      ? selectedTrackName
+      : defaultTrackName;
+    setPreviewRevisionId(revision.id);
+    setSections(normalized);
+    setSelectedSectionName(hydratedSection?.name ?? null);
+    setSelectedTrackName(trackName);
+    setNotes(hydratedSection?.midiTracks[trackName]?.notes ?? noteSeed(2));
+    setCcPoints(hydratedSection?.midiTracks[trackName]?.cc ?? DEFAULT_CC);
+    onRevisionPreviewChange?.(true);
+  };
+
+  const cancelPreview = () => {
+    setPreviewRevisionId(null);
+    if (stashedSections.current) {
+      const restoredSections = stashedSections.current;
+      setSections(restoredSections);
+      const hydratedSection = restoredSections.find((section) => section.name === selectedSectionName) ?? restoredSections[0];
+      const defaultTrackName = tracks.find((track) => track.kind === "midi")?.name ?? "MIDI";
+      const trackName = hydratedSection?.midiTracks[selectedTrackName]
+        ? selectedTrackName
+        : defaultTrackName;
+      setSelectedSectionName(hydratedSection?.name ?? null);
+      setSelectedTrackName(trackName);
+      setNotes(hydratedSection?.midiTracks[trackName]?.notes ?? noteSeed(2));
+      setCcPoints(hydratedSection?.midiTracks[trackName]?.cc ?? DEFAULT_CC);
+      stashedSections.current = null;
+    }
+    onRevisionPreviewChange?.(false);
+  };
+
+  const handleRestore = (revision: ArrangementRevision) => {
+    if (!arrangement) return;
+    restoreMutation.mutate({
+      arrangementId: arrangement.id,
+      revisionId: revision.id,
+      data: { expectedVersion: arrangement.version }
+    }, {
+      onSuccess: (restoredArr) => {
+        setPreviewRevisionId(null);
+        stashedSections.current = null;
+        setDirty(false);
+        setShowHistory(false);
+        onRevisionPreviewChange?.(false);
+        queryClient.setQueryData(getListArrangementsQueryKey(projectId), (current: Arrangement[] | undefined) =>
+          current?.map(a => a.id === restoredArr.id ? restoredArr : a)
+        );
+        void queryClient.invalidateQueries({
+          queryKey: getListArrangementRevisionsQueryKey(arrangement.id),
+        });
+        toast({
+          title: `Revision v${revision.version} restored`,
+          description: `The restored arrangement is now v${restoredArr.version}; newer history was preserved.`,
+        });
+      },
+      onError: async (restoreError) => {
+        if (
+          restoreError
+          && typeof restoreError === "object"
+          && "status" in restoreError
+          && restoreError.status === 409
+        ) {
+          cancelPreview();
+          await queryClient.refetchQueries({
+            queryKey: getListArrangementsQueryKey(projectId),
+          });
+          toast({
+            title: "Arrangement changed before restore",
+            description: "The latest revision was loaded. Review the history and try again.",
+            variant: "destructive",
+          });
+          return;
+        }
+        toast({
+          title: "Revision could not be restored",
+          description: restoreError instanceof Error ? restoreError.message : "Try restoring this revision again.",
+          variant: "destructive",
+        });
+      }
+    });
+  };
+
   useEffect(() => {
     const revision = arrangement ? `${arrangement.id}:${arrangement.version}` : null;
     if (arrangement?.id && revision && lastArrangementRevision.current !== revision) {
-      if (dirty) return;
+      if (dirty || previewRevisionId) return;
       lastArrangementRevision.current = revision;
       const normalized = normalizeSections(arrangement.sections, analysis?.sections, tracks);
       setSections(normalized);
@@ -192,10 +357,14 @@ export function ArrangerEditor({
       setNotes(hydratedSection?.midiTracks[trackName]?.notes ?? noteSeed(2));
       setCcPoints(hydratedSection?.midiTracks[trackName]?.cc ?? DEFAULT_CC);
     }
-  }, [arrangement, analysis?.sections, dirty, selectedSectionName, selectedTrackName, tracks]);
+  }, [arrangement, analysis?.sections, dirty, previewRevisionId, selectedSectionName, selectedTrackName, tracks]);
+
+  useEffect(() => () => {
+    onRevisionPreviewChange?.(false);
+  }, [onRevisionPreviewChange]);
 
   useEffect(() => {
-    if (!dirty || hasConflict || saveCoordinator.current.hasInFlightSave()) return;
+    if (!dirty || hasConflict || saveCoordinator.current.hasInFlightSave() || previewRevisionId) return;
     const timeout = window.setTimeout(() => {
       const savingGeneration = saveCoordinator.current.beginSave();
       if (savingGeneration === null) return;
@@ -215,10 +384,10 @@ export function ArrangerEditor({
         });
     }, 650);
     return () => window.clearTimeout(timeout);
-  }, [dirty, hasConflict, onSectionsChange, savePass, sections]);
+  }, [dirty, hasConflict, onSectionsChange, previewRevisionId, savePass, sections]);
 
   useEffect(() => {
-    if (!copilotResult || appliedCopilotResult.current === copilotResult) return;
+    if (!copilotResult || appliedCopilotResult.current === copilotResult || previewRevisionId) return;
     appliedCopilotResult.current = copilotResult;
     const affected = copilotResult.affectedSections;
     setSections((current) => current.map((section) => {
@@ -274,7 +443,7 @@ export function ArrangerEditor({
     }));
     saveCoordinator.current.markChanged();
     setDirty(true);
-  }, [copilotResult]);
+  }, [copilotResult, previewRevisionId]);
 
   const barCount = useMemo(
     () => Math.max(88, ...sections.map((section) => section.endBar)),
@@ -292,6 +461,7 @@ export function ArrangerEditor({
     : 0.125;
 
   const updateSections = (updater: (current: EditorSection[]) => EditorSection[]) => {
+    if (previewRevisionId) return;
     setSections((current) => updater(current));
     saveCoordinator.current.markChanged();
     setDirty(true);
@@ -402,6 +572,7 @@ export function ArrangerEditor({
   };
 
   const updateNotes = (updater: (current: PianoNote[]) => PianoNote[]) => {
+    if (previewRevisionId) return;
     const updated = updater(notes);
     setNotes(updated);
     if (selectedSection) {
@@ -469,6 +640,7 @@ export function ArrangerEditor({
   };
 
   const updateCcPoint = (pointIndex: number) => {
+    if (previewRevisionId) return;
     const updated = ccPoints.map((value, index) => index === pointIndex ? Math.min(127, value + 8) : value);
     setCcPoints(updated);
     if (selectedSection) {
@@ -492,9 +664,10 @@ export function ArrangerEditor({
   ];
 
   return (
-    <div className="flex min-h-0 flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-3 py-2 shadow-sm">
-        <div className="flex items-center gap-2">
+    <div className="flex h-full flex-col relative min-h-0">
+      <div className={cn("flex flex-1 min-h-0 flex-col gap-3 overflow-auto pr-1", showHistory && "xl:mr-80 xl:pr-4 transition-all duration-300")}>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-3 py-2 shadow-sm shrink-0">
+          <div className="flex items-center gap-2">
           <div className="flex items-center rounded-lg border bg-muted/30 p-0.5">
             {headerTools.map(({ id, label, icon: Icon }) => (
               <Button
@@ -523,6 +696,21 @@ export function ArrangerEditor({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant={showHistory ? "secondary" : "ghost"}
+            size="sm"
+            className={cn("h-8 gap-1.5 text-xs", showHistory && "bg-secondary text-secondary-foreground")}
+            disabled={dirty || saveCoordinator.current.hasInFlightSave()}
+            title={dirty ? "Wait for local edits to finish saving" : "Open revision history"}
+            onClick={() => {
+              if (showHistory) cancelPreview();
+              setShowHistory(!showHistory);
+            }}
+          >
+            <History className="h-3.5 w-3.5" />
+            History
+          </Button>
+
           <Button variant={snap ? "secondary" : "ghost"} size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setSnap((value) => !value)}>
             <Magnet className="h-3.5 w-3.5" />
             Snap
@@ -542,6 +730,14 @@ export function ArrangerEditor({
           </Badge>
         </div>
       </div>
+      {previewRevisionId && (
+        <div className="flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-2 text-xs shadow-sm shrink-0">
+          <Sparkles className="h-4 w-4 text-primary" />
+          <span className="font-medium text-primary">Previewing older revision</span>
+          <span className="text-muted-foreground text-[10px] hidden sm:inline">Auto-save is paused. Restore this revision from the history panel to continue editing.</span>
+          <Button variant="outline" size="sm" className="ml-auto h-7 text-[10px] bg-background" onClick={cancelPreview}>Exit Preview</Button>
+        </div>
+      )}
       {hasConflict && (
         <div role="alert" className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-900">
           <span className="mr-auto">A newer arrangement revision exists. Resolve it before saving again.</span>
@@ -556,8 +752,8 @@ export function ArrangerEditor({
         </div>
       )}
 
-      <Card className="overflow-hidden border shadow-sm">
-        <CardHeader className="flex flex-row items-center justify-between border-b bg-muted/10 px-4 py-2.5">
+      <Card className="overflow-hidden border shadow-sm flex flex-1 flex-col min-h-0 shrink-0">
+        <CardHeader className="flex flex-row items-center justify-between border-b bg-muted/10 px-4 py-2.5 shrink-0">
           <CardTitle className="flex items-center gap-2 text-sm">
             <Grid3X3 className="h-4 w-4 text-primary" />
             Arranger
@@ -569,8 +765,8 @@ export function ArrangerEditor({
             <span className="ml-2 h-2 w-2 rounded-full bg-emerald-400" /> audio
           </div>
         </CardHeader>
-        <CardContent className="p-0">
-          <div className="flex min-h-[360px] overflow-x-auto">
+        <CardContent className="p-0 flex flex-1 min-h-0 overflow-auto relative">
+          <div className="flex min-h-[360px] w-full">
             <div className="sticky left-0 z-20 w-36 shrink-0 border-r bg-card">
               <div className="h-9 border-b bg-muted/20 px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Tracks</div>
               <div className="h-9 border-b bg-primary/5 px-3 py-2 text-[10px] font-semibold text-primary">Sections</div>
@@ -813,6 +1009,137 @@ export function ArrangerEditor({
           </CardContent>
         </Card>
       </div>
+      </div>
+
+      {showHistory && (
+        <div className="absolute right-0 top-0 bottom-0 w-[min(20rem,calc(100%-1rem))] bg-card/95 backdrop-blur-md border-l shadow-[-8px_0_24px_rgba(0,0,0,0.08)] z-30 flex flex-col rounded-l-xl overflow-hidden flex-shrink-0 animate-in slide-in-from-right-8 duration-200">
+          <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/40">
+            <h3 className="font-semibold text-sm flex items-center gap-2"><History className="h-4 w-4" /> Revision History</h3>
+            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { cancelPreview(); setShowHistory(false); }}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+          <ScrollArea className="flex-1">
+            {isLoadingRevisions ? (
+              <div className="p-4 space-y-4">
+                {[1, 2, 3].map(i => (
+                  <div key={i} className="space-y-2">
+                    <div className="flex justify-between"><div className="h-4 w-12 bg-muted rounded animate-pulse" /><div className="h-4 w-20 bg-muted rounded animate-pulse" /></div>
+                    <div className="h-8 w-full bg-muted/50 rounded animate-pulse" />
+                  </div>
+                ))}
+              </div>
+            ) : revisions?.length ? (
+              <div className="flex flex-col">
+                {revisions.map((rev) => {
+                  const isCurrent = rev.version === arrangement?.version;
+                  const isPreviewing = previewRevisionId === rev.id;
+                  const comparison = arrangement
+                    ? revisionControlComparison(rev, arrangement)
+                    : null;
+                  return (
+                    <div
+                      key={rev.id}
+                      className={cn(
+                        "p-4 border-b flex flex-col gap-3 transition-all relative overflow-hidden group",
+                        !isCurrent && "cursor-pointer",
+                        isPreviewing ? "bg-primary/5 border-primary/30 shadow-[inset_2px_0_0_hsl(var(--primary))]" : isCurrent ? "bg-muted/20" : "hover:bg-muted/40 hover:shadow-[inset_2px_0_0_hsl(var(--muted-foreground)/0.3)]"
+                      )}
+                      onClick={() => !isCurrent && startPreview(rev)}
+                    >
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-2">
+                          <span className={cn("font-bold text-sm", isPreviewing && "text-primary")}>v{rev.version}</span>
+                          {isCurrent && <Badge variant="outline" className="text-[9px] h-4 py-0 font-normal uppercase tracking-wider bg-background">Current</Badge>}
+                        </div>
+                        <span className="text-[10px] text-muted-foreground">{new Date(rev.createdAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5">
+                        {rev.summary.affectedSections?.length > 0 && (
+                          <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-4 font-normal bg-background/50 border-muted-foreground/20 text-muted-foreground">
+                            Sec: {rev.summary.affectedSections.join(', ')}
+                          </Badge>
+                        )}
+                        {rev.summary.affectedTracks?.length > 0 && (
+                          <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-4 font-normal bg-background/50 border-muted-foreground/20 text-muted-foreground">
+                            Trk: {rev.summary.affectedTracks.join(', ')}
+                          </Badge>
+                        )}
+                        {rev.summary.chordChanges > 0 && (
+                          <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-4 font-normal bg-background/50 border-muted-foreground/20 text-muted-foreground">
+                            {rev.summary.chordChanges} chords
+                          </Badge>
+                        )}
+                        {rev.summary.noteChanges > 0 && (
+                          <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-4 font-normal bg-background/50 border-muted-foreground/20 text-muted-foreground">
+                            {rev.summary.noteChanges} notes
+                          </Badge>
+                        )}
+                        {rev.summary.conductorControls?.length > 0 && (
+                          <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-4 font-normal bg-background/50 border-muted-foreground/20 text-muted-foreground">
+                            {rev.summary.conductorControls.join(', ')}
+                          </Badge>
+                        )}
+                        {rev.summary.candidateSelectionChanged && (
+                          <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-4 font-normal bg-background/50 border-muted-foreground/20 text-muted-foreground">
+                            Candidate selection
+                          </Badge>
+                        )}
+                      </div>
+
+                      {isPreviewing && (
+                        <div className="mt-1 pt-3 border-t border-primary/20 flex flex-col gap-2.5 animate-in fade-in zoom-in-95 duration-200">
+                          <div className="rounded-md border border-primary/20 bg-background/70 p-2.5">
+                            <div className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+                              Compared with current v{arrangement?.version}
+                            </div>
+                            <div className="mt-2 space-y-1.5 text-[10px]">
+                              <div className="flex items-start justify-between gap-3">
+                                <span className="text-muted-foreground">Sections</span>
+                                <span className="text-right font-medium">
+                                  {comparison?.affectedSections.length
+                                    ? comparison.affectedSections.join(", ")
+                                    : "No section differences"}
+                                </span>
+                              </div>
+                              {comparison?.controls.map((control) => (
+                                <div className="flex items-center justify-between gap-3" key={control.label}>
+                                  <span className="text-muted-foreground">{control.label}</span>
+                                  <span className="font-mono">
+                                    v{rev.version} {control.revision} → current {control.current}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="text-[10px] text-primary/80 leading-snug">
+                            Restoring will append a new version (v{(arrangement?.version ?? 0) + 1}) to your history. No revisions are deleted.
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              onClick={(e) => { e.stopPropagation(); handleRestore(rev); }}
+                              className="flex-1 h-7 text-[10px] font-semibold bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
+                              disabled={restoreMutation.isPending}
+                            >
+                              {restoreMutation.isPending ? "Restoring..." : `Restore to v${rev.version}`}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="p-8 text-center text-sm text-muted-foreground">
+                No revisions found.
+              </div>
+            )}
+          </ScrollArea>
+        </div>
+      )}
     </div>
   );
 }

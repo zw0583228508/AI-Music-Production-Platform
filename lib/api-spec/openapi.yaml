@@ -418,8 +418,70 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Arrangement"
+        "400":
+          description: Invalid arrangement update or missing expected version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: Arrangement changed before the update could be applied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /arrangements/{arrangementId}/revisions:
+    get:
+      operationId: listArrangementRevisions
+      tags: [arrangements]
+      summary: List immutable arrangement revisions
+      parameters:
+        - $ref: "#/components/parameters/ArrangementId"
+      responses:
+        "200":
+          description: Arrangement revision history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ArrangementRevision"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /arrangements/{arrangementId}/revisions/{revisionId}/restore:
+    post:
+      operationId: restoreArrangementRevision
+      tags: [arrangements]
+      summary: Restore a revision as a new arrangement version
+      parameters:
+        - $ref: "#/components/parameters/ArrangementId"
+        - name: revisionId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RestoreArrangementRevisionInput"
+      responses:
+        "200":
+          description: Restored arrangement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Arrangement"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Arrangement changed before restore could be applied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /arrangements/{arrangementId}/generate:
     post:
       operationId: generateArrangement
@@ -1292,6 +1354,7 @@ components:
           enum: [QUICK_ARRANGE, STUDIO, PRO_SCORE]
     ArrangementUpdate:
       type: object
+      required: [expectedVersion]
       properties:
         name: { type: string }
         harmonyComplexity: { type: number, minimum: 1, maximum: 10 }
@@ -1345,6 +1408,54 @@ components:
             - $ref: "#/components/schemas/GenerationProvenance"
             - { type: "null" }
         createdAt: { type: string }
+    ArrangementRevisionSummary:
+      type: object
+      required: [affectedSections, affectedTracks, chordChanges, noteChanges, conductorControls, candidateSelectionChanged]
+      properties:
+        affectedSections:
+          type: array
+          items: { type: string }
+        affectedTracks:
+          type: array
+          items: { type: string }
+        chordChanges: { type: number, minimum: 0 }
+        noteChanges: { type: number, minimum: 0 }
+        conductorControls:
+          type: array
+          items: { type: string }
+        candidateSelectionChanged: { type: boolean }
+    ArrangementRevisionSnapshot:
+      type: object
+      required: [name, harmonyComplexity, energy, density, orchestraSize, rhythmIntensity, selectedCandidateId, sections]
+      properties:
+        name: { type: string }
+        harmonyComplexity: { type: number }
+        energy: { type: number }
+        density: { type: number }
+        orchestraSize: { type: number }
+        rhythmIntensity: { type: number }
+        selectedCandidateId: { type: ["string", "null"] }
+        sections:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArrangementSection"
+    ArrangementRevision:
+      type: object
+      required: [id, arrangementId, version, snapshot, summary, createdAt]
+      properties:
+        id: { type: string }
+        arrangementId: { type: string }
+        version: { type: number }
+        snapshot:
+          $ref: "#/components/schemas/ArrangementRevisionSnapshot"
+        summary:
+          $ref: "#/components/schemas/ArrangementRevisionSummary"
+        createdAt: { type: string }
+    RestoreArrangementRevisionInput:
+      type: object
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: number, minimum: 1 }
     ArrangementSection:
       type: object
       required: [name, energy, density, tracks]

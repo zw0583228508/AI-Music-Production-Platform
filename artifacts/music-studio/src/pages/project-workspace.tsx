@@ -102,6 +102,7 @@ export default function ProjectWorkspace() {
   // const runCopilot = useRunCopilot(); // We'll mock copilot if it's not exported, but let's assume it is
 
   const [activeTab, setActiveTab] = useState("editor");
+  const [revisionPreviewing, setRevisionPreviewing] = useState(false);
   const [selectedArrangementId, setSelectedArrangementId] = useState<string | null>(null);
   const [generationJobId, setGenerationJobId] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
@@ -244,8 +245,11 @@ export default function ProjectWorkspace() {
   const initializedArrangementRef = useRef<string | null>(null);
   
   useEffect(() => {
-    if (activeArrangement && initializedArrangementRef.current !== activeArrangement.id) {
-      initializedArrangementRef.current = activeArrangement.id;
+    const revisionKey = activeArrangement
+      ? `${activeArrangement.id}:${activeArrangement.version}`
+      : null;
+    if (activeArrangement && initializedArrangementRef.current !== revisionKey) {
+      initializedArrangementRef.current = revisionKey;
       setLocalHarmony(activeArrangement.harmonyComplexity);
       setLocalEnergy(activeArrangement.energy);
       setLocalDensity(activeArrangement.density);
@@ -253,22 +257,49 @@ export default function ProjectWorkspace() {
   }, [activeArrangement]);
 
   const handleParamChange = (param: string, value: number) => {
-    if (!activeArrangement) return;
-    
+    if (revisionPreviewing) return;
     if (param === 'harmony') setLocalHarmony(value);
     if (param === 'energy') setLocalEnergy(value);
     if (param === 'density') setLocalDensity(value);
+  };
 
-    // Optimistic UI + debounce server update (simplified immediate for now)
+  const commitParamChange = (param: string, value: number) => {
+    if (!activeArrangement || revisionPreviewing) return;
     updateArrangement.mutate({
       arrangementId: activeArrangement.id,
       data: {
-        [param === 'harmony' ? 'harmonyComplexity' : param]: value
+        [param === 'harmony' ? 'harmonyComplexity' : param]: value,
+        expectedVersion: activeArrangement.version,
       }
     }, {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getListArrangementsQueryKey(projectId) });
-      }
+      onSuccess: (updated) => {
+        queryClient.setQueryData(
+          getListArrangementsQueryKey(projectId),
+          (current: typeof arrangements | undefined) =>
+            current?.map((arrangement) => arrangement.id === updated.id ? updated : arrangement),
+        );
+      },
+      onError: async (paramError) => {
+        if (
+          paramError
+          && typeof paramError === "object"
+          && "status" in paramError
+          && paramError.status === 409
+        ) {
+          await queryClient.refetchQueries({ queryKey: getListArrangementsQueryKey(projectId) });
+          toast({
+            title: "Arrangement changed elsewhere",
+            description: "The latest conductor values were loaded. Review the control and try again.",
+            variant: "destructive",
+          });
+          return;
+        }
+        toast({
+          title: "Conductor change could not be saved",
+          description: paramError instanceof Error ? paramError.message : "Try the change again.",
+          variant: "destructive",
+        });
+      },
     });
   };
 
@@ -410,7 +441,7 @@ export default function ProjectWorkspace() {
 
   const handleCopilotSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!copilotCommand.trim() || runCopilot.isPending) return;
+    if (!copilotCommand.trim() || runCopilot.isPending || revisionPreviewing) return;
 
     const command = copilotCommand;
     setCopilotMessages(prev => [...prev, { role: 'user', text: command }]);
@@ -596,25 +627,33 @@ export default function ProjectWorkspace() {
             </div>
           </div>
 
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
+          <Tabs
+            value={activeTab}
+            onValueChange={(value) => {
+              if (!revisionPreviewing || value === "editor") setActiveTab(value);
+            }}
+            className="flex-1 flex flex-col min-h-0"
+          >
             <div className="px-6 pt-4 shrink-0">
               <TabsList className="grid w-full max-w-2xl grid-cols-4">
                 <TabsTrigger value="editor">Editor</TabsTrigger>
-                <TabsTrigger value="model" data-testid="tab-model">Song Model</TabsTrigger>
-                <TabsTrigger value="arrangement" data-testid="tab-director">Director</TabsTrigger>
-                <TabsTrigger value="candidates" data-testid="tab-candidates">Candidates</TabsTrigger>
+                <TabsTrigger value="model" data-testid="tab-model" disabled={revisionPreviewing}>Song Model</TabsTrigger>
+                <TabsTrigger value="arrangement" data-testid="tab-director" disabled={revisionPreviewing}>Director</TabsTrigger>
+                <TabsTrigger value="candidates" data-testid="tab-candidates" disabled={revisionPreviewing}>Candidates</TabsTrigger>
               </TabsList>
             </div>
 
-            <TabsContent value="editor" className="flex-1 min-h-0 overflow-auto m-0 p-4">
+            <TabsContent value="editor" className="flex-1 min-h-0 flex flex-col overflow-hidden relative m-0 p-4">
               {activeArrangement ? (
                 <ArrangerEditor
+                  projectId={projectId}
                   arrangement={activeArrangement}
                   analysis={analysis}
                   tracks={tracks ?? []}
                   copilotResult={copilotEditorResult}
                   onSelectionChange={setEditorSelection}
                   onSectionsChange={handleEditorSectionsChange}
+                  onRevisionPreviewChange={setRevisionPreviewing}
                 />
               ) : (
                 <EmptyState
@@ -678,6 +717,7 @@ export default function ProjectWorkspace() {
                             value={[localHarmony]} 
                             min={1} max={10} step={1}
                             onValueChange={([v]) => handleParamChange('harmony', v)}
+                            onValueCommit={([v]) => commitParamChange('harmony', v)}
                           />
                           <p className="text-xs text-muted-foreground">Controls chord extensions, voicing density, and progression movement.</p>
                         </div>
@@ -691,6 +731,7 @@ export default function ProjectWorkspace() {
                             value={[localEnergy]} 
                             min={0} max={1} step={0.05}
                             onValueChange={([v]) => handleParamChange('energy', v)}
+                            onValueCommit={([v]) => commitParamChange('energy', v)}
                           />
                           <p className="text-xs text-muted-foreground">Overall intensity, dynamic range, and high-frequency presence.</p>
                         </div>
@@ -704,6 +745,7 @@ export default function ProjectWorkspace() {
                             value={[localDensity]} 
                             min={0} max={1} step={0.05}
                             onValueChange={([v]) => handleParamChange('density', v)}
+                            onValueCommit={([v]) => commitParamChange('density', v)}
                           />
                           <p className="text-xs text-muted-foreground">Number of simultaneous parts and textural thickness.</p>
                         </div>
@@ -884,9 +926,9 @@ export default function ProjectWorkspace() {
                 className="text-sm shadow-sm" 
                 value={copilotCommand}
                 onChange={(e) => setCopilotCommand(e.target.value)}
-                disabled={runCopilot.isPending}
+                disabled={runCopilot.isPending || revisionPreviewing}
               />
-              <Button type="submit" size="icon" className="shrink-0" disabled={!copilotCommand.trim() || runCopilot.isPending}>
+              <Button type="submit" size="icon" className="shrink-0" disabled={!copilotCommand.trim() || runCopilot.isPending || revisionPreviewing}>
                 <Bot className="h-4 w-4" />
               </Button>
             </form>

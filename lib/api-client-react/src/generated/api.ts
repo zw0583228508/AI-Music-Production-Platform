@@ -25,6 +25,7 @@ import type {
   AnalysisJob,
   Arrangement,
   ArrangementInput,
+  ArrangementRevision,
   ArrangementUpdate,
   Artifact,
   AuthUserEnvelope,
@@ -32,6 +33,7 @@ import type {
   CopilotInput,
   CopilotResult,
   Dashboard,
+  Error,
   ExportInput,
   ExportPackage,
   GenerationBlockedError,
@@ -51,6 +53,7 @@ import type {
   ProjectSource,
   ProjectWorkspace,
   RegisterSourceInput,
+  RestoreArrangementRevisionInput,
   SongModel,
   SongModelCorrectionInput,
   Track,
@@ -1775,7 +1778,7 @@ export const updateArrangement = async (arrangementId: string,
 
 
 
-export const getUpdateArrangementMutationOptions = <TError = ErrorType<NotFoundResponse>,
+export const getUpdateArrangementMutationOptions = <TError = ErrorType<Error | NotFoundResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateArrangement>>, TError,{arrangementId: string;data: BodyType<ArrangementUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof updateArrangement>>, TError,{arrangementId: string;data: BodyType<ArrangementUpdate>}, TContext> => {
 
@@ -1804,12 +1807,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type UpdateArrangementMutationResult = NonNullable<Awaited<ReturnType<typeof updateArrangement>>>
     export type UpdateArrangementMutationBody = BodyType<ArrangementUpdate>
-    export type UpdateArrangementMutationError = ErrorType<NotFoundResponse>
+    export type UpdateArrangementMutationError = ErrorType<Error | NotFoundResponse>
 
     /**
  * @summary Update arrangement controls
  */
-export const useUpdateArrangement = <TError = ErrorType<NotFoundResponse>,
+export const useUpdateArrangement = <TError = ErrorType<Error | NotFoundResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateArrangement>>, TError,{arrangementId: string;data: BodyType<ArrangementUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof updateArrangement>>,
@@ -1818,6 +1821,157 @@ export const useUpdateArrangement = <TError = ErrorType<NotFoundResponse>,
         TContext
       > => {
       return useMutation(getUpdateArrangementMutationOptions(options));
+    }
+
+export const getListArrangementRevisionsUrl = (arrangementId: string,) => {
+
+
+
+
+  return `/api/arrangements/${arrangementId}/revisions`
+}
+
+/**
+ * @summary List immutable arrangement revisions
+ */
+export const listArrangementRevisions = async (arrangementId: string, options?: Parameters<typeof customFetch>[1]): Promise<ArrangementRevision[]> => {
+
+  return customFetch<ArrangementRevision[]>(getListArrangementRevisionsUrl(arrangementId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListArrangementRevisionsQueryKey = (arrangementId: string,) => {
+    return [
+    `/api/arrangements/${arrangementId}/revisions`
+    ] as const;
+    }
+
+
+export const getListArrangementRevisionsQueryOptions = <TData = Awaited<ReturnType<typeof listArrangementRevisions>>, TError = ErrorType<NotFoundResponse>>(arrangementId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listArrangementRevisions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListArrangementRevisionsQueryKey(arrangementId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listArrangementRevisions>>> = ({ signal }) => listArrangementRevisions(arrangementId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: arrangementId !== null && arrangementId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listArrangementRevisions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListArrangementRevisionsQueryResult = NonNullable<Awaited<ReturnType<typeof listArrangementRevisions>>>
+export type ListArrangementRevisionsQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary List immutable arrangement revisions
+ */
+
+export function useListArrangementRevisions<TData = Awaited<ReturnType<typeof listArrangementRevisions>>, TError = ErrorType<NotFoundResponse>>(
+ arrangementId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listArrangementRevisions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListArrangementRevisionsQueryOptions(arrangementId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRestoreArrangementRevisionUrl = (arrangementId: string,
+    revisionId: string,) => {
+
+
+
+
+  return `/api/arrangements/${arrangementId}/revisions/${revisionId}/restore`
+}
+
+/**
+ * @summary Restore a revision as a new arrangement version
+ */
+export const restoreArrangementRevision = async (arrangementId: string,
+    revisionId: string,
+    restoreArrangementRevisionInput: RestoreArrangementRevisionInput, options?: Parameters<typeof customFetch>[1]): Promise<Arrangement> => {
+
+  return customFetch<Arrangement>(getRestoreArrangementRevisionUrl(arrangementId,revisionId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(restoreArrangementRevisionInput)
+  }
+);}
+
+
+
+
+
+export const getRestoreArrangementRevisionMutationOptions = <TError = ErrorType<NotFoundResponse | Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof restoreArrangementRevision>>, TError,{arrangementId: string;revisionId: string;data: BodyType<RestoreArrangementRevisionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof restoreArrangementRevision>>, TError,{arrangementId: string;revisionId: string;data: BodyType<RestoreArrangementRevisionInput>}, TContext> => {
+
+const mutationKey = ['restoreArrangementRevision'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof restoreArrangementRevision>>, {arrangementId: string;revisionId: string;data: BodyType<RestoreArrangementRevisionInput>}> = (props) => {
+          const {arrangementId,revisionId,data} = props ?? {};
+
+          return  restoreArrangementRevision(arrangementId,revisionId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RestoreArrangementRevisionMutationResult = NonNullable<Awaited<ReturnType<typeof restoreArrangementRevision>>>
+    export type RestoreArrangementRevisionMutationBody = BodyType<RestoreArrangementRevisionInput>
+    export type RestoreArrangementRevisionMutationError = ErrorType<NotFoundResponse | Error>
+
+    /**
+ * @summary Restore a revision as a new arrangement version
+ */
+export const useRestoreArrangementRevision = <TError = ErrorType<NotFoundResponse | Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof restoreArrangementRevision>>, TError,{arrangementId: string;revisionId: string;data: BodyType<RestoreArrangementRevisionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof restoreArrangementRevision>>,
+        TError,
+        {arrangementId: string;revisionId: string;data: BodyType<RestoreArrangementRevisionInput>},
+        TContext
+      > => {
+      return useMutation(getRestoreArrangementRevisionMutationOptions(options));
     }
 
 export const getGenerateArrangementUrl = (arrangementId: string,) => {

@@ -62,6 +62,16 @@ export type ArrangementSection = {
   transposeSemitones?: number;
 };
 
+export type ArrangementRevisionSnapshot = {
+  name: string;
+  harmonyComplexity: number;
+  energy: number;
+  density: number;
+  orchestraSize: number;
+  rhythmIntensity: number;
+  selectedCandidateId: string | null;
+  sections: ArrangementSection[];
+};
 export type MusicGenerationTask =
   | "SEPARATION"
   | "TRANSCRIPTION"
@@ -394,16 +404,31 @@ export const arrangementsTable = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("music_arrangements_project_version_unique").on(
-      table.projectId,
-      table.version,
-    ),
     uniqueIndex("music_arrangements_source_candidate_unique").on(
       table.sourceCandidateId,
     ),
   ],
 );
 
+export const arrangementRevisionsTable = pgTable(
+  "music_arrangement_revisions",
+  {
+    id: text("id").primaryKey(),
+    arrangementId: text("arrangement_id")
+      .notNull()
+      .references(() => arrangementsTable.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    snapshot: jsonb("snapshot").$type<ArrangementRevisionSnapshot>().notNull(),
+    summary: jsonb("summary").$type<ArrangementRevisionSummary>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("music_arrangement_revisions_arrangement_version_unique").on(
+      table.arrangementId,
+      table.version,
+    ),
+  ],
+);
 export const musicGenerationJobsTable = pgTable("music_generation_jobs", {
   id: text("id").primaryKey(),
   projectId: text("project_id")
@@ -720,4 +745,13 @@ export type MusicalNote = {
 
 export type ArticulationEvent = {
   time: number; name: string; keyswitch?: number; intensity?: number;
+};
+
+export type ArrangementRevisionSummary = {
+  affectedSections: string[];
+  affectedTracks: string[];
+  chordChanges: number;
+  noteChanges: number;
+  conductorControls: string[];
+  candidateSelectionChanged: boolean;
 };
