@@ -16,10 +16,10 @@ import {
   songModelsTable,
   studioActivitiesTable,
   type AnalysisSection,
-  type SongModelData,
 } from "@workspace/db";
 import { runAnalysisProviders } from "./analysisProviders";
 import { createSourceDownloadUrl, getSourceObject } from "./objectStorage";
+import { fuseProviderSongModels } from "./songModelValidation";
 
 const execFileAsync = promisify(execFile);
 const activeSourceJobs = new Set<string>();
@@ -321,7 +321,7 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
     const fingerprint = await fingerprintFile(inputPath);
     const energy = energyCurve(samples);
     let bpm = estimateBpm(samples, decodeRate);
-    const key = estimateKey(samples, decodeRate, fingerprint);
+    let key = estimateKey(samples, decodeRate, fingerprint);
     let meter = "4/4";
     let sections = makeSections(durationSeconds, bpm, energy);
     let secondsPerBeat = 60 / bpm;
@@ -379,7 +379,7 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
     if (providerResults.transcription) {
       successfulAnalysisProviders.push(providerResults.transcription.providerId);
     }
-    const model: SongModelData = {
+    const candidate = {
       audio: {
         name: source.name,
         contentType: source.contentType,
@@ -436,6 +436,25 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
           : []),
       ],
     };
+    const fusion = fuseProviderSongModels([{
+      provider: successfulAnalysisProviders.join("+") || "LOCAL_SIGNAL_ANALYZER_V1",
+      output: candidate,
+      confidence,
+    }]);
+    if (!fusion.accepted) {
+      throw new Error(
+        `Analysis providers returned an invalid Song Model. ${
+          fusion.issues.map((item) => item.message).join(" ")
+        }`,
+      );
+    }
+    const model = fusion.model;
+    bpm = model.tempoMap[0].bpm;
+    meter = model.meterMap[0].meter;
+    key = model.keyMap[0].key;
+    sections = model.sections;
+    const persistedProviders = fusion.decisions.map((decision) => decision.provider);
+    const fusedConfidence = model.fusion.confidence;
     await updateOwnedStage("persisting_song_model", 88);
     const songModelId = randomUUID();
 
@@ -469,8 +488,8 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
         analysisJobId: job.id,
         version,
         model,
-        providers: ["FFMPEG", "LOCAL_SIGNAL_ANALYZER_V1", ...successfulAnalysisProviders],
-        confidence,
+        providers: persistedProviders,
+        confidence: fusedConfidence,
       });
       await tx.update(projectSourcesTable)
         .set({ status: "ready", progress: 100 })
@@ -484,10 +503,10 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
           bpm,
           key,
           meter,
-          confidence,
+          confidence: fusedConfidence,
           sections,
           energy,
-          providers: ["FFMPEG", "LOCAL_SIGNAL_ANALYZER_V1", ...successfulAnalysisProviders],
+          providers: persistedProviders,
           updatedAt: new Date(),
         })
         .where(eq(musicProjectsTable.id, source.projectId));

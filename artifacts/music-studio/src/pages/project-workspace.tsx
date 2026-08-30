@@ -158,9 +158,10 @@ export default function ProjectWorkspace() {
         queryClient.invalidateQueries({ queryKey: getListArrangementsQueryKey(projectId) });
       },
       onError: (error) => {
+        const failure = generationFailure(error);
         toast({
-          title: "Generation failed",
-          description: error instanceof Error ? error.message : "The selected provider could not generate candidates.",
+          title: failure.title,
+          description: failure.description,
           variant: "destructive",
         });
       }
@@ -746,4 +747,26 @@ export default function ProjectWorkspace() {
       </Dialog>
     </div>
   );
+}
+
+function generationFailure(error: unknown): { title: string; description: string } {
+  if (typeof error === "object" && error !== null && "data" in error) {
+    const data = (error as {
+      data?: { error?: unknown; action?: unknown };
+    }).data;
+    if (typeof data?.error === "string") {
+      return {
+        title: "Generation Blocked",
+        description: typeof data.action === "string"
+          ? `${data.error} ${data.action}`
+          : data.error,
+      };
+    }
+  }
+  return {
+    title: "Generation Failed",
+    description: error instanceof Error
+      ? error.message
+      : "The selected provider could not generate candidates.",
+  };
 }

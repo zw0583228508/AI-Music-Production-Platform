@@ -16,8 +16,11 @@ import type { ProviderProvenance } from './providerProvenance';
 import type { Section } from './section';
 import type { SongModelAudio } from './songModelAudio';
 import type { SongModelConfidenceByField } from './songModelConfidenceByField';
+import type { SongModelContractVersion } from './songModelContractVersion';
 import type { SongModelCorrection } from './songModelCorrection';
+import type { SongModelFusion } from './songModelFusion';
 import type { SongModelStatus } from './songModelStatus';
+import type { SongModelValidation } from './songModelValidation';
 import type { SourceStem } from './sourceStem';
 import type { TempoEvent } from './tempoEvent';
 
@@ -27,6 +30,9 @@ export interface SongModel {
   sourceId: string;
   version: number;
   status: SongModelStatus;
+  contractVersion: SongModelContractVersion;
+  validation: SongModelValidation;
+  fusion: SongModelFusion;
   audio: SongModelAudio;
   tempoMap: TempoEvent[];
   meterMap: MeterEvent[];
@@ -43,6 +49,10 @@ export interface SongModel {
   confidenceByField: SongModelConfidenceByField;
   provenance: ProviderProvenance[];
   providers: string[];
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
   confidence: number;
   createdAt: string;
   /** @nullable */

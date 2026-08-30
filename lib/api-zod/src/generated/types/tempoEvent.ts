@@ -8,6 +8,14 @@
 
 export interface TempoEvent {
   time: number;
+  /**
+     * @minimum 30
+     * @maximum 300
+     */
   bpm: number;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
   confidence: number;
 }

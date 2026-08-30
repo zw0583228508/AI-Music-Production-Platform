@@ -79,6 +79,12 @@ import {
   persistExportBundle,
   type ExportBundle,
 } from "../lib/export-pipeline";
+import {
+  evaluateArrangementEligibility,
+  fuseProviderSongModels,
+  isLegacySongModel,
+  validateCanonicalSongModel,
+} from "../lib/songModelValidation";
 
 const router: IRouter = Router();
 const exportBundles = new Map<string, ExportBundle>();
@@ -240,13 +246,143 @@ const analysisJobResponse = (
   updatedAt: iso(job.updatedAt),
 });
 
-async function ensureSeeded(): Promise<void> {
-  const existing = await db.select({ id: musicProjectsTable.id }).from(musicProjectsTable).limit(1);
-  if (existing.length > 0) return;
+function durationSeconds(value: string): number {
+  const match = /^(\d+):([0-5]\d)$/.exec(value);
+  return match ? Number(match[1]) * 60 + Number(match[2]) : 1;
+}
 
-  const projectId = "demo-cinematic-vocal";
-  const secondProjectId = "demo-acoustic-sketch";
-  const sections = [
+function projectSongModelCore(
+  project: typeof musicProjectsTable.$inferSelect,
+  source: typeof projectSourcesTable.$inferSelect,
+) {
+  return {
+    audio: {
+      name: source.name,
+      contentType: source.contentType,
+      size: source.size,
+      durationSeconds: source.durationSeconds ?? durationSeconds(project.duration),
+      sampleRate: source.sampleRate ?? 44_100,
+      channels: source.channels ?? 2,
+    },
+    tempoMap: [{ time: 0, bpm: project.bpm, confidence: project.confidence }],
+    meterMap: [{ bar: 1, meter: project.meter, confidence: project.confidence }],
+    keyMap: [{ time: 0, key: project.key, confidence: project.confidence }],
+    melody: [],
+    chords: [],
+    sections: project.sections,
+    energy: project.energy,
+    beats: [],
+    bars: [],
+    dynamics: project.energy,
+    sourceStems: [],
+    lyrics: [],
+    confidenceByField: {
+      tempo: project.confidence,
+      meter: project.confidence,
+      key: project.confidence,
+      structure: project.confidence,
+      melody: 0,
+      harmony: 0,
+    },
+    provenance: [{
+      capability: "legacy_compatibility",
+      provider: "LEGACY_ANALYZER_V1",
+      version: "1.0.0",
+      status: "fallback" as const,
+    }],
+  };
+}
+
+async function ensureProjectSource(
+  project: typeof musicProjectsTable.$inferSelect,
+): Promise<typeof projectSourcesTable.$inferSelect> {
+  const [existing] = await db
+    .select()
+    .from(projectSourcesTable)
+    .where(eq(projectSourcesTable.projectId, project.id))
+    .limit(1);
+  if (existing) return existing;
+  const [source] = await db.insert(projectSourcesTable).values({
+    id: randomUUID(),
+    projectId: project.id,
+    ownerId: project.ownerId ?? "legacy-backfill",
+    objectPath: `/objects/legacy/${project.id}`,
+    name: project.sourceName ?? `${project.name}.wav`,
+    size: 1,
+    contentType: "audio/wav",
+    sourceType: project.sourceType,
+    status: "ready",
+    progress: 100,
+    durationSeconds: durationSeconds(project.duration),
+    sampleRate: 44_100,
+    channels: 2,
+  }).returning();
+  return source;
+}
+
+async function persistProjectSongModel(
+  project: typeof musicProjectsTable.$inferSelect,
+): Promise<typeof songModelsTable.$inferSelect> {
+  const source = await ensureProjectSource(project);
+  const fusion = fuseProviderSongModels([{
+    provider: "LEGACY_ANALYZER_V1",
+    output: projectSongModelCore(project, source),
+    confidence: project.confidence,
+  }]);
+  if (!fusion.accepted) {
+    throw new Error(
+      `Project analysis failed Song Model validation. ${
+        fusion.issues.map((item) => item.message).join(" ")
+      }`,
+    );
+  }
+  const [previous] = await db
+    .select({ version: songModelsTable.version })
+    .from(songModelsTable)
+    .where(eq(songModelsTable.projectId, project.id))
+    .orderBy(desc(songModelsTable.version))
+    .limit(1);
+  const [songModel] = await db.insert(songModelsTable).values({
+    id: randomUUID(),
+    projectId: project.id,
+    sourceId: source.id,
+    version: (previous?.version ?? 0) + 1,
+    status: "ready",
+    model: fusion.model,
+    providers: fusion.decisions.map((decision) => decision.provider),
+    confidence: fusion.model.fusion.confidence,
+  }).returning();
+  return songModel;
+}
+
+async function backfillReadySongModels(): Promise<void> {
+  const projects = await db
+    .select()
+    .from(musicProjectsTable)
+    .where(eq(musicProjectsTable.status, "ready"));
+  for (const project of projects) {
+    const [latest] = await db
+      .select()
+      .from(songModelsTable)
+      .where(eq(songModelsTable.projectId, project.id))
+      .orderBy(desc(songModelsTable.version))
+      .limit(1);
+    if (latest && validateCanonicalSongModel(latest.model).success) continue;
+    if (latest && !isLegacySongModel(latest.model)) continue;
+    try {
+      await persistProjectSongModel(project);
+    } catch {
+      // Invalid legacy project summaries remain ineligible and are rejected by the generation gate.
+    }
+  }
+}
+
+async function ensureSeededOnce(): Promise<void> {
+  const existing = await db.select({ id: musicProjectsTable.id }).from(musicProjectsTable).limit(1);
+  if (existing.length === 0) {
+    const projectId = "demo-cinematic-vocal";
+    const secondProjectId = "demo-acoustic-sketch";
+    const sections = [
     { name: "Intro", startBar: 1, endBar: 8, energy: 0.24 },
     { name: "Verse 1", startBar: 9, endBar: 24, energy: 0.38 },
     { name: "Chorus", startBar: 25, endBar: 40, energy: 0.82 },
@@ -254,9 +390,9 @@ async function ensureSeeded(): Promise<void> {
     { name: "Bridge", startBar: 57, endBar: 64, energy: 0.31 },
     { name: "Final Chorus", startBar: 65, endBar: 80, energy: 0.96 },
     { name: "Outro", startBar: 81, endBar: 88, energy: 0.27 },
-  ];
+    ];
 
-  await db.insert(musicProjectsTable).values([
+    await db.insert(musicProjectsTable).values([
     {
       id: projectId,
       name: "Midnight Cinema",
@@ -292,9 +428,9 @@ async function ensureSeeded(): Promise<void> {
       energy: [0.31, 0.41, 0.55, 0.73, 0.48],
       providers: ["DEMO_REFERENCE_DATA"],
     },
-  ]);
+    ]);
 
-  await db.insert(arrangementsTable).values({
+    await db.insert(arrangementsTable).values({
     id: "arr-cinematic-1",
     projectId,
     name: "Cinematic Pop — Full Orchestra",
@@ -315,30 +451,43 @@ async function ensureSeeded(): Promise<void> {
         ? ["Piano", "Cello", "Strings"]
         : ["Drums", "Bass", "Piano", "Strings", "Brass"],
     })),
-  });
+    });
 
-  await db.insert(tracksTable).values([
+    await db.insert(tracksTable).values([
     { id: "track-vocal", projectId, name: "Lead Vocal", role: "melody", kind: "audio", color: "#a78bfa", volume: -1.5, muted: false, solo: false, status: "source" },
     { id: "track-drums", projectId, name: "Studio Drums", role: "rhythm", kind: "audio", color: "#fb7185", volume: -4, muted: false, solo: false, status: "generated" },
     { id: "track-bass", projectId, name: "Electric Bass", role: "bass", kind: "midi", color: "#38bdf8", volume: -3, muted: false, solo: false, status: "rendered" },
     { id: "track-piano", projectId, name: "Grand Piano", role: "harmony", kind: "midi", color: "#fbbf24", volume: -5, muted: false, solo: false, status: "rendered" },
     { id: "track-strings", projectId, name: "Orchestral Strings", role: "countermelody", kind: "midi", color: "#34d399", volume: -6, muted: false, solo: false, status: "rendered" },
     { id: "track-brass", projectId, name: "French Horns", role: "lift", kind: "midi", color: "#f97316", volume: -7, muted: false, solo: false, status: "generated" },
-  ]);
+    ]);
 
-  await db.insert(musicArtifactsTable).values([
+    await db.insert(musicArtifactsTable).values([
     { id: "artifact-source", projectId, type: "SOURCE", label: "Original vocal", version: 1, size: "38.4 MB", format: "WAV" },
     { id: "artifact-song-model", projectId, type: "SONG_MODEL", label: "Unified Song Model", version: 4, size: "186 KB", format: "JSON" },
     { id: "artifact-plan", projectId, type: "ARRANGEMENT_PLAN", label: "Cinematic arrangement plan", version: 3, size: "42 KB", format: "JSON" },
     { id: "artifact-midi", projectId, type: "MIDI", label: "Full arrangement", version: 3, size: "1.8 MB", format: "MIDI" },
     { id: "artifact-master", projectId, type: "MASTER", label: "Streaming master", version: 2, size: "64.1 MB", format: "WAV" },
-  ]);
+    ]);
 
-  await db.insert(studioActivitiesTable).values([
+    await db.insert(studioActivitiesTable).values([
     { id: "activity-1", projectId, title: "Master completed", detail: "Streaming master · v2", type: "export", createdAt: new Date(Date.now() - 1000 * 60 * 18) },
     { id: "activity-2", projectId, title: "Arrangement generated", detail: "Cinematic Pop · 6 tracks", type: "arrangement", createdAt: new Date(Date.now() - 1000 * 60 * 64) },
     { id: "activity-3", projectId: secondProjectId, title: "Source imported", detail: "Solo guitar · 2:18", type: "analysis", createdAt: new Date(Date.now() - 1000 * 60 * 60 * 5) },
-  ]);
+    ]);
+  }
+  await backfillReadySongModels();
+}
+
+let ensureSeededInFlight: Promise<void> | null = null;
+
+async function ensureSeeded(): Promise<void> {
+  ensureSeededInFlight ??= ensureSeededOnce();
+  try {
+    await ensureSeededInFlight;
+  } finally {
+    ensureSeededInFlight = null;
+  }
 }
 
 router.get("/dashboard", async (req, res): Promise<void> => {
@@ -871,6 +1020,7 @@ router.patch("/arrangements/:arrangementId", async (req, res): Promise<void> => 
 });
 
 router.post("/arrangements/:arrangementId/generate", async (req, res): Promise<void> => {
+  await ensureSeeded();
   const params = GenerateArrangementParams.safeParse(req.params);
   const body = GenerateArrangementBody.safeParse(req.body ?? {});
   if (!params.success || !body.success) {
@@ -885,6 +1035,25 @@ router.post("/arrangements/:arrangementId/generate", async (req, res): Promise<v
     res.status(404).json({ error: "Arrangement not found" });
     return;
   }
+  const [project] = await db
+    .select()
+    .from(musicProjectsTable)
+    .where(eq(musicProjectsTable.id, existingArrangement.projectId))
+    .limit(1);
+  if (!project) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+  if (project.ownerId) {
+    if (!req.isAuthenticated()) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    if (project.ownerId !== req.user.id) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+  }
   const [songModel] = await db
     .select()
     .from(songModelsTable)
@@ -892,7 +1061,26 @@ router.post("/arrangements/:arrangementId/generate", async (req, res): Promise<v
     .orderBy(desc(songModelsTable.version))
     .limit(1);
   if (!songModel) {
-    res.status(409).json({ error: "Analyze a source and review its Song Model before generating" });
+    res.status(422).json({
+      error: "Arrangement generation is blocked because this project has no completed Song Model.",
+      code: "SONG_MODEL_MISSING",
+      action: "Upload a source and wait for analysis to complete before generating an arrangement.",
+      issues: [],
+    });
+    return;
+  }
+  const eligibility = evaluateArrangementEligibility(
+    songModel.model,
+    songModel.status,
+    songModel.confidence,
+  );
+  if (!eligibility.eligible) {
+    res.status(422).json({
+      error: eligibility.message,
+      code: eligibility.code,
+      action: eligibility.action,
+      issues: eligibility.issues,
+    });
     return;
   }
   const [source] = await db

@@ -9,5 +9,9 @@
 export interface KeyEvent {
   time: number;
   key: string;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
   confidence: number;
 }

@@ -56,18 +56,24 @@ export type ExportFileRecord = {
   url: string;
 };
 
-export type SongModelData = {
-  audio: {
-    name: string;
-    contentType: string;
-    size: number;
-    durationSeconds: number;
-    sampleRate: number;
-    channels: number;
+export type SongModelValidationIssue = {
+  code: string;
+  severity: "error" | "warning";
+  path: string;
+  message: string;
+  provider?: string;
+};
+export type SongModelData = SongModelCore & {
+  contractVersion: "1.0";
+  validation: {
+    status: "accepted" | "flagged";
+    issues: SongModelValidationIssue[];
   };
-  tempoMap: Array<{ time: number; bpm: number; confidence: number }>;
-  meterMap: Array<{ bar: number; meter: string; confidence: number }>;
-  keyMap: Array<{ time: number; key: string; confidence: number }>;
+  fusion: {
+    selectedProvider: string;
+    confidence: number;
+    decisions: ProviderFusionDecision[];
+  };
   beats: Array<{
     time: number;
     beat: number;
@@ -81,23 +87,6 @@ export type SongModelData = {
     beats: number;
     confidence: number;
   }>;
-  melody: Array<{
-    start: number;
-    end: number;
-    pitch: number;
-    velocity: number;
-    confidence: number;
-    source: string;
-  }>;
-  chords: Array<{
-    start: number;
-    end: number;
-    symbol: string;
-    roman: string;
-    confidence: number;
-  }>;
-  sections: AnalysisSection[];
-  energy: number[];
   dynamics: number[];
   sourceStems: Array<{
     role: string;
@@ -344,3 +333,42 @@ export const studioActivitiesTable = pgTable("studio_activities", {
   type: text("type").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export type ProviderFusionDecision = {
+  provider: string;
+  status: "selected" | "accepted" | "flagged" | "rejected";
+  confidence: number;
+  compatibility: number;
+  issues: SongModelValidationIssue[];
+};
+
+export type SongModelCore = {
+  audio: {
+    name: string;
+    contentType: string;
+    size: number;
+    durationSeconds: number;
+    sampleRate: number;
+    channels: number;
+  };
+  tempoMap: Array<{ time: number; bpm: number; confidence: number }>;
+  meterMap: Array<{ bar: number; meter: string; confidence: number }>;
+  keyMap: Array<{ time: number; key: string; confidence: number }>;
+  melody: Array<{
+    start: number;
+    end: number;
+    pitch: number;
+    velocity: number;
+    confidence: number;
+    source: string;
+  }>;
+  chords: Array<{
+    start: number;
+    end: number;
+    symbol: string;
+    roman: string;
+    confidence: number;
+  }>;
+  sections: AnalysisSection[];
+  energy: number[];
+};

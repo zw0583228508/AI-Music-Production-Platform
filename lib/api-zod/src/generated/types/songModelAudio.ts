@@ -9,8 +9,12 @@
 export interface SongModelAudio {
   name: string;
   contentType: string;
+  /** @minimum 1 */
   size: number;
+  /** @exclusiveMinimum 0 */
   durationSeconds: number;
+  /** @minimum 1 */
   sampleRate: number;
+  /** @minimum 1 */
   channels: number;
 }

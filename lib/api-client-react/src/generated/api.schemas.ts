@@ -142,30 +142,123 @@ export const SongModelStatus = {
 
 export type SongModelConfidenceByField = {[key: string]: number};
 
+export type SongModelContractVersion = typeof SongModelContractVersion[keyof typeof SongModelContractVersion];
+
+
+export const SongModelContractVersion = {
+  '10': '1.0',
+} as const;
+
+export type SongModelValidationStatus = typeof SongModelValidationStatus[keyof typeof SongModelValidationStatus];
+
+
+export const SongModelValidationStatus = {
+  accepted: 'accepted',
+  flagged: 'flagged',
+} as const;
+
+export type SongModelValidationIssueSeverity = typeof SongModelValidationIssueSeverity[keyof typeof SongModelValidationIssueSeverity];
+
+
+export const SongModelValidationIssueSeverity = {
+  error: 'error',
+  warning: 'warning',
+} as const;
+
+export interface SongModelValidationIssue {
+  code: string;
+  severity: SongModelValidationIssueSeverity;
+  path: string;
+  message: string;
+  provider?: string;
+}
+
+export interface SongModelValidation {
+  status: SongModelValidationStatus;
+  issues: SongModelValidationIssue[];
+}
+
+export type ProviderFusionDecisionStatus = typeof ProviderFusionDecisionStatus[keyof typeof ProviderFusionDecisionStatus];
+
+
+export const ProviderFusionDecisionStatus = {
+  selected: 'selected',
+  accepted: 'accepted',
+  flagged: 'flagged',
+  rejected: 'rejected',
+} as const;
+
+export interface ProviderFusionDecision {
+  provider: string;
+  status: ProviderFusionDecisionStatus;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  confidence: number;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  compatibility: number;
+  issues: SongModelValidationIssue[];
+}
+
+export interface SongModelFusion {
+  selectedProvider: string;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  confidence: number;
+  /** @minItems 1 */
+  decisions: ProviderFusionDecision[];
+}
+
 export interface SongModelAudio {
   name: string;
   contentType: string;
+  /** @minimum 1 */
   size: number;
+  /** @exclusiveMinimum 0 */
   durationSeconds: number;
+  /** @minimum 1 */
   sampleRate: number;
+  /** @minimum 1 */
   channels: number;
 }
 
 export interface TempoEvent {
   time: number;
+  /**
+     * @minimum 30
+     * @maximum 300
+     */
   bpm: number;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
   confidence: number;
 }
 
 export interface MeterEvent {
   bar: number;
   meter: string;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
   confidence: number;
 }
 
 export interface KeyEvent {
   time: number;
   key: string;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
   confidence: number;
 }
 
@@ -260,6 +353,9 @@ export interface SongModel {
   sourceId: string;
   version: number;
   status: SongModelStatus;
+  contractVersion: SongModelContractVersion;
+  validation: SongModelValidation;
+  fusion: SongModelFusion;
   audio: SongModelAudio;
   tempoMap: TempoEvent[];
   meterMap: MeterEvent[];
@@ -276,6 +372,10 @@ export interface SongModel {
   confidenceByField: SongModelConfidenceByField;
   provenance: ProviderProvenance[];
   providers: string[];
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
   confidence: number;
   createdAt: string;
   /** @nullable */
@@ -380,6 +480,13 @@ export interface HealthStatus {
 
 export interface Error {
   error: string;
+}
+
+export interface GenerationBlockedError {
+  error: string;
+  code: string;
+  action: string;
+  issues: SongModelValidationIssue[];
 }
 
 export type ActivityType = typeof ActivityType[keyof typeof ActivityType];
@@ -847,3 +954,4 @@ returnTo?: string;
 export type LogoutBrowserSessionParams = {
 returnTo?: string;
 };
+

@@ -401,6 +401,12 @@ paths:
                 $ref: "#/components/schemas/GenerationResult"
         "404":
           $ref: "#/components/responses/NotFound"
+        "422":
+          description: Generation blocked because the Song Model is missing, invalid, flagged, or unreliable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerationBlockedError"
   /arrangements/{arrangementId}/export:
     post:
       operationId: exportArrangement
@@ -634,7 +640,7 @@ components:
         createdAt: { type: string }
     SongModel:
       type: object
-      required: [id, projectId, sourceId, version, status, audio, tempoMap, meterMap, keyMap, beats, bars, melody, chords, sections, energy, dynamics, sourceStems, lyrics, confidenceByField, provenance, providers, confidence, createdAt]
+      required: [id, projectId, sourceId, version, status, contractVersion, validation, fusion, audio, tempoMap, meterMap, keyMap, beats, bars, melody, chords, sections, energy, dynamics, sourceStems, lyrics, confidenceByField, provenance, providers, confidence, createdAt]
       properties:
         id: { type: string }
         projectId: { type: string }
@@ -643,6 +649,12 @@ components:
         status:
           type: string
           enum: [ready]
+        contractVersion:
+          $ref: "#/components/schemas/SongModelContractVersion"
+        validation:
+          $ref: "#/components/schemas/SongModelValidation"
+        fusion:
+          $ref: "#/components/schemas/SongModelFusion"
         audio:
           $ref: "#/components/schemas/SongModelAudio"
         tempoMap:
@@ -701,7 +713,7 @@ components:
         providers:
           type: array
           items: { type: string }
-        confidence: { type: number }
+        confidence: { type: number, minimum: 0, maximum: 1 }
         createdAt: { type: string }
         parentModelId: { type: ["string", "null"] }
         correction:
@@ -719,6 +731,56 @@ components:
           items:
             type: string
             enum: [bpm, key, meter, sections]
+    SongModelContractVersion:
+      type: string
+      enum: ["1.0"]
+    SongModelValidation:
+      type: object
+      required: [status, issues]
+      properties:
+        status:
+          type: string
+          enum: [accepted, flagged]
+        issues:
+          type: array
+          items:
+            $ref: "#/components/schemas/SongModelValidationIssue"
+    SongModelValidationIssue:
+      type: object
+      required: [code, severity, path, message]
+      properties:
+        code: { type: string }
+        severity:
+          type: string
+          enum: [error, warning]
+        path: { type: string }
+        message: { type: string }
+        provider: { type: string }
+    SongModelFusion:
+      type: object
+      required: [selectedProvider, confidence, decisions]
+      properties:
+        selectedProvider: { type: string }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        decisions:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/ProviderFusionDecision"
+    ProviderFusionDecision:
+      type: object
+      required: [provider, status, confidence, compatibility, issues]
+      properties:
+        provider: { type: string }
+        status:
+          type: string
+          enum: [selected, accepted, flagged, rejected]
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        compatibility: { type: number, minimum: 0, maximum: 1 }
+        issues:
+          type: array
+          items:
+            $ref: "#/components/schemas/SongModelValidationIssue"
     SongModelCorrectionInput:
       type: object
       minProperties: 1
@@ -748,31 +810,31 @@ components:
       properties:
         name: { type: string }
         contentType: { type: string }
-        size: { type: number }
-        durationSeconds: { type: number }
-        sampleRate: { type: number }
-        channels: { type: number }
+        size: { type: number, minimum: 1 }
+        durationSeconds: { type: number, exclusiveMinimum: 0 }
+        sampleRate: { type: number, minimum: 1 }
+        channels: { type: number, minimum: 1 }
     TempoEvent:
       type: object
       required: [time, bpm, confidence]
       properties:
         time: { type: number }
-        bpm: { type: number }
-        confidence: { type: number }
+        bpm: { type: number, minimum: 30, maximum: 300 }
+        confidence: { type: number, minimum: 0, maximum: 1 }
     MeterEvent:
       type: object
       required: [bar, meter, confidence]
       properties:
         bar: { type: number }
         meter: { type: string }
-        confidence: { type: number }
+        confidence: { type: number, minimum: 0, maximum: 1 }
     KeyEvent:
       type: object
       required: [time, key, confidence]
       properties:
         time: { type: number }
         key: { type: string }
-        confidence: { type: number }
+        confidence: { type: number, minimum: 0, maximum: 1 }
     BeatEvent:
       type: object
       required: [time, beat, bar, confidence]
@@ -889,6 +951,17 @@ components:
         error:
           type: string
       required: [error]
+    GenerationBlockedError:
+      type: object
+      required: [error, code, action, issues]
+      properties:
+        error: { type: string }
+        code: { type: string }
+        action: { type: string }
+        issues:
+          type: array
+          items:
+            $ref: "#/components/schemas/SongModelValidationIssue"
     Dashboard:
       type: object
       required: [activeProjects, totalRenders, savedArtifacts, recentActivity]

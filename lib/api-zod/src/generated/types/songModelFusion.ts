@@ -5,13 +5,15 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { ProviderFusionDecision } from './providerFusionDecision';
 
-export interface MeterEvent {
-  bar: number;
-  meter: string;
+export interface SongModelFusion {
+  selectedProvider: string;
   /**
      * @minimum 0
      * @maximum 1
      */
   confidence: number;
+  /** @minItems 1 */
+  decisions: ProviderFusionDecision[];
 }

@@ -79,6 +79,10 @@ export const LogoutBrowserSessionResponse = zod.void()
  */
 
 
+
+
+
+
 export const ExchangeMobileAuthorizationCodeBody = zod.object({
   "code": zod.string().min(1),
   "code_verifier": zod.string().min(1),
@@ -107,6 +111,8 @@ export const LogoutMobileSessionResponse = zod.object({
 export const requestSourceUploadUrlBodySizeMax = 524288000;
 
 
+
+
 export const RequestSourceUploadUrlBody = zod.object({
   "name": zod.string().min(1),
   "size": zod.number().min(1).max(requestSourceUploadUrlBodySizeMax),
@@ -115,6 +121,8 @@ export const RequestSourceUploadUrlBody = zod.object({
 
 
 export const requestSourceUploadUrlResponseMetadataSizeMax = 524288000;
+
+
 
 
 export const RequestSourceUploadUrlResponse = zod.object({
@@ -148,6 +156,7 @@ export const ListProjectsResponse = zod.array(ListProjectsResponseItem)
 /**
  * @summary Create a music project
  */
+
 
 
 export const CreateProjectBody = zod.object({
@@ -284,14 +293,6 @@ export const GetProjectResponse = zod.object({
 }))
 })
 
-/**
- * Creates an auditable immutable revision of the latest Song Model and updates the project analysis summary atomically. Omitted fields remain unchanged.
- * @summary Create a corrected Song Model version
- */
-export const CorrectProjectSongModelParams = zod.object({
-  "projectId": zod.coerce.string()
-})
-
 
 /**
  * @summary List imported source recordings
@@ -302,6 +303,7 @@ export const ListProjectSourcesParams = zod.object({
 
 export const listProjectSourcesResponseProgressMin = 0;
 export const listProjectSourcesResponseProgressMax = 100;
+
 
 
 export const ListProjectSourcesResponseItem = zod.object({
@@ -330,7 +332,10 @@ export const RegisterProjectSourceParams = zod.object({
 })
 
 
+
 export const registerProjectSourceBodySizeMax = 524288000;
+
+
 
 
 export const RegisterProjectSourceBody = zod.object({
@@ -343,6 +348,7 @@ export const RegisterProjectSourceBody = zod.object({
 
 export const registerProjectSourceResponseProgressMin = 0;
 export const registerProjectSourceResponseProgressMax = 100;
+
 
 
 export const RegisterProjectSourceResponse = zod.object({
@@ -369,34 +375,94 @@ export const GetProjectSongModelParams = zod.object({
   "projectId": zod.coerce.string()
 })
 
+export const getProjectSongModelResponseFusionConfidenceMin = 0;
+export const getProjectSongModelResponseFusionConfidenceMax = 1;
+
+export const getProjectSongModelResponseFusionDecisionsItemConfidenceMin = 0;
+export const getProjectSongModelResponseFusionDecisionsItemConfidenceMax = 1;
+
+export const getProjectSongModelResponseFusionDecisionsItemCompatibilityMin = 0;
+export const getProjectSongModelResponseFusionDecisionsItemCompatibilityMax = 1;
+
+
+
+export const getProjectSongModelResponseAudioDurationSecondsExclusiveMin = 0;
+
+
+
+export const getProjectSongModelResponseTempoMapItemBpmMin = 30;
+export const getProjectSongModelResponseTempoMapItemBpmMax = 300;
+
+export const getProjectSongModelResponseTempoMapItemConfidenceMin = 0;
+export const getProjectSongModelResponseTempoMapItemConfidenceMax = 1;
+
+export const getProjectSongModelResponseMeterMapItemConfidenceMin = 0;
+export const getProjectSongModelResponseMeterMapItemConfidenceMax = 1;
+
+export const getProjectSongModelResponseKeyMapItemConfidenceMin = 0;
+export const getProjectSongModelResponseKeyMapItemConfidenceMax = 1;
+
+export const getProjectSongModelResponseConfidenceMin = 0;
+export const getProjectSongModelResponseConfidenceMax = 1;
+
+
+
 export const GetProjectSongModelResponse = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
   "sourceId": zod.string(),
   "version": zod.number(),
   "status": zod.enum(['ready']),
+  "contractVersion": zod.enum(['1.0']),
+  "validation": zod.object({
+  "status": zod.enum(['accepted', 'flagged']),
+  "issues": zod.array(zod.object({
+  "code": zod.string(),
+  "severity": zod.enum(['error', 'warning']),
+  "path": zod.string(),
+  "message": zod.string(),
+  "provider": zod.string().optional()
+}))
+}),
+  "fusion": zod.object({
+  "selectedProvider": zod.string(),
+  "confidence": zod.number().min(getProjectSongModelResponseFusionConfidenceMin).max(getProjectSongModelResponseFusionConfidenceMax),
+  "decisions": zod.array(zod.object({
+  "provider": zod.string(),
+  "status": zod.enum(['selected', 'accepted', 'flagged', 'rejected']),
+  "confidence": zod.number().min(getProjectSongModelResponseFusionDecisionsItemConfidenceMin).max(getProjectSongModelResponseFusionDecisionsItemConfidenceMax),
+  "compatibility": zod.number().min(getProjectSongModelResponseFusionDecisionsItemCompatibilityMin).max(getProjectSongModelResponseFusionDecisionsItemCompatibilityMax),
+  "issues": zod.array(zod.object({
+  "code": zod.string(),
+  "severity": zod.enum(['error', 'warning']),
+  "path": zod.string(),
+  "message": zod.string(),
+  "provider": zod.string().optional()
+}))
+})).min(1)
+}),
   "audio": zod.object({
   "name": zod.string(),
   "contentType": zod.string(),
-  "size": zod.number(),
-  "durationSeconds": zod.number(),
-  "sampleRate": zod.number(),
-  "channels": zod.number()
+  "size": zod.number().min(1),
+  "durationSeconds": zod.number().gt(getProjectSongModelResponseAudioDurationSecondsExclusiveMin),
+  "sampleRate": zod.number().min(1),
+  "channels": zod.number().min(1)
 }),
   "tempoMap": zod.array(zod.object({
   "time": zod.number(),
-  "bpm": zod.number(),
-  "confidence": zod.number()
+  "bpm": zod.number().min(getProjectSongModelResponseTempoMapItemBpmMin).max(getProjectSongModelResponseTempoMapItemBpmMax),
+  "confidence": zod.number().min(getProjectSongModelResponseTempoMapItemConfidenceMin).max(getProjectSongModelResponseTempoMapItemConfidenceMax)
 })),
   "meterMap": zod.array(zod.object({
   "bar": zod.number(),
   "meter": zod.string(),
-  "confidence": zod.number()
+  "confidence": zod.number().min(getProjectSongModelResponseMeterMapItemConfidenceMin).max(getProjectSongModelResponseMeterMapItemConfidenceMax)
 })),
   "keyMap": zod.array(zod.object({
   "time": zod.number(),
   "key": zod.string(),
-  "confidence": zod.number()
+  "confidence": zod.number().min(getProjectSongModelResponseKeyMapItemConfidenceMin).max(getProjectSongModelResponseKeyMapItemConfidenceMax)
 })),
   "beats": zod.array(zod.object({
   "time": zod.number(),
@@ -454,7 +520,7 @@ export const GetProjectSongModelResponse = zod.object({
   "status": zod.enum(['ready', 'fallback', 'unavailable'])
 })),
   "providers": zod.array(zod.string()),
-  "confidence": zod.number(),
+  "confidence": zod.number().min(getProjectSongModelResponseConfidenceMin).max(getProjectSongModelResponseConfidenceMax),
   "createdAt": zod.string(),
   "parentModelId": zod.string().nullish(),
   "correction": zod.union([zod.object({
@@ -483,6 +549,10 @@ export const correctProjectSongModelBodyMeterRegExp = new RegExp('^[1-9][0-9]*/[
 export const correctProjectSongModelBodySectionsItemNameMax = 120;
 
 
+
+
+
+
 export const CorrectProjectSongModelBody = zod.object({
   "baseVersion": zod.number().min(1),
   "bpm": zod.number().min(correctProjectSongModelBodyBpmMin).max(correctProjectSongModelBodyBpmMax).optional(),
@@ -495,34 +565,94 @@ export const CorrectProjectSongModelBody = zod.object({
 })).min(1).optional()
 })
 
+export const correctProjectSongModelResponseFusionConfidenceMin = 0;
+export const correctProjectSongModelResponseFusionConfidenceMax = 1;
+
+export const correctProjectSongModelResponseFusionDecisionsItemConfidenceMin = 0;
+export const correctProjectSongModelResponseFusionDecisionsItemConfidenceMax = 1;
+
+export const correctProjectSongModelResponseFusionDecisionsItemCompatibilityMin = 0;
+export const correctProjectSongModelResponseFusionDecisionsItemCompatibilityMax = 1;
+
+
+
+export const correctProjectSongModelResponseAudioDurationSecondsExclusiveMin = 0;
+
+
+
+export const correctProjectSongModelResponseTempoMapItemBpmMin = 30;
+export const correctProjectSongModelResponseTempoMapItemBpmMax = 300;
+
+export const correctProjectSongModelResponseTempoMapItemConfidenceMin = 0;
+export const correctProjectSongModelResponseTempoMapItemConfidenceMax = 1;
+
+export const correctProjectSongModelResponseMeterMapItemConfidenceMin = 0;
+export const correctProjectSongModelResponseMeterMapItemConfidenceMax = 1;
+
+export const correctProjectSongModelResponseKeyMapItemConfidenceMin = 0;
+export const correctProjectSongModelResponseKeyMapItemConfidenceMax = 1;
+
+export const correctProjectSongModelResponseConfidenceMin = 0;
+export const correctProjectSongModelResponseConfidenceMax = 1;
+
+
+
 export const CorrectProjectSongModelResponse = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
   "sourceId": zod.string(),
   "version": zod.number(),
   "status": zod.enum(['ready']),
+  "contractVersion": zod.enum(['1.0']),
+  "validation": zod.object({
+  "status": zod.enum(['accepted', 'flagged']),
+  "issues": zod.array(zod.object({
+  "code": zod.string(),
+  "severity": zod.enum(['error', 'warning']),
+  "path": zod.string(),
+  "message": zod.string(),
+  "provider": zod.string().optional()
+}))
+}),
+  "fusion": zod.object({
+  "selectedProvider": zod.string(),
+  "confidence": zod.number().min(correctProjectSongModelResponseFusionConfidenceMin).max(correctProjectSongModelResponseFusionConfidenceMax),
+  "decisions": zod.array(zod.object({
+  "provider": zod.string(),
+  "status": zod.enum(['selected', 'accepted', 'flagged', 'rejected']),
+  "confidence": zod.number().min(correctProjectSongModelResponseFusionDecisionsItemConfidenceMin).max(correctProjectSongModelResponseFusionDecisionsItemConfidenceMax),
+  "compatibility": zod.number().min(correctProjectSongModelResponseFusionDecisionsItemCompatibilityMin).max(correctProjectSongModelResponseFusionDecisionsItemCompatibilityMax),
+  "issues": zod.array(zod.object({
+  "code": zod.string(),
+  "severity": zod.enum(['error', 'warning']),
+  "path": zod.string(),
+  "message": zod.string(),
+  "provider": zod.string().optional()
+}))
+})).min(1)
+}),
   "audio": zod.object({
   "name": zod.string(),
   "contentType": zod.string(),
-  "size": zod.number(),
-  "durationSeconds": zod.number(),
-  "sampleRate": zod.number(),
-  "channels": zod.number()
+  "size": zod.number().min(1),
+  "durationSeconds": zod.number().gt(correctProjectSongModelResponseAudioDurationSecondsExclusiveMin),
+  "sampleRate": zod.number().min(1),
+  "channels": zod.number().min(1)
 }),
   "tempoMap": zod.array(zod.object({
   "time": zod.number(),
-  "bpm": zod.number(),
-  "confidence": zod.number()
+  "bpm": zod.number().min(correctProjectSongModelResponseTempoMapItemBpmMin).max(correctProjectSongModelResponseTempoMapItemBpmMax),
+  "confidence": zod.number().min(correctProjectSongModelResponseTempoMapItemConfidenceMin).max(correctProjectSongModelResponseTempoMapItemConfidenceMax)
 })),
   "meterMap": zod.array(zod.object({
   "bar": zod.number(),
   "meter": zod.string(),
-  "confidence": zod.number()
+  "confidence": zod.number().min(correctProjectSongModelResponseMeterMapItemConfidenceMin).max(correctProjectSongModelResponseMeterMapItemConfidenceMax)
 })),
   "keyMap": zod.array(zod.object({
   "time": zod.number(),
   "key": zod.string(),
-  "confidence": zod.number()
+  "confidence": zod.number().min(correctProjectSongModelResponseKeyMapItemConfidenceMin).max(correctProjectSongModelResponseKeyMapItemConfidenceMax)
 })),
   "beats": zod.array(zod.object({
   "time": zod.number(),
@@ -580,7 +710,7 @@ export const CorrectProjectSongModelResponse = zod.object({
   "status": zod.enum(['ready', 'fallback', 'unavailable'])
 })),
   "providers": zod.array(zod.string()),
-  "confidence": zod.number(),
+  "confidence": zod.number().min(correctProjectSongModelResponseConfidenceMin).max(correctProjectSongModelResponseConfidenceMax),
   "createdAt": zod.string(),
   "parentModelId": zod.string().nullish(),
   "correction": zod.union([zod.object({
@@ -709,6 +839,7 @@ export const CreateArrangementParams = zod.object({
 export const createArrangementBodyHarmonyComplexityMax = 10;
 
 
+
 export const CreateArrangementBody = zod.object({
   "name": zod.string().min(1),
   "style": zod.string(),
@@ -770,6 +901,7 @@ export const updateArrangementBodyRhythmIntensityMin = 0;
 export const updateArrangementBodyRhythmIntensityMax = 1;
 
 
+
 export const UpdateArrangementBody = zod.object({
   "name": zod.string().optional(),
   "harmonyComplexity": zod.number().min(1).max(updateArrangementBodyHarmonyComplexityMax).optional(),
@@ -820,6 +952,7 @@ export const GenerateArrangementParams = zod.object({
 })
 
 export const generateArrangementBodyCandidatesMax = 3;
+
 
 
 export const GenerateArrangementBody = zod.object({
@@ -1042,6 +1175,8 @@ export const RunCopilotParams = zod.object({
 })
 
 
+
+
 export const RunCopilotBody = zod.object({
   "command": zod.string().min(1)
 })
@@ -1054,3 +1189,5 @@ export const RunCopilotResponse = zod.object({
 })),
   "affectedSections": zod.array(zod.string())
 })
+
+
