@@ -744,6 +744,9 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           providerOrdinal: providerIndex + 1,
           providerScore: candidate.score,
           confidence: candidate.confidence,
+          generationSeed: job.seed,
+          generationParameters: JSON.stringify(job.parameters),
+          providerRuntimeProvenance: JSON.stringify(result.runtimeProvenance ?? null),
           ...(result.checkpointSha256
             ? { checkpointSha256: result.checkpointSha256 }
             : {}),
@@ -854,6 +857,8 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           checkpointSha256: result.checkpointSha256,
           providerRequestId: candidate.providerRequestId ?? result.requestId,
           seed: job.seed,
+          parameters: job.parameters,
+          runtimeProvenance: result.runtimeProvenance ?? null,
           providerScore: candidate.score,
           quality: pipeline.quality,
         }, null, 2));
@@ -901,6 +906,9 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
               bytes: wav.byteLength,
               durationSeconds: pipeline.durationSeconds,
               candidateId,
+              generationSeed: job.seed,
+              generationParameters: JSON.stringify(job.parameters),
+              providerRuntimeProvenance: JSON.stringify(result.runtimeProvenance ?? null),
               ...(result.checkpointSha256
                 ? { checkpointSha256: result.checkpointSha256 }
                 : {}),
@@ -927,6 +935,9 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
               bytes: midi.byteLength,
               durationSeconds: pipeline.durationSeconds,
               candidateId,
+              generationSeed: job.seed,
+              generationParameters: JSON.stringify(job.parameters),
+              providerRuntimeProvenance: JSON.stringify(result.runtimeProvenance ?? null),
               ...(result.checkpointSha256
                 ? { checkpointSha256: result.checkpointSha256 }
                 : {}),
@@ -953,6 +964,9 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
               bytes: qualityData.byteLength,
               qualityScore: pipeline.quality.score,
               candidateId,
+              generationSeed: job.seed,
+              generationParameters: JSON.stringify(job.parameters),
+              providerRuntimeProvenance: JSON.stringify(result.runtimeProvenance ?? null),
               ...(result.checkpointSha256
                 ? { checkpointSha256: result.checkpointSha256 }
                 : {}),
