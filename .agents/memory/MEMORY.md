@@ -1,0 +1,1 @@
+- [Arrangement export semantics](arrangement-export-semantics.md) — deterministic exports must still follow section structure, controls, and track activation rather than generic audio.

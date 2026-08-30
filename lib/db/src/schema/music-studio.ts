@@ -22,6 +22,14 @@ export type ArrangementSection = {
   tracks: string[];
 };
 
+export type ExportFileRecord = {
+  name: string;
+  type: string;
+  size: string;
+  format: string;
+  url: string;
+};
+
 export const musicProjectsTable = pgTable("music_projects", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -90,6 +98,23 @@ export const musicArtifactsTable = pgTable("music_artifacts", {
   format: text("format").notNull(),
   url: text("url"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const musicExportsTable = pgTable("music_exports", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id")
+    .notNull()
+    .references(() => musicProjectsTable.id, { onDelete: "cascade" }),
+  arrangementId: text("arrangement_id")
+    .notNull()
+    .references(() => arrangementsTable.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("rendering"),
+  masterProfile: text("master_profile").notNull(),
+  bundleUrl: text("bundle_url"),
+  files: jsonb("files").$type<ExportFileRecord[]>().notNull().default([]),
+  error: text("error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
 });
 
 export const studioActivitiesTable = pgTable("studio_activities", {

@@ -319,6 +319,60 @@ export interface GenerationResult {
   selectedCandidate: string;
 }
 
+export type ExportInputMasterProfile = typeof ExportInputMasterProfile[keyof typeof ExportInputMasterProfile];
+
+
+export const ExportInputMasterProfile = {
+  STREAMING: 'STREAMING',
+  DYNAMIC: 'DYNAMIC',
+  CLASSICAL: 'CLASSICAL',
+  POP: 'POP',
+  LOUD: 'LOUD',
+  FILM: 'FILM',
+} as const;
+
+export interface ExportInput {
+  includeStems?: boolean;
+  includeMidi?: boolean;
+  masterProfile?: ExportInputMasterProfile;
+}
+
+export type ExportResultStatus = typeof ExportResultStatus[keyof typeof ExportResultStatus];
+
+
+export const ExportResultStatus = {
+  ready: 'ready',
+} as const;
+
+export type ExportFileType = typeof ExportFileType[keyof typeof ExportFileType];
+
+
+export const ExportFileType = {
+  STEM: 'STEM',
+  MIDI: 'MIDI',
+  MIX: 'MIX',
+  PREMASTER: 'PREMASTER',
+  MASTER: 'MASTER',
+  METADATA: 'METADATA',
+  BUNDLE: 'BUNDLE',
+} as const;
+
+export interface ExportFile {
+  name: string;
+  type: ExportFileType;
+  size: string;
+  format: string;
+  url: string;
+}
+
+export interface ExportResult {
+  id: string;
+  status: ExportResultStatus;
+  files: ExportFile[];
+  bundleUrl: string;
+  createdAt: string;
+}
+
 export interface CopilotInput {
   /** @minLength 1 */
   command: string;

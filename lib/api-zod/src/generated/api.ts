@@ -362,6 +362,34 @@ export const GenerateArrangementResponse = zod.object({
 
 
 /**
+ * @summary Render and export an arrangement package
+ */
+export const ExportArrangementParams = zod.object({
+  "arrangementId": zod.coerce.string()
+})
+
+export const ExportArrangementBody = zod.object({
+  "includeStems": zod.boolean().optional(),
+  "includeMidi": zod.boolean().optional(),
+  "masterProfile": zod.enum(['STREAMING', 'DYNAMIC', 'CLASSICAL', 'POP', 'LOUD', 'FILM']).optional()
+})
+
+export const ExportArrangementResponse = zod.object({
+  "id": zod.string(),
+  "status": zod.enum(['ready']),
+  "files": zod.array(zod.object({
+  "name": zod.string(),
+  "type": zod.enum(['STEM', 'MIDI', 'MIX', 'PREMASTER', 'MASTER', 'METADATA', 'BUNDLE']),
+  "size": zod.string(),
+  "format": zod.string(),
+  "url": zod.string()
+})),
+  "bundleUrl": zod.string(),
+  "createdAt": zod.string()
+})
+
+
+/**
  * @summary List project tracks
  */
 export const ListTracksParams = zod.object({

@@ -29,6 +29,8 @@ import type {
   CopilotInput,
   CopilotResult,
   Dashboard,
+  ExportInput,
+  ExportResult,
   GenerationInput,
   GenerationResult,
   HealthStatus,
@@ -809,6 +811,78 @@ export const useGenerateArrangement = <TError = ErrorType<NotFoundResponse>,
         TContext
       > => {
       return useMutation(getGenerateArrangementMutationOptions(options));
+    }
+
+export const getExportArrangementUrl = (arrangementId: string,) => {
+
+
+
+
+  return `/api/arrangements/${arrangementId}/export`
+}
+
+/**
+ * @summary Render and export an arrangement package
+ */
+export const exportArrangement = async (arrangementId: string,
+    exportInput?: ExportInput, options?: Parameters<typeof customFetch>[1]): Promise<ExportResult> => {
+
+  return customFetch<ExportResult>(getExportArrangementUrl(arrangementId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(exportInput)
+  }
+);}
+
+
+
+
+
+export const getExportArrangementMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof exportArrangement>>, TError,{arrangementId: string;data?: BodyType<ExportInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof exportArrangement>>, TError,{arrangementId: string;data?: BodyType<ExportInput>}, TContext> => {
+
+const mutationKey = ['exportArrangement'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof exportArrangement>>, {arrangementId: string;data?: BodyType<ExportInput>}> = (props) => {
+          const {arrangementId,data} = props ?? {};
+
+          return  exportArrangement(arrangementId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ExportArrangementMutationResult = NonNullable<Awaited<ReturnType<typeof exportArrangement>>>
+    export type ExportArrangementMutationBody = BodyType<ExportInput> | undefined
+    export type ExportArrangementMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Render and export an arrangement package
+ */
+export const useExportArrangement = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof exportArrangement>>, TError,{arrangementId: string;data?: BodyType<ExportInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof exportArrangement>>,
+        TError,
+        {arrangementId: string;data?: BodyType<ExportInput>},
+        TContext
+      > => {
+      return useMutation(getExportArrangementMutationOptions(options));
     }
 
 export const getListTracksUrl = (projectId: string,) => {

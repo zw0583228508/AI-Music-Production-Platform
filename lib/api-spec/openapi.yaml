@@ -192,6 +192,28 @@ paths:
                 $ref: "#/components/schemas/GenerationResult"
         "404":
           $ref: "#/components/responses/NotFound"
+  /arrangements/{arrangementId}/export:
+    post:
+      operationId: exportArrangement
+      tags: [studio]
+      summary: Render and export an arrangement package
+      parameters:
+        - $ref: "#/components/parameters/ArrangementId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExportInput"
+      responses:
+        "200":
+          description: Completed export package
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExportResult"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /projects/{projectId}/tracks:
     get:
       operationId: listTracks
@@ -465,6 +487,39 @@ components:
         label: { type: string }
         score: { type: number }
         summary: { type: string }
+    ExportInput:
+      type: object
+      properties:
+        includeStems: { type: boolean }
+        includeMidi: { type: boolean }
+        masterProfile:
+          type: string
+          enum: [STREAMING, DYNAMIC, CLASSICAL, POP, LOUD, FILM]
+    ExportResult:
+      type: object
+      required: [id, status, files, bundleUrl, createdAt]
+      properties:
+        id: { type: string }
+        status:
+          type: string
+          enum: [ready]
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExportFile"
+        bundleUrl: { type: string }
+        createdAt: { type: string }
+    ExportFile:
+      type: object
+      required: [name, type, size, format, url]
+      properties:
+        name: { type: string }
+        type:
+          type: string
+          enum: [STEM, MIDI, MIX, PREMASTER, MASTER, METADATA, BUNDLE]
+        size: { type: string }
+        format: { type: string }
+        url: { type: string }
     Track:
       type: object
       required: [id, projectId, name, role, kind, color, volume, muted, solo, status]

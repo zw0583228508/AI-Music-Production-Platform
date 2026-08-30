@@ -13,6 +13,9 @@ import {
   GenerateArrangementBody,
   GenerateArrangementParams,
   GenerateArrangementResponse,
+  ExportArrangementBody,
+  ExportArrangementParams,
+  ExportArrangementResponse,
   GetDashboardResponse,
   GetProjectParams,
   GetProjectResponse,
@@ -34,10 +37,17 @@ import {
   arrangementsTable,
   db,
   musicArtifactsTable,
+  musicExportsTable,
   musicProjectsTable,
   studioActivitiesTable,
   tracksTable,
 } from "@workspace/db";
+import {
+  createZip,
+  formatBytes,
+  renderArrangementExport,
+} from "../lib/exportEngine";
+import { deleteExportObject, saveExportObject } from "../lib/objectStorage";
 
 const router: IRouter = Router();
 
@@ -388,6 +398,191 @@ router.post("/arrangements/:arrangementId/generate", async (req, res): Promise<v
     candidates,
     selectedCandidate: candidates[0].id,
   }));
+});
+
+router.post("/arrangements/:arrangementId/export", async (req, res): Promise<void> => {
+  const params = ExportArrangementParams.safeParse(req.params);
+  const body = ExportArrangementBody.safeParse(req.body ?? {});
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: "Invalid export request" });
+    return;
+  }
+
+  const [arrangement] = await db
+    .select()
+    .from(arrangementsTable)
+    .where(eq(arrangementsTable.id, params.data.arrangementId));
+  if (!arrangement) {
+    res.status(404).json({ error: "Arrangement not found" });
+    return;
+  }
+  const [project] = await db
+    .select()
+    .from(musicProjectsTable)
+    .where(eq(musicProjectsTable.id, arrangement.projectId));
+  if (!project) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+  const tracks = await db
+    .select()
+    .from(tracksTable)
+    .where(eq(tracksTable.projectId, project.id));
+  if (tracks.length === 0) {
+    res.status(400).json({ error: "No tracks are available to export" });
+    return;
+  }
+  if (tracks.length > 24) {
+    res.status(400).json({ error: "Exports support up to 24 tracks per arrangement" });
+    return;
+  }
+
+  const exportId = randomUUID();
+  const masterProfile = body.data.masterProfile ?? "STREAMING";
+  await db.insert(musicExportsTable).values({
+    id: exportId,
+    projectId: project.id,
+    arrangementId: arrangement.id,
+    status: "rendering",
+    masterProfile,
+  });
+  const uploadedUrls: string[] = [];
+  try {
+  const renderedFiles = renderArrangementExport({
+    projectName: project.name,
+    bpm: project.bpm,
+    key: project.key,
+    meter: project.meter,
+    arrangementName: arrangement.name,
+    arrangementVersion: arrangement.version,
+    masterProfile,
+    energy: arrangement.energy,
+    density: arrangement.density,
+    harmonyComplexity: arrangement.harmonyComplexity,
+    sections: arrangement.sections,
+    tracks,
+    includeStems: body.data.includeStems ?? true,
+    includeMidi: body.data.includeMidi ?? true,
+  });
+  const storedFiles: Array<{
+    name: string;
+    type: typeof renderedFiles[number]["type"];
+    size: string;
+    format: string;
+    url: string;
+    data: Buffer;
+  }> = [];
+  for (const file of renderedFiles) {
+    const url = await saveExportObject(
+      `${exportId}/${file.name}`,
+      file.data,
+      file.contentType,
+    );
+    uploadedUrls.push(url);
+    storedFiles.push({
+      name: file.name,
+      type: file.type,
+      size: formatBytes(file.data.length),
+      format: file.format,
+      url,
+      data: file.data,
+    });
+  }
+  const zip = createZip(
+    storedFiles.map(({ name, data }) => ({ name, data })),
+  );
+  const bundleName = `${project.name.replace(/[^\w-]+/g, "_") || "music_project"}_v${arrangement.version}.zip`;
+  const bundleUrl = await saveExportObject(
+    `${exportId}/${bundleName}`,
+    zip,
+    "application/zip",
+  );
+  uploadedUrls.push(bundleUrl);
+  const createdAt = new Date();
+
+  const artifactRows = storedFiles.map((file) => ({
+    id: randomUUID(),
+    projectId: project.id,
+    type:
+      file.type === "STEM"
+        ? "AUDIO_TRACK"
+        : file.type === "MIDI"
+          ? "MIDI"
+          : file.type === "MASTER"
+            ? "MASTER"
+            : file.type === "PREMASTER" || file.type === "MIX"
+              ? "MIX"
+              : "EXPORT",
+    label: file.name.split("/").pop() || file.name,
+    version: arrangement.version,
+    size: file.size,
+    format: file.format,
+    url: file.url,
+    createdAt,
+  }));
+  artifactRows.push({
+    id: randomUUID(),
+    projectId: project.id,
+    type: "EXPORT",
+    label: bundleName,
+    version: arrangement.version,
+    size: formatBytes(zip.length),
+    format: "ZIP",
+    url: bundleUrl,
+    createdAt,
+  });
+  const resultFiles = [
+    ...storedFiles.map(({ data: _data, ...file }) => file),
+    {
+      name: bundleName,
+      type: "BUNDLE" as const,
+      size: formatBytes(zip.length),
+      format: "ZIP",
+      url: bundleUrl,
+    },
+  ];
+  await db.transaction(async (tx) => {
+    await tx.insert(musicArtifactsTable).values(artifactRows);
+    await tx.insert(studioActivitiesTable).values({
+      id: randomUUID(),
+      projectId: project.id,
+      title: "Export package completed",
+      detail: `${storedFiles.length} files · ${masterProfile.toLowerCase()} master`,
+      type: "export",
+    });
+    await tx
+      .update(musicExportsTable)
+      .set({
+        status: "ready",
+        bundleUrl,
+        files: resultFiles,
+        completedAt: createdAt,
+      })
+      .where(eq(musicExportsTable.id, exportId));
+  });
+
+  res.json(ExportArrangementResponse.parse({
+    id: exportId,
+    status: "ready",
+    files: resultFiles,
+    bundleUrl,
+    createdAt: createdAt.toISOString(),
+  }));
+  } catch (error) {
+    req.log.error({ err: error, exportId }, "Arrangement export failed");
+    await db
+      .update(musicExportsTable)
+      .set({
+        status: "failed",
+        error: error instanceof Error ? error.message : "Unknown export failure",
+        completedAt: new Date(),
+      })
+      .where(eq(musicExportsTable.id, exportId));
+    await Promise.allSettled(
+      uploadedUrls.map((url) => deleteExportObject(url)),
+    );
+    res.status(500).json({ error: "Arrangement export failed" });
+  }
 });
 
 router.get("/projects/:projectId/tracks", async (req, res): Promise<void> => {

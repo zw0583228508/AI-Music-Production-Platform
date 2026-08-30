@@ -10,6 +10,9 @@ import {
   useListTracks,
   useListArtifacts,
   useRunCopilot,
+  useExportArrangement,
+  getListArtifactsQueryKey,
+  ExportResult,
   ArrangementMode,
   ArrangementStatus,
   Arrangement
@@ -30,7 +33,10 @@ import {
   ListMusic,
   MoreHorizontal,
   Check,
-  Plus
+  Plus,
+  Download,
+  FileArchive,
+  Loader2
 } from "lucide-react";
 
 import { EmptyState } from "@/components/ui/empty";
@@ -47,6 +53,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export default function ProjectWorkspace() {
   const [, params] = useRoute("/projects/:projectId");
@@ -57,14 +72,21 @@ export default function ProjectWorkspace() {
   const { data: workspace, isLoading, error } = useGetProject(projectId);
   const { data: arrangements } = useListArrangements(projectId);
   const { data: tracks } = useListTracks(projectId);
+  const { data: artifacts } = useListArtifacts(projectId);
   
   const createArrangement = useCreateArrangement();
   const updateArrangement = useUpdateArrangement();
   const generateArrangement = useGenerateArrangement();
+  const exportArrangement = useExportArrangement();
   // const runCopilot = useRunCopilot(); // We'll mock copilot if it's not exported, but let's assume it is
 
   const [activeTab, setActiveTab] = useState("arrangement");
   const [selectedArrangementId, setSelectedArrangementId] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [includeStems, setIncludeStems] = useState(true);
+  const [includeMidi, setIncludeMidi] = useState(true);
+  const [masterProfile, setMasterProfile] = useState("STREAMING");
+  const [exportResult, setExportResult] = useState<ExportResult | null>(null);
 
   const [copilotCommand, setCopilotCommand] = useState("");
   const runCopilot = useRunCopilot();
@@ -128,6 +150,45 @@ export default function ProjectWorkspace() {
         queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(projectId) });
         queryClient.invalidateQueries({ queryKey: getListArrangementsQueryKey(projectId) });
       }
+    });
+  };
+
+  const downloadFile = (url: string) => {
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  };
+
+  const handleExport = () => {
+    if (!activeArrangement) return;
+    setExportResult(null);
+    exportArrangement.mutate({
+      arrangementId: activeArrangement.id,
+      data: {
+        includeStems,
+        includeMidi,
+        masterProfile: masterProfile as "STREAMING" | "DYNAMIC" | "CLASSICAL" | "POP" | "LOUD" | "FILM",
+      },
+    }, {
+      onSuccess: (result) => {
+        setExportResult(result);
+        queryClient.invalidateQueries({ queryKey: getListArtifactsQueryKey(projectId) });
+        toast({
+          title: "Export package ready",
+          description: `${result.files.length} playable files were rendered and saved.`,
+        });
+        downloadFile(result.bundleUrl);
+      },
+      onError: () => {
+        toast({
+          title: "Export failed",
+          description: "The render could not be completed. Please try again.",
+          variant: "destructive",
+        });
+      },
     });
   };
 
@@ -221,9 +282,14 @@ export default function ProjectWorkspace() {
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" className="font-mono text-xs hidden sm:flex">
             <Layers className="h-3.5 w-3.5 mr-1.5" />
-            Artifacts ({workspace.artifacts?.length || 0})
+            Artifacts ({artifacts?.length ?? workspace.artifacts?.length ?? 0})
           </Button>
-          <Button size="sm" className="shadow-sm shadow-primary/20">
+          <Button
+            size="sm"
+            className="shadow-sm shadow-primary/20"
+            onClick={() => setExportOpen(true)}
+            disabled={!activeArrangement || !tracks?.length}
+          >
             Export <ChevronRight className="h-4 w-4 ml-1" />
           </Button>
         </div>
@@ -494,6 +560,110 @@ export default function ProjectWorkspace() {
         </aside>
 
       </div>
+
+      <Dialog open={exportOpen} onOpenChange={setExportOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileArchive className="h-5 w-5 text-primary" />
+              Export production package
+            </DialogTitle>
+            <DialogDescription>
+              Render playable 44.1 kHz WAV files, a multitrack MIDI arrangement,
+              and a versioned ZIP package saved to the project.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-5 py-2">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="flex cursor-pointer items-start gap-3 rounded-lg border bg-card p-4">
+                <Checkbox
+                  checked={includeStems}
+                  onCheckedChange={(checked) => setIncludeStems(checked === true)}
+                />
+                <span>
+                  <span className="block text-sm font-semibold">Audio stems</span>
+                  <span className="text-xs text-muted-foreground">
+                    Individual 16-bit WAV file for every active track
+                  </span>
+                </span>
+              </label>
+              <label className="flex cursor-pointer items-start gap-3 rounded-lg border bg-card p-4">
+                <Checkbox
+                  checked={includeMidi}
+                  onCheckedChange={(checked) => setIncludeMidi(checked === true)}
+                />
+                <span>
+                  <span className="block text-sm font-semibold">Multitrack MIDI</span>
+                  <span className="text-xs text-muted-foreground">
+                    Tempo, meter, programs, notes, and track channels
+                  </span>
+                </span>
+              </label>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Mastering profile</Label>
+              <Select value={masterProfile} onValueChange={setMasterProfile}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="STREAMING">Streaming balanced</SelectItem>
+                  <SelectItem value="DYNAMIC">Dynamic / acoustic</SelectItem>
+                  <SelectItem value="CLASSICAL">Classical headroom</SelectItem>
+                  <SelectItem value="POP">Modern pop</SelectItem>
+                  <SelectItem value="LOUD">Loud master</SelectItem>
+                  <SelectItem value="FILM">Film and sync</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {exportResult && (
+              <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/5 p-4">
+                <div className="flex items-center gap-2 text-sm font-semibold text-emerald-700">
+                  <Check className="h-4 w-4" />
+                  Export ready
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {exportResult.files.length} files are stored as project artifacts.
+                </p>
+                <div className="mt-3 max-h-32 space-y-1 overflow-auto">
+                  {exportResult.files.map((file) => (
+                    <button
+                      key={`${file.type}-${file.name}`}
+                      type="button"
+                      onClick={() => downloadFile(file.url)}
+                      className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-xs hover:bg-background"
+                    >
+                      <span className="truncate font-mono">{file.name}</span>
+                      <span className="ml-3 shrink-0 text-muted-foreground">{file.size}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            {exportResult ? (
+              <Button onClick={() => downloadFile(exportResult.bundleUrl)}>
+                <Download className="mr-2 h-4 w-4" />
+                Download ZIP again
+              </Button>
+            ) : (
+              <Button onClick={handleExport} disabled={exportArrangement.isPending}>
+                {exportArrangement.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="mr-2 h-4 w-4" />
+                )}
+                {exportArrangement.isPending ? "Rendering files..." : "Render and download"}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
