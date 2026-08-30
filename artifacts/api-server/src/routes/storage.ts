@@ -1,10 +1,10 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   RequestSourceUploadUrlBody,
   RequestSourceUploadUrlResponse,
 } from "@workspace/api-zod";
-import { db, musicArtifactsTable } from "@workspace/db";
+import { db, musicArtifactsTable, musicProjectsTable } from "@workspace/db";
 import { createSourceUploadTarget, getPrivateObject } from "../lib/objectStorage";
 
 const router: IRouter = Router();
@@ -28,6 +28,10 @@ router.post("/storage/uploads/request-url", async (req, res): Promise<void> => {
 });
 
 router.get("/storage/objects/*path", async (req, res): Promise<void> => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
   const rawPath = req.params.path;
   const path = Array.isArray(rawPath) ? rawPath.join("/") : rawPath;
   if (!path.startsWith("exports/")) {
@@ -38,7 +42,14 @@ router.get("/storage/objects/*path", async (req, res): Promise<void> => {
   const [registeredArtifact] = await db
     .select({ id: musicArtifactsTable.id })
     .from(musicArtifactsTable)
-    .where(eq(musicArtifactsTable.url, downloadUrl))
+    .innerJoin(
+      musicProjectsTable,
+      eq(musicProjectsTable.id, musicArtifactsTable.projectId),
+    )
+    .where(and(
+      eq(musicArtifactsTable.url, downloadUrl),
+      eq(musicProjectsTable.ownerId, req.user.id),
+    ))
     .limit(1);
   if (!registeredArtifact) {
     res.status(404).json({ error: "File not found" });

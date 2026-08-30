@@ -79,10 +79,6 @@ export const LogoutBrowserSessionResponse = zod.void()
  */
 
 
-
-
-
-
 export const ExchangeMobileAuthorizationCodeBody = zod.object({
   "code": zod.string().min(1),
   "code_verifier": zod.string().min(1),
@@ -111,8 +107,6 @@ export const LogoutMobileSessionResponse = zod.object({
 export const requestSourceUploadUrlBodySizeMax = 524288000;
 
 
-
-
 export const RequestSourceUploadUrlBody = zod.object({
   "name": zod.string().min(1),
   "size": zod.number().min(1).max(requestSourceUploadUrlBodySizeMax),
@@ -121,8 +115,6 @@ export const RequestSourceUploadUrlBody = zod.object({
 
 
 export const requestSourceUploadUrlResponseMetadataSizeMax = 524288000;
-
-
 
 
 export const RequestSourceUploadUrlResponse = zod.object({
@@ -156,7 +148,6 @@ export const ListProjectsResponse = zod.array(ListProjectsResponseItem)
 /**
  * @summary Create a music project
  */
-
 
 
 export const CreateProjectBody = zod.object({
@@ -251,7 +242,33 @@ export const GetProjectResponse = zod.object({
   "volume": zod.number(),
   "muted": zod.boolean(),
   "solo": zod.boolean(),
-  "status": zod.enum(['source', 'generated', 'rendered'])
+  "status": zod.enum(['source', 'generated', 'rendered']),
+  "performance": zod.object({
+  "tempoMap": zod.array(zod.object({
+  "tick": zod.number(),
+  "bpm": zod.number()
+})),
+  "meterMap": zod.array(zod.object({
+  "tick": zod.number(),
+  "numerator": zod.number(),
+  "denominator": zod.number()
+})),
+  "notes": zod.array(zod.object({
+  "startTick": zod.number(),
+  "durationTicks": zod.number(),
+  "pitch": zod.number(),
+  "velocity": zod.number()
+})),
+  "expression": zod.array(zod.object({
+  "tick": zod.number(),
+  "value": zod.number()
+})),
+  "articulations": zod.array(zod.object({
+  "tick": zod.number(),
+  "type": zod.string(),
+  "keyswitch": zod.number()
+}))
+})
 })),
   "artifacts": zod.array(zod.object({
   "id": zod.string(),
@@ -261,9 +278,18 @@ export const GetProjectResponse = zod.object({
   "version": zod.number(),
   "size": zod.string(),
   "format": zod.string(),
+  "state": zod.enum(['rendering', 'ready', 'failed']),
   "createdAt": zod.string(),
   "url": zod.string().nullish()
 }))
+})
+
+/**
+ * Creates an auditable immutable revision of the latest Song Model and updates the project analysis summary atomically. Omitted fields remain unchanged.
+ * @summary Create a corrected Song Model version
+ */
+export const CorrectProjectSongModelParams = zod.object({
+  "projectId": zod.coerce.string()
 })
 
 
@@ -276,7 +302,6 @@ export const ListProjectSourcesParams = zod.object({
 
 export const listProjectSourcesResponseProgressMin = 0;
 export const listProjectSourcesResponseProgressMax = 100;
-
 
 
 export const ListProjectSourcesResponseItem = zod.object({
@@ -305,10 +330,7 @@ export const RegisterProjectSourceParams = zod.object({
 })
 
 
-
 export const registerProjectSourceBodySizeMax = 524288000;
-
-
 
 
 export const RegisterProjectSourceBody = zod.object({
@@ -321,7 +343,6 @@ export const RegisterProjectSourceBody = zod.object({
 
 export const registerProjectSourceResponseProgressMin = 0;
 export const registerProjectSourceResponseProgressMax = 100;
-
 
 
 export const RegisterProjectSourceResponse = zod.object({
@@ -460,10 +481,6 @@ export const correctProjectSongModelBodyKeyMax = 80;
 
 export const correctProjectSongModelBodyMeterRegExp = new RegExp('^[1-9][0-9]*/[1-9][0-9]*$');
 export const correctProjectSongModelBodySectionsItemNameMax = 120;
-
-
-
-
 
 
 export const CorrectProjectSongModelBody = zod.object({
@@ -692,7 +709,6 @@ export const CreateArrangementParams = zod.object({
 export const createArrangementBodyHarmonyComplexityMax = 10;
 
 
-
 export const CreateArrangementBody = zod.object({
   "name": zod.string().min(1),
   "style": zod.string(),
@@ -754,7 +770,6 @@ export const updateArrangementBodyRhythmIntensityMin = 0;
 export const updateArrangementBodyRhythmIntensityMax = 1;
 
 
-
 export const UpdateArrangementBody = zod.object({
   "name": zod.string().optional(),
   "harmonyComplexity": zod.number().min(1).max(updateArrangementBodyHarmonyComplexityMax).optional(),
@@ -805,7 +820,6 @@ export const GenerateArrangementParams = zod.object({
 })
 
 export const generateArrangementBodyCandidatesMax = 3;
-
 
 
 export const GenerateArrangementBody = zod.object({
@@ -870,30 +884,38 @@ export const GenerateArrangementResponse = zod.object({
 
 
 /**
- * @summary Render and export an arrangement package
+ * @deprecated
+ * @summary Compatibility alias for the durable project export pipeline
  */
 export const ExportArrangementParams = zod.object({
   "arrangementId": zod.coerce.string()
 })
 
 export const ExportArrangementBody = zod.object({
+  "arrangementId": zod.string().nullish(),
   "includeStems": zod.boolean().optional(),
   "includeMidi": zod.boolean().optional(),
+  "includeMix": zod.boolean().optional(),
+  "includeMetadata": zod.boolean().optional(),
   "masterProfile": zod.enum(['STREAMING', 'DYNAMIC', 'CLASSICAL', 'POP', 'LOUD', 'FILM']).optional()
 })
 
 export const ExportArrangementResponse = zod.object({
   "id": zod.string(),
+  "projectId": zod.string(),
+  "version": zod.number(),
   "status": zod.enum(['ready']),
+  "filename": zod.string(),
+  "size": zod.string(),
+  "createdAt": zod.string(),
+  "url": zod.string(),
   "files": zod.array(zod.object({
   "name": zod.string(),
-  "type": zod.enum(['STEM', 'MIDI', 'MIX', 'PREMASTER', 'MASTER', 'METADATA', 'BUNDLE']),
+  "type": zod.enum(['STEM', 'MIDI', 'MIX', 'PREMASTER', 'MASTER', 'METADATA', 'BUNDLE', 'SONG_MODEL', 'ARRANGEMENT_PLAN', 'EXPORT']),
   "size": zod.string(),
   "format": zod.string(),
   "url": zod.string()
-})),
-  "bundleUrl": zod.string(),
-  "createdAt": zod.string()
+}))
 })
 
 
@@ -914,7 +936,33 @@ export const ListTracksResponseItem = zod.object({
   "volume": zod.number(),
   "muted": zod.boolean(),
   "solo": zod.boolean(),
-  "status": zod.enum(['source', 'generated', 'rendered'])
+  "status": zod.enum(['source', 'generated', 'rendered']),
+  "performance": zod.object({
+  "tempoMap": zod.array(zod.object({
+  "tick": zod.number(),
+  "bpm": zod.number()
+})),
+  "meterMap": zod.array(zod.object({
+  "tick": zod.number(),
+  "numerator": zod.number(),
+  "denominator": zod.number()
+})),
+  "notes": zod.array(zod.object({
+  "startTick": zod.number(),
+  "durationTicks": zod.number(),
+  "pitch": zod.number(),
+  "velocity": zod.number()
+})),
+  "expression": zod.array(zod.object({
+  "tick": zod.number(),
+  "value": zod.number()
+})),
+  "articulations": zod.array(zod.object({
+  "tick": zod.number(),
+  "type": zod.string(),
+  "keyswitch": zod.number()
+}))
+})
 })
 export const ListTracksResponse = zod.array(ListTracksResponseItem)
 
@@ -934,10 +982,56 @@ export const ListArtifactsResponseItem = zod.object({
   "version": zod.number(),
   "size": zod.string(),
   "format": zod.string(),
+  "state": zod.enum(['rendering', 'ready', 'failed']),
   "createdAt": zod.string(),
   "url": zod.string().nullish()
 })
 export const ListArtifactsResponse = zod.array(ListArtifactsResponseItem)
+
+
+/**
+ * @summary Render and package a versioned project export
+ */
+export const CreateProjectExportParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+export const CreateProjectExportBody = zod.object({
+  "arrangementId": zod.string().nullish(),
+  "includeStems": zod.boolean().optional(),
+  "includeMidi": zod.boolean().optional(),
+  "includeMix": zod.boolean().optional(),
+  "includeMetadata": zod.boolean().optional(),
+  "masterProfile": zod.enum(['STREAMING', 'DYNAMIC', 'CLASSICAL', 'POP', 'LOUD', 'FILM']).optional()
+})
+
+export const CreateProjectExportResponse = zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "version": zod.number(),
+  "status": zod.enum(['ready']),
+  "filename": zod.string(),
+  "size": zod.string(),
+  "createdAt": zod.string(),
+  "url": zod.string(),
+  "files": zod.array(zod.object({
+  "name": zod.string(),
+  "type": zod.enum(['STEM', 'MIDI', 'MIX', 'PREMASTER', 'MASTER', 'METADATA', 'BUNDLE', 'SONG_MODEL', 'ARRANGEMENT_PLAN', 'EXPORT']),
+  "size": zod.string(),
+  "format": zod.string(),
+  "url": zod.string()
+}))
+})
+
+
+/**
+ * @summary Download a project export ZIP
+ */
+export const DownloadProjectExportParams = zod.object({
+  "exportId": zod.coerce.string()
+})
+
+export const DownloadProjectExportResponse = zod.unknown()
 
 
 /**
@@ -946,8 +1040,6 @@ export const ListArtifactsResponse = zod.array(ListArtifactsResponseItem)
 export const RunCopilotParams = zod.object({
   "projectId": zod.coerce.string()
 })
-
-
 
 
 export const RunCopilotBody = zod.object({
@@ -962,5 +1054,3 @@ export const RunCopilotResponse = zod.object({
 })),
   "affectedSections": zod.array(zod.string())
 })
-
-

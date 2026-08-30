@@ -1,18 +1,25 @@
 import { randomUUID } from "node:crypto";
-import { Router, type IRouter } from "express";
-import { and, desc, eq, sql } from "drizzle-orm";
+import {
+  Router,
+  type IRouter,
+  type NextFunction,
+  type Request,
+  type Response,
+} from "express";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   CreateArrangementBody,
   CreateArrangementParams,
   CreateArrangementResponse,
+  CreateProjectExportBody,
+  CreateProjectExportParams,
+  CreateProjectExportResponse,
   CreateProjectBody,
   CreateProjectResponse,
+  DownloadProjectExportParams,
   GenerateArrangementBody,
   GenerateArrangementParams,
   GenerateArrangementResponse,
-  ExportArrangementBody,
-  ExportArrangementParams,
-  ExportArrangementResponse,
   GetDashboardResponse,
   GetProjectParams,
   GetProjectResponse,
@@ -50,19 +57,12 @@ import {
   arrangementsTable,
   db,
   musicArtifactsTable,
-  musicExportsTable,
   musicProjectsTable,
   projectSourcesTable,
   songModelsTable,
   studioActivitiesTable,
   tracksTable,
 } from "@workspace/db";
-import {
-  createZip,
-  formatBytes,
-  renderArrangementExport,
-} from "../lib/exportEngine";
-import { deleteExportObject, saveExportObject } from "../lib/objectStorage";
 import { analyzeProjectSource } from "../lib/sourceAnalyzer";
 import { validateSourceFileMetadata } from "../lib/sourceFormats";
 import {
@@ -72,8 +72,90 @@ import {
   selectArrangementProvider,
   validateArrangementProviderOutput,
 } from "../lib/musicProviders";
+import {
+  createExportBundle,
+  createTrackPerformance,
+  loadExportZip,
+  persistExportBundle,
+  type ExportBundle,
+} from "../lib/export-pipeline";
 
 const router: IRouter = Router();
+const exportBundles = new Map<string, ExportBundle>();
+
+function requireStudioAuth(req: Request, res: Response, next: NextFunction): void {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  next();
+}
+
+router.use(requireStudioAuth);
+
+router.param("projectId", async (req, res, next, projectId): Promise<void> => {
+  try {
+    const [project] = await db
+      .select({ id: musicProjectsTable.id })
+      .from(musicProjectsTable)
+      .where(sql`${musicProjectsTable.id} = ${projectId} and ${musicProjectsTable.ownerId} = ${req.user!.id}`);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.param("arrangementId", async (req, res, next, arrangementId): Promise<void> => {
+  try {
+    const [arrangement] = await db
+      .select({ projectId: arrangementsTable.projectId })
+      .from(arrangementsTable)
+      .where(eq(arrangementsTable.id, arrangementId));
+    if (!arrangement) {
+      res.status(404).json({ error: "Arrangement not found" });
+      return;
+    }
+    const [project] = await db
+      .select({ id: musicProjectsTable.id })
+      .from(musicProjectsTable)
+      .where(sql`${musicProjectsTable.id} = ${arrangement.projectId} and ${musicProjectsTable.ownerId} = ${req.user!.id}`);
+    if (!project) {
+      res.status(404).json({ error: "Arrangement not found" });
+      return;
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.param("exportId", async (req, res, next, exportId): Promise<void> => {
+  try {
+    const [artifact] = await db
+      .select({ projectId: musicArtifactsTable.projectId })
+      .from(musicArtifactsTable)
+      .where(eq(musicArtifactsTable.id, exportId));
+    if (!artifact) {
+      res.status(404).json({ error: "Export package not found" });
+      return;
+    }
+    const [project] = await db
+      .select({ id: musicProjectsTable.id })
+      .from(musicProjectsTable)
+      .where(sql`${musicProjectsTable.id} = ${artifact.projectId} and ${musicProjectsTable.ownerId} = ${req.user!.id}`);
+    if (!project) {
+      res.status(404).json({ error: "Export package not found" });
+      return;
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 
 const iso = (value: Date) => value.toISOString();
 
@@ -259,13 +341,23 @@ async function ensureSeeded(): Promise<void> {
   ]);
 }
 
-router.get("/dashboard", async (_req, res): Promise<void> => {
+router.get("/dashboard", async (req, res): Promise<void> => {
   await ensureSeeded();
-  const [projects, artifacts, activities] = await Promise.all([
-    db.select().from(musicProjectsTable),
-    db.select().from(musicArtifactsTable),
-    db.select().from(studioActivitiesTable).orderBy(desc(studioActivitiesTable.createdAt)).limit(8),
-  ]);
+  const projects = await db
+    .select()
+    .from(musicProjectsTable)
+    .where(eq(musicProjectsTable.ownerId, req.user!.id));
+  const projectIds = projects.map((project) => project.id);
+  const [artifacts, activities] = projectIds.length
+    ? await Promise.all([
+        db.select().from(musicArtifactsTable)
+          .where(inArray(musicArtifactsTable.projectId, projectIds)),
+        db.select().from(studioActivitiesTable)
+          .where(inArray(studioActivitiesTable.projectId, projectIds))
+          .orderBy(desc(studioActivitiesTable.createdAt))
+          .limit(8),
+      ])
+    : [[], []];
   const payload = {
     activeProjects: projects.length,
     totalRenders: artifacts.filter((item) => ["AUDIO_TRACK", "MIX", "MASTER"].includes(item.type)).length,
@@ -281,9 +373,13 @@ router.get("/dashboard", async (_req, res): Promise<void> => {
   res.json(GetDashboardResponse.parse(payload));
 });
 
-router.get("/projects", async (_req, res): Promise<void> => {
+router.get("/projects", async (req, res): Promise<void> => {
   await ensureSeeded();
-  const projects = await db.select().from(musicProjectsTable).orderBy(desc(musicProjectsTable.updatedAt));
+  const projects = await db
+    .select()
+    .from(musicProjectsTable)
+    .where(eq(musicProjectsTable.ownerId, req.user!.id))
+    .orderBy(desc(musicProjectsTable.updatedAt));
   res.json(ListProjectsResponse.parse(projects.map(projectResponse)));
 });
 
@@ -299,7 +395,7 @@ router.post("/projects", async (req, res): Promise<void> => {
     name: body.data.name,
     sourceType: body.data.sourceType,
     sourceName: body.data.sourceName ?? null,
-    ownerId: req.isAuthenticated() ? req.user.id : null,
+    ownerId: req.user!.id,
     status: "draft",
     coverColor: "#06b6d4",
   }).returning();
@@ -875,6 +971,25 @@ router.post("/arrangements/:arrangementId/generate", async (req, res): Promise<v
 });
 
 router.post("/arrangements/:arrangementId/export", async (req, res): Promise<void> => {
+  const [redirectArrangement] = await db
+    .select({ projectId: arrangementsTable.projectId })
+    .from(arrangementsTable)
+    .where(eq(arrangementsTable.id, req.params.arrangementId));
+  if (!redirectArrangement) {
+    res.status(404).json({ error: "Arrangement not found" });
+    return;
+  }
+  res.setHeader("Deprecation", "true");
+  res.redirect(
+    307,
+    `/api/projects/${redirectArrangement.projectId}/export?arrangementId=${encodeURIComponent(req.params.arrangementId)}`,
+  );
+  return;
+
+  /*
+   * Retired fixed-duration renderer. Kept in the rebase history only; the live
+   * compatibility alias above always forwards to the durable project pipeline.
+   *
   const params = ExportArrangementParams.safeParse(req.params);
   const body = ExportArrangementBody.safeParse(req.body ?? {});
   if (!params.success || !body.success) {
@@ -1057,6 +1172,187 @@ router.post("/arrangements/:arrangementId/export", async (req, res): Promise<voi
     );
     res.status(500).json({ error: "Arrangement export failed" });
   }
+  */
+});
+
+router.post("/projects/:projectId/export", async (req, res): Promise<void> => {
+  await ensureSeeded();
+  const params = CreateProjectExportParams.safeParse(req.params);
+  const body = CreateProjectExportBody.safeParse(req.body ?? {});
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: "Invalid export request" });
+    return;
+  }
+
+  const [project] = await db
+    .select()
+    .from(musicProjectsTable)
+    .where(eq(musicProjectsTable.id, params.data.projectId));
+  if (!project) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+
+  const [arrangements, tracks] = await Promise.all([
+    db
+      .select()
+      .from(arrangementsTable)
+      .where(eq(arrangementsTable.projectId, project.id))
+      .orderBy(desc(arrangementsTable.version)),
+    db.select().from(tracksTable).where(eq(tracksTable.projectId, project.id)),
+  ]);
+  const arrangementId = body.data.arrangementId
+    ?? (typeof req.query.arrangementId === "string" ? req.query.arrangementId : null);
+  const arrangement = arrangementId
+    ? arrangements.find((item) => item.id === arrangementId)
+    : arrangements[0];
+  if (!arrangement) {
+    res.status(404).json({ error: "Arrangement not found" });
+    return;
+  }
+
+  const hasSoloTrack = tracks.some((track) => track.solo);
+  const performanceTracks = tracks.map((track, index) => ({
+    ...track,
+    performance: createTrackPerformance(
+      track,
+      project,
+      arrangement,
+      index,
+      hasSoloTrack,
+    ),
+  }));
+  await Promise.all(
+    performanceTracks.map((track) => db
+      .update(tracksTable)
+      .set({ performance: track.performance })
+      .where(eq(tracksTable.id, track.id))),
+  );
+
+  const allocation = await db.transaction(async (transaction) => {
+    await transaction.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${`music-export:${project.id}`}))`,
+    );
+    const exportArtifacts = await transaction
+      .select({ version: musicArtifactsTable.version })
+      .from(musicArtifactsTable)
+      .where(sql`${musicArtifactsTable.projectId} = ${project.id} and ${musicArtifactsTable.type} = 'EXPORT'`);
+    const version = Math.max(0, ...exportArtifacts.map((artifact) => artifact.version)) + 1;
+    const exportId = `export-${project.id}-${version}-${randomUUID().slice(0, 8)}`;
+    await transaction.insert(musicArtifactsTable).values({
+      id: exportId,
+      projectId: project.id,
+      type: "EXPORT",
+      label: `${project.name} v${version} export`,
+      version,
+      size: "Rendering",
+      format: "ZIP",
+      url: `/api/exports/${exportId}/download`,
+      state: "rendering",
+    });
+    return { exportId, version };
+  });
+
+  try {
+    const bundle = createExportBundle(
+      project,
+      arrangement,
+      performanceTracks,
+      body.data,
+      allocation.version,
+      "",
+      allocation.exportId,
+    );
+    await persistExportBundle(bundle);
+    exportBundles.set(bundle.package.id, bundle);
+
+    const artifactRows: Array<typeof musicArtifactsTable.$inferInsert> =
+      bundle.package.files.map((file) => ({
+        id: randomUUID(),
+        projectId: project.id,
+        type: file.type,
+        label: file.name,
+        version: allocation.version,
+        size: file.size,
+        format: file.format,
+        url: bundle.package.url,
+      }));
+    await Promise.all([
+      db.insert(musicArtifactsTable).values(artifactRows),
+      db
+        .update(musicArtifactsTable)
+        .set({
+          label: bundle.package.filename,
+          size: bundle.package.size,
+          url: bundle.package.url,
+          state: "ready",
+        })
+        .where(eq(musicArtifactsTable.id, allocation.exportId)),
+      db
+        .update(musicProjectsTable)
+        .set({ status: "ready" })
+        .where(eq(musicProjectsTable.id, project.id)),
+      db.insert(studioActivitiesTable).values({
+        id: randomUUID(),
+        projectId: project.id,
+        title: "Export package ready",
+        detail: `${bundle.package.filename} · ${bundle.package.size}`,
+        type: "export",
+      }),
+    ]);
+
+    req.log.info(
+      {
+        projectId: project.id,
+        exportId: bundle.package.id,
+        version: allocation.version,
+        files: bundle.package.files.length,
+        bytes: bundle.zip.length,
+      },
+      "Project export rendered",
+    );
+    res.status(201).json(CreateProjectExportResponse.parse(bundle.package));
+  } catch (error) {
+    await db
+      .update(musicArtifactsTable)
+      .set({ state: "failed", size: "Failed" })
+      .where(eq(musicArtifactsTable.id, allocation.exportId));
+    throw error;
+  }
+});
+
+router.get("/exports/:exportId/download", async (req, res): Promise<void> => {
+  const params = DownloadProjectExportParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const cachedBundle = exportBundles.get(params.data.exportId);
+  const [artifact] = await db
+    .select()
+    .from(musicArtifactsTable)
+    .where(eq(musicArtifactsTable.id, params.data.exportId));
+  if (!artifact || artifact.type !== "EXPORT") {
+    res.status(404).json({ error: "Export package not found or expired" });
+    return;
+  }
+  if (artifact.state !== "ready") {
+    res.status(409).json({ error: `Export package is ${artifact.state}` });
+    return;
+  }
+  const zip = cachedBundle?.zip ?? await loadExportZip(params.data.exportId);
+  if (!zip) {
+    res.status(404).json({ error: "Export package not found or expired" });
+    return;
+  }
+  res.setHeader("Content-Type", "application/zip");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="${artifact.label}"`,
+  );
+  res.setHeader("Content-Length", zip.length.toString());
+  res.setHeader("Cache-Control", "private, max-age=3600");
+  res.send(zip);
 });
 
 router.get("/projects/:projectId/tracks", async (req, res): Promise<void> => {

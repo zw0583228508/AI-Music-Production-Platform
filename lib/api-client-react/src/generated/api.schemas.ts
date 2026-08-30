@@ -543,6 +543,43 @@ export const TrackStatus = {
   rendered: 'rendered',
 } as const;
 
+export interface TempoMapEvent {
+  tick: number;
+  bpm: number;
+}
+
+export interface MeterMapEvent {
+  tick: number;
+  numerator: number;
+  denominator: number;
+}
+
+export interface MidiNote {
+  startTick: number;
+  durationTicks: number;
+  pitch: number;
+  velocity: number;
+}
+
+export interface ExpressionEvent {
+  tick: number;
+  value: number;
+}
+
+export interface ArticulationEvent {
+  tick: number;
+  type: string;
+  keyswitch: number;
+}
+
+export interface TrackPerformance {
+  tempoMap: TempoMapEvent[];
+  meterMap: MeterMapEvent[];
+  notes: MidiNote[];
+  expression: ExpressionEvent[];
+  articulations: ArticulationEvent[];
+}
+
 export interface Track {
   id: string;
   projectId: string;
@@ -554,6 +591,7 @@ export interface Track {
   muted: boolean;
   solo: boolean;
   status: TrackStatus;
+  performance: TrackPerformance;
 }
 
 export type ArtifactType = typeof ArtifactType[keyof typeof ArtifactType];
@@ -573,6 +611,15 @@ export const ArtifactType = {
   EXPORT: 'EXPORT',
 } as const;
 
+export type ArtifactState = typeof ArtifactState[keyof typeof ArtifactState];
+
+
+export const ArtifactState = {
+  rendering: 'rendering',
+  ready: 'ready',
+  failed: 'failed',
+} as const;
+
 export interface Artifact {
   id: string;
   projectId: string;
@@ -581,6 +628,7 @@ export interface Artifact {
   version: number;
   size: string;
   format: string;
+  state: ArtifactState;
   createdAt: string;
   /** @nullable */
   url?: string | null;
@@ -704,8 +752,12 @@ export const ExportInputMasterProfile = {
 } as const;
 
 export interface ExportInput {
+  /** @nullable */
+  arrangementId?: string | null;
   includeStems?: boolean;
   includeMidi?: boolean;
+  includeMix?: boolean;
+  includeMetadata?: boolean;
   masterProfile?: ExportInputMasterProfile;
 }
 
@@ -727,6 +779,9 @@ export const ExportFileType = {
   MASTER: 'MASTER',
   METADATA: 'METADATA',
   BUNDLE: 'BUNDLE',
+  SONG_MODEL: 'SONG_MODEL',
+  ARRANGEMENT_PLAN: 'ARRANGEMENT_PLAN',
+  EXPORT: 'EXPORT',
 } as const;
 
 export interface ExportFile {
@@ -743,6 +798,25 @@ export interface ExportResult {
   files: ExportFile[];
   bundleUrl: string;
   createdAt: string;
+}
+
+export type ExportPackageStatus = typeof ExportPackageStatus[keyof typeof ExportPackageStatus];
+
+
+export const ExportPackageStatus = {
+  ready: 'ready',
+} as const;
+
+export interface ExportPackage {
+  id: string;
+  projectId: string;
+  version: number;
+  status: ExportPackageStatus;
+  filename: string;
+  size: string;
+  createdAt: string;
+  url: string;
+  files: ExportFile[];
 }
 
 export interface CopilotInput {
@@ -773,4 +847,3 @@ returnTo?: string;
 export type LogoutBrowserSessionParams = {
 returnTo?: string;
 };
-

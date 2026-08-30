@@ -23,6 +23,23 @@ export type ArrangementSection = {
   tracks: string[];
 };
 
+export type TrackPerformance = {
+  tempoMap: Array<{ tick: number; bpm: number }>;
+  meterMap: Array<{ tick: number; numerator: number; denominator: number }>;
+  notes: Array<{
+    startTick: number;
+    durationTicks: number;
+    pitch: number;
+    velocity: number;
+  }>;
+  expression: Array<{ tick: number; value: number }>;
+  articulations: Array<{
+    tick: number;
+    type: string;
+    keyswitch: number;
+  }>;
+};
+
 export type ArrangementCandidateData = {
   id: string;
   label: string;
@@ -258,6 +275,14 @@ export const arrangementsTable = pgTable("music_arrangements", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+const emptyTrackPerformance: TrackPerformance = {
+  tempoMap: [],
+  meterMap: [],
+  notes: [],
+  expression: [],
+  articulations: [],
+};
+
 export const tracksTable = pgTable("music_tracks", {
   id: text("id").primaryKey(),
   projectId: text("project_id")
@@ -271,6 +296,10 @@ export const tracksTable = pgTable("music_tracks", {
   muted: boolean("muted").notNull().default(false),
   solo: boolean("solo").notNull().default(false),
   status: text("status").notNull(),
+  performance: jsonb("performance")
+    .$type<TrackPerformance>()
+    .notNull()
+    .default(emptyTrackPerformance),
 });
 
 export const musicArtifactsTable = pgTable("music_artifacts", {
@@ -284,6 +313,7 @@ export const musicArtifactsTable = pgTable("music_artifacts", {
   size: text("size").notNull(),
   format: text("format").notNull(),
   url: text("url"),
+  state: text("state").notNull().default("ready"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -17,4 +17,7 @@ export const ExportFileType = {
   MASTER: 'MASTER',
   METADATA: 'METADATA',
   BUNDLE: 'BUNDLE',
+  SONG_MODEL: 'SONG_MODEL',
+  ARRANGEMENT_PLAN: 'ARRANGEMENT_PLAN',
+  EXPORT: 'EXPORT',
 } as const;

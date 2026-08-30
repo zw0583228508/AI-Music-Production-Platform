@@ -8,7 +8,11 @@
 import type { ExportInputMasterProfile } from './exportInputMasterProfile';
 
 export interface ExportInput {
+  /** @nullable */
+  arrangementId?: string | null;
   includeStems?: boolean;
   includeMidi?: boolean;
+  includeMix?: boolean;
+  includeMetadata?: boolean;
   masterProfile?: ExportInputMasterProfile;
 }

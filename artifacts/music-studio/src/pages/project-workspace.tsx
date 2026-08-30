@@ -9,7 +9,7 @@ import {
   useListTracks,
   useListArtifacts,
   useRunCopilot,
-  useExportArrangement,
+  useCreateProjectExport,
   getListArtifactsQueryKey,
   ExportResult,
   GenerationResult,
@@ -75,7 +75,7 @@ export default function ProjectWorkspace() {
   const createArrangement = useCreateArrangement();
   const updateArrangement = useUpdateArrangement();
   const generateArrangement = useGenerateArrangement();
-  const exportArrangement = useExportArrangement();
+  const createExport = useCreateProjectExport();
   // const runCopilot = useRunCopilot(); // We'll mock copilot if it's not exported, but let's assume it is
 
   const [activeTab, setActiveTab] = useState("model");
@@ -179,22 +179,31 @@ export default function ProjectWorkspace() {
   const handleExport = () => {
     if (!activeArrangement) return;
     setExportResult(null);
-    exportArrangement.mutate({
-      arrangementId: activeArrangement.id,
+    createExport.mutate({
+      projectId,
       data: {
+        arrangementId: activeArrangement.id,
         includeStems,
         includeMidi,
+        includeMix: true,
+        includeMetadata: true,
         masterProfile: masterProfile as "STREAMING" | "DYNAMIC" | "CLASSICAL" | "POP" | "LOUD" | "FILM",
       },
     }, {
       onSuccess: (result) => {
-        setExportResult(result);
+        setExportResult({
+          id: result.id,
+          status: result.status,
+          files: result.files,
+          bundleUrl: result.url,
+          createdAt: result.createdAt,
+        });
         queryClient.invalidateQueries({ queryKey: getListArtifactsQueryKey(projectId) });
         toast({
           title: "Export package ready",
           description: `${result.files.length} playable files were rendered and saved.`,
         });
-        downloadFile(result.bundleUrl);
+        downloadFile(result.url);
       },
       onError: () => {
         toast({
@@ -640,7 +649,7 @@ export default function ProjectWorkspace() {
               Export production package
             </DialogTitle>
             <DialogDescription>
-              Render playable 44.1 kHz WAV files, a multitrack MIDI arrangement,
+              Render DAW-compatible 16-bit WAV files, a multitrack MIDI arrangement,
               and a versioned ZIP package saved to the project.
             </DialogDescription>
           </DialogHeader>
@@ -723,13 +732,13 @@ export default function ProjectWorkspace() {
                 Download ZIP again
               </Button>
             ) : (
-              <Button onClick={handleExport} disabled={exportArrangement.isPending}>
-                {exportArrangement.isPending ? (
+              <Button onClick={handleExport} disabled={createExport.isPending}>
+                {createExport.isPending ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
                   <Download className="mr-2 h-4 w-4" />
                 )}
-                {exportArrangement.isPending ? "Rendering files..." : "Render and download"}
+                {createExport.isPending ? "Rendering files..." : "Render and download"}
               </Button>
             )}
           </DialogFooter>

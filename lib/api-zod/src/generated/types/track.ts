@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { TrackKind } from './trackKind';
+import type { TrackPerformance } from './trackPerformance';
 import type { TrackStatus } from './trackStatus';
 
 export interface Track {
@@ -19,4 +20,5 @@ export interface Track {
   muted: boolean;
   solo: boolean;
   status: TrackStatus;
+  performance: TrackPerformance;
 }

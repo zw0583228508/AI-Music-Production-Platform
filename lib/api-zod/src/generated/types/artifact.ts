@@ -5,6 +5,7 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { ArtifactState } from './artifactState';
 import type { ArtifactType } from './artifactType';
 
 export interface Artifact {
@@ -15,6 +16,7 @@ export interface Artifact {
   version: number;
   size: string;
   format: string;
+  state: ArtifactState;
   createdAt: string;
   /** @nullable */
   url?: string | null;

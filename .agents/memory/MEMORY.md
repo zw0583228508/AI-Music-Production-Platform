@@ -1,3 +1,4 @@
 - [Arrangement export semantics](arrangement-export-semantics.md) — deterministic exports must still follow section structure, controls, and track activation rather than generic audio.
 - [Object Storage stream warnings](object-storage-stream-warnings.md) — analysis downloads can emit benign PassThrough listener-limit warnings despite successful completion.
 - [Provider truth and job fencing](provider-truth-and-job-fencing.md) — unavailable music models stay explicit; durable jobs require database fencing before any musical result is committed.
+- [Generated-code verification](generated-code-verification.md) — restart the frontend workflow after API code generation before trusting browser HMR or module-loading logs.

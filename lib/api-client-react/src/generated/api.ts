@@ -31,7 +31,7 @@ import type {
   CopilotResult,
   Dashboard,
   ExportInput,
-  ExportResult,
+  ExportPackage,
   GenerationInput,
   GenerationResult,
   HealthStatus,
@@ -64,7 +64,6 @@ type AwaitedInput<T> = PromiseLike<T> | T;
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 
-
 const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
   const result = { queryKey } as T & { queryKey: K };
   for (const key of Object.keys(query)) {
@@ -81,8 +80,6 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
 };
 
 export const getHealthCheckUrl = () => {
-
-
 
 
   return `/api/healthz`
@@ -104,9 +101,6 @@ export const healthCheck = async ( options?: Parameters<typeof customFetch>[1]):
 );}
 
 
-
-
-
 export const getHealthCheckQueryKey = () => {
     return [
     `/api/healthz`
@@ -122,11 +116,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
   const queryKey =  queryOptions?.queryKey ?? getHealthCheckQueryKey();
 
 
-
     const queryFn: QueryFunction<Awaited<ReturnType<typeof healthCheck>>> = ({ signal }) => healthCheck({ signal, ...requestOptions });
-
-
-
 
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof healthCheck>>, TError, TData> & { queryKey: QueryKey }
@@ -153,14 +143,7 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
 }
 
 
-
-
-
-
-
 export const getGetDashboardUrl = () => {
-
-
 
 
   return `/api/dashboard`
@@ -181,9 +164,6 @@ export const getDashboard = async ( options?: Parameters<typeof customFetch>[1])
 );}
 
 
-
-
-
 export const getGetDashboardQueryKey = () => {
     return [
     `/api/dashboard`
@@ -199,11 +179,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
   const queryKey =  queryOptions?.queryKey ?? getGetDashboardQueryKey();
 
 
-
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getDashboard>>> = ({ signal }) => getDashboard({ signal, ...requestOptions });
-
-
-
 
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDashboard>>, TError, TData> & { queryKey: QueryKey }
@@ -230,14 +206,7 @@ export function useGetDashboard<TData = Awaited<ReturnType<typeof getDashboard>>
 }
 
 
-
-
-
-
-
 export const getGetCurrentAuthUserUrl = () => {
-
-
 
 
   return `/api/auth/user`
@@ -258,9 +227,6 @@ export const getCurrentAuthUser = async ( options?: Parameters<typeof customFetc
 );}
 
 
-
-
-
 export const getGetCurrentAuthUserQueryKey = () => {
     return [
     `/api/auth/user`
@@ -276,11 +242,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
   const queryKey =  queryOptions?.queryKey ?? getGetCurrentAuthUserQueryKey();
 
 
-
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getCurrentAuthUser>>> = ({ signal }) => getCurrentAuthUser({ signal, ...requestOptions });
-
-
-
 
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCurrentAuthUser>>, TError, TData> & { queryKey: QueryKey }
@@ -305,11 +267,6 @@ export function useGetCurrentAuthUser<TData = Awaited<ReturnType<typeof getCurre
 
   return withQueryKey(query, queryOptions.queryKey);
 }
-
-
-
-
-
 
 
 export const getBeginBrowserLoginUrl = (params?: BeginBrowserLoginParams,) => {
@@ -342,9 +299,6 @@ export const beginBrowserLogin = async (params?: BeginBrowserLoginParams, option
 );}
 
 
-
-
-
 export const getBeginBrowserLoginQueryKey = (params?: BeginBrowserLoginParams,) => {
     return [
     `/api/login`, ...(params ? [params] : [])
@@ -360,11 +314,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
   const queryKey =  queryOptions?.queryKey ?? getBeginBrowserLoginQueryKey(params);
 
 
-
     const queryFn: QueryFunction<Awaited<ReturnType<typeof beginBrowserLogin>>> = ({ signal }) => beginBrowserLogin(params, { signal, ...requestOptions });
-
-
-
 
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof beginBrowserLogin>>, TError, TData> & { queryKey: QueryKey }
@@ -391,14 +341,7 @@ export function useBeginBrowserLogin<TData = Awaited<ReturnType<typeof beginBrow
 }
 
 
-
-
-
-
-
 export const getHandleBrowserLoginCallbackUrl = () => {
-
-
 
 
   return `/api/callback`
@@ -419,9 +362,6 @@ export const handleBrowserLoginCallback = async ( options?: Parameters<typeof cu
 );}
 
 
-
-
-
 export const getHandleBrowserLoginCallbackQueryKey = () => {
     return [
     `/api/callback`
@@ -437,11 +377,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
   const queryKey =  queryOptions?.queryKey ?? getHandleBrowserLoginCallbackQueryKey();
 
 
-
     const queryFn: QueryFunction<Awaited<ReturnType<typeof handleBrowserLoginCallback>>> = ({ signal }) => handleBrowserLoginCallback({ signal, ...requestOptions });
-
-
-
 
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof handleBrowserLoginCallback>>, TError, TData> & { queryKey: QueryKey }
@@ -466,11 +402,6 @@ export function useHandleBrowserLoginCallback<TData = Awaited<ReturnType<typeof 
 
   return withQueryKey(query, queryOptions.queryKey);
 }
-
-
-
-
-
 
 
 export const getLogoutBrowserSessionUrl = (params?: LogoutBrowserSessionParams,) => {
@@ -503,9 +434,6 @@ export const logoutBrowserSession = async (params?: LogoutBrowserSessionParams, 
 );}
 
 
-
-
-
 export const getLogoutBrowserSessionQueryKey = (params?: LogoutBrowserSessionParams,) => {
     return [
     `/api/logout`, ...(params ? [params] : [])
@@ -521,11 +449,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
   const queryKey =  queryOptions?.queryKey ?? getLogoutBrowserSessionQueryKey(params);
 
 
-
     const queryFn: QueryFunction<Awaited<ReturnType<typeof logoutBrowserSession>>> = ({ signal }) => logoutBrowserSession(params, { signal, ...requestOptions });
-
-
-
 
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof logoutBrowserSession>>, TError, TData> & { queryKey: QueryKey }
@@ -552,14 +476,7 @@ export function useLogoutBrowserSession<TData = Awaited<ReturnType<typeof logout
 }
 
 
-
-
-
-
-
 export const getExchangeMobileAuthorizationCodeUrl = () => {
-
-
 
 
   return `/api/mobile-auth/token-exchange`
@@ -580,9 +497,6 @@ export const exchangeMobileAuthorizationCode = async (mobileTokenExchangeRequest
 );}
 
 
-
-
-
 export const getExchangeMobileAuthorizationCodeMutationOptions = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof exchangeMobileAuthorizationCode>>, TError,{data: BodyType<MobileTokenExchangeRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof exchangeMobileAuthorizationCode>>, TError,{data: BodyType<MobileTokenExchangeRequest>}, TContext> => {
@@ -595,17 +509,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {mutation: { mutationKey, }, request: undefined};
 
 
-
-
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof exchangeMobileAuthorizationCode>>, {data: BodyType<MobileTokenExchangeRequest>}> = (props) => {
           const {data} = props ?? {};
 
           return  exchangeMobileAuthorizationCode(data,requestOptions)
         }
-
-
-
-
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -631,8 +539,6 @@ export const useExchangeMobileAuthorizationCode = <TError = ErrorType<unknown>,
 export const getLogoutMobileSessionUrl = () => {
 
 
-
-
   return `/api/mobile-auth/logout`
 }
 
@@ -651,9 +557,6 @@ export const logoutMobileSession = async ( options?: Parameters<typeof customFet
 );}
 
 
-
-
-
 export const getLogoutMobileSessionMutationOptions = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logoutMobileSession>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof logoutMobileSession>>, TError,void, TContext> => {
@@ -666,17 +569,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {mutation: { mutationKey, }, request: undefined};
 
 
-
-
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof logoutMobileSession>>, void> = () => {
 
 
           return  logoutMobileSession(requestOptions)
         }
-
-
-
-
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -702,8 +599,6 @@ export const useLogoutMobileSession = <TError = ErrorType<unknown>,
 export const getRequestSourceUploadUrlUrl = () => {
 
 
-
-
   return `/api/storage/uploads/request-url`
 }
 
@@ -722,9 +617,6 @@ export const requestSourceUploadUrl = async (uploadUrlRequest: UploadUrlRequest,
 );}
 
 
-
-
-
 export const getRequestSourceUploadUrlMutationOptions = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestSourceUploadUrl>>, TError,{data: BodyType<UploadUrlRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof requestSourceUploadUrl>>, TError,{data: BodyType<UploadUrlRequest>}, TContext> => {
@@ -737,17 +629,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {mutation: { mutationKey, }, request: undefined};
 
 
-
-
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof requestSourceUploadUrl>>, {data: BodyType<UploadUrlRequest>}> = (props) => {
           const {data} = props ?? {};
 
           return  requestSourceUploadUrl(data,requestOptions)
         }
-
-
-
-
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -773,8 +659,6 @@ export const useRequestSourceUploadUrl = <TError = ErrorType<void>,
 export const getListProjectsUrl = () => {
 
 
-
-
   return `/api/projects`
 }
 
@@ -793,9 +677,6 @@ export const listProjects = async ( options?: Parameters<typeof customFetch>[1])
 );}
 
 
-
-
-
 export const getListProjectsQueryKey = () => {
     return [
     `/api/projects`
@@ -811,11 +692,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
   const queryKey =  queryOptions?.queryKey ?? getListProjectsQueryKey();
 
 
-
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listProjects>>> = ({ signal }) => listProjects({ signal, ...requestOptions });
-
-
-
 
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listProjects>>, TError, TData> & { queryKey: QueryKey }
@@ -842,14 +719,7 @@ export function useListProjects<TData = Awaited<ReturnType<typeof listProjects>>
 }
 
 
-
-
-
-
-
 export const getCreateProjectUrl = () => {
-
-
 
 
   return `/api/projects`
@@ -870,9 +740,6 @@ export const createProject = async (projectInput: ProjectInput, options?: Parame
 );}
 
 
-
-
-
 export const getCreateProjectMutationOptions = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProject>>, TError,{data: BodyType<ProjectInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createProject>>, TError,{data: BodyType<ProjectInput>}, TContext> => {
@@ -885,17 +752,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {mutation: { mutationKey, }, request: undefined};
 
 
-
-
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createProject>>, {data: BodyType<ProjectInput>}> = (props) => {
           const {data} = props ?? {};
 
           return  createProject(data,requestOptions)
         }
-
-
-
-
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -921,8 +782,6 @@ export const useCreateProject = <TError = ErrorType<unknown>,
 export const getGetProjectUrl = (projectId: string,) => {
 
 
-
-
   return `/api/projects/${projectId}`
 }
 
@@ -941,9 +800,6 @@ export const getProject = async (projectId: string, options?: Parameters<typeof 
 );}
 
 
-
-
-
 export const getGetProjectQueryKey = (projectId: string,) => {
     return [
     `/api/projects/${projectId}`
@@ -959,11 +815,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
   const queryKey =  queryOptions?.queryKey ?? getGetProjectQueryKey(projectId);
 
 
-
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getProject>>> = ({ signal }) => getProject(projectId, { signal, ...requestOptions });
-
-
-
 
 
    return  { queryKey, queryFn, enabled: projectId !== null && projectId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getProject>>, TError, TData> & { queryKey: QueryKey }
@@ -990,14 +842,7 @@ export function useGetProject<TData = Awaited<ReturnType<typeof getProject>>, TE
 }
 
 
-
-
-
-
-
 export const getListProjectSourcesUrl = (projectId: string,) => {
-
-
 
 
   return `/api/projects/${projectId}/sources`
@@ -1018,9 +863,6 @@ export const listProjectSources = async (projectId: string, options?: Parameters
 );}
 
 
-
-
-
 export const getListProjectSourcesQueryKey = (projectId: string,) => {
     return [
     `/api/projects/${projectId}/sources`
@@ -1036,11 +878,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
   const queryKey =  queryOptions?.queryKey ?? getListProjectSourcesQueryKey(projectId);
 
 
-
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listProjectSources>>> = ({ signal }) => listProjectSources(projectId, { signal, ...requestOptions });
-
-
-
 
 
    return  { queryKey, queryFn, enabled: projectId !== null && projectId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listProjectSources>>, TError, TData> & { queryKey: QueryKey }
@@ -1067,14 +905,7 @@ export function useListProjectSources<TData = Awaited<ReturnType<typeof listProj
 }
 
 
-
-
-
-
-
 export const getRegisterProjectSourceUrl = (projectId: string,) => {
-
-
 
 
   return `/api/projects/${projectId}/sources`
@@ -1096,9 +927,6 @@ export const registerProjectSource = async (projectId: string,
 );}
 
 
-
-
-
 export const getRegisterProjectSourceMutationOptions = <TError = ErrorType<void | NotFoundResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof registerProjectSource>>, TError,{projectId: string;data: BodyType<RegisterSourceInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof registerProjectSource>>, TError,{projectId: string;data: BodyType<RegisterSourceInput>}, TContext> => {
@@ -1111,17 +939,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {mutation: { mutationKey, }, request: undefined};
 
 
-
-
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof registerProjectSource>>, {projectId: string;data: BodyType<RegisterSourceInput>}> = (props) => {
           const {projectId,data} = props ?? {};
 
           return  registerProjectSource(projectId,data,requestOptions)
         }
-
-
-
-
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1147,8 +969,6 @@ export const useRegisterProjectSource = <TError = ErrorType<void | NotFoundRespo
 export const getGetProjectSongModelUrl = (projectId: string,) => {
 
 
-
-
   return `/api/projects/${projectId}/song-model`
 }
 
@@ -1167,9 +987,6 @@ export const getProjectSongModel = async (projectId: string, options?: Parameter
 );}
 
 
-
-
-
 export const getGetProjectSongModelQueryKey = (projectId: string,) => {
     return [
     `/api/projects/${projectId}/song-model`
@@ -1185,11 +1002,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
   const queryKey =  queryOptions?.queryKey ?? getGetProjectSongModelQueryKey(projectId);
 
 
-
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getProjectSongModel>>> = ({ signal }) => getProjectSongModel(projectId, { signal, ...requestOptions });
-
-
-
 
 
    return  { queryKey, queryFn, enabled: projectId !== null && projectId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getProjectSongModel>>, TError, TData> & { queryKey: QueryKey }
@@ -1216,14 +1029,7 @@ export function useGetProjectSongModel<TData = Awaited<ReturnType<typeof getProj
 }
 
 
-
-
-
-
-
 export const getCorrectProjectSongModelUrl = (projectId: string,) => {
-
-
 
 
   return `/api/projects/${projectId}/song-model`
@@ -1246,9 +1052,6 @@ export const correctProjectSongModel = async (projectId: string,
 );}
 
 
-
-
-
 export const getCorrectProjectSongModelMutationOptions = <TError = ErrorType<void | NotFoundResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof correctProjectSongModel>>, TError,{projectId: string;data: BodyType<SongModelCorrectionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof correctProjectSongModel>>, TError,{projectId: string;data: BodyType<SongModelCorrectionInput>}, TContext> => {
@@ -1261,17 +1064,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {mutation: { mutationKey, }, request: undefined};
 
 
-
-
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof correctProjectSongModel>>, {projectId: string;data: BodyType<SongModelCorrectionInput>}> = (props) => {
           const {projectId,data} = props ?? {};
 
           return  correctProjectSongModel(projectId,data,requestOptions)
         }
-
-
-
-
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1297,8 +1094,6 @@ export const useCorrectProjectSongModel = <TError = ErrorType<void | NotFoundRes
 export const getListAnalysisJobsUrl = (projectId: string,) => {
 
 
-
-
   return `/api/projects/${projectId}/analysis-jobs`
 }
 
@@ -1317,9 +1112,6 @@ export const listAnalysisJobs = async (projectId: string, options?: Parameters<t
 );}
 
 
-
-
-
 export const getListAnalysisJobsQueryKey = (projectId: string,) => {
     return [
     `/api/projects/${projectId}/analysis-jobs`
@@ -1335,11 +1127,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
   const queryKey =  queryOptions?.queryKey ?? getListAnalysisJobsQueryKey(projectId);
 
 
-
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listAnalysisJobs>>> = ({ signal }) => listAnalysisJobs(projectId, { signal, ...requestOptions });
-
-
-
 
 
    return  { queryKey, queryFn, enabled: projectId !== null && projectId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAnalysisJobs>>, TError, TData> & { queryKey: QueryKey }
@@ -1366,15 +1154,8 @@ export function useListAnalysisJobs<TData = Awaited<ReturnType<typeof listAnalys
 }
 
 
-
-
-
-
-
 export const getRetrySourceAnalysisUrl = (projectId: string,
     sourceId: string,) => {
-
-
 
 
   return `/api/projects/${projectId}/sources/${sourceId}/retry`
@@ -1396,9 +1177,6 @@ export const retrySourceAnalysis = async (projectId: string,
 );}
 
 
-
-
-
 export const getRetrySourceAnalysisMutationOptions = <TError = ErrorType<void | NotFoundResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retrySourceAnalysis>>, TError,{projectId: string;sourceId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof retrySourceAnalysis>>, TError,{projectId: string;sourceId: string}, TContext> => {
@@ -1411,17 +1189,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {mutation: { mutationKey, }, request: undefined};
 
 
-
-
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof retrySourceAnalysis>>, {projectId: string;sourceId: string}> = (props) => {
           const {projectId,sourceId} = props ?? {};
 
           return  retrySourceAnalysis(projectId,sourceId,requestOptions)
         }
-
-
-
-
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1447,8 +1219,6 @@ export const useRetrySourceAnalysis = <TError = ErrorType<void | NotFoundRespons
 export const getListMusicProvidersUrl = () => {
 
 
-
-
   return `/api/providers`
 }
 
@@ -1467,9 +1237,6 @@ export const listMusicProviders = async ( options?: Parameters<typeof customFetc
 );}
 
 
-
-
-
 export const getListMusicProvidersQueryKey = () => {
     return [
     `/api/providers`
@@ -1485,11 +1252,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
   const queryKey =  queryOptions?.queryKey ?? getListMusicProvidersQueryKey();
 
 
-
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listMusicProviders>>> = ({ signal }) => listMusicProviders({ signal, ...requestOptions });
-
-
-
 
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listMusicProviders>>, TError, TData> & { queryKey: QueryKey }
@@ -1516,14 +1279,7 @@ export function useListMusicProviders<TData = Awaited<ReturnType<typeof listMusi
 }
 
 
-
-
-
-
-
 export const getListArrangementsUrl = (projectId: string,) => {
-
-
 
 
   return `/api/projects/${projectId}/arrangements`
@@ -1544,9 +1300,6 @@ export const listArrangements = async (projectId: string, options?: Parameters<t
 );}
 
 
-
-
-
 export const getListArrangementsQueryKey = (projectId: string,) => {
     return [
     `/api/projects/${projectId}/arrangements`
@@ -1562,11 +1315,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
   const queryKey =  queryOptions?.queryKey ?? getListArrangementsQueryKey(projectId);
 
 
-
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listArrangements>>> = ({ signal }) => listArrangements(projectId, { signal, ...requestOptions });
-
-
-
 
 
    return  { queryKey, queryFn, enabled: projectId !== null && projectId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listArrangements>>, TError, TData> & { queryKey: QueryKey }
@@ -1593,14 +1342,7 @@ export function useListArrangements<TData = Awaited<ReturnType<typeof listArrang
 }
 
 
-
-
-
-
-
 export const getCreateArrangementUrl = (projectId: string,) => {
-
-
 
 
   return `/api/projects/${projectId}/arrangements`
@@ -1622,9 +1364,6 @@ export const createArrangement = async (projectId: string,
 );}
 
 
-
-
-
 export const getCreateArrangementMutationOptions = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createArrangement>>, TError,{projectId: string;data: BodyType<ArrangementInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createArrangement>>, TError,{projectId: string;data: BodyType<ArrangementInput>}, TContext> => {
@@ -1637,17 +1376,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {mutation: { mutationKey, }, request: undefined};
 
 
-
-
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createArrangement>>, {projectId: string;data: BodyType<ArrangementInput>}> = (props) => {
           const {projectId,data} = props ?? {};
 
           return  createArrangement(projectId,data,requestOptions)
         }
-
-
-
-
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1673,8 +1406,6 @@ export const useCreateArrangement = <TError = ErrorType<unknown>,
 export const getUpdateArrangementUrl = (arrangementId: string,) => {
 
 
-
-
   return `/api/arrangements/${arrangementId}`
 }
 
@@ -1694,9 +1425,6 @@ export const updateArrangement = async (arrangementId: string,
 );}
 
 
-
-
-
 export const getUpdateArrangementMutationOptions = <TError = ErrorType<NotFoundResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateArrangement>>, TError,{arrangementId: string;data: BodyType<ArrangementUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof updateArrangement>>, TError,{arrangementId: string;data: BodyType<ArrangementUpdate>}, TContext> => {
@@ -1709,17 +1437,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {mutation: { mutationKey, }, request: undefined};
 
 
-
-
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateArrangement>>, {arrangementId: string;data: BodyType<ArrangementUpdate>}> = (props) => {
           const {arrangementId,data} = props ?? {};
 
           return  updateArrangement(arrangementId,data,requestOptions)
         }
-
-
-
-
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1745,8 +1467,6 @@ export const useUpdateArrangement = <TError = ErrorType<NotFoundResponse>,
 export const getGenerateArrangementUrl = (arrangementId: string,) => {
 
 
-
-
   return `/api/arrangements/${arrangementId}/generate`
 }
 
@@ -1766,9 +1486,6 @@ export const generateArrangement = async (arrangementId: string,
 );}
 
 
-
-
-
 export const getGenerateArrangementMutationOptions = <TError = ErrorType<NotFoundResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateArrangement>>, TError,{arrangementId: string;data?: BodyType<GenerationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof generateArrangement>>, TError,{arrangementId: string;data?: BodyType<GenerationInput>}, TContext> => {
@@ -1781,17 +1498,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {mutation: { mutationKey, }, request: undefined};
 
 
-
-
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof generateArrangement>>, {arrangementId: string;data?: BodyType<GenerationInput>}> = (props) => {
           const {arrangementId,data} = props ?? {};
 
           return  generateArrangement(arrangementId,data,requestOptions)
         }
-
-
-
-
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1817,18 +1528,17 @@ export const useGenerateArrangement = <TError = ErrorType<NotFoundResponse>,
 export const getExportArrangementUrl = (arrangementId: string,) => {
 
 
-
-
   return `/api/arrangements/${arrangementId}/export`
 }
 
 /**
- * @summary Render and export an arrangement package
+ * @deprecated
+ * @summary Compatibility alias for the durable project export pipeline
  */
 export const exportArrangement = async (arrangementId: string,
-    exportInput?: ExportInput, options?: Parameters<typeof customFetch>[1]): Promise<ExportResult> => {
+    exportInput?: ExportInput, options?: Parameters<typeof customFetch>[1]): Promise<ExportPackage> => {
 
-  return customFetch<ExportResult>(getExportArrangementUrl(arrangementId),
+  return customFetch<ExportPackage>(getExportArrangementUrl(arrangementId),
   {
     ...options,
     method: 'POST',
@@ -1836,9 +1546,6 @@ export const exportArrangement = async (arrangementId: string,
     body: JSON.stringify(exportInput)
   }
 );}
-
-
-
 
 
 export const getExportArrangementMutationOptions = <TError = ErrorType<NotFoundResponse>,
@@ -1853,17 +1560,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {mutation: { mutationKey, }, request: undefined};
 
 
-
-
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof exportArrangement>>, {arrangementId: string;data?: BodyType<ExportInput>}> = (props) => {
           const {arrangementId,data} = props ?? {};
 
           return  exportArrangement(arrangementId,data,requestOptions)
         }
-
-
-
-
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1873,7 +1574,8 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type ExportArrangementMutationError = ErrorType<NotFoundResponse>
 
     /**
- * @summary Render and export an arrangement package
+ * @deprecated
+ * @summary Compatibility alias for the durable project export pipeline
  */
 export const useExportArrangement = <TError = ErrorType<NotFoundResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof exportArrangement>>, TError,{arrangementId: string;data?: BodyType<ExportInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -1887,8 +1589,6 @@ export const useExportArrangement = <TError = ErrorType<NotFoundResponse>,
     }
 
 export const getListTracksUrl = (projectId: string,) => {
-
-
 
 
   return `/api/projects/${projectId}/tracks`
@@ -1909,9 +1609,6 @@ export const listTracks = async (projectId: string, options?: Parameters<typeof 
 );}
 
 
-
-
-
 export const getListTracksQueryKey = (projectId: string,) => {
     return [
     `/api/projects/${projectId}/tracks`
@@ -1927,11 +1624,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
   const queryKey =  queryOptions?.queryKey ?? getListTracksQueryKey(projectId);
 
 
-
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listTracks>>> = ({ signal }) => listTracks(projectId, { signal, ...requestOptions });
-
-
-
 
 
    return  { queryKey, queryFn, enabled: projectId !== null && projectId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTracks>>, TError, TData> & { queryKey: QueryKey }
@@ -1958,14 +1651,7 @@ export function useListTracks<TData = Awaited<ReturnType<typeof listTracks>>, TE
 }
 
 
-
-
-
-
-
 export const getListArtifactsUrl = (projectId: string,) => {
-
-
 
 
   return `/api/projects/${projectId}/artifacts`
@@ -1986,9 +1672,6 @@ export const listArtifacts = async (projectId: string, options?: Parameters<type
 );}
 
 
-
-
-
 export const getListArtifactsQueryKey = (projectId: string,) => {
     return [
     `/api/projects/${projectId}/artifacts`
@@ -2004,11 +1687,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
   const queryKey =  queryOptions?.queryKey ?? getListArtifactsQueryKey(projectId);
 
 
-
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listArtifacts>>> = ({ signal }) => listArtifacts(projectId, { signal, ...requestOptions });
-
-
-
 
 
    return  { queryKey, queryFn, enabled: projectId !== null && projectId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listArtifacts>>, TError, TData> & { queryKey: QueryKey }
@@ -2035,14 +1714,131 @@ export function useListArtifacts<TData = Awaited<ReturnType<typeof listArtifacts
 }
 
 
+export const getCreateProjectExportUrl = (projectId: string,) => {
 
 
+  return `/api/projects/${projectId}/export`
+}
 
+/**
+ * @summary Render and package a versioned project export
+ */
+export const createProjectExport = async (projectId: string,
+    exportInput?: ExportInput, options?: Parameters<typeof customFetch>[1]): Promise<ExportPackage> => {
+
+  return customFetch<ExportPackage>(getCreateProjectExportUrl(projectId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(exportInput)
+  }
+);}
+
+
+export const getCreateProjectExportMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProjectExport>>, TError,{projectId: string;data?: BodyType<ExportInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createProjectExport>>, TError,{projectId: string;data?: BodyType<ExportInput>}, TContext> => {
+
+const mutationKey = ['createProjectExport'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createProjectExport>>, {projectId: string;data?: BodyType<ExportInput>}> = (props) => {
+          const {projectId,data} = props ?? {};
+
+          return  createProjectExport(projectId,data,requestOptions)
+        }
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateProjectExportMutationResult = NonNullable<Awaited<ReturnType<typeof createProjectExport>>>
+    export type CreateProjectExportMutationBody = BodyType<ExportInput> | undefined
+    export type CreateProjectExportMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Render and package a versioned project export
+ */
+export const useCreateProjectExport = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProjectExport>>, TError,{projectId: string;data?: BodyType<ExportInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createProjectExport>>,
+        TError,
+        {projectId: string;data?: BodyType<ExportInput>},
+        TContext
+      > => {
+      return useMutation(getCreateProjectExportMutationOptions(options));
+    }
+
+export const getDownloadProjectExportUrl = (exportId: string,) => {
+
+
+  return `/api/exports/${exportId}/download`
+}
+
+/**
+ * @summary Download a project export ZIP
+ */
+export const downloadProjectExport = async (exportId: string, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getDownloadProjectExportUrl(exportId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+export const getDownloadProjectExportQueryKey = (exportId: string,) => {
+    return [
+    `/api/exports/${exportId}/download`
+    ] as const;
+    }
+
+
+export const getDownloadProjectExportQueryOptions = <TData = Awaited<ReturnType<typeof downloadProjectExport>>, TError = ErrorType<NotFoundResponse>>(exportId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof downloadProjectExport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getDownloadProjectExportQueryKey(exportId);
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof downloadProjectExport>>> = ({ signal }) => downloadProjectExport(exportId, { signal, ...requestOptions });
+
+
+   return  { queryKey, queryFn, enabled: exportId !== null && exportId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof downloadProjectExport>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type DownloadProjectExportQueryResult = NonNullable<Awaited<ReturnType<typeof downloadProjectExport>>>
+export type DownloadProjectExportQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Download a project export ZIP
+ */
+
+export function useDownloadProjectExport<TData = Awaited<ReturnType<typeof downloadProjectExport>>, TError = ErrorType<NotFoundResponse>>(
+ exportId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof downloadProjectExport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getDownloadProjectExportQueryOptions(exportId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
 
 
 export const getRunCopilotUrl = (projectId: string,) => {
-
-
 
 
   return `/api/projects/${projectId}/copilot`
@@ -2064,9 +1860,6 @@ export const runCopilot = async (projectId: string,
 );}
 
 
-
-
-
 export const getRunCopilotMutationOptions = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runCopilot>>, TError,{projectId: string;data: BodyType<CopilotInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof runCopilot>>, TError,{projectId: string;data: BodyType<CopilotInput>}, TContext> => {
@@ -2079,17 +1872,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {mutation: { mutationKey, }, request: undefined};
 
 
-
-
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof runCopilot>>, {projectId: string;data: BodyType<CopilotInput>}> = (props) => {
           const {projectId,data} = props ?? {};
 
           return  runCopilot(projectId,data,requestOptions)
         }
-
-
-
-
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -2111,4 +1898,3 @@ export const useRunCopilot = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getRunCopilotMutationOptions(options));
     }
-
