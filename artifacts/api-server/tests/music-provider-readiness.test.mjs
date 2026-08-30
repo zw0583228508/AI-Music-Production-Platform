@@ -17,6 +17,7 @@ await build({
         verifyProviderRegistry,
         verifiedProviderDescriptorCatalog,
       } from "./src/lib/musicProviders";
+      export { ListGenerationProvidersResponse } from "@workspace/api-zod";
     `,
     resolveDir: apiDirectory,
     sourcefile: "music-provider-readiness-harness.ts",
@@ -38,6 +39,7 @@ const {
   selectMusicProvider,
   verifyProviderRegistry,
   verifiedProviderDescriptorCatalog,
+  ListGenerationProvidersResponse,
 } = await import(pathToFileURL(harnessPath).href);
 
 after(async () => {
@@ -162,6 +164,15 @@ test("reports an unconfigured provider as unavailable without probing", async ()
   assert.equal(catalogEntry.configured, false);
   assert.equal(catalogEntry.lastHealth.status, "unknown");
   assert.equal(catalogEntry.lastHealth.checkedAt, null);
+});
+
+test("returns MusicGen in the provider catalog accepted by the API response schema", async () => {
+  const registry = await verifyProviderRegistry(undefined, true);
+  const catalog = ListGenerationProvidersResponse.parse(providerCatalog(registry));
+  const musicGen = catalog.find((provider) => provider.id === "MUSICGEN");
+  assert.ok(musicGen);
+  assert.equal(musicGen.name, "MusicGen");
+  assert.equal(musicGen.status, "unavailable");
 });
 
 test("does not claim DEMUCS readiness without every verified health signal", async () => {

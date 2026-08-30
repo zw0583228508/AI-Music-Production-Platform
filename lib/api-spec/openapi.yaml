@@ -1907,7 +1907,7 @@ components:
         idempotencyKey: { type: string, minLength: 1, maxLength: 200 }
         provider:
           type: string
-          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, ANYACCOMP, SYMPHONYGEN, METEOR, MIDI_SAG]
+          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, MUSICGEN, ANYACCOMP, SYMPHONYGEN, METEOR, MIDI_SAG]
         task:
           type: string
           enum: [SEPARATION, TRANSCRIPTION, ACCOMPANIMENT, ORCHESTRATION, ARRANGEMENT]
@@ -1929,7 +1929,7 @@ components:
         candidateId: { type: string }
         provider:
           type: string
-          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, ANYACCOMP, SYMPHONYGEN, METEOR, MIDI_SAG]
+          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, MUSICGEN, ANYACCOMP, SYMPHONYGEN, METEOR, MIDI_SAG]
         modelVersion: { type: string }
         reportedModelVersion:
           type: [string, "null"]
@@ -1961,7 +1961,7 @@ components:
           enum: [queued, running, cancel_requested, cancelled, succeeded, failed]
         provider:
           type: string
-          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, ANYACCOMP, SYMPHONYGEN, METEOR, MIDI_SAG]
+          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, MUSICGEN, ANYACCOMP, SYMPHONYGEN, METEOR, MIDI_SAG]
         modelVersion: { type: string }
         providerRuntime:
           oneOf:
@@ -2060,7 +2060,7 @@ components:
         jobId: { type: string }
         provider:
           type: string
-          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, ANYACCOMP, SYMPHONYGEN, METEOR, MIDI_SAG]
+          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, MUSICGEN, ANYACCOMP, SYMPHONYGEN, METEOR, MIDI_SAG]
         modelVersion: { type: string }
         reportedModelVersion:
           type: [string, "null"]
@@ -2113,7 +2113,7 @@ components:
       properties:
         id:
           type: string
-          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, ANYACCOMP, SYMPHONYGEN, METEOR, MIDI_SAG]
+          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, MUSICGEN, ANYACCOMP, SYMPHONYGEN, METEOR, MIDI_SAG]
         name: { type: string }
         modelVersion: { type: string }
         tasks:
