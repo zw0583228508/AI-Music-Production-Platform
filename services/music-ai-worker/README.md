@@ -13,7 +13,61 @@ uv run uvicorn app:app --app-dir services/music-ai-worker --host 0.0.0.0 --port 
 `MUSIC_AI_WORKER_TOKEN` enables bearer authentication. Inputs are limited by
 `MUSIC_AI_MAX_SOURCE_BYTES`, `MUSIC_AI_MAX_INPUT_BYTES`, and
 `MUSIC_AI_MAX_DURATION_SECONDS`; public HTTP(S) sources only are accepted.
-`MUSIC_AI_VST3_PATH` must name a successfully loadable VST3 for `/render`.
+Native renderers are optional and fail closed. Licensed assets must be placed in
+a private, worker-readable mount outside Git (for example
+`MUSIC_AI_ASSET_ROOT=/var/lib/music-ai/assets`) and selected by
+`MUSIC_AI_ASSET_MANIFEST`. The manifest itself must contain a `vst3` and/or
+`sfz` entry with an asset `id`, exact `identity`, `licenseOwner`,
+`licenseReference`, and a SHA-256 checksum. Both entries require an executable
+native MIDI host selected by `rendererPath`, `rendererIdentity`, and
+`rendererSha256`. VST3 entries use `path`; Pedalboard verifies that the plugin
+loads, while the native host performs instrument/MIDI rendering. SFZ entries
+use `libraryPath` and a native sfizz host. Every path must remain inside the
+asset root; a missing, changed, or undocumented asset or host is unhealthy.
+
+Example manifest (keep the real file in the private mount, never in Git):
+
+```json
+{
+  "vst3": {
+    "id": "licensed-orchestral-vst3",
+    "identity": "Vendor / Product / Version",
+    "path": "/var/lib/music-ai/assets/plugins/orchestral.vst3",
+    "rendererPath": "/var/lib/music-ai/assets/bin/vst3-midi-render-host",
+    "rendererIdentity": "Approved VST3 MIDI Host / Version",
+    "rendererSha256": "<sha256 of the native host>",
+    "sha256": "<sha256 of the plugin file>",
+    "licenseOwner": "Your licensed account or organization",
+    "licenseReference": "Invoice, subscription, or license record reference"
+  },
+  "sfz": {
+    "id": "licensed-vsco2-ce",
+    "identity": "Versilian Studios / VSCO 2 CE / Version",
+    "libraryPath": "/var/lib/music-ai/assets/vsco2-ce",
+    "rendererPath": "/var/lib/music-ai/assets/bin/sfizz-render-host",
+    "rendererIdentity": "Approved sfizz Host / Version",
+    "rendererSha256": "<sha256 of the native host>",
+    "sha256": "<deterministic hash of all library files>",
+    "licenseOwner": "Your licensed account or organization",
+    "licenseReference": "Applicable VSCO 2 CE license record reference"
+  }
+}
+```
+
+Both native hosts receive `--track-model`, `--sample-rate`,
+`--duration-seconds`, `--output`, `--attestation`, and `--asset-identity`, plus
+`--plugin` for VST3 or `--library` for SFZ. They must consume notes, CC,
+articulations, and automation from the supplied canonical TrackModel, load the
+selected instrument, and write a finite, audible WAV at the requested sample
+rate and duration. They must also write JSON to `--attestation` containing the
+exact `provider` (`vst3` or `sfz`), `assetIdentity`, `assetSha256`,
+`rendererSha256`, `trackModelSha256`, `eventCounts` (`notes`, `cc`,
+`articulations`, `automation`), and `outputSha256`. The worker validates every
+field against its own hashes and request before decoding the WAV. Smoke
+readiness renders pitch and expression variants and requires three distinct
+output hashes, so a fixed-tone or TrackModel-ignoring host fails closed. The
+worker never accepts an asset path from a render request.
+
 The manifest pins the Basic Pitch and Demucs checkpoint hashes and runtime
 versions. Health also reads the installed distribution metadata and is unhealthy
 when a package version differs from the pinned manifest. Downloaded checkpoints,
@@ -21,8 +75,10 @@ readiness markers, and stem artifacts are runtime data and are not committed.
 
 The local workflow exposes:
 
-- `GET /health?provider=BASIC_PITCH|DEMUCS` — strict runtime, checkpoint,
-  checksum, version, and smoke readiness.
+- `GET /health?provider=BASIC_PITCH|DEMUCS|VST3|SFIZZ_VSCO2_CE` — strict
+  runtime, asset identity/checksum, version, and smoke readiness. Native health
+  includes the exact selected plugin/library identity, license evidence, and
+  TrackModel render evidence.
 - `POST /analyze` — Basic Pitch audio-to-MIDI evidence.
 - `POST /separate` — Demucs vocal/instrumental FLAC stems. The response is
   deliberately small (well below 32MB) and contains absolute, same-origin,
@@ -35,8 +91,9 @@ The local workflow exposes:
   below 512MB by `MUSIC_AI_MAX_STEM_BYTES` and
   `MUSIC_AI_MAX_SEPARATION_OUTPUT_BYTES`.
 - `POST /process` — Pedalboard built-in effects.
-- `POST /render` — fail-closed VST3 processing; unavailable without a real,
-  loadable plugin.
+- `POST /render` — fail-closed canonical TrackModel rendering through VST3 or
+  sfizz/VSCO. Unavailable or failed native assets never become a synthetic
+  provider result.
 
 Heavy neural generation uses the separate contract documented in
 `docs/music-ai-gpu-worker-contract.md`.

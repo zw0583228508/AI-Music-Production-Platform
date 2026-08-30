@@ -31,6 +31,25 @@ export type RenderedTrack = {
   trackModel: TrackModel;
   samples: Float32Array;
   renderer: "LOCAL_EXPRESSIVE_SYNTH" | "SFIZZ_VSCO2_CE" | "PEDALBOARD_VST3";
+  rendererAttestation?: NativeRendererAttestation;
+};
+
+export type NativeRendererAttestation = {
+  provider: string;
+  modelVersion: string;
+  assetId: string;
+  assetIdentity: string;
+  assetSha256: string;
+  licenseOwner: string;
+  licenseReference: string;
+  rendererIdentity: string;
+  rendererSha256: string;
+  smokeOutputSha256: string;
+};
+
+type NativeRenderResult = {
+  samples: Float32Array;
+  attestation: NativeRendererAttestation;
 };
 
 export type QualityReport = {
@@ -560,7 +579,7 @@ export class SfzRenderer {
   readonly providerId = "SFIZZ_VSCO2_CE";
 
   isConfigured(): boolean {
-    return Boolean(process.env.SFIZZ_RENDER_API_URL && process.env.VSCO2_LIBRARY_PATH);
+    return Boolean(process.env.SFIZZ_RENDER_API_URL);
   }
 
   assertConfigured(): void {
@@ -570,6 +589,14 @@ export class SfzRenderer {
   }
 
   async render(track: TrackModel, sampleRate: number, durationSeconds: number): Promise<Float32Array> {
+    return (await this.renderAttested(track, sampleRate, durationSeconds)).samples;
+  }
+
+  async renderAttested(
+    track: TrackModel,
+    sampleRate: number,
+    durationSeconds: number,
+  ): Promise<NativeRenderResult> {
     this.assertConfigured();
     return renderRemoteInstrument({
       endpoint: process.env.SFIZZ_RENDER_API_URL!,
@@ -578,7 +605,9 @@ export class SfzRenderer {
       track,
       sampleRate,
       durationSeconds,
-      parameters: { libraryPath: process.env.VSCO2_LIBRARY_PATH! },
+      // The worker resolves the selected licensed library from its private
+      // asset manifest. Never send a private filesystem path over the wire.
+      parameters: {},
     });
   }
 }
@@ -597,11 +626,19 @@ export class PedalboardRenderer {
   }
 
   async render(track: TrackModel, sampleRate: number, durationSeconds: number): Promise<Float32Array> {
+    return (await this.renderAttested(track, sampleRate, durationSeconds)).samples;
+  }
+
+  async renderAttested(
+    track: TrackModel,
+    sampleRate: number,
+    durationSeconds: number,
+  ): Promise<NativeRenderResult> {
     this.assertConfigured();
     return renderRemoteInstrument({
       endpoint: process.env.PEDALBOARD_VST3_API_URL!,
       token: process.env.PEDALBOARD_VST3_API_TOKEN,
-      provider: this.providerId,
+      provider: "VST3",
       track,
       sampleRate,
       durationSeconds,
@@ -618,13 +655,76 @@ async function renderRemoteInstrument(input: {
   sampleRate: number;
   durationSeconds: number;
   parameters: Record<string, string>;
-}): Promise<Float32Array> {
+}): Promise<NativeRenderResult> {
+  const headers = {
+    "Content-Type": "application/json",
+    ...(input.token ? { Authorization: `Bearer ${input.token}` } : {}),
+  };
+  const healthResponse = await fetch(
+    new URL(`/health?provider=${encodeURIComponent(input.provider)}`, input.endpoint),
+    {
+      headers,
+      signal: AbortSignal.timeout(30_000),
+    },
+  );
+  if (!healthResponse.ok) {
+    throw new Error(`${input.provider} health returned HTTP ${healthResponse.status}`);
+  }
+  const health = await healthResponse.json() as {
+    healthy?: boolean;
+    provider?: string;
+    modelVersion?: string;
+    runtimeReady?: boolean;
+    smokeTested?: boolean;
+    asset?: {
+      id?: string;
+      identity?: string;
+      sha256?: string;
+      licenseOwner?: string;
+      licenseReference?: string;
+      rendererIdentity?: string;
+      rendererSha256?: string;
+    };
+    smokeEvidence?: {
+      assetId?: string;
+      sha256?: string;
+      trackModelRendered?: boolean;
+      audible?: boolean;
+      canonicalSensitivity?: boolean;
+      nativeHostAttested?: boolean;
+      outputSha256?: string;
+      rendererSha256?: string;
+    };
+  };
+  const asset = health.asset;
+  const smoke = health.smokeEvidence;
+  if (
+    health.healthy !== true ||
+    health.runtimeReady !== true ||
+    health.smokeTested !== true ||
+    health.provider !== input.provider ||
+    !health.modelVersion ||
+    !asset?.id ||
+    !asset.identity ||
+    !asset.sha256 ||
+    !asset.licenseOwner ||
+    !asset.licenseReference ||
+    !asset.rendererIdentity ||
+    !asset.rendererSha256 ||
+    smoke?.assetId !== asset.id ||
+    smoke.sha256 !== asset.sha256 ||
+    smoke.rendererSha256 !== asset.rendererSha256 ||
+    smoke.trackModelRendered !== true ||
+    smoke.audible !== true ||
+    smoke.canonicalSensitivity !== true ||
+    smoke.nativeHostAttested !== true ||
+    !smoke.outputSha256
+  ) {
+    throw new Error(`${input.provider} renderer is not backed by a healthy attested asset`);
+  }
   const response = await fetch(new URL("/render", input.endpoint), {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(input.token ? { Authorization: `Bearer ${input.token}` } : {}),
-    },
+    headers,
     body: JSON.stringify({
       provider: input.provider,
       trackModel: input.track,
@@ -635,7 +735,60 @@ async function renderRemoteInstrument(input: {
     signal: AbortSignal.timeout(10 * 60_000),
   });
   if (!response.ok) throw new Error(`${input.provider} renderer returned HTTP ${response.status}`);
-  return decodePcm16Wav(Buffer.from(await response.arrayBuffer()), input.sampleRate);
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) {
+    throw new Error(`${input.provider} renderer returned unattested audio`);
+  }
+  const payload = await response.json() as {
+    provider?: string;
+    trackModelId?: string;
+    audio_base64?: string;
+    asset?: {
+      id?: string;
+      identity?: string;
+      sha256?: string;
+      licenseOwner?: string;
+      licenseReference?: string;
+      rendererIdentity?: string;
+      rendererSha256?: string;
+    };
+  };
+  if (
+    payload.provider !== input.provider ||
+    payload.trackModelId !== input.track.id ||
+    typeof payload.audio_base64 !== "string" ||
+    payload.asset?.id !== asset.id ||
+    payload.asset.identity !== asset.identity ||
+    payload.asset.sha256 !== asset.sha256 ||
+    payload.asset.licenseOwner !== asset.licenseOwner ||
+    payload.asset.licenseReference !== asset.licenseReference ||
+    payload.asset.rendererIdentity !== asset.rendererIdentity ||
+    payload.asset.rendererSha256 !== asset.rendererSha256
+  ) {
+    throw new Error(`${input.provider} renderer returned an incomplete attestation`);
+  }
+  if (
+    !/^[A-Za-z0-9+/]*={0,2}$/.test(payload.audio_base64) ||
+    payload.audio_base64.length % 4 !== 0
+  ) {
+    throw new Error(`${input.provider} renderer returned invalid audio encoding`);
+  }
+  const audio = Buffer.from(payload.audio_base64, "base64");
+  return {
+    samples: decodePcm16Wav(audio, input.sampleRate),
+    attestation: {
+      provider: input.provider,
+      modelVersion: health.modelVersion,
+      assetId: asset.id,
+      assetIdentity: asset.identity,
+      assetSha256: asset.sha256,
+      licenseOwner: asset.licenseOwner,
+      licenseReference: asset.licenseReference,
+      rendererIdentity: asset.rendererIdentity,
+      rendererSha256: asset.rendererSha256,
+      smokeOutputSha256: smoke.outputSha256,
+    },
+  };
 }
 
 function decodePcm16Wav(buffer: Buffer, expectedSampleRate: number): Float32Array {

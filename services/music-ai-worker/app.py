@@ -5,6 +5,7 @@ import base64
 import hashlib
 import ipaddress
 import json
+import copy
 import os
 import re
 import secrets
@@ -43,6 +44,11 @@ MAX_SEPARATION_JSON_BYTES = 32 * 1024 * 1024
 ARTIFACT_TTL_SECONDS = float(os.getenv("MUSIC_AI_ARTIFACT_TTL_SECONDS", "900"))
 ARTIFACTS = ROOT / ".artifacts"
 ARTIFACT_ID = re.compile(r"^[A-Za-z0-9_-]{32,}$")
+ASSET_ROOT = Path(os.getenv("MUSIC_AI_ASSET_ROOT", "/var/lib/music-ai/assets")).resolve()
+ASSET_MANIFEST_PATH = Path(
+    os.getenv("MUSIC_AI_ASSET_MANIFEST", str(ASSET_ROOT / "licensed_assets.json"))
+).resolve()
+MAX_RENDER_SECONDS = float(os.getenv("MUSIC_AI_MAX_RENDER_SECONDS", "300"))
 
 app = FastAPI(title="Music AI Worker", version="1.0.0")
 
@@ -233,14 +239,372 @@ class ProcessRequest(BaseModel):
 
 
 class RenderRequest(BaseModel):
-    provider: Literal["VST3"]
-    audio_base64: str = Field(min_length=4, max_length=MAX_INPUT_BYTES * 2)
+    model_config = ConfigDict(populate_by_name=True)
+
+    provider: Literal["VST3", "SFIZZ_VSCO2_CE"]
+    track_model: dict | None = Field(default=None, alias="trackModel")
+    sample_rate: int = Field(default=44100, alias="sampleRate", ge=8000, le=192000)
+    duration_seconds: float = Field(default=8, alias="durationSeconds", gt=0, le=MAX_RENDER_SECONDS)
+    # Kept only for old effect-render clients. Instrument rendering requires a
+    # canonical TrackModel and never treats arbitrary audio as musical evidence.
+    audio_base64: str | None = Field(default=None, min_length=4, max_length=MAX_INPUT_BYTES * 2)
 
 
 def _sha256(path: Path) -> str | None:
     if not path.is_file():
         return None
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _sha256_tree(path: Path) -> str | None:
+    """Hash a file or directory without exposing a private storage path."""
+    if path.is_file():
+        return _sha256(path)
+    if not path.is_dir():
+        return None
+    digest = hashlib.sha256()
+    files = sorted(candidate for candidate in path.rglob("*") if candidate.is_file())
+    if not files:
+        return None
+    for candidate in files:
+        digest.update(str(candidate.relative_to(path)).encode("utf-8"))
+        digest.update(b"\0")
+        with candidate.open("rb") as handle:
+            while block := handle.read(1024 * 1024):
+                digest.update(block)
+    return digest.hexdigest()
+
+
+def _safe_asset_path(value: object, label: str) -> Path:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{label} path is missing")
+    path = Path(value).expanduser().resolve()
+    try:
+        path.relative_to(ASSET_ROOT)
+    except ValueError as exc:
+        raise ValueError(f"{label} must be inside MUSIC_AI_ASSET_ROOT") from exc
+    return path
+
+
+def _licensed_asset(kind: Literal["vst3", "sfz"]) -> dict:
+    """Return an attested asset, never a path supplied by a render request."""
+    try:
+        ASSET_MANIFEST_PATH.relative_to(ASSET_ROOT)
+    except ValueError as exc:
+        raise ValueError("licensed asset manifest must be inside MUSIC_AI_ASSET_ROOT") from exc
+    try:
+        manifest = json.loads(ASSET_MANIFEST_PATH.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("licensed asset manifest is missing or invalid") from exc
+    if not isinstance(manifest, dict):
+        raise ValueError("licensed asset manifest must be a JSON object")
+    entry = manifest.get(kind)
+    if not isinstance(entry, dict):
+        raise ValueError(f"licensed {kind} asset is not selected")
+    for required in ("id", "identity", "licenseOwner", "licenseReference", "sha256"):
+        if not isinstance(entry.get(required), str) or not entry[required].strip():
+            raise ValueError(f"licensed {kind} asset is missing {required}")
+    path_key = "path" if kind == "vst3" else "libraryPath"
+    path = _safe_asset_path(entry.get(path_key), kind)
+    if (kind == "vst3" and not (path.is_file() or path.is_dir())) or (kind == "sfz" and not path.is_dir()):
+        raise ValueError(f"licensed {kind} asset is not present at the selected path")
+    checksum = _sha256_tree(path)
+    if not checksum or checksum != entry["sha256"].lower():
+        raise ValueError(f"licensed {kind} asset checksum does not match its manifest")
+    asset = {
+        "id": entry["id"].strip(),
+        "identity": entry["identity"].strip(),
+        "licenseOwner": entry["licenseOwner"].strip(),
+        "licenseReference": entry["licenseReference"].strip(),
+        "sha256": checksum,
+        "path": path,
+    }
+    renderer_label = "VST3 MIDI host" if kind == "vst3" else "sfizz renderer"
+    renderer = _safe_asset_path(entry.get("rendererPath"), renderer_label)
+    if not renderer.is_file() or not os.access(renderer, os.X_OK):
+        raise ValueError(f"native {renderer_label} is missing or not executable")
+    for required in ("rendererIdentity", "rendererSha256"):
+        if not isinstance(entry.get(required), str) or not entry[required].strip():
+            raise ValueError(f"licensed {kind} asset is missing {required}")
+    renderer_checksum = _sha256_tree(renderer)
+    if renderer_checksum != entry["rendererSha256"].lower():
+        raise ValueError(f"native {renderer_label} checksum does not match its manifest")
+    asset["rendererPath"] = renderer
+    asset["rendererIdentity"] = entry["rendererIdentity"].strip()
+    asset["rendererSha256"] = renderer_checksum
+    if kind == "sfz":
+        asset["libraryPath"] = path
+    return asset
+
+
+def _canonical_track_model(value: object) -> dict:
+    if not isinstance(value, dict):
+        raise HTTPException(422, "trackModel must be a canonical TrackModel object")
+    required = ("id", "instrument", "role", "notes", "cc", "articulations", "automation")
+    if any(not value.get(key) and key in ("id", "instrument", "role") for key in required):
+        raise HTTPException(422, "trackModel is missing identity fields")
+    if any(not isinstance(value.get(key), list) for key in required[3:]):
+        raise HTTPException(422, "trackModel event collections are invalid")
+    notes = value["notes"]
+    for note in notes:
+        if not isinstance(note, dict):
+            raise HTTPException(422, "trackModel contains an invalid note")
+        if not all(isinstance(note.get(key), (int, float)) for key in ("start", "duration", "pitch", "velocity")):
+            raise HTTPException(422, "trackModel note is missing numeric timing or pitch")
+        if note["start"] < 0 or note["duration"] <= 0 or not 0 <= note["pitch"] <= 127:
+            raise HTTPException(422, "trackModel contains an unplayable note")
+    return value
+
+
+def _validate_render_audio(audio: np.ndarray, sample_rate: int, duration_seconds: float) -> None:
+    if audio.ndim == 1:
+        audio = audio[np.newaxis, :]
+    if audio.ndim != 2 or audio.shape[0] not in (1, 2):
+        raise HTTPException(503, "native renderer returned an invalid channel layout")
+    expected = int(round(sample_rate * duration_seconds))
+    if abs(audio.shape[1] - expected) > max(1, sample_rate // 100):
+        raise HTTPException(503, "native renderer returned an invalid duration")
+    if not np.isfinite(audio).all():
+        raise HTTPException(503, "native renderer returned non-finite audio")
+    if float(np.max(np.abs(audio))) < 0.0005:
+        raise HTTPException(503, "native renderer returned silent audio")
+
+
+def _render_native_track(
+    kind: Literal["vst3", "sfz"],
+    track: dict,
+    sample_rate: int,
+    duration_seconds: float,
+) -> tuple[np.ndarray, dict]:
+    try:
+        asset = _licensed_asset(kind)
+    except ValueError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    if kind == "vst3":
+        try:
+            from pedalboard import load_plugin
+            plugin_name = os.getenv("MUSIC_AI_VST3_PLUGIN_NAME") or None
+            load_plugin(str(asset["path"]), plugin_name=plugin_name)
+        except Exception as exc:
+            raise HTTPException(503, f"configured VST3 plugin could not be loaded: {exc}") from exc
+    with tempfile.TemporaryDirectory(prefix=f"music-ai-{kind}-") as tmp:
+        request_path = Path(tmp) / "track-model.json"
+        output_path = Path(tmp) / "render.wav"
+        attestation_path = Path(tmp) / "render-attestation.json"
+        request_path.write_text(json.dumps({
+            "trackModel": track,
+            "sampleRate": sample_rate,
+            "durationSeconds": duration_seconds,
+            "assetPath": str(asset["path"]),
+            "outputPath": str(output_path),
+        }, sort_keys=True, separators=(",", ":")))
+        track_model_sha256 = _sha256_tree(request_path)
+        command = [
+            str(asset["rendererPath"]),
+            "--track-model", str(request_path),
+            "--sample-rate", str(sample_rate),
+            "--duration-seconds", str(duration_seconds),
+            "--output", str(output_path),
+            "--attestation", str(attestation_path),
+            "--asset-identity", asset["identity"],
+        ]
+        command.extend(
+            ["--plugin", str(asset["path"])]
+            if kind == "vst3"
+            else ["--library", str(asset["path"])]
+        )
+        try:
+            subprocess.run(
+                command,
+                check=True,
+                capture_output=True,
+                timeout=INFERENCE_TIMEOUT,
+            )
+        except (OSError, subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
+            raise HTTPException(503, f"configured {kind} renderer could not render TrackModel") from exc
+        if not output_path.is_file():
+            raise HTTPException(503, f"native {kind} renderer did not produce a WAV")
+        try:
+            host_attestation = json.loads(attestation_path.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            raise HTTPException(
+                503, f"native {kind} renderer did not attest the selected asset"
+            ) from exc
+        expected_event_counts = {
+            "notes": len(track["notes"]),
+            "cc": len(track["cc"]),
+            "articulations": len(track["articulations"]),
+            "automation": len(track["automation"]),
+        }
+        expected_host_attestation = {
+            "provider": kind,
+            "assetIdentity": asset["identity"],
+            "assetSha256": asset["sha256"],
+            "rendererSha256": asset["rendererSha256"],
+            "trackModelSha256": track_model_sha256,
+            "eventCounts": expected_event_counts,
+            "outputSha256": _sha256_tree(output_path),
+        }
+        if host_attestation != expected_host_attestation:
+            raise HTTPException(
+                503, f"native {kind} renderer returned invalid asset/render attestation"
+            )
+        max_wav_bytes = int(sample_rate * duration_seconds * 2 * 4) + 1024 * 1024
+        if output_path.stat().st_size > max_wav_bytes:
+            raise HTTPException(503, f"native {kind} renderer produced an oversized WAV")
+        try:
+            audio, output_rate = sf.read(output_path, always_2d=True, dtype="float32")
+        except RuntimeError as exc:
+            raise HTTPException(503, f"native {kind} renderer returned an undecodable WAV") from exc
+    if output_rate != sample_rate:
+        raise HTTPException(503, f"native {kind} renderer returned the wrong sample rate")
+    audio = np.asarray(audio, dtype=np.float32).T
+    _validate_render_audio(audio, sample_rate, duration_seconds)
+    return audio, {
+        key: value
+        for key, value in asset.items()
+        if key not in ("path", "libraryPath", "rendererPath")
+    }
+
+
+def _render_vst3_track(track: dict, sample_rate: int, duration_seconds: float) -> tuple[np.ndarray, dict]:
+    return _render_native_track("vst3", track, sample_rate, duration_seconds)
+
+
+def _render_sfizz_track(track: dict, sample_rate: int, duration_seconds: float) -> tuple[np.ndarray, dict]:
+    return _render_native_track("sfz", track, sample_rate, duration_seconds)
+
+
+def renderer_health(provider: str) -> dict:
+    """Attest the selected licensed asset and native smoke evidence."""
+    kind = "vst3" if provider == "VST3" else "sfz"
+    try:
+        asset = _licensed_asset(kind)
+        if provider == "VST3":
+            # Loading is deliberately part of health; package presence alone is
+            # not proof that this plugin can be instantiated.
+            from pedalboard import load_plugin
+            plugin_name = os.getenv("MUSIC_AI_VST3_PLUGIN_NAME") or None
+            load_plugin(str(asset["path"]), plugin_name=plugin_name)
+            package_version = installed_version("pedalboard")
+        else:
+            package_version = "native-command"
+        marker = _readiness_marker().get("vst3" if provider == "VST3" else "sfizz")
+        smoke_tested = (
+            isinstance(marker, dict)
+            and marker.get("assetId") == asset["id"]
+            and marker.get("sha256") == asset["sha256"]
+            and marker.get("rendererSha256") == asset["rendererSha256"]
+            and marker.get("audible") is True
+            and marker.get("trackModelRendered") is True
+            and marker.get("canonicalSensitivity") is True
+            and marker.get("nativeHostAttested") is True
+        )
+        return {
+            "status": "ok" if smoke_tested else "unhealthy",
+            "healthy": smoke_tested,
+            "provider": provider,
+            "runtimeReady": smoke_tested,
+            "checkpointReady": True,
+            "packageReady": True,
+            "modelVersion": package_version,
+            "checksum": asset["sha256"],
+            "smokeTested": smoke_tested,
+            "asset": {
+                "id": asset["id"],
+                "identity": asset["identity"],
+                "licenseOwner": asset["licenseOwner"],
+                "licenseReference": asset["licenseReference"],
+                "sha256": asset["sha256"],
+                "rendererIdentity": asset["rendererIdentity"],
+                "rendererSha256": asset["rendererSha256"],
+            },
+            "smokeEvidence": marker if isinstance(marker, dict) else None,
+            "runtime": {"ready": smoke_tested, "python": "3.11", "device": "cpu"},
+        }
+    except Exception as exc:
+        return {
+            "status": "unhealthy",
+            "healthy": False,
+            "provider": provider,
+            "runtimeReady": False,
+            "checkpointReady": False,
+            "packageReady": False,
+            "modelVersion": None,
+            "checksum": None,
+            "smokeTested": False,
+            "error": str(exc),
+            "asset": None,
+            "smokeEvidence": None,
+            "runtime": {"ready": False, "python": "3.11", "device": "cpu"},
+        }
+
+
+def canonical_render_smoke_track() -> dict:
+    """Small but genuine TrackModel used for native renderer attestation."""
+    return {
+        "id": "renderer-smoke",
+        "instrument": "strings",
+        "role": "harmony",
+        "instrumentDefinition": {"id": "strings"},
+        "notes": [{
+            "id": "renderer-smoke-note",
+            "start": 0.05,
+            "duration": 0.7,
+            "pitch": 60,
+            "velocity": 96,
+            "voice": "harmony",
+        }],
+        "cc": [{"controller": 11, "time": 0, "value": 100}],
+        "articulations": [{"time": 0.05, "name": "sustain", "intensity": 0.75}],
+        "automation": [],
+    }
+
+
+def run_renderer_smoke(provider: Literal["VST3", "SFIZZ_VSCO2_CE"]) -> dict:
+    track = _canonical_track_model(canonical_render_smoke_track())
+    sample_rate = 22050
+    duration_seconds = 1.0
+    render = _render_vst3_track if provider == "VST3" else _render_sfizz_track
+    audio, asset = render(track, sample_rate, duration_seconds)
+    pitch_variant = copy.deepcopy(track)
+    pitch_variant["notes"][0]["pitch"] += 7
+    pitch_audio, pitch_asset = render(pitch_variant, sample_rate, duration_seconds)
+    expression_variant = copy.deepcopy(track)
+    expression_variant["cc"][0]["value"] = 24
+    expression_variant["articulations"][0]["name"] = "staccato"
+    expression_audio, expression_asset = render(
+        expression_variant, sample_rate, duration_seconds
+    )
+    if asset["id"] != pitch_asset["id"] or asset["id"] != expression_asset["id"]:
+        raise HTTPException(503, "native renderer changed assets during smoke test")
+    audio_hash = hashlib.sha256(audio.tobytes()).hexdigest()
+    pitch_hash = hashlib.sha256(pitch_audio.tobytes()).hexdigest()
+    expression_hash = hashlib.sha256(expression_audio.tobytes()).hexdigest()
+    canonical_sensitivity = len({audio_hash, pitch_hash, expression_hash}) == 3
+    if not canonical_sensitivity:
+        raise HTTPException(
+            503,
+            "native renderer did not respond to TrackModel pitch and expression changes",
+        )
+    peak = float(np.max(np.abs(audio)))
+    return {
+        "assetId": asset["id"],
+        "sha256": asset["sha256"],
+        "rendererIdentity": asset["rendererIdentity"],
+        "rendererSha256": asset["rendererSha256"],
+        "trackModelRendered": True,
+        "audible": peak >= 0.0005,
+        "canonicalSensitivity": canonical_sensitivity,
+        "nativeHostAttested": True,
+        "outputSha256": audio_hash,
+        "pitchVariantSha256": pitch_hash,
+        "expressionVariantSha256": expression_hash,
+        "peak": round(peak, 6),
+        "sampleRate": sample_rate,
+        "durationSeconds": duration_seconds,
+        "format": "wav/pcm_s16le",
+    }
 
 
 def _readiness_marker() -> dict:
@@ -320,12 +684,20 @@ def _store_stems(vocal: Path, accompaniment: Path) -> tuple[str, list[dict]]:
 
 @app.get("/health", dependencies=[Depends(_require_auth)])
 def health(provider: str | None = None) -> dict:
-    providers = {"BASIC_PITCH", "DEMUCS", "PEDALBOARD_BUILTIN", "VST3"}
+    providers = {
+        "BASIC_PITCH",
+        "DEMUCS",
+        "PEDALBOARD_BUILTIN",
+        "VST3",
+        "SFIZZ_VSCO2_CE",
+    }
     if provider and provider not in providers:
         raise HTTPException(404, "unknown provider")
     selected = provider or "BASIC_PITCH"
+    if selected in {"VST3", "SFIZZ_VSCO2_CE"}:
+        return renderer_health(selected)
     manifest_key = {"BASIC_PITCH": "basic_pitch", "DEMUCS": "demucs",
-                    "PEDALBOARD_BUILTIN": "pedalboard", "VST3": "pedalboard"}[selected]
+                    "PEDALBOARD_BUILTIN": "pedalboard"}[selected]
     details = MANIFEST[manifest_key]
     marker = _readiness_marker()
     package_ready = _package_is_pinned(details)
@@ -344,11 +716,6 @@ def health(provider: str | None = None) -> dict:
         checksum = f"builtin:{details['package']}:{details['version']}"
         checkpoint_ready = True
         smoke_tested = marker.get("pedalboard") is True
-    else:
-        plugin_path = os.getenv("MUSIC_AI_VST3_PATH")
-        checksum = _sha256(Path(plugin_path)) if plugin_path else None
-        checkpoint_ready = bool(checksum)
-        smoke_tested = marker.get("vst3") is True
     ready = package_ready and checkpoint_ready and smoke_tested
     return {
         "status": "ok" if ready else "unhealthy",
@@ -482,19 +849,41 @@ def process(payload: ProcessRequest) -> dict:
 
 @app.post("/render", dependencies=[Depends(_require_auth)])
 def render(payload: RenderRequest) -> dict:
-    plugin_path = os.getenv("MUSIC_AI_VST3_PATH")
-    if not plugin_path or not Path(plugin_path).is_file():
-        raise HTTPException(503, "no configured VST3 plugin is available")
     try:
-        from pedalboard import load_plugin
-        plugin = load_plugin(plugin_path)
-    except Exception as exc:
-        raise HTTPException(503, f"configured VST3 plugin could not be loaded: {exc}") from exc
-    with tempfile.TemporaryDirectory(prefix="music-ai-") as tmp:
-        audio_path = decode_audio(payload.audio_base64, Path(tmp))
-        audio, rate = sf.read(audio_path, always_2d=True, dtype="float32")
-        encoded = wav_b64(plugin(audio.T, rate).T, rate)
-    return {"provider": payload.provider, "audio_base64": encoded, "format": "wav", "encoding": "pcm_s16le"}
+        asset = _licensed_asset("vst3" if payload.provider == "VST3" else "sfz")
+    except ValueError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    marker = _readiness_marker().get(
+        "vst3" if payload.provider == "VST3" else "sfizz"
+    )
+    if not (
+        isinstance(marker, dict)
+        and marker.get("assetId") == asset["id"]
+        and marker.get("sha256") == asset["sha256"]
+        and marker.get("rendererSha256") == asset["rendererSha256"]
+        and marker.get("trackModelRendered") is True
+        and marker.get("audible") is True
+        and marker.get("canonicalSensitivity") is True
+        and marker.get("nativeHostAttested") is True
+    ):
+        raise HTTPException(503, "selected native asset has not passed its smoke attestation")
+    if payload.track_model is None:
+        raise HTTPException(422, "instrument rendering requires a canonical TrackModel")
+    track = _canonical_track_model(payload.track_model)
+    audio, asset = (
+        _render_vst3_track(track, payload.sample_rate, payload.duration_seconds)
+        if payload.provider == "VST3"
+        else _render_sfizz_track(track, payload.sample_rate, payload.duration_seconds)
+    )
+    return {
+        "provider": payload.provider,
+        "version": asset["id"],
+        "asset": asset,
+        "audio_base64": wav_b64(audio.T, payload.sample_rate),
+        "format": "wav",
+        "encoding": "pcm_s16le",
+        "trackModelId": track["id"],
+    }
 
 
 @app.exception_handler(HTTPException)

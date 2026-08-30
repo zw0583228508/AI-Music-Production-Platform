@@ -24,8 +24,8 @@ Git.
 
 | Provider/runtime | State | What is missing |
 | --- | --- | --- |
-| Pedalboard VST3 | Blocked | A compatible, licensed VST3 binary and an explicit plugin path. Pedalboard built-ins do not make the VST3 provider ready. |
-| sfizz / VSCO2 CE | Blocked | The sfizz native renderer plus a verified SFZ library path and the applicable sample-library license. |
+| Pedalboard VST3 | Blocked until attested | A compatible, licensed VST3 binary and approved native MIDI host in a private worker asset mount, manifest checksums/license ownership, and a canonical TrackModel smoke render with asset/host/output attestation. Pedalboard built-ins do not make the VST3 provider ready. |
+| sfizz / VSCO2 CE | Blocked until attested | An approved native sfizz host and verified SFZ library in a private worker asset mount, manifest checksums/license ownership, and a canonical TrackModel smoke render with asset/host/output attestation. |
 | ACE-Step base / complete | GPU worker implemented; deployment blocked | Pin and mount the licensed/approved checkpoint SHA-256, install the ACE-Step runner, allocate CUDA hardware, enable the provider, and pass real smoke inference. |
 | MusicGen | GPU worker implemented; deployment blocked | Pin and mount the AudioCraft checkpoint SHA-256, install the MusicGen runner, allocate CUDA hardware, enable the provider, and pass real smoke inference. |
 | BS-RoFormer | GPU worker implemented; deployment blocked | Pin and mount the BS-RoFormer checkpoint SHA-256, install the separation runner, allocate CUDA hardware, enable the provider, and pass real smoke inference. Demucs never impersonates this identity. |
@@ -62,9 +62,15 @@ Relevant configuration:
 - `MUSIC_AI_WORKER_TOKEN`: optional bearer token shared by the API and worker.
 - `PEDALBOARD_VST3_API_URL`: configured only when a real VST3 plugin backend is
   present.
-- `VST3_PLUGIN_PATH`: licensed plugin binary loaded by that backend.
-- `SFIZZ_RENDER_API_URL` and `VSCO2_LIBRARY_PATH`: configured only together
-  after the native renderer and sample library are verified.
+- `MUSIC_AI_ASSET_ROOT`: private worker-mounted directory containing licensed
+  native assets; never a Git path.
+- `MUSIC_AI_ASSET_MANIFEST`: private JSON manifest describing the selected
+  plugin/library identity, SHA-256, license owner, and license record.
+- `MUSIC_AI_VST3_PLUGIN_NAME`: optional exact name for a multi-plugin VST3
+  bundle.
+- `SFIZZ_RENDER_API_URL`: configured only for a worker whose selected SFZ
+  library and native host passed canonical TrackModel sensitivity smoke tests.
+  The API never receives or transmits the private library path.
 
 Never place tokens, model-provider credentials, licensed plugin binaries, or
 sample libraries in source control.

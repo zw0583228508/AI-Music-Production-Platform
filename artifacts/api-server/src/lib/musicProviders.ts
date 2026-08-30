@@ -264,12 +264,10 @@ export const MUSIC_PROVIDERS: MusicProviderDescriptor[] = [
     capabilities: ["audio_generation"],
     inputTypes: ["MIDI"],
     execution: "remote",
-    status: remoteConfigured("SFIZZ_RENDER") && Boolean(process.env.VSCO2_LIBRARY_PATH)
-      ? "configured"
-      : "unavailable",
+    status: remoteConfigured("SFIZZ_RENDER") ? "configured" : "unavailable",
     license: "VSCO 2 CE / sfizz terms",
     priority: 66,
-    notes: "Requires SFIZZ_RENDER_API_URL and VSCO2_LIBRARY_PATH.",
+    notes: "Requires SFIZZ_RENDER_API_URL and a worker-attested licensed SFZ library/native host.",
   },
   {
     id: "PEDALBOARD_VST3",

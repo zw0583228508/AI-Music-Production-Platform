@@ -11,6 +11,7 @@ import soundfile as sf
 
 ROOT = Path(__file__).resolve().parent
 MANIFEST = json.loads((ROOT / "model_manifest.json").read_text())
+import app as worker_app
 
 with tempfile.TemporaryDirectory() as tmp:
     audio = Path(tmp) / "tone.wav"
@@ -52,6 +53,22 @@ with tempfile.TemporaryDirectory() as tmp:
     assert (stem_root / "vocals.wav").stat().st_size > 44
     assert (stem_root / "no_vocals.wav").stat().st_size > 44
 
+renderer_evidence = {}
+for renderer_provider, marker_name in (("VST3", "vst3"), ("SFIZZ_VSCO2_CE", "sfizz")):
+    try:
+        renderer_evidence[marker_name] = worker_app.run_renderer_smoke(renderer_provider)
+    except Exception as exc:
+        # Native assets are intentionally optional for the CPU baseline. A
+        # configured-but-invalid asset is recorded as unhealthy instead of
+        # enabling a renderer or blocking the deterministic local renderer.
+        renderer_evidence[marker_name] = {
+            "trackModelRendered": False,
+            "audible": False,
+            "canonicalSensitivity": False,
+            "nativeHostAttested": False,
+            "error": str(exc),
+        }
+
 ready = ROOT / ".readiness"
 ready.mkdir(exist_ok=True)
 (ready / f"{MANIFEST['readiness_key']}.json").write_text(json.dumps({
@@ -59,5 +76,6 @@ ready.mkdir(exist_ok=True)
     "onnx": True,
     "pedalboard": True,
     "demucs": True,
+    **renderer_evidence,
 }))
 print("music-ai-worker smoke test passed")

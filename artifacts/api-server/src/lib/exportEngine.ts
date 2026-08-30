@@ -43,6 +43,38 @@ function clamp(value: number, min = -1, max = 1): number {
   return Math.max(min, Math.min(max, value));
 }
 
+export function validateNativeRenderSamples(
+  samples: Float32Array,
+  expectedLength: number,
+): string[] {
+  const errors: string[] = [];
+  if (samples.length !== expectedLength) {
+    errors.push(`sample length ${samples.length} does not match ${expectedLength}`);
+    return errors;
+  }
+  let peak = 0;
+  let activeFrames = 0;
+  let clippedSamples = 0;
+  for (let index = 0; index < samples.length; index += 2) {
+    const left = samples[index];
+    const right = samples[index + 1];
+    if (!Number.isFinite(left) || !Number.isFinite(right)) {
+      errors.push("audio contains non-finite samples");
+      break;
+    }
+    peak = Math.max(peak, Math.abs(left), Math.abs(right));
+    if (Math.max(Math.abs(left), Math.abs(right)) > 0.0005) activeFrames += 1;
+    if (Math.abs(left) >= 0.999 || Math.abs(right) >= 0.999) clippedSamples += 1;
+  }
+  const frames = Math.max(1, samples.length / CHANNELS);
+  if (peak < 0.0005 || activeFrames / frames < 0.005) {
+    errors.push("audio is silent or effectively empty");
+  }
+  if (clippedSamples / frames > 0.001) {
+    errors.push("audio contains excessive clipping");
+  }
+  return errors;
+}
 function safeName(value: string): string {
   return value
     .normalize("NFKD")
@@ -539,11 +571,32 @@ export async function renderArrangementExport(input: {
         sfizzRenderer.isConfigured() &&
         ["strings", "brass"].includes(rendered.trackModel.instrumentDefinition.family);
       if (!usePedalboard && !useSfizz) return rendered;
+      if (
+        !input.parentIds.length &&
+        !input.trackModelArtifactIds?.[rendered.trackModel.id]
+      ) {
+        return rendered;
+      }
       const renderer = usePedalboard ? pedalboardRenderer : sfizzRenderer;
-      const samples = await renderer.render(rendered.trackModel, SAMPLE_RATE, pipeline.durationSeconds);
+      let samples: Float32Array;
+      let rendererAttestation: RenderedTrack["rendererAttestation"];
+      try {
+        const native = await renderer.renderAttested(
+          rendered.trackModel,
+          SAMPLE_RATE,
+          pipeline.durationSeconds,
+        );
+        samples = native.samples;
+        rendererAttestation = native.attestation;
+      } catch {
+        // A configured endpoint is not proof of a licensed, compatible asset.
+        // Keep the already-rendered deterministic stem and do not attribute it
+        // to a native provider that failed attestation or playback validation.
+        return rendered;
+      }
       const expectedLength = Math.ceil(SAMPLE_RATE * pipeline.durationSeconds) * CHANNELS;
-      if (samples.length !== expectedLength) {
-        throw new Error(`${renderer.providerId} returned ${samples.length} samples; expected ${expectedLength}`);
+      if (validateNativeRenderSamples(samples, expectedLength).length) {
+        return rendered;
       }
       const volume = activeTracks.find((track) => track.id === rendered.trackModel.id)?.volume ?? 0;
       const gain = 10 ** (volume / 20);
@@ -554,6 +607,7 @@ export async function renderArrangementExport(input: {
         ...rendered,
         samples,
         renderer: renderer.providerId,
+        rendererAttestation,
       };
     }));
     const mix = new MixGraph().mix(remoteTracks, input.styleSpec, Math.ceil(SAMPLE_RATE * pipeline.durationSeconds));
@@ -570,26 +624,50 @@ export async function renderArrangementExport(input: {
         meter: input.meter,
       },
     );
-    pipeline = {
-      ...pipeline,
-      tracks: remoteTracks,
-      mix,
-      premaster: mastered.premaster,
-      master: mastered.master,
-      quality,
-      provenance: [
-        ...pipeline.provenance.filter((item) => item.model !== "LOCAL_EXPRESSIVE_SYNTH"),
-        ...remoteTracks.map((track) => ({
-          model: track.renderer,
-          version: "configured-endpoint",
-          parameters: { sampleRate: SAMPLE_RATE, durationSeconds: pipeline.durationSeconds },
-          parentIds: input.trackModelArtifactIds?.[track.trackModel.id]
-            ? [input.trackModelArtifactIds[track.trackModel.id]]
-            : input.parentIds,
-          createdBy: "renderer-adapter",
-        })),
-      ],
-    };
+    const nativeTracks = remoteTracks.filter((track) =>
+      track.renderer !== "LOCAL_EXPRESSIVE_SYNTH");
+    const nativeQualityPassed =
+      quality.lineageComplete &&
+      quality.checks.silence >= 0.005 &&
+      quality.checks.clipping >= 0.999 &&
+      quality.checks.notePlayability >= 0.98;
+    if (nativeTracks.length && nativeQualityPassed) {
+      const hasLocalTracks = remoteTracks.some((track) =>
+        track.renderer === "LOCAL_EXPRESSIVE_SYNTH");
+      pipeline = {
+        ...pipeline,
+        tracks: remoteTracks,
+        mix,
+        premaster: mastered.premaster,
+        master: mastered.master,
+        quality,
+        provenance: [
+          ...pipeline.provenance.filter((item) =>
+            item.model !== "LOCAL_EXPRESSIVE_SYNTH" || hasLocalTracks),
+          ...nativeTracks.map((track) => ({
+            model: track.renderer,
+            version: "attested-native-asset",
+            parameters: {
+              sampleRate: SAMPLE_RATE,
+              durationSeconds: pipeline.durationSeconds,
+              trackModelId: track.trackModel.id,
+              assetId: track.rendererAttestation!.assetId,
+              assetIdentity: track.rendererAttestation!.assetIdentity,
+              assetSha256: track.rendererAttestation!.assetSha256,
+              licenseOwner: track.rendererAttestation!.licenseOwner,
+              licenseReference: track.rendererAttestation!.licenseReference,
+              rendererIdentity: track.rendererAttestation!.rendererIdentity,
+              rendererSha256: track.rendererAttestation!.rendererSha256,
+              smokeOutputSha256: track.rendererAttestation!.smokeOutputSha256,
+            },
+            parentIds: input.trackModelArtifactIds?.[track.trackModel.id]
+              ? [input.trackModelArtifactIds[track.trackModel.id]]
+              : input.parentIds,
+            createdBy: "renderer-adapter",
+          })),
+        ],
+      };
+    }
   }
   const fileProvenance = (
     model: string,
@@ -637,6 +715,17 @@ export async function renderArrangementExport(input: {
           instrument: stem.trackModel.instrument,
           trackModelVersion: stem.trackModel.version,
           sampleRate: SAMPLE_RATE,
+          ...(stem.rendererAttestation ? {
+            nativeModelVersion: stem.rendererAttestation.modelVersion,
+            assetId: stem.rendererAttestation.assetId,
+            assetIdentity: stem.rendererAttestation.assetIdentity,
+            assetSha256: stem.rendererAttestation.assetSha256,
+            licenseOwner: stem.rendererAttestation.licenseOwner,
+            licenseReference: stem.rendererAttestation.licenseReference,
+            rendererIdentity: stem.rendererAttestation.rendererIdentity,
+            rendererSha256: stem.rendererAttestation.rendererSha256,
+            smokeOutputSha256: stem.rendererAttestation.smokeOutputSha256,
+          } : {}),
         }, input.trackModelArtifactIds?.[stem.trackModel.id]
           ? [input.trackModelArtifactIds[stem.trackModel.id]]
           : input.parentIds),
@@ -717,13 +806,16 @@ export async function renderArrangementExport(input: {
     },
     sections: input.sections,
     tracks: activeTracks.map(({ id, name, role }) => ({ id, name, role })),
-    trackModels: pipeline.tracks.map(({ trackModel, renderer }) => ({
+    trackModels: pipeline.tracks.map(({ trackModel, renderer, rendererAttestation }) => ({
       ...trackModel,
       provenance: {
         ...trackModel.provenance,
         parentIds: trackModelParents,
       },
       renderer,
+      ...(rendererAttestation ? {
+        rendererAttestation,
+      } : {}),
     })),
     styleSpec: input.styleSpec,
     arrangementPlan: {
