@@ -86,6 +86,50 @@ export interface RegisterSourceInput {
   sourceType: RegisterSourceInputSourceType;
 }
 
+export type AnalysisAttemptStatus = typeof AnalysisAttemptStatus[keyof typeof AnalysisAttemptStatus];
+
+
+export const AnalysisAttemptStatus = {
+  queued: 'queued',
+  running: 'running',
+  succeeded: 'succeeded',
+  failed: 'failed',
+  interrupted: 'interrupted',
+} as const;
+
+export type AnalysisAttemptStage = typeof AnalysisAttemptStage[keyof typeof AnalysisAttemptStage];
+
+
+export const AnalysisAttemptStage = {
+  queued: 'queued',
+  preprocessing: 'preprocessing',
+  probing: 'probing',
+  analyzing: 'analyzing',
+  persisting: 'persisting',
+  complete: 'complete',
+} as const;
+
+export interface AnalysisAttempt {
+  id: string;
+  sourceId: string;
+  attemptNumber: number;
+  status: AnalysisAttemptStatus;
+  stage: AnalysisAttemptStage;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  progress: number;
+  /** @nullable */
+  error?: string | null;
+  /** @nullable */
+  startedAt?: string | null;
+  /** @nullable */
+  completedAt?: string | null;
+  heartbeatAt: string;
+  createdAt: string;
+}
+
 export type ProjectSourceSourceType = typeof ProjectSourceSourceType[keyof typeof ProjectSourceSourceType];
 
 
@@ -130,6 +174,7 @@ export interface ProjectSource {
   channels?: number | null;
   /** @nullable */
   error?: string | null;
+  attempts: AnalysisAttempt[];
   createdAt: string;
 }
 

@@ -5,6 +5,7 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { AnalysisAttempt } from './analysisAttempt';
 import type { ProjectSourceSourceType } from './projectSourceSourceType';
 import type { ProjectSourceStatus } from './projectSourceStatus';
 
@@ -29,5 +30,6 @@ export interface ProjectSource {
   channels?: number | null;
   /** @nullable */
   error?: string | null;
+  attempts: AnalysisAttempt[];
   createdAt: string;
 }

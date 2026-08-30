@@ -347,6 +347,9 @@ export const ListProjectSourcesParams = zod.object({
 export const listProjectSourcesResponseProgressMin = 0;
 export const listProjectSourcesResponseProgressMax = 100;
 
+export const listProjectSourcesResponseAttemptsItemProgressMin = 0;
+export const listProjectSourcesResponseAttemptsItemProgressMax = 100;
+
 
 
 export const ListProjectSourcesResponseItem = zod.object({
@@ -362,6 +365,19 @@ export const ListProjectSourcesResponseItem = zod.object({
   "sampleRate": zod.number().nullish(),
   "channels": zod.number().nullish(),
   "error": zod.string().nullish(),
+  "attempts": zod.array(zod.object({
+  "id": zod.string(),
+  "sourceId": zod.string(),
+  "attemptNumber": zod.number(),
+  "status": zod.enum(['queued', 'running', 'succeeded', 'failed', 'interrupted']),
+  "stage": zod.enum(['queued', 'preprocessing', 'probing', 'analyzing', 'persisting', 'complete']),
+  "progress": zod.number().min(listProjectSourcesResponseAttemptsItemProgressMin).max(listProjectSourcesResponseAttemptsItemProgressMax),
+  "error": zod.string().nullish(),
+  "startedAt": zod.string().nullish(),
+  "completedAt": zod.string().nullish(),
+  "heartbeatAt": zod.string(),
+  "createdAt": zod.string()
+})),
   "createdAt": zod.string()
 })
 export const ListProjectSourcesResponse = zod.array(ListProjectSourcesResponseItem)
@@ -392,6 +408,9 @@ export const RegisterProjectSourceBody = zod.object({
 export const registerProjectSourceResponseProgressMin = 0;
 export const registerProjectSourceResponseProgressMax = 100;
 
+export const registerProjectSourceResponseAttemptsItemProgressMin = 0;
+export const registerProjectSourceResponseAttemptsItemProgressMax = 100;
+
 
 
 export const RegisterProjectSourceResponse = zod.object({
@@ -407,6 +426,65 @@ export const RegisterProjectSourceResponse = zod.object({
   "sampleRate": zod.number().nullish(),
   "channels": zod.number().nullish(),
   "error": zod.string().nullish(),
+  "attempts": zod.array(zod.object({
+  "id": zod.string(),
+  "sourceId": zod.string(),
+  "attemptNumber": zod.number(),
+  "status": zod.enum(['queued', 'running', 'succeeded', 'failed', 'interrupted']),
+  "stage": zod.enum(['queued', 'preprocessing', 'probing', 'analyzing', 'persisting', 'complete']),
+  "progress": zod.number().min(registerProjectSourceResponseAttemptsItemProgressMin).max(registerProjectSourceResponseAttemptsItemProgressMax),
+  "error": zod.string().nullish(),
+  "startedAt": zod.string().nullish(),
+  "completedAt": zod.string().nullish(),
+  "heartbeatAt": zod.string(),
+  "createdAt": zod.string()
+})),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Retry a failed source analysis
+ */
+export const RetryProjectSourceAnalysisParams = zod.object({
+  "projectId": zod.coerce.string(),
+  "sourceId": zod.coerce.string()
+})
+
+export const retryProjectSourceAnalysisResponseProgressMin = 0;
+export const retryProjectSourceAnalysisResponseProgressMax = 100;
+
+export const retryProjectSourceAnalysisResponseAttemptsItemProgressMin = 0;
+export const retryProjectSourceAnalysisResponseAttemptsItemProgressMax = 100;
+
+
+
+export const RetryProjectSourceAnalysisResponse = zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "name": zod.string(),
+  "size": zod.number(),
+  "contentType": zod.string(),
+  "sourceType": zod.enum(['FULL_SONG', 'VOCAL_ONLY', 'SOLO_INSTRUMENT', 'INSTRUMENTAL', 'MIDI', 'VIDEO']),
+  "status": zod.enum(['queued', 'preprocessing', 'analyzing', 'ready', 'failed']),
+  "progress": zod.number().min(retryProjectSourceAnalysisResponseProgressMin).max(retryProjectSourceAnalysisResponseProgressMax),
+  "durationSeconds": zod.number().nullish(),
+  "sampleRate": zod.number().nullish(),
+  "channels": zod.number().nullish(),
+  "error": zod.string().nullish(),
+  "attempts": zod.array(zod.object({
+  "id": zod.string(),
+  "sourceId": zod.string(),
+  "attemptNumber": zod.number(),
+  "status": zod.enum(['queued', 'running', 'succeeded', 'failed', 'interrupted']),
+  "stage": zod.enum(['queued', 'preprocessing', 'probing', 'analyzing', 'persisting', 'complete']),
+  "progress": zod.number().min(retryProjectSourceAnalysisResponseAttemptsItemProgressMin).max(retryProjectSourceAnalysisResponseAttemptsItemProgressMax),
+  "error": zod.string().nullish(),
+  "startedAt": zod.string().nullish(),
+  "completedAt": zod.string().nullish(),
+  "heartbeatAt": zod.string(),
+  "createdAt": zod.string()
+})),
   "createdAt": zod.string()
 })
 
@@ -852,30 +930,6 @@ export const ListAnalysisJobsResponseItem = zod.object({
   "updatedAt": zod.string()
 })
 export const ListAnalysisJobsResponse = zod.array(ListAnalysisJobsResponseItem)
-
-
-/**
- * @summary Retry a failed or interrupted source analysis
- */
-export const RetrySourceAnalysisParams = zod.object({
-  "projectId": zod.coerce.string(),
-  "sourceId": zod.coerce.string()
-})
-
-export const RetrySourceAnalysisResponse = zod.object({
-  "id": zod.string(),
-  "projectId": zod.string(),
-  "sourceId": zod.string(),
-  "status": zod.enum(['queued', 'running', 'completed', 'failed']),
-  "stage": zod.string(),
-  "progress": zod.number(),
-  "attempt": zod.number(),
-  "error": zod.string().nullable(),
-  "startedAt": zod.string().nullable(),
-  "finishedAt": zod.string().nullable(),
-  "createdAt": zod.string(),
-  "updatedAt": zod.string()
-})
 
 
 /**

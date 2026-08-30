@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { 
   useGetProjectSongModel, 
   useListAnalysisJobs, 
-  useRetrySourceAnalysis, 
+  useRetryProjectSourceAnalysis,
   useCorrectProjectSongModel,
   useListMusicProviders,
   getListAnalysisJobsQueryKey,
@@ -55,7 +55,7 @@ export function SongModelInspector({ projectId }: { projectId: string }) {
   });
 
   const { data: providers } = useListMusicProviders();
-  const retry = useRetrySourceAnalysis();
+  const retry = useRetryProjectSourceAnalysis();
   const correctModel = useCorrectProjectSongModel();
   const [bpm, setBpm] = useState("");
   const [key, setKey] = useState("");

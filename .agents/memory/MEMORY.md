@@ -3,3 +3,4 @@
 - [Provider truth and job fencing](provider-truth-and-job-fencing.md) — unavailable music models stay explicit; durable jobs require database fencing before any musical result is committed.
 - [Managed database schema flow](managed-database-schema-flow.md) — use Drizzle push for dev/test and Replit Publish’s schema diff for production; never run startup or deploy DDL.
 - [Generated-code verification](generated-code-verification.md) — restart the frontend workflow after API code generation before trusting browser HMR or module-loading logs.
+- [Background analysis leases](background-analysis-leases.md) — resumable workers must use expiring DB leases and lease-conditional writes, not process-local job guards.

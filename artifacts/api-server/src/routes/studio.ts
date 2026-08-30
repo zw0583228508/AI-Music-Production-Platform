@@ -56,8 +56,8 @@ import {
   RegisterProjectSourceBody,
   RegisterProjectSourceParams,
   RegisterProjectSourceResponse,
-  RetrySourceAnalysisParams,
-  RetrySourceAnalysisResponse,
+  RetryProjectSourceAnalysisParams,
+  RetryProjectSourceAnalysisResponse,
   UpdateArrangementBody,
   UpdateArrangementParams,
   UpdateArrangementResponse,
@@ -65,6 +65,7 @@ import {
 import {
   analysisJobsTable,
   arrangementsTable,
+  analysisAttemptsTable,
   db,
   musicArtifactsTable,
   musicProjectsTable,
@@ -74,7 +75,13 @@ import {
   tracksTable,
   type SongModelData,
 } from "@workspace/db";
-import { analyzeProjectSource } from "../lib/sourceAnalyzer";
+import {
+  createZip,
+  formatBytes,
+  renderArrangementExport,
+} from "../lib/exportEngine";
+import { deleteExportObject, saveExportObject } from "../lib/objectStorage";
+import { queueProjectSourceAnalysis } from "../lib/sourceAnalyzer";
 import { validateSourceFileMetadata } from "../lib/sourceFormats";
 import {
   MUSIC_PROVIDERS,
@@ -180,6 +187,7 @@ router.param("exportId", async (req, res, next, exportId): Promise<void> => {
 });
 
 const iso = (value: Date) => value.toISOString();
+const nullableIso = (value: Date | null) => value ? iso(value) : null;
 
 const projectResponse = (project: typeof musicProjectsTable.$inferSelect) => ({
   id: project.id,
@@ -219,6 +227,7 @@ const artifactResponse = (
 
 const sourceResponse = (
   source: typeof projectSourcesTable.$inferSelect,
+  attempts: Array<typeof analysisAttemptsTable.$inferSelect> = [],
 ) => ({
   id: source.id,
   projectId: source.projectId,
@@ -232,6 +241,19 @@ const sourceResponse = (
   sampleRate: source.sampleRate,
   channels: source.channels,
   error: source.error,
+  attempts: attempts.map((attempt) => ({
+    id: attempt.id,
+    sourceId: attempt.sourceId,
+    attemptNumber: attempt.attemptNumber,
+    status: attempt.status,
+    stage: attempt.stage,
+    progress: attempt.progress,
+    error: attempt.error,
+    startedAt: nullableIso(attempt.startedAt),
+    completedAt: nullableIso(attempt.completedAt),
+    heartbeatAt: iso(attempt.heartbeatAt),
+    createdAt: iso(attempt.createdAt),
+  })),
   createdAt: iso(source.createdAt),
 });
 
@@ -365,66 +387,67 @@ function projectSongModelCore(
   };
 }
 
-async function ensureProjectSource(
-  project: typeof musicProjectsTable.$inferSelect,
-): Promise<typeof projectSourcesTable.$inferSelect> {
-  const [existing] = await db
-    .select()
-    .from(projectSourcesTable)
-    .where(eq(projectSourcesTable.projectId, project.id))
-    .limit(1);
-  if (existing) return existing;
-  const [source] = await db.insert(projectSourcesTable).values({
-    id: randomUUID(),
-    projectId: project.id,
-    ownerId: project.ownerId ?? "legacy-backfill",
-    objectPath: `/objects/legacy/${project.id}`,
-    name: project.sourceName ?? `${project.name}.wav`,
-    size: 1,
-    contentType: "audio/wav",
-    sourceType: project.sourceType,
-    status: "ready",
-    progress: 100,
-    durationSeconds: durationSeconds(project.duration),
-    sampleRate: 44_100,
-    channels: 2,
-  }).returning();
-  return source;
-}
-
 async function persistProjectSongModel(
   project: typeof musicProjectsTable.$inferSelect,
 ): Promise<typeof songModelsTable.$inferSelect> {
-  const source = await ensureProjectSource(project);
-  const fusion = fuseProviderSongModels([{
-    provider: "LEGACY_ANALYZER_V1",
-    output: projectSongModelCore(project, source),
-    confidence: project.confidence,
-  }]);
-  if (!fusion.accepted) {
-    throw new Error(
-      `Project analysis failed Song Model validation. ${
-        fusion.issues.map((item) => item.message).join(" ")
-      }`,
+  return db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${project.id}))`,
     );
-  }
-  const [previous] = await db
-    .select({ version: songModelsTable.version })
-    .from(songModelsTable)
-    .where(eq(songModelsTable.projectId, project.id))
-    .orderBy(desc(songModelsTable.version))
-    .limit(1);
-  const [songModel] = await db.insert(songModelsTable).values({
-    id: randomUUID(),
-    projectId: project.id,
-    sourceId: source.id,
-    version: (previous?.version ?? 0) + 1,
-    status: "ready",
-    model: fusion.model,
-    providers: fusion.decisions.map((decision) => decision.provider),
-    confidence: fusion.model.fusion.confidence,
-  }).returning();
-  return songModel;
+    const [latest] = await tx
+      .select()
+      .from(songModelsTable)
+      .where(eq(songModelsTable.projectId, project.id))
+      .orderBy(desc(songModelsTable.version))
+      .limit(1);
+    if (latest && validateCanonicalSongModel(latest.model).success) {
+      return latest;
+    }
+
+    const [existingSource] = await tx
+      .select()
+      .from(projectSourcesTable)
+      .where(eq(projectSourcesTable.projectId, project.id))
+      .limit(1);
+    const source = existingSource ?? (await tx.insert(projectSourcesTable).values({
+      id: randomUUID(),
+      projectId: project.id,
+      ownerId: project.ownerId ?? "legacy-backfill",
+      objectPath: `/objects/legacy/${project.id}`,
+      name: project.sourceName ?? `${project.name}.wav`,
+      size: 1,
+      contentType: "audio/wav",
+      sourceType: project.sourceType,
+      status: "ready",
+      progress: 100,
+      durationSeconds: durationSeconds(project.duration),
+      sampleRate: 44_100,
+      channels: 2,
+    }).returning())[0];
+    const fusion = fuseProviderSongModels([{
+      provider: "LEGACY_ANALYZER_V1",
+      output: projectSongModelCore(project, source),
+      confidence: project.confidence,
+    }]);
+    if (!fusion.accepted) {
+      throw new Error(
+        `Project analysis failed Song Model validation. ${
+          fusion.issues.map((item) => item.message).join(" ")
+        }`,
+      );
+    }
+    const [songModel] = await tx.insert(songModelsTable).values({
+      id: randomUUID(),
+      projectId: project.id,
+      sourceId: source.id,
+      version: (latest?.version ?? 0) + 1,
+      status: "ready",
+      model: fusion.model,
+      providers: fusion.decisions.map((decision) => decision.provider),
+      confidence: fusion.model.fusion.confidence,
+    }).returning();
+    return songModel;
+  });
 }
 
 async function backfillReadySongModels(): Promise<void> {
@@ -693,29 +716,6 @@ router.post("/projects/:projectId/analyze", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Import a source before analyzing the project" });
     return;
   }
-  const [latest] = await db
-    .select()
-    .from(analysisJobsTable)
-    .where(eq(analysisJobsTable.sourceId, source.id))
-    .orderBy(desc(analysisJobsTable.createdAt))
-    .limit(1);
-  if (latest?.status === "queued" || latest?.status === "running") {
-    res.status(409).json({ error: "Analysis is already running" });
-    return;
-  }
-  const [job] = await db.insert(analysisJobsTable).values({
-    id: randomUUID(),
-    projectId: project.id,
-    sourceId: source.id,
-    status: "queued",
-    stage: "queued",
-    progress: 4,
-    attempt: (latest?.attempt ?? 0) + 1,
-  }).onConflictDoNothing().returning();
-  if (!job) {
-    res.status(409).json({ error: "A new analysis attempt was already queued" });
-    return;
-  }
   await db.transaction(async (tx) => {
     await tx.update(projectSourcesTable)
       .set({ status: "queued", progress: 4, error: null })
@@ -724,16 +724,9 @@ router.post("/projects/:projectId/analyze", async (req, res): Promise<void> => {
       .set({ status: "analyzing", updatedAt: new Date() })
       .where(eq(musicProjectsTable.id, project.id));
   });
-  await analyzeProjectSource(source.id);
-  const [result] = await db
-    .select()
-    .from(analysisJobsTable)
-    .where(eq(analysisJobsTable.id, job.id))
-    .limit(1);
-  if (!result || result.status === "failed") {
-    res.status(422).json({
-      error: result?.error ?? "Source analysis failed",
-    });
+  const queued = await queueProjectSourceAnalysis(source.id);
+  if (!queued) {
+    res.status(409).json({ error: "Analysis is already running" });
     return;
   }
   const [updatedProject] = await db
@@ -759,7 +752,24 @@ router.get("/projects/:projectId/sources", async (req, res): Promise<void> => {
     .from(projectSourcesTable)
     .where(eq(projectSourcesTable.projectId, params.data.projectId))
     .orderBy(desc(projectSourcesTable.createdAt));
-  res.json(ListProjectSourcesResponse.parse(sources.map(sourceResponse)));
+  const attempts = sources.length === 0
+    ? []
+    : await db.select()
+      .from(analysisAttemptsTable)
+      .where(inArray(
+        analysisAttemptsTable.sourceId,
+        sources.map((source) => source.id),
+      ))
+      .orderBy(desc(analysisAttemptsTable.attemptNumber));
+  const attemptsBySource = new Map<string, Array<typeof analysisAttemptsTable.$inferSelect>>();
+  for (const attempt of attempts) {
+    const sourceAttempts = attemptsBySource.get(attempt.sourceId) ?? [];
+    sourceAttempts.push(attempt);
+    attemptsBySource.set(attempt.sourceId, sourceAttempts);
+  }
+  res.json(ListProjectSourcesResponse.parse(
+    sources.map((source) => sourceResponse(source, attemptsBySource.get(source.id))),
+  ));
 });
 
 router.post("/projects/:projectId/sources", async (req, res): Promise<void> => {
@@ -822,27 +832,100 @@ router.post("/projects/:projectId/sources", async (req, res): Promise<void> => {
     status: "queued",
     progress: 4,
   }).returning();
-  await db.insert(analysisJobsTable).values({
-    id: randomUUID(),
-    projectId: project.id,
-    sourceId: source.id,
-    status: "queued",
-    stage: "queued",
-    progress: 4,
-  });
   await db.update(musicProjectsTable)
     .set({
       ownerId: project.ownerId ?? req.user.id,
-      sourceName: body.data.name,
-      sourceType: body.data.sourceType,
       status: "analyzing",
       updatedAt: new Date(),
     })
     .where(eq(musicProjectsTable.id, project.id));
-  setImmediate(() => {
-    void analyzeProjectSource(source.id);
+  await queueProjectSourceAnalysis(source.id);
+  const [freshSource] = await db
+    .select()
+    .from(projectSourcesTable)
+    .where(eq(projectSourcesTable.id, source.id))
+    .limit(1);
+  const attempts = await db
+    .select()
+    .from(analysisAttemptsTable)
+    .where(eq(analysisAttemptsTable.sourceId, source.id))
+    .orderBy(desc(analysisAttemptsTable.attemptNumber));
+  res.status(202).json(RegisterProjectSourceResponse.parse(
+    sourceResponse(freshSource ?? source, attempts),
+  ));
+});
+
+router.post("/projects/:projectId/sources/:sourceId/retry", async (req, res): Promise<void> => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const params = RetryProjectSourceAnalysisParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const { projectId, sourceId } = params.data;
+  const [source] = await db
+    .select()
+    .from(projectSourcesTable)
+    .where(eq(projectSourcesTable.id, sourceId))
+    .limit(1);
+  if (!source || source.projectId !== projectId) {
+    res.status(404).json({ error: "Source not found" });
+    return;
+  }
+  const [project] = await db
+    .select({ ownerId: musicProjectsTable.ownerId })
+    .from(musicProjectsTable)
+    .where(eq(musicProjectsTable.id, projectId))
+    .limit(1);
+  if (!project) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+  if (source.ownerId !== req.user.id || (project.ownerId && project.ownerId !== req.user.id)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+  if (source.status !== "failed") {
+    res.status(409).json({ error: "Source analysis is not failed or is already in progress" });
+    return;
+  }
+
+  const queued = await db.transaction(async (tx) => {
+    const now = new Date();
+    const [updatedSource] = await tx.update(projectSourcesTable)
+      .set({ status: "queued", progress: 4, error: null, updatedAt: now })
+      .where(and(
+        eq(projectSourcesTable.id, source.id),
+        eq(projectSourcesTable.status, "failed"),
+      ))
+      .returning({ id: projectSourcesTable.id });
+    if (!updatedSource) return false;
+    await tx.update(musicProjectsTable)
+      .set({ status: "analyzing", updatedAt: now })
+      .where(eq(musicProjectsTable.id, projectId));
+    return true;
   });
-  res.status(202).json(RegisterProjectSourceResponse.parse(sourceResponse(source)));
+  if (!queued) {
+    res.status(409).json({ error: "Source analysis is already in progress" });
+    return;
+  }
+  await queueProjectSourceAnalysis(source.id);
+  const [freshSource] = await db
+    .select()
+    .from(projectSourcesTable)
+    .where(eq(projectSourcesTable.id, source.id))
+    .limit(1);
+  const attempts = await db
+    .select()
+    .from(analysisAttemptsTable)
+    .where(eq(analysisAttemptsTable.sourceId, source.id))
+    .orderBy(desc(analysisAttemptsTable.attemptNumber));
+  res.status(202).json(RetryProjectSourceAnalysisResponse.parse(
+    sourceResponse(freshSource ?? source, attempts),
+  ));
 });
 
 router.get("/projects/:projectId/song-model", async (req, res): Promise<void> => {
@@ -1067,67 +1150,6 @@ router.get("/projects/:projectId/analysis-jobs", async (req, res): Promise<void>
     .where(eq(analysisJobsTable.projectId, params.data.projectId))
     .orderBy(desc(analysisJobsTable.createdAt));
   res.json(ListAnalysisJobsResponse.parse(jobs.map(analysisJobResponse)));
-});
-
-router.post("/projects/:projectId/sources/:sourceId/retry", async (req, res): Promise<void> => {
-  if (!req.isAuthenticated()) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
-  const params = RetrySourceAnalysisParams.safeParse(req.params);
-  if (!params.success) {
-    res.status(400).json({ error: params.error.message });
-    return;
-  }
-  const [source] = await db
-    .select()
-    .from(projectSourcesTable)
-    .where(and(
-      eq(projectSourcesTable.id, params.data.sourceId),
-      eq(projectSourcesTable.projectId, params.data.projectId),
-    ))
-    .limit(1);
-  if (!source) {
-    res.status(404).json({ error: "Source not found" });
-    return;
-  }
-  if (source.ownerId !== req.user.id) {
-    res.status(403).json({ error: "Forbidden" });
-    return;
-  }
-  const [latest] = await db
-    .select()
-    .from(analysisJobsTable)
-    .where(eq(analysisJobsTable.sourceId, source.id))
-    .orderBy(desc(analysisJobsTable.createdAt))
-    .limit(1);
-  if (latest?.status === "queued" || latest?.status === "running") {
-    res.status(409).json({ error: "Analysis is already running" });
-    return;
-  }
-  const [job] = await db.insert(analysisJobsTable).values({
-    id: randomUUID(),
-    projectId: source.projectId,
-    sourceId: source.id,
-    status: "queued",
-    stage: "queued",
-    progress: 4,
-    attempt: (latest?.attempt ?? 0) + 1,
-  }).onConflictDoNothing().returning();
-  if (!job) {
-    res.status(409).json({ error: "A retry was already queued for this source" });
-    return;
-  }
-  await db.update(projectSourcesTable)
-    .set({ status: "queued", progress: 4, error: null })
-    .where(eq(projectSourcesTable.id, source.id));
-  await db.update(musicProjectsTable)
-    .set({ status: "analyzing", updatedAt: new Date() })
-    .where(eq(musicProjectsTable.id, source.projectId));
-  setImmediate(() => {
-    void analyzeProjectSource(source.id);
-  });
-  res.status(202).json(RetrySourceAnalysisResponse.parse(analysisJobResponse(job)));
 });
 
 router.get("/providers", (_req, res): void => {

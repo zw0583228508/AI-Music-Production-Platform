@@ -191,6 +191,8 @@ export const projectSourcesTable = pgTable("music_project_sources", {
   sampleRate: integer("sample_rate"),
   channels: integer("channels"),
   error: text("error"),
+  analysisLeaseId: text("analysis_lease_id"),
+  analysisLeaseExpiresAt: timestamp("analysis_lease_expires_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
@@ -198,30 +200,65 @@ export const projectSourcesTable = pgTable("music_project_sources", {
     .$onUpdate(() => new Date()),
 });
 
-export const songModelsTable = pgTable("music_song_models", {
-  id: text("id").primaryKey(),
-  projectId: text("project_id")
-    .notNull()
-    .references(() => musicProjectsTable.id, { onDelete: "cascade" }),
-  sourceId: text("source_id")
-    .notNull()
-    .references(() => projectSourcesTable.id, { onDelete: "cascade" }),
-  version: integer("version").notNull().default(1),
-  status: text("status").notNull().default("ready"),
-  analysisJobId: text("analysis_job_id"),
-  parentModelId: text("parent_model_id"),
-  correction: jsonb("correction").$type<SongModelCorrection | null>(),
-  model: jsonb("model").$type<SongModelData>().notNull(),
-  providers: jsonb("providers").$type<string[]>().notNull().default([]),
-  confidence: doublePrecision("confidence").notNull().default(0),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [
-  uniqueIndex("music_song_models_analysis_job_idx").on(table.analysisJobId),
-  uniqueIndex("music_song_models_project_version_idx").on(
-    table.projectId,
-    table.version,
-  ),
-]);
+export const analysisAttemptsTable = pgTable(
+  "music_analysis_attempts",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => musicProjectsTable.id, { onDelete: "cascade" }),
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => projectSourcesTable.id, { onDelete: "cascade" }),
+    attemptNumber: integer("attempt_number").notNull(),
+    status: text("status").notNull().default("queued"),
+    stage: text("stage").notNull().default("queued"),
+    progress: integer("progress").notNull().default(0),
+    error: text("error"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    heartbeatAt: timestamp("heartbeat_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("music_analysis_attempts_source_number_unique")
+      .on(table.sourceId, table.attemptNumber),
+  ],
+);
+export const songModelsTable = pgTable(
+  "music_song_models",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => musicProjectsTable.id, { onDelete: "cascade" }),
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => projectSourcesTable.id, { onDelete: "cascade" }),
+    version: integer("version").notNull().default(1),
+    status: text("status").notNull().default("ready"),
+    analysisJobId: text("analysis_job_id"),
+    parentModelId: text("parent_model_id"),
+    correction: jsonb("correction").$type<SongModelCorrection | null>(),
+    model: jsonb("model").$type<SongModelData>().notNull(),
+    providers: jsonb("providers").$type<string[]>().notNull().default([]),
+    confidence: doublePrecision("confidence").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("music_song_models_analysis_job_idx").on(table.analysisJobId),
+    uniqueIndex("music_song_models_project_version_idx").on(
+      table.projectId,
+      table.version,
+    ),
+  ],
+);
 
 export const modelRegistryTable = pgTable("music_model_registry", {
   id: text("id").primaryKey(),

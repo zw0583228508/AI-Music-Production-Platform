@@ -5,6 +5,7 @@ import {
   useListProjectSources,
   useRegisterProjectSource,
   useRequestSourceUploadUrl,
+  useRetryProjectSourceAnalysis,
 } from "@workspace/api-client-react";
 import { useAuth } from "@workspace/replit-auth-web";
 import { useQueryClient } from "@tanstack/react-query";
@@ -14,6 +15,7 @@ import {
   FileAudio,
   Loader2,
   LogIn,
+  RotateCcw,
   Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -77,6 +79,7 @@ export function SourceImport({
   const auth = useAuth();
   const requestUpload = useRequestSourceUploadUrl();
   const registerSource = useRegisterProjectSource();
+  const retryAnalysis = useRetryProjectSourceAnalysis();
   const { data: sources } = useListProjectSources(projectId, {
     query: {
       queryKey: getListProjectSourcesQueryKey(projectId),
@@ -84,6 +87,7 @@ export function SourceImport({
     },
   });
   const currentSource = sources?.[0];
+  const latestAttempt = currentSource?.attempts[0];
 
   useEffect(() => {
     if (
@@ -159,7 +163,6 @@ export function SourceImport({
       setFile(null);
       return;
     }
-
     const fileValidation = validateSourceFile(selectedFile);
     if (!fileValidation.valid) {
       setFile(null);
@@ -170,21 +173,53 @@ export function SourceImport({
       });
       return;
     }
-
     setFile(selectedFile);
   };
 
-  const statusLabel = currentSource?.status === "preprocessing"
-    ? "Creating safe analysis proxy"
-    : currentSource?.status === "analyzing"
-      ? "Building Song Model"
+  const retryCurrentSource = async () => {
+    if (!currentSource) return;
+    try {
+      await retryAnalysis.mutateAsync({
+        projectId,
+        sourceId: currentSource.id,
+      });
+      await queryClient.invalidateQueries({
+        queryKey: getListProjectSourcesQueryKey(projectId),
+      });
+      toast({
+        title: "Analysis restarted",
+        description: `Attempt ${(latestAttempt?.attemptNumber ?? 0) + 1} is now queued.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Retry failed",
+        description: error instanceof Error ? error.message : "Could not retry analysis.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const stageLabel = latestAttempt?.stage === "preprocessing"
+    ? "Downloading and normalizing audio"
+    : latestAttempt?.stage === "probing"
+      ? "Inspecting audio metadata"
+      : latestAttempt?.stage === "analyzing"
+        ? "Building Song Model"
+        : latestAttempt?.stage === "persisting"
+          ? "Saving Song Model"
+          : null;
+  const statusLabel = stageLabel
+    ?? (currentSource?.status === "preprocessing"
+      ? "Creating safe analysis proxy"
+      : currentSource?.status === "analyzing"
+        ? "Building Song Model"
       : currentSource?.status === "queued"
         ? "Queued"
         : currentSource?.status === "ready"
           ? "Analysis complete"
           : currentSource?.status === "failed"
             ? "Analysis failed"
-            : null;
+            : null);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -268,8 +303,64 @@ export function SourceImport({
                 {currentSource.error && (
                   <p className="mt-2 text-xs text-destructive">{currentSource.error}</p>
                 )}
+                {currentSource.status === "failed" && (
+                  <Button
+                    className="mt-3 w-full"
+                    variant="outline"
+                    size="sm"
+                    onClick={retryCurrentSource}
+                    disabled={retryAnalysis.isPending}
+                  >
+                    {retryAnalysis.isPending ? (
+                      <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RotateCcw className="mr-2 h-3.5 w-3.5" />
+                    )}
+                    Retry analysis
+                  </Button>
+                )}
               </div>
             )}
+
+            {currentSource?.attempts.length ? (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Attempt history
+                </p>
+                <div className="max-h-36 space-y-2 overflow-y-auto pr-1">
+                  {currentSource.attempts.map((attempt) => (
+                    <div
+                      key={attempt.id}
+                      className="flex items-start gap-2 rounded-md border px-3 py-2 text-xs"
+                    >
+                      {attempt.status === "succeeded" ? (
+                        <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-500" />
+                      ) : attempt.status === "failed" || attempt.status === "interrupted" ? (
+                        <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
+                      ) : (
+                        <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium">
+                            Attempt {attempt.attemptNumber} · {attempt.stage}
+                          </span>
+                          <span className="font-mono text-muted-foreground">
+                            {attempt.progress}%
+                          </span>
+                        </div>
+                        <p className="mt-0.5 capitalize text-muted-foreground">
+                          {attempt.status} · {new Date(attempt.createdAt).toLocaleString()}
+                        </p>
+                        {attempt.error && (
+                          <p className="mt-1 text-destructive">{attempt.error}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <Button
               className="w-full"

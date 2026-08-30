@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
-import { and, desc, eq, gt, isNull, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import {
+  analysisAttemptsTable,
   analysisJobsTable,
   db,
   musicArtifactsTable,
@@ -31,12 +32,178 @@ import {
 } from "./objectStorage";
 import { execFile, spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { logger } from "./logger";
 
 const execFileAsync = promisify(execFile);
 const activeSourceJobs = new Set<string>();
 const WORKER_ID = randomUUID();
 const LEASE_MS = 2 * 60_000;
-const leaseDeadline = (): Date => new Date(Date.now() + LEASE_MS);
+const ANALYSIS_HEARTBEAT_MS = 20_000;
+const leaseDeadline = (now = new Date()): Date => new Date(now.getTime() + LEASE_MS);
+
+class AnalysisLeaseLostError extends Error {
+  constructor() {
+    super("Analysis lease was lost to another worker");
+  }
+}
+
+async function claimAnalysisAttempt(sourceId: string) {
+  const [existing] = await db
+    .select()
+    .from(projectSourcesTable)
+    .where(eq(projectSourcesTable.id, sourceId))
+    .limit(1);
+  if (
+    !existing
+    || !["queued", "preprocessing", "analyzing"].includes(existing.status)
+    || (existing.analysisLeaseExpiresAt && existing.analysisLeaseExpiresAt > new Date())
+  ) {
+    return null;
+  }
+  const now = new Date();
+  const attemptId = randomUUID();
+  return db.transaction(async (tx) => {
+    const leaseMatches = existing.analysisLeaseId
+      ? eq(projectSourcesTable.analysisLeaseId, existing.analysisLeaseId)
+      : isNull(projectSourcesTable.analysisLeaseId);
+    const [source] = await tx.update(projectSourcesTable)
+      .set({
+        analysisLeaseId: attemptId,
+        analysisLeaseExpiresAt: leaseDeadline(now),
+        updatedAt: now,
+      })
+      .where(and(
+        eq(projectSourcesTable.id, sourceId),
+        inArray(projectSourcesTable.status, ["queued", "preprocessing", "analyzing"]),
+        leaseMatches,
+        or(
+          isNull(projectSourcesTable.analysisLeaseExpiresAt),
+          lte(projectSourcesTable.analysisLeaseExpiresAt, now),
+        ),
+      ))
+      .returning();
+    if (!source) return null;
+    const interruptionMessage =
+      "The previous worker stopped heartbeating before this attempt finished.";
+    const interrupted = await tx.update(analysisAttemptsTable)
+      .set({
+        status: "interrupted",
+        error: interruptionMessage,
+        completedAt: now,
+        heartbeatAt: now,
+        updatedAt: now,
+      })
+      .where(and(
+        eq(analysisAttemptsTable.sourceId, source.id),
+        inArray(analysisAttemptsTable.status, ["queued", "running"]),
+      ))
+      .returning({ id: analysisAttemptsTable.id });
+    await tx.update(analysisJobsTable)
+      .set({
+        status: "failed",
+        error: interruptionMessage,
+        leaseExpiresAt: null,
+        finishedAt: now,
+        updatedAt: now,
+      })
+      .where(and(
+        eq(analysisJobsTable.sourceId, source.id),
+        inArray(analysisJobsTable.status, ["queued", "running"]),
+      ));
+    const [latest] = await tx
+      .select({ attemptNumber: analysisAttemptsTable.attemptNumber })
+      .from(analysisAttemptsTable)
+      .where(eq(analysisAttemptsTable.sourceId, source.id))
+      .orderBy(desc(analysisAttemptsTable.attemptNumber))
+      .limit(1);
+    const [latestJob] = await tx
+      .select({ attemptNumber: analysisJobsTable.attempt })
+      .from(analysisJobsTable)
+      .where(eq(analysisJobsTable.sourceId, source.id))
+      .orderBy(desc(analysisJobsTable.attempt))
+      .limit(1);
+    const attemptNumber = Math.max(
+      latest?.attemptNumber ?? 0,
+      latestJob?.attemptNumber ?? 0,
+    ) + 1;
+    const [attempt] = await tx.insert(analysisAttemptsTable).values({
+      id: attemptId,
+      projectId: source.projectId,
+      sourceId: source.id,
+      attemptNumber,
+      status: "queued",
+      stage: "queued",
+      progress: 0,
+      heartbeatAt: now,
+    }).returning();
+    await tx.insert(analysisJobsTable).values({
+      id: attemptId,
+      projectId: source.projectId,
+      sourceId: source.id,
+      status: "queued",
+      stage: "queued",
+      progress: 0,
+      attempt: attemptNumber,
+      workerId: attemptId,
+      leaseVersion: 1,
+      leaseExpiresAt: leaseDeadline(now),
+    });
+    return { source, attempt, resumed: interrupted.length > 0 };
+  });
+}
+
+async function heartbeatAnalysisLease(
+  sourceId: string,
+  attemptId: string,
+): Promise<boolean> {
+  const now = new Date();
+  return db.transaction(async (tx) => {
+    const [source] = await tx.update(projectSourcesTable)
+      .set({ analysisLeaseExpiresAt: leaseDeadline(now), updatedAt: now })
+      .where(and(
+        eq(projectSourcesTable.id, sourceId),
+        eq(projectSourcesTable.analysisLeaseId, attemptId),
+        gt(projectSourcesTable.analysisLeaseExpiresAt, now),
+      ))
+      .returning({ id: projectSourcesTable.id });
+    if (!source) return false;
+    await tx.update(analysisAttemptsTable)
+      .set({ heartbeatAt: now, updatedAt: now })
+      .where(eq(analysisAttemptsTable.id, attemptId));
+    await tx.update(analysisJobsTable)
+      .set({ leaseExpiresAt: leaseDeadline(now), updatedAt: now })
+      .where(eq(analysisJobsTable.id, attemptId));
+    return true;
+  });
+}
+
+async function interruptAttempt(attemptId: string, message: string): Promise<void> {
+  const now = new Date();
+  await db.update(analysisAttemptsTable)
+    .set({
+      status: "interrupted",
+      error: message,
+      completedAt: now,
+      heartbeatAt: now,
+      updatedAt: now,
+    })
+    .where(and(
+      eq(analysisAttemptsTable.id, attemptId),
+      inArray(analysisAttemptsTable.status, ["queued", "running"]),
+    ));
+  await db.update(analysisJobsTable)
+    .set({
+      status: "failed",
+      error: message,
+      leaseExpiresAt: null,
+      finishedAt: now,
+      updatedAt: now,
+    })
+    .where(and(
+      eq(analysisJobsTable.id, attemptId),
+      inArray(analysisJobsTable.status, ["queued", "running"]),
+    ));
+}
 
 type Probe = {
   format?: { duration?: string };
@@ -286,7 +453,13 @@ async function persistSeparationStems(
   }));
 }
 
-type MidiEvent = { tick: number; type: "tempo" | "meter" | "key" | "note"; data: number[]; channel?: number };
+type MidiEvent = {
+  tick: number;
+  type: "tempo" | "meter" | "key" | "note";
+  data: number[];
+  channel?: number;
+  track?: number;
+};
 async function analyzeProjectSourceBeforeTask1(sourceId: string): Promise<void> {
   if (activeSourceJobs.has(sourceId)) return;
   activeSourceJobs.add(sourceId);
@@ -605,11 +778,30 @@ async function analyzeProjectSourceBeforeTask1(sourceId: string): Promise<void> 
     const fusedConfidence = model.fusion.confidence;
     await updateOwnedStage("persisting_song_model", 88);
     const songModelId = randomUUID();
+    const now = new Date();
 
     await db.transaction(async (tx) => {
       await tx.execute(
         sql`select pg_advisory_xact_lock(hashtext(${source.projectId}))`,
       );
+      const [claimedSource] = await tx.update(projectSourcesTable)
+        .set({
+          status: "ready",
+          progress: 100,
+          error: null,
+          analysisLeaseId: null,
+          analysisLeaseExpiresAt: null,
+          updatedAt: now,
+        })
+        .where(and(
+          eq(projectSourcesTable.id, source.id),
+          eq(projectSourcesTable.analysisLeaseId, job.id),
+          gt(projectSourcesTable.analysisLeaseExpiresAt, now),
+        ))
+        .returning({ id: projectSourcesTable.id });
+      if (!claimedSource) {
+        throw new LeaseLostError("Analysis lease was transferred before commit");
+      }
       const [previous] = await tx
         .select({ version: songModelsTable.version })
         .from(songModelsTable)
@@ -617,18 +809,6 @@ async function analyzeProjectSourceBeforeTask1(sourceId: string): Promise<void> 
         .orderBy(desc(songModelsTable.version))
         .limit(1);
       const version = (previous?.version ?? 0) + 1;
-      const [completed] = await tx.update(analysisJobsTable)
-        .set({
-          status: "completed",
-          stage: "completed",
-          progress: 100,
-          error: null,
-          leaseExpiresAt: null,
-          finishedAt: new Date(),
-        })
-        .where(ownedLease())
-        .returning({ id: analysisJobsTable.id });
-      if (!completed) throw new LeaseLostError("Analysis lease was transferred before commit");
       await tx.insert(songModelsTable).values({
         id: songModelId,
         projectId: source.projectId,
@@ -639,9 +819,6 @@ async function analyzeProjectSourceBeforeTask1(sourceId: string): Promise<void> 
         providers: persistedProviders,
         confidence: fusedConfidence,
       });
-      await tx.update(projectSourcesTable)
-        .set({ status: "ready", progress: 100 })
-        .where(eq(projectSourcesTable.id, source.id));
       await tx.update(musicProjectsTable)
         .set({
           sourceName: source.name,
@@ -655,7 +832,7 @@ async function analyzeProjectSourceBeforeTask1(sourceId: string): Promise<void> 
           sections,
           energy,
           providers: persistedProviders,
-          updatedAt: new Date(),
+          updatedAt: now,
         })
         .where(eq(musicProjectsTable.id, source.projectId));
       await tx.insert(musicArtifactsTable).values([
@@ -715,7 +892,14 @@ async function analyzeProjectSourceBeforeTask1(sourceId: string): Promise<void> 
     activeSourceJobs.delete(sourceId);
   }
 }
-export async function analyzeProjectSource(sourceId: string): Promise<void> {
+export async function analyzeProjectSource(
+  sourceId: string,
+  attemptId?: string,
+): Promise<void> {
+  if (!attemptId) {
+    await queueProjectSourceAnalysis(sourceId);
+    return;
+  }
   if (activeSourceJobs.has(sourceId)) return;
   activeSourceJobs.add(sourceId);
   const [source] = await db
@@ -727,49 +911,28 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
     activeSourceJobs.delete(sourceId);
     return;
   }
-  const [existingJob] = await db
+  const [attempt] = await db
     .select()
-    .from(analysisJobsTable)
-    .where(eq(analysisJobsTable.sourceId, source.id))
-    .orderBy(desc(analysisJobsTable.createdAt))
+    .from(analysisAttemptsTable)
+    .where(eq(analysisAttemptsTable.id, attemptId))
     .limit(1);
-  const queuedJob = existingJob ?? (await db.insert(analysisJobsTable).values({
-    id: randomUUID(),
-    projectId: source.projectId,
-    sourceId: source.id,
-    status: "queued",
-    stage: "queued",
-    progress: source.progress,
-  }).returning())[0];
-  if (!queuedJob) {
+  if (!attempt || source.analysisLeaseId !== attempt.id) {
     activeSourceJobs.delete(sourceId);
     return;
   }
+  const attemptStartedAt = attempt.startedAt ?? new Date();
   const [job] = await db.update(analysisJobsTable)
     .set({
       status: "running",
       stage: "downloading",
       progress: 8,
       error: null,
-      workerId: WORKER_ID,
-      leaseVersion: sql`${analysisJobsTable.leaseVersion} + 1`,
+      workerId: attempt.id,
       leaseExpiresAt: leaseDeadline(),
-      startedAt: queuedJob.startedAt ?? new Date(),
+      startedAt: attemptStartedAt,
       finishedAt: null,
     })
-    .where(and(
-      eq(analysisJobsTable.id, queuedJob.id),
-      or(
-        eq(analysisJobsTable.status, "queued"),
-        and(
-          eq(analysisJobsTable.status, "running"),
-          or(
-            isNull(analysisJobsTable.leaseExpiresAt),
-            lte(analysisJobsTable.leaseExpiresAt, new Date()),
-          ),
-        ),
-      ),
-    ))
+    .where(eq(analysisJobsTable.id, attempt.id))
     .returning();
   if (!job) {
     activeSourceJobs.delete(sourceId);
@@ -777,42 +940,75 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
   }
   class LeaseLostError extends Error {}
   const ownedLease = () => and(
-    eq(analysisJobsTable.id, job.id),
-    eq(analysisJobsTable.workerId, WORKER_ID),
-    eq(analysisJobsTable.leaseVersion, job.leaseVersion),
+    eq(analysisJobsTable.id, attempt.id),
+    eq(analysisJobsTable.workerId, attempt.id),
     eq(analysisJobsTable.status, "running"),
     gt(analysisJobsTable.leaseExpiresAt, new Date()),
   );
+  let currentStage = "queued";
+  let currentProgress = 0;
   const updateOwnedStage = async (
     stage: string,
     progress: number,
     sourceValues?: Partial<typeof projectSourcesTable.$inferInsert>,
   ): Promise<void> => {
+    const canonicalStage = stage === "downloading"
+      ? "preprocessing"
+      : stage === "probing"
+        ? "probing"
+        : stage === "persisting_song_model"
+          ? "persisting"
+          : "analyzing";
+    currentStage = canonicalStage;
+    currentProgress = progress;
+    const now = new Date();
     await db.transaction(async (tx) => {
-      const [owned] = await tx.update(analysisJobsTable)
-        .set({ stage, progress, leaseExpiresAt: leaseDeadline() })
-        .where(ownedLease())
-        .returning({ id: analysisJobsTable.id });
-      if (!owned) throw new LeaseLostError("Analysis lease was transferred to another worker");
-      if (sourceValues) {
-        await tx.update(projectSourcesTable)
-          .set(sourceValues)
-          .where(eq(projectSourcesTable.id, source.id));
+      const [ownedSource] = await tx.update(projectSourcesTable)
+        .set({
+          ...sourceValues,
+          analysisLeaseExpiresAt: leaseDeadline(now),
+          updatedAt: now,
+        })
+        .where(and(
+          eq(projectSourcesTable.id, source.id),
+          eq(projectSourcesTable.analysisLeaseId, attempt.id),
+          gt(projectSourcesTable.analysisLeaseExpiresAt, now),
+        ))
+        .returning({ id: projectSourcesTable.id });
+      if (!ownedSource) {
+        throw new LeaseLostError("Analysis lease was transferred to another worker");
       }
+      await tx.update(analysisAttemptsTable)
+        .set({
+          status: "running",
+          stage: canonicalStage,
+          progress,
+          heartbeatAt: now,
+          startedAt: attemptStartedAt,
+          updatedAt: now,
+        })
+        .where(eq(analysisAttemptsTable.id, attempt.id));
+      await tx.update(analysisJobsTable)
+        .set({ stage, progress, leaseExpiresAt: leaseDeadline(now), updatedAt: now })
+        .where(ownedLease());
     });
+    logger.info({
+      sourceId: source.id,
+      attemptId: attempt.id,
+      stage: canonicalStage,
+      progress,
+    }, "music_analysis_stage_updated");
   };
 
   const heartbeat = setInterval(() => {
-    void db.update(analysisJobsTable)
-      .set({ leaseExpiresAt: leaseDeadline() })
-      .where(and(
-        eq(analysisJobsTable.id, job.id),
-        eq(analysisJobsTable.workerId, WORKER_ID),
-        eq(analysisJobsTable.leaseVersion, job.leaseVersion),
-        eq(analysisJobsTable.status, "running"),
-      ))
-      .catch(() => undefined);
-  }, 30_000);
+    void heartbeatAnalysisLease(source.id, attempt.id).catch((error) => {
+      logger.error({
+        err: error,
+        sourceId: source.id,
+        attemptId: attempt.id,
+      }, "music_analysis_heartbeat_failed");
+    });
+  }, ANALYSIS_HEARTBEAT_MS);
   heartbeat.unref();
   let directory: string | null = null;
   let hasUncommittedAnalysisObjects = false;
@@ -1130,11 +1326,30 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
     const fusedConfidence = model.fusion.confidence;
     await updateOwnedStage("persisting_song_model", 88);
     const songModelId = randomUUID();
+    const now = new Date();
 
     await db.transaction(async (tx) => {
       await tx.execute(
         sql`select pg_advisory_xact_lock(hashtext(${source.projectId}))`,
       );
+      const [claimedSource] = await tx.update(projectSourcesTable)
+        .set({
+          status: "ready",
+          progress: 100,
+          error: null,
+          analysisLeaseId: null,
+          analysisLeaseExpiresAt: null,
+          updatedAt: now,
+        })
+        .where(and(
+          eq(projectSourcesTable.id, source.id),
+          eq(projectSourcesTable.analysisLeaseId, attempt.id),
+          gt(projectSourcesTable.analysisLeaseExpiresAt, now),
+        ))
+        .returning({ id: projectSourcesTable.id });
+      if (!claimedSource) {
+        throw new LeaseLostError("Analysis lease was transferred before commit");
+      }
       const [previous] = await tx
         .select({ version: songModelsTable.version })
         .from(songModelsTable)
@@ -1142,31 +1357,16 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
         .orderBy(desc(songModelsTable.version))
         .limit(1);
       const version = (previous?.version ?? 0) + 1;
-      const [completed] = await tx.update(analysisJobsTable)
-        .set({
-          status: "completed",
-          stage: "completed",
-          progress: 100,
-          error: null,
-          leaseExpiresAt: null,
-          finishedAt: new Date(),
-        })
-        .where(ownedLease())
-        .returning({ id: analysisJobsTable.id });
-      if (!completed) throw new LeaseLostError("Analysis lease was transferred before commit");
       await tx.insert(songModelsTable).values({
         id: songModelId,
         projectId: source.projectId,
         sourceId: source.id,
-        analysisJobId: job.id,
+        analysisJobId: attempt.id,
         version,
         model,
         providers: persistedProviders,
         confidence: fusedConfidence,
       });
-      await tx.update(projectSourcesTable)
-        .set({ status: "ready", progress: 100 })
-        .where(eq(projectSourcesTable.id, source.id));
       await tx.update(musicProjectsTable)
         .set({
           sourceName: source.name,
@@ -1180,7 +1380,7 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
           sections,
           energy,
           providers: persistedProviders,
-          updatedAt: new Date(),
+          updatedAt: now,
         })
         .where(eq(musicProjectsTable.id, source.projectId));
       await tx.insert(musicArtifactsTable).values([
@@ -1225,6 +1425,28 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
             url: stem.objectPath,
           })),
       ]);
+      await tx.update(analysisAttemptsTable)
+        .set({
+          status: "succeeded",
+          stage: "complete",
+          progress: 100,
+          error: null,
+          completedAt: now,
+          heartbeatAt: now,
+          updatedAt: now,
+        })
+        .where(eq(analysisAttemptsTable.id, attempt.id));
+      await tx.update(analysisJobsTable)
+        .set({
+          status: "completed",
+          stage: "complete",
+          progress: 100,
+          error: null,
+          leaseExpiresAt: null,
+          finishedAt: now,
+          updatedAt: now,
+        })
+        .where(eq(analysisJobsTable.id, attempt.id));
       await tx.insert(studioActivitiesTable).values({
         id: randomUUID(),
         projectId: source.projectId,
@@ -1234,37 +1456,143 @@ export async function analyzeProjectSource(sourceId: string): Promise<void> {
       });
     });
     hasUncommittedAnalysisObjects = false;
+    logger.info({
+      sourceId: source.id,
+      attemptId: attempt.id,
+      stage: "complete",
+      progress: 100,
+    }, "music_analysis_attempt_succeeded");
   } catch (error) {
     if (hasUncommittedAnalysisObjects) {
-      await deleteAnalysisObjects(source.projectId, job.id).catch(() => undefined);
+      await deleteAnalysisObjects(source.projectId, attempt.id).catch(() => undefined);
       hasUncommittedAnalysisObjects = false;
     }
-    if (error instanceof LeaseLostError) return;
     const message = error instanceof Error ? error.message : "Source analysis failed";
-    await db.transaction(async (tx) => {
-      const [failed] = await tx.update(analysisJobsTable)
-        .set({
-          status: "failed",
-          stage: "failed",
-          progress: 100,
-          error: message,
-          leaseExpiresAt: null,
-          finishedAt: new Date(),
-        })
-        .where(ownedLease())
-        .returning({ id: analysisJobsTable.id });
-      if (!failed) return;
-      await tx.update(projectSourcesTable)
-        .set({ status: "failed", error: message, progress: 100 })
-        .where(eq(projectSourcesTable.id, source.id));
-      await tx.update(musicProjectsTable)
-        .set({ status: "draft", updatedAt: new Date() })
-        .where(eq(musicProjectsTable.id, source.projectId));
-    });
+    const failedAt = new Date();
+    if (error instanceof LeaseLostError || error instanceof AnalysisLeaseLostError) {
+      await interruptAttempt(attempt.id, message);
+      logger.warn({
+        sourceId: source.id,
+        attemptId: attempt.id,
+        stage: currentStage,
+        progress: currentProgress,
+      }, "music_analysis_attempt_interrupted");
+    } else {
+      const failedWithLease = await db.transaction(async (tx) => {
+        const [claimedSource] = await tx.update(projectSourcesTable)
+          .set({
+            status: "failed",
+            error: message,
+            progress: currentProgress,
+            analysisLeaseId: null,
+            analysisLeaseExpiresAt: null,
+            updatedAt: failedAt,
+          })
+          .where(and(
+            eq(projectSourcesTable.id, source.id),
+            eq(projectSourcesTable.analysisLeaseId, attempt.id),
+            gt(projectSourcesTable.analysisLeaseExpiresAt, failedAt),
+          ))
+          .returning({ id: projectSourcesTable.id });
+        if (!claimedSource) return false;
+        await tx.update(analysisAttemptsTable)
+          .set({
+            status: "failed",
+            stage: currentStage,
+            progress: currentProgress,
+            error: message,
+            completedAt: failedAt,
+            heartbeatAt: failedAt,
+            updatedAt: failedAt,
+          })
+          .where(eq(analysisAttemptsTable.id, attempt.id));
+        await tx.update(analysisJobsTable)
+          .set({
+            status: "failed",
+            stage: currentStage,
+            progress: currentProgress,
+            error: message,
+            leaseExpiresAt: null,
+            finishedAt: failedAt,
+            updatedAt: failedAt,
+          })
+          .where(eq(analysisJobsTable.id, attempt.id));
+        const [latestModel] = await tx
+          .select({ id: songModelsTable.id })
+          .from(songModelsTable)
+          .where(eq(songModelsTable.projectId, source.projectId))
+          .orderBy(desc(songModelsTable.version))
+          .limit(1);
+        await tx.update(musicProjectsTable)
+          .set({ status: latestModel ? "ready" : "draft", updatedAt: failedAt })
+          .where(eq(musicProjectsTable.id, source.projectId));
+        return true;
+      });
+      if (!failedWithLease) {
+        await interruptAttempt(
+          attempt.id,
+          "Analysis lease expired before the error could be recorded.",
+        );
+        logger.warn({
+          err: error,
+          sourceId: source.id,
+          attemptId: attempt.id,
+          stage: currentStage,
+          progress: currentProgress,
+        }, "music_analysis_failure_after_lease_lost");
+      } else {
+        logger.error({
+          err: error,
+          sourceId: source.id,
+          attemptId: attempt.id,
+          stage: currentStage,
+          progress: currentProgress,
+        }, "music_analysis_attempt_failed");
+      }
+    }
   } finally {
     clearInterval(heartbeat);
     if (directory) await rm(directory, { recursive: true, force: true });
     activeSourceJobs.delete(sourceId);
+  }
+}
+
+export async function queueProjectSourceAnalysis(sourceId: string): Promise<boolean> {
+  try {
+    const claim = await claimAnalysisAttempt(sourceId);
+    if (!claim) return false;
+    logger.info({
+      sourceId,
+      attemptId: claim.attempt.id,
+      attemptNumber: claim.attempt.attemptNumber,
+      resumed: claim.resumed,
+    }, "music_analysis_attempt_queued");
+    void analyzeProjectSource(sourceId, claim.attempt.id).catch((error) => {
+      logger.error({ err: error, sourceId }, "music_analysis_worker_crashed");
+    });
+    return true;
+  } catch (error) {
+    logger.error({ err: error, sourceId }, "music_analysis_attempt_queue_failed");
+    throw error;
+  }
+}
+
+export async function recoverInterruptedAnalyses(): Promise<void> {
+  const resumableSources = await db
+    .select()
+    .from(projectSourcesTable)
+    .where(inArray(projectSourcesTable.status, ["queued", "preprocessing", "analyzing"]));
+  const resumedSourceIds: string[] = [];
+  for (const source of resumableSources) {
+    if (await queueProjectSourceAnalysis(source.id)) {
+      resumedSourceIds.push(source.id);
+    }
+  }
+  if (resumedSourceIds.length > 0) {
+    logger.info({
+      sourceCount: resumedSourceIds.length,
+      sourceIds: resumedSourceIds,
+    }, "music_analysis_sources_resumed");
   }
 }
 
@@ -1308,9 +1636,14 @@ function parseMidi(path: string): Promise<MidiModelData> {
     if (!division || division & 0x8000) throw new Error("SMPTE-timed MIDI files are not supported");
     let offset = 8 + headerLength;
     const events: MidiEvent[] = [];
-    const active = new Map<string, { tick: number; pitch: number; velocity: number; channel: number }>();
+    const active = new Map<
+      string,
+      Array<{ tick: number; pitch: number; velocity: number; channel: number; track: number }>
+    >();
     let finalTick = 0;
+    let trackIndex = 0;
     while (offset + 8 <= bytes.length && bytes.toString("ascii", offset, offset + 4) === "MTrk") {
+      const currentTrack = trackIndex++;
       const end = Math.min(bytes.length, offset + 8 + bytes.readUInt32BE(offset + 4));
       offset += 8;
       let tick = 0; let running = 0;
@@ -1329,9 +1662,31 @@ function parseMidi(path: string): Promise<MidiModelData> {
           const command = status >> 4; const channel = status & 15; const dataLength = command === 0xc || command === 0xd ? 1 : 2;
           const data = [...bytes.subarray(offset, offset + dataLength)]; offset += dataLength;
           if ((command === 0x9 && data[1] > 0) || command === 0x8) {
-            const identity = `${channel}:${data[0]}`;
-            if (command === 0x9 && data[1] > 0) active.set(identity, { tick, pitch: data[0], velocity: data[1], channel });
-            else { const note = active.get(identity); if (note) { events.push({ tick, type: "note", data: [note.tick, note.pitch, note.velocity], channel }); active.delete(identity); } }
+            const identity = `${currentTrack}:${channel}:${data[0]}`;
+            if (command === 0x9 && data[1] > 0) {
+              const notes = active.get(identity) ?? [];
+              notes.push({
+                tick,
+                pitch: data[0],
+                velocity: data[1],
+                channel,
+                track: currentTrack,
+              });
+              active.set(identity, notes);
+            } else {
+              const notes = active.get(identity);
+              const note = notes?.shift();
+              if (note) {
+                events.push({
+                  tick,
+                  type: "note",
+                  data: [note.tick, note.pitch, note.velocity],
+                  channel,
+                  track: note.track,
+                });
+                if (notes && notes.length === 0) active.delete(identity);
+              }
+            }
           }
         }
       }
@@ -1358,7 +1713,14 @@ function parseMidi(path: string): Promise<MidiModelData> {
     const beatCount = Math.max(1, Math.ceil(durationSeconds / secondsPerBeat));
     const beats = Array.from({ length: beatCount }, (_, index) => ({ time: Number((index * secondsPerBeat).toFixed(4)), beat: index % beatsPerBar + 1, bar: Math.floor(index / beatsPerBar) + 1, confidence: 1 }));
     const bars = Array.from({ length: Math.ceil(beatCount / beatsPerBar) }, (_, index) => ({ bar: index + 1, start: Number((index * beatsPerBar * secondsPerBeat).toFixed(4)), end: Number(Math.min(durationSeconds, (index + 1) * beatsPerBar * secondsPerBeat).toFixed(4)), beats: beatsPerBar, confidence: 1 }));
-    const melody = ordered.filter((event) => event.type === "note").map((event) => ({ start: tickToSeconds(event.data[0]), end: Math.max(tickToSeconds(event.tick), tickToSeconds(event.data[0]) + 0.04), pitch: event.data[1], velocity: event.data[2], confidence: 1, source: `MIDI_CHANNEL_${event.channel! + 1}` }));
+    const melody = ordered.filter((event) => event.type === "note").map((event) => ({
+      start: tickToSeconds(event.data[0]),
+      end: Math.max(tickToSeconds(event.tick), tickToSeconds(event.data[0]) + 0.04),
+      pitch: event.data[1],
+      velocity: event.data[2],
+      confidence: 1,
+      source: `MIDI_TRACK_${(event.track ?? 0) + 1}_CHANNEL_${event.channel! + 1}`,
+    }));
     const channels = [...new Set(melody.map((note) => note.source))];
     return { durationSeconds, sampleRate: 44_100, channels: channels.length || 1, bpm, meter, key, tempoMap, meterMap: meters.length ? meters.map((event) => ({ bar: Math.max(1, Math.floor(tickToSeconds(event.tick) / (secondsPerBeat * beatsPerBar)) + 1), meter: meterFor(event), confidence: 1 })) : [{ bar: 1, meter, confidence: 1 }], keyMap: [{ time: 0, key, confidence: 1 }, ...keys.map((event) => ({ time: tickToSeconds(event.tick), key: keyFor(event), confidence: 1 }))], beats, bars, melody, sourceStems: channels.map((role) => ({ role, objectPath: "", provider: "STANDARD_MIDI", confidence: 1 })) };
   });

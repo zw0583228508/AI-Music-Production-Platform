@@ -1222,6 +1222,79 @@ export const useRegisterProjectSource = <TError = ErrorType<void | NotFoundRespo
       return useMutation(getRegisterProjectSourceMutationOptions(options));
     }
 
+export const getRetryProjectSourceAnalysisUrl = (projectId: string,
+    sourceId: string,) => {
+
+
+
+
+  return `/api/projects/${projectId}/sources/${sourceId}/retry`
+}
+
+/**
+ * @summary Retry a failed source analysis
+ */
+export const retryProjectSourceAnalysis = async (projectId: string,
+    sourceId: string, options?: Parameters<typeof customFetch>[1]): Promise<ProjectSource> => {
+
+  return customFetch<ProjectSource>(getRetryProjectSourceAnalysisUrl(projectId,sourceId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRetryProjectSourceAnalysisMutationOptions = <TError = ErrorType<void | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retryProjectSourceAnalysis>>, TError,{projectId: string;sourceId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof retryProjectSourceAnalysis>>, TError,{projectId: string;sourceId: string}, TContext> => {
+
+const mutationKey = ['retryProjectSourceAnalysis'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof retryProjectSourceAnalysis>>, {projectId: string;sourceId: string}> = (props) => {
+          const {projectId,sourceId} = props ?? {};
+
+          return  retryProjectSourceAnalysis(projectId,sourceId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RetryProjectSourceAnalysisMutationResult = NonNullable<Awaited<ReturnType<typeof retryProjectSourceAnalysis>>>
+
+    export type RetryProjectSourceAnalysisMutationError = ErrorType<void | NotFoundResponse>
+
+    /**
+ * @summary Retry a failed source analysis
+ */
+export const useRetryProjectSourceAnalysis = <TError = ErrorType<void | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retryProjectSourceAnalysis>>, TError,{projectId: string;sourceId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof retryProjectSourceAnalysis>>,
+        TError,
+        {projectId: string;sourceId: string},
+        TContext
+      > => {
+      return useMutation(getRetryProjectSourceAnalysisMutationOptions(options));
+    }
+
 export const getGetProjectSongModelUrl = (projectId: string,) => {
 
 
@@ -1448,79 +1521,6 @@ export function useListAnalysisJobs<TData = Awaited<ReturnType<typeof listAnalys
 
 
 
-
-export const getRetrySourceAnalysisUrl = (projectId: string,
-    sourceId: string,) => {
-
-
-
-
-  return `/api/projects/${projectId}/sources/${sourceId}/retry`
-}
-
-/**
- * @summary Retry a failed or interrupted source analysis
- */
-export const retrySourceAnalysis = async (projectId: string,
-    sourceId: string, options?: Parameters<typeof customFetch>[1]): Promise<AnalysisJob> => {
-
-  return customFetch<AnalysisJob>(getRetrySourceAnalysisUrl(projectId,sourceId),
-  {
-    ...options,
-    method: 'POST'
-
-
-  }
-);}
-
-
-
-
-
-export const getRetrySourceAnalysisMutationOptions = <TError = ErrorType<void | NotFoundResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retrySourceAnalysis>>, TError,{projectId: string;sourceId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof retrySourceAnalysis>>, TError,{projectId: string;sourceId: string}, TContext> => {
-
-const mutationKey = ['retrySourceAnalysis'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof retrySourceAnalysis>>, {projectId: string;sourceId: string}> = (props) => {
-          const {projectId,sourceId} = props ?? {};
-
-          return  retrySourceAnalysis(projectId,sourceId,requestOptions)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type RetrySourceAnalysisMutationResult = NonNullable<Awaited<ReturnType<typeof retrySourceAnalysis>>>
-
-    export type RetrySourceAnalysisMutationError = ErrorType<void | NotFoundResponse>
-
-    /**
- * @summary Retry a failed or interrupted source analysis
- */
-export const useRetrySourceAnalysis = <TError = ErrorType<void | NotFoundResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retrySourceAnalysis>>, TError,{projectId: string;sourceId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
- ): UseMutationResult<
-        Awaited<ReturnType<typeof retrySourceAnalysis>>,
-        TError,
-        {projectId: string;sourceId: string},
-        TContext
-      > => {
-      return useMutation(getRetrySourceAnalysisMutationOptions(options));
-    }
 
 export const getListMusicProvidersUrl = () => {
 

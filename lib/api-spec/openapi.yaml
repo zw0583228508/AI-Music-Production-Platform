@@ -260,6 +260,35 @@ paths:
           description: Login required
         "404":
           $ref: "#/components/responses/NotFound"
+  /projects/{projectId}/sources/{sourceId}/retry:
+    post:
+      operationId: retryProjectSourceAnalysis
+      tags: [sources]
+      summary: Retry a failed source analysis
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: sourceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: Source accepted for another analysis attempt
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectSource"
+        "400":
+          description: Invalid retry request
+        "401":
+          description: Login required
+        "403":
+          description: Forbidden
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Source analysis is already in progress
   /projects/{projectId}/song-model:
     get:
       operationId: getProjectSongModel
@@ -320,25 +349,6 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/AnalysisJob"
-  /projects/{projectId}/sources/{sourceId}/retry:
-    post:
-      operationId: retrySourceAnalysis
-      tags: [sources]
-      summary: Retry a failed or interrupted source analysis
-      parameters:
-        - $ref: "#/components/parameters/ProjectId"
-        - $ref: "#/components/parameters/SourceId"
-      responses:
-        "202":
-          description: Analysis retry queued
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AnalysisJob"
-        "401":
-          description: Login required
-        "404":
-          $ref: "#/components/responses/NotFound"
   /providers:
     get:
       operationId: listMusicProviders
@@ -726,9 +736,28 @@ components:
         sourceType:
           type: string
           enum: [FULL_SONG, VOCAL_ONLY, SOLO_INSTRUMENT, INSTRUMENTAL, MIDI, VIDEO]
+    AnalysisAttempt:
+      type: object
+      required: [id, sourceId, attemptNumber, status, stage, progress, createdAt, heartbeatAt]
+      properties:
+        id: { type: string }
+        sourceId: { type: string }
+        attemptNumber: { type: number }
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed, interrupted]
+        stage:
+          type: string
+          enum: [queued, preprocessing, probing, analyzing, persisting, complete]
+        progress: { type: number, minimum: 0, maximum: 100 }
+        error: { type: ["string", "null"] }
+        startedAt: { type: ["string", "null"] }
+        completedAt: { type: ["string", "null"] }
+        heartbeatAt: { type: string }
+        createdAt: { type: string }
     ProjectSource:
       type: object
-      required: [id, projectId, name, size, contentType, sourceType, status, progress, createdAt]
+      required: [id, projectId, name, size, contentType, sourceType, status, progress, attempts, createdAt]
       properties:
         id: { type: string }
         projectId: { type: string }
@@ -746,6 +775,10 @@ components:
         sampleRate: { type: ["number", "null"] }
         channels: { type: ["number", "null"] }
         error: { type: ["string", "null"] }
+        attempts:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnalysisAttempt"
         createdAt: { type: string }
     SongModel:
       type: object
