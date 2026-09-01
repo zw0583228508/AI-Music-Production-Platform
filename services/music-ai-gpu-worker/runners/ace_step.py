@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import tempfile
+import wave
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
@@ -317,34 +318,87 @@ def _region_seconds(
     song = request.get("songModel")
     if not isinstance(song, dict):
         raise RunnerError(f"{unit} REPAINT requires SongModel tempo evidence")
-    bpm = None
+    tempo_events: list[tuple[float, float]] = []
     tempo_map = song.get("tempoMap")
     if isinstance(tempo_map, list):
         for entry in tempo_map:
-            if isinstance(entry, dict) and isinstance(entry.get("bpm"), (int, float)):
-                candidate = float(entry["bpm"])
-                if 30 <= candidate <= 300:
-                    bpm = candidate
-                    break
-    if bpm is None:
+            if not isinstance(entry, dict):
+                continue
+            if not isinstance(entry.get("time"), (int, float)):
+                continue
+            if not isinstance(entry.get("bpm"), (int, float)):
+                continue
+            event_time = float(entry["time"])
+            event_bpm = float(entry["bpm"])
+            if event_time >= 0 and 30 <= event_bpm <= 300:
+                tempo_events.append((event_time, event_bpm))
+    tempo_events.sort()
+    if not tempo_events or tempo_events[0][0] != 0:
         raise RunnerError(f"{unit} REPAINT requires a verified tempo")
-    seconds_per_beat = 60.0 / bpm
+
+    def beat_to_seconds(target: float) -> float:
+        elapsed_beats = 0.0
+        for index, (event_time, event_bpm) in enumerate(tempo_events):
+            next_time = (
+                tempo_events[index + 1][0]
+                if index + 1 < len(tempo_events)
+                else None
+            )
+            if next_time is None:
+                return event_time + (target - elapsed_beats) * 60.0 / event_bpm
+            segment_beats = (next_time - event_time) * event_bpm / 60.0
+            if target <= elapsed_beats + segment_beats:
+                return event_time + (target - elapsed_beats) * 60.0 / event_bpm
+            elapsed_beats += segment_beats
+        raise RunnerError("tempo map could not resolve the requested beat")
+
     if unit == "beat":
-        return start * seconds_per_beat, end * seconds_per_beat
-    beats_per_bar = 4
+        return beat_to_seconds(start), beat_to_seconds(end)
+
+    meter_events: list[tuple[float, int]] = []
     meter_map = song.get("meterMap")
     if isinstance(meter_map, list):
         for entry in meter_map:
             if not isinstance(entry, dict):
                 continue
+            bar = entry.get("bar")
             numerator = str(entry.get("meter") or "").partition("/")[0]
-            if numerator.isdigit() and 1 <= int(numerator) <= 16:
-                beats_per_bar = int(numerator)
-                break
-    return (
-        (start - 1) * beats_per_bar * seconds_per_beat,
-        (end - 1) * beats_per_bar * seconds_per_beat,
-    )
+            if (
+                isinstance(bar, (int, float))
+                and float(bar) >= 1
+                and numerator.isdigit()
+                and 1 <= int(numerator) <= 16
+            ):
+                meter_events.append((float(bar), int(numerator)))
+    meter_events.sort()
+    if not meter_events or meter_events[0][0] != 1:
+        raise RunnerError("bar REPAINT requires verified meter evidence from bar 1")
+
+    def bar_to_beats(target: float) -> float:
+        elapsed_beats = 0.0
+        for index, (event_bar, beats_per_bar) in enumerate(meter_events):
+            next_bar = (
+                meter_events[index + 1][0]
+                if index + 1 < len(meter_events)
+                else None
+            )
+            if next_bar is None or target <= next_bar:
+                return elapsed_beats + (target - event_bar) * beats_per_bar
+            elapsed_beats += (next_bar - event_bar) * beats_per_bar
+        raise RunnerError("meter map could not resolve the requested bar")
+
+    return beat_to_seconds(bar_to_beats(start)), beat_to_seconds(bar_to_beats(end))
+
+
+def _wav_duration_seconds(path: Path) -> float:
+    try:
+        with wave.open(str(path), "rb") as source:
+            frame_rate = source.getframerate()
+            if frame_rate <= 0:
+                raise RunnerError("source WAV has an invalid sample rate")
+            return source.getnframes() / frame_rate
+    except (EOFError, OSError, wave.Error) as exc:
+        raise RunnerError("REPAINT source must be a valid canonical WAV") from exc
 
 
 def provenance(digest: str) -> dict[str, str]:
@@ -376,6 +430,9 @@ def run_job(request: dict[str, Any], checkpoint: Path,
         repainting_start, repainting_end = _region_seconds(
             request, operation["region"]
         )
+        source_duration = _wav_duration_seconds(source_path)
+        if repainting_start >= source_duration or repainting_end > source_duration:
+            raise RunnerError("REPAINT region exceeds the source audio duration")
         operation = {
             **operation,
             "repainting_start": repainting_start,

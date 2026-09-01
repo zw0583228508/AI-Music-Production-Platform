@@ -66,6 +66,25 @@ class AceStepOperationTests(unittest.TestCase):
             (2.0, 4.0),
         )
 
+    def test_repaint_honors_later_tempo_and_meter_changes(self) -> None:
+        song = {
+            "tempoMap": [
+                {"time": 0, "bpm": 120},
+                {"time": 4, "bpm": 60},
+            ],
+            "meterMap": [
+                {"bar": 1, "meter": "4/4"},
+                {"bar": 3, "meter": "3/4"},
+            ],
+        }
+        self.assertEqual(
+            ace_step._region_seconds(
+                {"songModel": song},
+                {"unit": "bar", "start": 3, "end": 5},
+            ),
+            (4.0, 10.0),
+        )
+
     def test_official_backend_receives_source_and_repaint_fields(self) -> None:
         captured: dict[str, object] = {}
 

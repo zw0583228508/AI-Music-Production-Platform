@@ -131,6 +131,13 @@ export default function ProjectWorkspace() {
   const [revisionPreviewing, setRevisionPreviewing] = useState(false);
   const [selectedArrangementId, setSelectedArrangementId] = useState<string | null>(null);
   const [generationJobId, setGenerationJobId] = useState<string | null>(null);
+  const [aceOperation, setAceOperation] = useState<
+    "COMPLETE" | "LEGO" | "REPAINT" | "COVER" | "EXTRACT"
+  >("COMPLETE");
+  const [aceSourceArtifactId, setAceSourceArtifactId] = useState("");
+  const [aceInstrument, setAceInstrument] = useState("drums");
+  const [repaintStartBar, setRepaintStartBar] = useState(1);
+  const [repaintEndBar, setRepaintEndBar] = useState(2);
   const [candidatePreview, setCandidatePreview] = useState<{
     id: string;
     label: string;
@@ -432,6 +439,7 @@ export default function ProjectWorkspace() {
 
   const handleGenerate = () => {
     if (!activeArrangement) return;
+    const sourceArtifactId = aceSourceArtifactId || undefined;
     generateArrangement.mutate({
       arrangementId: activeArrangement.id,
       data: {
@@ -443,7 +451,21 @@ export default function ProjectWorkspace() {
           ? {}
           : {
               provider: "ACE_STEP" as const,
-              operation: "COMPLETE" as const,
+              operation: aceOperation,
+              ...(sourceArtifactId ? { sourceArtifactId } : {}),
+              ...(["LEGO", "EXTRACT"].includes(aceOperation)
+                ? { instrument: aceInstrument }
+                : {}),
+              ...(aceOperation === "REPAINT"
+                ? {
+                    region: {
+                      unit: "bar" as const,
+                      start: repaintStartBar,
+                      end: repaintEndBar,
+                      crossfadeSeconds: 0.25,
+                    },
+                  }
+                : {}),
             }),
       }
     }, {
@@ -1109,6 +1131,80 @@ export default function ProjectWorkspace() {
                       </CardContent>
                     </Card>
                     
+                    {activeArrangement.mode !== "PRO_SCORE" && (
+                      <Card>
+                        <CardContent className="grid gap-4 p-4 md:grid-cols-2">
+                          <label className="space-y-1 text-sm font-medium">
+                            ACE-Step operation
+                            <select
+                              className="mt-1 h-10 w-full rounded-md border bg-background px-3"
+                              value={aceOperation}
+                              onChange={(event) => setAceOperation(event.target.value as typeof aceOperation)}
+                            >
+                              {["COMPLETE", "LEGO", "REPAINT", "COVER", "EXTRACT"].map((operation) => (
+                                <option key={operation} value={operation}>{operation}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="space-y-1 text-sm font-medium">
+                            Source audio
+                            <select
+                              className="mt-1 h-10 w-full rounded-md border bg-background px-3"
+                              value={aceSourceArtifactId}
+                              onChange={(event) => setAceSourceArtifactId(event.target.value)}
+                            >
+                              <option value="">Use latest project audio</option>
+                              {(artifacts ?? [])
+                                .filter((artifact) =>
+                                  ["SOURCE", "NORMALIZED_AUDIO", "STEM", "AUDIO_TRACK"].includes(artifact.type))
+                                .map((artifact) => (
+                                  <option key={artifact.id} value={artifact.id}>
+                                    {artifact.type} · {artifact.id.slice(0, 8)}
+                                  </option>
+                                ))}
+                            </select>
+                          </label>
+                          {["LEGO", "EXTRACT"].includes(aceOperation) && (
+                            <label className="space-y-1 text-sm font-medium">
+                              Focused instrument
+                              <select
+                                className="mt-1 h-10 w-full rounded-md border bg-background px-3"
+                                value={aceInstrument}
+                                onChange={(event) => setAceInstrument(event.target.value)}
+                              >
+                                {["drums", "bass", "guitar", "piano", "strings", "brass", "woodwinds", "synth", "vocals"].map((instrument) => (
+                                  <option key={instrument} value={instrument}>{instrument}</option>
+                                ))}
+                              </select>
+                            </label>
+                          )}
+                          {aceOperation === "REPAINT" && (
+                            <div className="grid grid-cols-2 gap-3">
+                              <label className="space-y-1 text-sm font-medium">
+                                Start bar
+                                <input
+                                  type="number"
+                                  min={1}
+                                  className="mt-1 h-10 w-full rounded-md border bg-background px-3"
+                                  value={repaintStartBar}
+                                  onChange={(event) => setRepaintStartBar(Number(event.target.value))}
+                                />
+                              </label>
+                              <label className="space-y-1 text-sm font-medium">
+                                End bar
+                                <input
+                                  type="number"
+                                  min={repaintStartBar + 1}
+                                  className="mt-1 h-10 w-full rounded-md border bg-background px-3"
+                                  value={repaintEndBar}
+                                  onChange={(event) => setRepaintEndBar(Number(event.target.value))}
+                                />
+                              </label>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )}
                     <div className="flex justify-end">
                       <Button 
                         size="lg" 
