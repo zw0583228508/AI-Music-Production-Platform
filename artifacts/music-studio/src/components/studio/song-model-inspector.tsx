@@ -28,11 +28,13 @@ import {
   Loader2,
   Layers,
   Music2,
+  Plus,
   RefreshCw,
   Server,
   ShieldAlert,
   ShieldCheck,
   Timer,
+  Trash2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -193,7 +195,10 @@ export function SongModelInspector({ projectId }: SongModelInspectorProps) {
       setCorrectionError("Section names and ordered, non-overlapping bar boundaries are required.");
       return;
     }
-    if (normalizedSections.length !== model.sections.length) {
+    if (
+      model.sections.length > 0 &&
+      normalizedSections.length !== model.sections.length
+    ) {
       setCorrectionError("Section corrections must retain the detected section count.");
       return;
     }
@@ -639,12 +644,61 @@ export function SongModelInspector({ projectId }: SongModelInspectorProps) {
             </div>
           </div>
           <div className="space-y-2">
-            <Label>Section labels and boundaries</Label>
+            <div className="flex items-center justify-between gap-3">
+              <Label>Section labels and boundaries</Label>
+              {model.sections.length === 0 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSections((current) => [
+                    ...current,
+                    {
+                      name: "",
+                      startBar: current.length
+                        ? String(Number(current[current.length - 1].endBar || 0) + 1)
+                        : "1",
+                      endBar: "",
+                    },
+                  ])}
+                  data-testid="button-add-song-model-section"
+                >
+                  <Plus className="mr-1.5 h-3.5 w-3.5" />
+                  Add section
+                </Button>
+              )}
+            </div>
+            {sections.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                No verified sections were detected. Add the boundaries you confirmed before arranging.
+              </p>
+            )}
             {sections.map((section, index) => (
-              <div key={index} className="grid grid-cols-[minmax(0,1fr)_80px_80px] gap-2">
+              <div
+                key={index}
+                className={cn(
+                  "grid gap-2",
+                  model.sections.length === 0
+                    ? "grid-cols-[minmax(0,1fr)_80px_80px_36px]"
+                    : "grid-cols-[minmax(0,1fr)_80px_80px]",
+                )}
+              >
                 <Input aria-label={`Section ${index + 1} name`} value={section.name} onChange={(event) => setSections((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))} />
                 <Input aria-label={`Section ${index + 1} start bar`} type="number" min="1" value={section.startBar} onChange={(event) => setSections((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, startBar: event.target.value } : item))} />
                 <Input aria-label={`Section ${index + 1} end bar`} type="number" min="1" value={section.endBar} onChange={(event) => setSections((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, endBar: event.target.value } : item))} />
+                {model.sections.length === 0 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Remove section ${index + 1}`}
+                    onClick={() => setSections((current) =>
+                      current.filter((_, itemIndex) => itemIndex !== index)
+                    )}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
             ))}
           </div>

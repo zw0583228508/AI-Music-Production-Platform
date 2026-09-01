@@ -304,6 +304,13 @@ test("failed quality evidence is unranked regardless of provider score", () => {
       { label: "provider favorite without evidence", rank: null },
     ],
   );
+  assert.equal(isSelectableCandidate({
+    status: "validated",
+    evaluation: ranked[0].evaluation,
+    trackModels: [],
+    evaluatedPlan: {},
+    evaluatedStyleSpec: {},
+  }), false);
 });
 
 test("an evaluated row without complete quality evidence is unranked", () => {

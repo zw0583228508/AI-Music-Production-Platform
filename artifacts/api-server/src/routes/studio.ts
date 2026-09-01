@@ -1864,7 +1864,11 @@ router.patch("/projects/:projectId/song-model", async (req, res): Promise<void> 
     return;
   }
   if (correction.sections) {
-    if (correction.sections.length !== latest.model.sections.length) {
+    const isEstablishingMissingSections = latest.model.sections.length === 0;
+    if (
+      !isEstablishingMissingSections &&
+      correction.sections.length !== latest.model.sections.length
+    ) {
       res.status(400).json({ error: "Section corrections must retain the existing section count" });
       return;
     }
@@ -1911,6 +1915,10 @@ router.patch("/projects/:projectId/song-model", async (req, res): Promise<void> 
   const existingTempo = latest.model.tempoMap[0];
   const existingKey = latest.model.keyMap[0];
   const existingMeter = latest.model.meterMap[0];
+  const measuredAverageEnergy = latest.model.energy.length
+    ? latest.model.energy.reduce((sum, value) => sum + value, 0) /
+      latest.model.energy.length
+    : 0;
   const editedFieldStatus = {
     ...latest.model.fieldStatus,
     ...(!fields.includes("bpm")
@@ -2012,7 +2020,7 @@ router.patch("/projects/:projectId/song-model", async (req, res): Promise<void> 
       : {
           sections: correction.sections!.map((section, index) => ({
             ...section,
-            energy: latest.model.sections[index].energy,
+             energy: latest.model.sections[index]?.energy ?? measuredAverageEnergy,
           })),
         }),
   };

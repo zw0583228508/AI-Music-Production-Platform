@@ -53,7 +53,8 @@ export function isSelectableCandidate(candidate: {
 }): boolean {
   return candidate.status === "validated" &&
     hasCompleteQualityEvidence(candidate.evaluation) &&
-    candidate.trackModels !== null &&
+    Array.isArray(candidate.trackModels) &&
+    candidate.trackModels.length > 0 &&
     candidate.evaluatedPlan !== null &&
     candidate.evaluatedStyleSpec !== null;
 }

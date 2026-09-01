@@ -141,6 +141,7 @@ before(async () => {
             score: 0.71,
             confidence: 0.79,
             summary: "A restrained provider arrangement.",
+            trackModels: [],
             plan: {
               sections: [{ name: "Verse", energy: 0.5, density: 0.45, tracks: ["Piano"] }],
             },
@@ -310,6 +311,7 @@ test("recurring recovery reclaims a lease that expires after startup and persist
   assert.equal(candidates[0].evaluation.status, "evaluated");
   assert.ok(candidates[0].evaluation.qualityReport);
   assert.equal(candidates[0].evaluation.artifacts.length, 3);
+  assert.ok(candidates[0].trackModels.length > 0);
   assert.deepEqual(
     Object.keys(candidates[0].evaluation.qualityReport.weights).sort(),
     ["clipping", "lineage", "notePlayability", "sectionCoverage", "silence", "timing"],

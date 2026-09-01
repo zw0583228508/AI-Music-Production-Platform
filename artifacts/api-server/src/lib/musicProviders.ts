@@ -1986,16 +1986,18 @@ function normalizeCandidate(
     if (!Array.isArray(rawTrackModels)) {
       throw new Error(`Provider candidate ${index + 1} trackModels must be an array`);
     }
-    const errors = validateCanonicalTrackModels(
-      rawTrackModels,
-      input.tracks.map((track) => track.id),
-    );
-    if (errors.length) {
-      throw new Error(
-        `Provider candidate ${index + 1} returned invalid TrackModels: ${errors.join("; ")}`,
+    if (rawTrackModels.length > 0) {
+      const errors = validateCanonicalTrackModels(
+        rawTrackModels,
+        input.tracks.map((track) => track.id),
       );
+      if (errors.length) {
+        throw new Error(
+          `Provider candidate ${index + 1} returned invalid TrackModels: ${errors.join("; ")}`,
+        );
+      }
+      trackModels = rawTrackModels as TrackModel[];
     }
-    trackModels = rawTrackModels as TrackModel[];
   }
   return {
     providerRequestId:

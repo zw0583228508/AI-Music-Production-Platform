@@ -348,7 +348,7 @@ function materializeCandidate(input: CandidateMaterializationInput): {
       };
     }),
   };
-  const trackModels = candidate.trackModels == null
+  const trackModels = candidate.trackModels == null || candidate.trackModels.length === 0
     ? buildTrackModels({
         songModel,
         plan,
