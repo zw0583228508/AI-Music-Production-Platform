@@ -1999,6 +1999,15 @@ function normalizeCandidate(
       trackModels = rawTrackModels as TrackModel[];
     }
   }
+  const audioArtifact = normalizeProviderAudioArtifact(
+    value["artifact"] ??
+      (Array.isArray(value["artifacts"]) ? value["artifacts"][0] : undefined),
+    index,
+    expectedArtifactOrigin,
+  );
+  if (audioArtifact && trackModels === undefined) {
+    trackModels = [];
+  }
   return {
     providerRequestId:
       typeof value["providerRequestId"] === "string" ? value["providerRequestId"] : null,
@@ -2027,12 +2036,7 @@ function normalizeCandidate(
     parameters,
     parentArtifactIds: parents,
     trackModels,
-    audioArtifact: normalizeProviderAudioArtifact(
-      value["artifact"] ??
-        (Array.isArray(value["artifacts"]) ? value["artifacts"][0] : undefined),
-      index,
-      expectedArtifactOrigin,
-    ),
+    audioArtifact,
   };
 }
 

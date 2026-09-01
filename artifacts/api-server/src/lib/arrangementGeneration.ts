@@ -350,7 +350,8 @@ function materializeCandidate(input: CandidateMaterializationInput): {
       };
     }),
   };
-  const trackModels = candidate.trackModels == null || candidate.trackModels.length === 0
+  const trackModels = candidate.trackModels === undefined ||
+      candidate.trackModels === null
     ? buildTrackModels({
         songModel,
         plan,

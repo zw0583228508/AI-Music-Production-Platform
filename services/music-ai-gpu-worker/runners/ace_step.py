@@ -6,14 +6,14 @@ import json
 import os
 import sys
 import tempfile
-import urllib.request
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
 from .common import (RunnerError, artifact_descriptor, attest_checkpoint, cached_result,
-                     durable_job_dir, emit, require_cuda, runtime_provenance, save_result)
+                     download_source, durable_job_dir, emit, require_cuda,
+                     runtime_provenance, save_result)
 
 PROVIDER = "ACE_STEP"
 MODEL_VERSION = "ace-step-1.5-base"
@@ -306,37 +306,6 @@ def _operation_parameters(request: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _download_source(url: str, destination: Path) -> None:
-    request = urllib.request.Request(
-        url,
-        headers={"User-Agent": "music-ai-gpu-worker/1.0"},
-    )
-    total = 0
-    try:
-        with urllib.request.urlopen(request, timeout=90) as response:
-            declared = response.headers.get("Content-Length")
-            if declared and int(declared) > MAX_SOURCE_BYTES:
-                raise RunnerError("source audio exceeds the worker size limit")
-            with destination.open("wb") as output:
-                while True:
-                    chunk = response.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    total += len(chunk)
-                    if total > MAX_SOURCE_BYTES:
-                        raise RunnerError("source audio exceeds the worker size limit")
-                    output.write(chunk)
-    except RunnerError:
-        destination.unlink(missing_ok=True)
-        raise
-    except Exception as exc:
-        destination.unlink(missing_ok=True)
-        raise RunnerError(f"source audio download failed: {exc}") from exc
-    if total <= 0:
-        destination.unlink(missing_ok=True)
-        raise RunnerError("source audio download was empty")
-
-
 def _region_seconds(
     request: dict[str, Any], region: dict[str, Any]
 ) -> tuple[float, float]:
@@ -402,7 +371,7 @@ def run_job(request: dict[str, Any], checkpoint: Path,
     source_path = None
     if operation["operation"]:
         source_path = work / "source-audio"
-        _download_source(operation["source_url"], source_path)
+        download_source(operation["source_url"], source_path)
     if operation["operation"] == "REPAINT":
         repainting_start, repainting_end = _region_seconds(
             request, operation["region"]
