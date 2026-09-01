@@ -171,8 +171,8 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
       songModels,
       arrangement.songModelVersion,
     );
-    if (!arrangement.plan || !arrangement.styleSpec || !arrangement.trackModels.length) {
-      throw new Error("The selected arrangement has no persisted Song Model, plan, style, or TrackModels");
+    if (!arrangement.plan || !arrangement.styleSpec) {
+      throw new Error("The selected arrangement has no persisted Song Model, plan, or style");
     }
     const planArtifact = artifacts.find((artifact) => artifact.type === "ARRANGEMENT_PLAN" &&
       (artifact.storageUri === `db://music_arrangements/${arrangement.id}` || artifact.id === arrangement.sourceCandidateId));
@@ -185,32 +185,50 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
     if ([...expectedTrackIds].some((id) => !trackModelArtifactIds[id])) {
       throw new Error("One or more selected TrackModel artifacts are unavailable");
     }
-    const exportTrackModels = applyArrangementEditorChanges({
-      trackModels: arrangement.trackModels, sections: arrangement.sections, tracks, bpm, meter,
-    });
-    const playabilityErrors = validateCanonicalTrackModels(exportTrackModels, [...expectedTrackIds]);
-    if (playabilityErrors.length) throw new Error("Arrangement editor changes are not playable");
+    const exportTrackModels = arrangement.trackModels.length > 0
+      ? applyArrangementEditorChanges({
+          trackModels: arrangement.trackModels,
+          sections: arrangement.sections,
+          tracks,
+          bpm,
+          meter,
+        })
+      : [];
+    const playabilityErrors = validateCanonicalTrackModels(
+      exportTrackModels,
+      [...expectedTrackIds],
+    );
+    if (playabilityErrors.length) {
+      throw new Error("Arrangement editor changes are not playable");
+    }
 
     await heartbeat("rendering", 25);
-    const deterministicFiles = await renderArrangementExport({
-      projectName: project.name, bpm, key, meter,
-      arrangementName: arrangement.name, arrangementVersion: arrangement.version,
-      masterProfile: input.masterProfile ?? "STREAMING", energy: arrangement.energy, density: arrangement.density,
-      harmonyComplexity: arrangement.harmonyComplexity, sections: arrangement.sections, tracks, songModel: songModel.model,
-      plan: arrangement.plan, trackModels: exportTrackModels, styleSpec: arrangement.styleSpec, seed: arrangement.seed ?? undefined,
-      generationProvider: arrangement.generationProvenance?.provider ?? arrangement.generationProvider ?? "ARRANGEMENT_ENGINE",
-      generationModelVersion: arrangement.generationProvenance?.modelVersion ?? arrangement.modelVersion ?? undefined,
-      generationCheckpointSha256: arrangement.generationProvenance?.checkpointSha256 ?? undefined,
-      candidateId: arrangement.generationProvenance?.candidateId ?? arrangement.sourceCandidateId ?? undefined,
-      providerRequestId: arrangement.generationProvenance?.providerRequestId ?? undefined,
-      parentIds: Object.values(trackModelArtifactIds).length ? Object.values(trackModelArtifactIds) : [planArtifact.id],
-      planArtifactId: planArtifact.id, planParentIds: planArtifact.parentIds, trackModelArtifactIds,
-      includeStems: input.includeStems ?? true, includeMidi: input.includeMidi ?? true,
-    });
+    const deterministicFiles = exportTrackModels.length > 0
+      ? await renderArrangementExport({
+          projectName: project.name, bpm, key, meter,
+          arrangementName: arrangement.name, arrangementVersion: arrangement.version,
+          masterProfile: input.masterProfile ?? "STREAMING", energy: arrangement.energy, density: arrangement.density,
+          harmonyComplexity: arrangement.harmonyComplexity, sections: arrangement.sections, tracks, songModel: songModel.model,
+          plan: arrangement.plan, trackModels: exportTrackModels, styleSpec: arrangement.styleSpec, seed: arrangement.seed ?? undefined,
+          generationProvider: arrangement.generationProvenance?.provider ?? arrangement.generationProvider ?? "ARRANGEMENT_ENGINE",
+          generationModelVersion: arrangement.generationProvenance?.modelVersion ?? arrangement.modelVersion ?? undefined,
+          generationCheckpointSha256: arrangement.generationProvenance?.checkpointSha256 ?? undefined,
+          candidateId: arrangement.generationProvenance?.candidateId ?? arrangement.sourceCandidateId ?? undefined,
+          providerRequestId: arrangement.generationProvenance?.providerRequestId ?? undefined,
+          parentIds: Object.values(trackModelArtifactIds).length ? Object.values(trackModelArtifactIds) : [planArtifact.id],
+          planArtifactId: planArtifact.id, planParentIds: planArtifact.parentIds, trackModelArtifactIds,
+          includeStems: input.includeStems ?? true, includeMidi: input.includeMidi ?? true,
+        })
+      : [];
     const providerAudioFiles = await selectedProviderAudioExport(
       arrangement,
       artifacts,
     );
+    if (deterministicFiles.length === 0 && providerAudioFiles.length === 0) {
+      throw new Error(
+        "The selected arrangement has neither symbolic tracks nor verified provider audio",
+      );
+    }
     const renderedFiles = [...deterministicFiles, ...providerAudioFiles]
       .filter((file) => (input.includeMix !== false || !["MIX", "PREMASTER", "MASTER"].includes(file.type)) &&
       (input.includeMetadata !== false || file.type !== "METADATA"));

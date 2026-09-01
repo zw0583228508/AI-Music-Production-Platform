@@ -313,6 +313,52 @@ test("failed quality evidence is unranked regardless of provider score", () => {
   }), false);
 });
 
+test("verified provider audio is selectable without inventing symbolic TrackModels", () => {
+  const evaluation = {
+    status: "evaluated",
+    providerScore: 0.8,
+    renderArtifactIds: ["audio"],
+    artifacts: [
+      { id: "audio", type: "AUDIO_TRACK", label: "Provider audio", url: "export-object://audio" },
+      { id: "quality", type: "QUALITY_REPORT", label: "Quality", url: "export-object://quality" },
+    ],
+    qualityReport: {
+      score: 0.82,
+      checks: {
+        silence: 1, clipping: 1, notePlayability: 0, timing: 0,
+        sectionCoverage: 0, lineage: 1,
+      },
+      weights: {
+        silence: 0.15, clipping: 0.15, notePlayability: 0.2, timing: 0.15,
+        sectionCoverage: 0.15, lineage: 0.2,
+      },
+      strengths: [], weaknesses: [], warnings: [],
+      evaluatedAt: "2026-09-01T00:00:00.000Z",
+      renderArtifactIds: ["audio"],
+      lineageComplete: true,
+    },
+    error: null,
+  };
+  assert.equal(hasCompleteQualityEvidence(evaluation), true);
+  assert.equal(isSelectableCandidate({
+    status: "validated",
+    evaluation,
+    trackModels: [],
+    evaluatedPlan: {},
+    evaluatedStyleSpec: {},
+  }), true);
+
+  const falselyClaimedMidi = {
+    ...evaluation,
+    renderArtifactIds: ["audio", "midi"],
+    qualityReport: {
+      ...evaluation.qualityReport,
+      renderArtifactIds: ["audio", "midi"],
+    },
+  };
+  assert.equal(hasCompleteQualityEvidence(falselyClaimedMidi), false);
+});
+
 test("an evaluated row without complete quality evidence is unranked", () => {
   const incomplete = {
     status: "evaluated",

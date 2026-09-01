@@ -50,8 +50,10 @@ import {
 } from "./musicEngines";
 import { createPerformanceMidi, encodeWav } from "./exportEngine";
 import {
+  createPrivateExportDownloadUrl,
   createSourceDownloadUrl,
   deleteExportObject,
+  isPrivateExportObjectPath,
   isSourceObjectPath,
   saveExportObject,
 } from "./objectStorage";
@@ -580,7 +582,12 @@ export async function queueArrangementGeneration(
       artifact.type,
     ),
   );
-  const parentArtifactIds = relevantArtifacts.map((artifact) => artifact.id);
+  const parentArtifactIds = [
+    ...new Set([
+      ...relevantArtifacts.map((artifact) => artifact.id),
+      ...(sourceArtifactId ? [sourceArtifactId] : []),
+    ]),
+  ];
   const songModel = songModels[0];
   const songModelSnapshot =
     songModel?.model ?? {
@@ -808,15 +815,23 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           eq(musicArtifactsTable.projectId, job.projectId),
         ))
         .limit(1);
-      if (
-        !sourceArtifact?.storageUri ||
-        !isSourceObjectPath(sourceArtifact.storageUri)
-      ) {
+      const sourceUpload =
+        sourceArtifact?.storageUri &&
+        isSourceObjectPath(sourceArtifact.storageUri);
+      const providerAudio =
+        sourceArtifact?.storageUri &&
+        isPrivateExportObjectPath(sourceArtifact.storageUri) &&
+        sourceArtifact.type === "AUDIO_TRACK" &&
+        sourceArtifact.format === "WAV" &&
+        sourceArtifact.createdBy === "gpu-provider-output-ingest";
+      if (!sourceArtifact?.storageUri || (!sourceUpload && !providerAudio)) {
         throw new Error("ACE-Step source artifact is unavailable or has an invalid storage location");
       }
       sourceAudio = {
         artifactId: sourceArtifact.id,
-        url: await createSourceDownloadUrl(sourceArtifact.storageUri),
+        url: sourceUpload
+          ? await createSourceDownloadUrl(sourceArtifact.storageUri)
+          : await createPrivateExportDownloadUrl(sourceArtifact.storageUri),
       };
     }
     // Check ownership immediately before the non-transactional provider call.
@@ -975,7 +990,6 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
         const audioArtifactId = randomUUID();
         const midiArtifactId = randomUUID();
         const qualityArtifactId = randomUUID();
-        const renderArtifactIds = [audioArtifactId, midiArtifactId];
         const materialized = materializeCandidate({
           candidateId,
           version: snapshot.arrangement.version + 1,
@@ -998,6 +1012,15 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
         const providerWav = candidate.audioArtifact
           ? await ingestProviderAudio(candidate.audioArtifact)
           : null;
+        const hasSymbolicTrackModels = materialized.trackModels.length > 0;
+        if (!providerWav && !hasSymbolicTrackModels) {
+          throw new Error(
+            "Candidate produced neither provider audio nor symbolic TrackModels",
+          );
+        }
+        const renderArtifactIds = hasSymbolicTrackModels
+          ? [audioArtifactId, midiArtifactId]
+          : [audioArtifactId];
         const pipeline = renderMusicPipeline({
           songModel: evaluationSongModel,
           plan: materialized.plan,
@@ -1036,12 +1059,14 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           : pipeline.quality;
         const candidateDuration =
           candidate.audioArtifact?.durationSeconds ?? pipeline.durationSeconds;
-        const midi = createPerformanceMidi(
-          materialized.trackModels,
-          evaluationSongModel.tempoMap[0]?.bpm ?? 92,
-          evaluationSongModel.meterMap[0]?.meter ?? "4/4",
-          candidateDuration,
-        );
+        const midi = hasSymbolicTrackModels
+          ? createPerformanceMidi(
+              materialized.trackModels,
+              evaluationSongModel.tempoMap[0]?.bpm ?? 92,
+              evaluationSongModel.meterMap[0]?.meter ?? "4/4",
+              candidateDuration,
+            )
+          : null;
         const objectPrefix = `generation/${job.id}/${candidateId}`;
         const audioUrl = await saveExportObject(
           `${objectPrefix}/render.wav`,
@@ -1050,13 +1075,17 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
         );
         candidateObjectUrls.push(audioUrl);
         unpublishedEvaluationUrls.push(audioUrl);
-        const midiUrl = await saveExportObject(
-          `${objectPrefix}/performance.mid`,
-          midi,
-          "audio/midi",
-        );
-        candidateObjectUrls.push(midiUrl);
-        unpublishedEvaluationUrls.push(midiUrl);
+        const midiUrl = midi
+          ? await saveExportObject(
+              `${objectPrefix}/performance.mid`,
+              midi,
+              "audio/midi",
+            )
+          : null;
+        if (midiUrl) {
+          candidateObjectUrls.push(midiUrl);
+          unpublishedEvaluationUrls.push(midiUrl);
+        }
         phase = "analyzing";
         const requiredDimensions = [
           "silence",
@@ -1103,7 +1132,9 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           renderArtifactIds,
           artifacts: [
             { id: audioArtifactId, type: "AUDIO_TRACK", label: "Rendered audio", url: audioUrl },
-            { id: midiArtifactId, type: "MIDI", label: "Performance MIDI", url: midiUrl },
+            ...(midiUrl
+              ? [{ id: midiArtifactId, type: "MIDI" as const, label: "Performance MIDI", url: midiUrl }]
+              : []),
             { id: qualityArtifactId, type: "QUALITY_REPORT", label: "Quality report", url: qualityUrl },
           ],
           qualityReport: quality,
@@ -1112,8 +1143,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
         evaluationScore = quality.score;
         candidateStatus = "validated";
         const artifactParentIds = [planArtifactId, ...candidateParentIds];
-        artifactRows.push(
-          {
+        artifactRows.push({
             id: audioArtifactId,
             projectId: job.projectId,
             type: "AUDIO_TRACK",
@@ -1157,8 +1187,9 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
                 ? { checkpointSha256: result.checkpointSha256 }
                 : {}),
             },
-          },
-          {
+          });
+        if (midi && midiUrl) {
+          artifactRows.push({
             id: midiArtifactId,
             projectId: job.projectId,
             type: "MIDI",
@@ -1186,8 +1217,9 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
                 ? { checkpointSha256: result.checkpointSha256 }
                 : {}),
             },
-          },
-          {
+          });
+        }
+        artifactRows.push({
             id: qualityArtifactId,
             projectId: job.projectId,
             type: "QUALITY_REPORT",
@@ -1199,7 +1231,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
             storageUri: qualityUrl,
             hash: sha256(qualityData),
             checksum: sha256(qualityData),
-            parentIds: [audioArtifactId, midiArtifactId, planArtifactId],
+            parentIds: [...renderArtifactIds, planArtifactId],
             createdBy: "quality-engine",
             modelVersion: "QUALITY_ENGINE@1.0.0",
             provider: provider.definition.id,
@@ -1215,8 +1247,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
                 ? { checkpointSha256: result.checkpointSha256 }
                 : {}),
             },
-          },
-        );
+          });
       } catch (error) {
         await Promise.all(candidateObjectUrls.map((url) =>
           deleteExportObject(url).catch(() => undefined)));
@@ -1876,32 +1907,34 @@ export async function selectGenerationCandidate(
         parameters: engineParameters,
         storageUri: `db://music_arrangements/${arrangement.id}`,
       });
-      await tx.insert(musicArtifactsTable).values(trackModels.map((trackModel) => {
-        const serialized = JSON.stringify(trackModel);
-        return {
-          id: randomUUID(),
-          projectId: arrangement.projectId,
-          type: "TRACK_MODEL",
-          label: `${arrangement.name} · ${trackModel.instrument}`,
-          version: arrangement.version,
-          size: `${Buffer.byteLength(serialized)} B`,
-          format: "JSON",
-          hash: sha256(serialized),
-          checksum: sha256(serialized),
-          parentIds: [selectedPlanArtifactId],
-          createdBy: "performance-engine",
-          modelVersion: `${trackModel.provenance.model}@${trackModel.provenance.version}`,
-          parameters: {
-            ...trackModel.provenance.parameters,
-            trackId: trackModel.id,
-            arrangementId: arrangement.id,
-            ...(candidate.checkpointSha256
-              ? { checkpointSha256: candidate.checkpointSha256 }
-              : {}),
-          },
-          storageUri: `db://music_arrangements/${arrangement.id}/tracks/${trackModel.id}`,
-        };
-      }));
+      if (trackModels.length > 0) {
+        await tx.insert(musicArtifactsTable).values(trackModels.map((trackModel) => {
+          const serialized = JSON.stringify(trackModel);
+          return {
+            id: randomUUID(),
+            projectId: arrangement.projectId,
+            type: "TRACK_MODEL",
+            label: `${arrangement.name} · ${trackModel.instrument}`,
+            version: arrangement.version,
+            size: `${Buffer.byteLength(serialized)} B`,
+            format: "JSON",
+            hash: sha256(serialized),
+            checksum: sha256(serialized),
+            parentIds: [selectedPlanArtifactId],
+            createdBy: "performance-engine",
+            modelVersion: `${trackModel.provenance.model}@${trackModel.provenance.version}`,
+            parameters: {
+              ...trackModel.provenance.parameters,
+              trackId: trackModel.id,
+              arrangementId: arrangement.id,
+              ...(candidate.checkpointSha256
+                ? { checkpointSha256: candidate.checkpointSha256 }
+                : {}),
+            },
+            storageUri: `db://music_arrangements/${arrangement.id}/tracks/${trackModel.id}`,
+          };
+        }));
+      }
     }
     await tx.insert(studioActivitiesTable).values({
       id: randomUUID(),

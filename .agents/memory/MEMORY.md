@@ -15,3 +15,4 @@
 - [Structure-model smoke evidence](structure-model-smoke-evidence.md) — smoke fixtures need multi-bar rhythm/harmony; preserve evidence by trimming pickups to the first detected downbeat.
 - [MT3 adapter compatibility](mt3-adapter-compatibility.md) — trust real GPU inference over declared dependency ranges; bind any exact compatibility correction into provenance.
 - [BS-RoFormer adapter contract](bs-roformer-adapter-contract.md) — v0.1.5 exposes a folder API, not a session wrapper; explicit paths are required to prevent downloads.
+- [Provider-audio arrangement semantics](provider-audio-arrangement-semantics.md) — audio-only candidates stay selectable/exportable without fake MIDI; chained provider audio remains private with explicit parent lineage.

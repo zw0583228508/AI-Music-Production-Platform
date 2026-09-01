@@ -53,6 +53,19 @@ export function isSourceObjectPath(objectPath: string): boolean {
     .test(objectPath);
 }
 
+export function isPrivateExportObjectPath(objectPath: string): boolean {
+  const prefix = "/api/storage/objects/exports/";
+  if (!objectPath.startsWith(prefix)) return false;
+  const relativePath = objectPath.slice(prefix.length);
+  return relativePath.length > 0 &&
+    relativePath.split("/").every((part) =>
+      Boolean(part) &&
+      part !== "." &&
+      part !== ".." &&
+      /^[a-zA-Z0-9._-]+$/.test(part)
+    );
+}
+
 async function signObjectUrl(
   bucketName: string,
   objectName: string,
@@ -120,6 +133,19 @@ export async function createSourceDownloadUrl(objectPath: string): Promise<strin
     throw new Error("Invalid source object path");
   }
   const relativePath = objectPath.slice("/objects/".length);
+  const { bucketName, objectName } = parseObjectPath(
+    `${privateObjectDir()}/${relativePath}`,
+  );
+  return signObjectUrl(bucketName, objectName, "GET");
+}
+
+export async function createPrivateExportDownloadUrl(
+  objectPath: string,
+): Promise<string> {
+  if (!isPrivateExportObjectPath(objectPath)) {
+    throw new Error("Invalid private export object path");
+  }
+  const relativePath = objectPath.slice("/api/storage/objects/".length);
   const { bucketName, objectName } = parseObjectPath(
     `${privateObjectDir()}/${relativePath}`,
   );
