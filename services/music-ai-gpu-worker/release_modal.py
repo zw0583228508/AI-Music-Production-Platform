@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -179,6 +181,76 @@ def read_health(metadata: dict, token: str) -> dict:
         return json.loads(response.read())
 
 
+def retain_smoke_artifact(health: dict, metadata: dict, output: Path) -> None:
+    descriptor = health.get("smokeEvidence", {}).get("output", {}).get("artifact", {})
+    url = str(descriptor.get("url", ""))
+    if not url.startswith(f"{_origin(metadata['endpointOrigin'])}/artifacts/"):
+        raise ValueError("smoke artifact capability is missing or targets another origin")
+    request = urllib.request.Request(url, headers={"Accept": "audio/wav"})
+    with urllib.request.build_opener(NoRedirect).open(request, timeout=300) as response:
+        if response.status != 200 or response.geturl() != url:
+            raise RuntimeError("smoke artifact did not return directly from Modal origin")
+        content = response.read(32 * 1024 * 1024 + 1)
+    expected_bytes = descriptor.get("bytes")
+    expected_sha = str(descriptor.get("sha256", "")).lower()
+    if (
+        not isinstance(expected_bytes, int)
+        or len(content) != expected_bytes
+        or len(content) > 32 * 1024 * 1024
+        or hashlib.sha256(content).hexdigest() != expected_sha
+    ):
+        raise ValueError("retained smoke artifact does not match its live descriptor")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(content)
+    descriptor["retainedEvidenceFile"] = output.name
+    for field in ("url", "capability", "expiresAt"):
+        descriptor.pop(field, None)
+
+
+def validate_mt3_note_output(output: object) -> None:
+    if not isinstance(output, dict):
+        raise ValueError("MT3 retained note evidence is missing")
+    events = output.get("noteEvents")
+    if (
+        not isinstance(events, list)
+        or not 1 <= len(events) <= 4096
+        or output.get("notes") != len(events)
+        or output.get("terminatedNotes") != len(events)
+        or output.get("allNotesTerminated") is not True
+    ):
+        raise ValueError("MT3 retained note evidence count is invalid")
+    previous = None
+    for event in events:
+        if not isinstance(event, dict):
+            raise ValueError("MT3 retained note evidence has an invalid event")
+        start, end = event.get("start"), event.get("end")
+        pitch, velocity = event.get("pitch"), event.get("velocity")
+        confidence = event.get("confidence")
+        if (
+            isinstance(start, bool) or not isinstance(start, (int, float))
+            or isinstance(end, bool) or not isinstance(end, (int, float))
+            or not math.isfinite(start) or not math.isfinite(end)
+            or start < 0 or end <= start
+            or isinstance(pitch, bool) or not isinstance(pitch, int)
+            or not 0 <= pitch <= 127
+            or isinstance(velocity, bool) or not isinstance(velocity, int)
+            or not 1 <= velocity <= 127
+            or isinstance(confidence, bool)
+            or not isinstance(confidence, (int, float))
+            or not math.isfinite(confidence) or not 0 <= confidence <= 1
+        ):
+            raise ValueError("MT3 retained note evidence has invalid bounds")
+        ordering = (start, end, pitch)
+        if previous is not None and ordering < previous:
+            raise ValueError("MT3 retained note evidence is not canonical")
+        previous = ordering
+    expected = hashlib.sha256(json.dumps(
+        events, sort_keys=True, separators=(",", ":"), allow_nan=False,
+    ).encode()).hexdigest()
+    if output.get("noteEventsSha256") != expected:
+        raise ValueError("MT3 retained note evidence hash is invalid")
+
+
 def validate_evidence(value: object, provider: str) -> None:
     validate_metadata(value, provider)
     if not isinstance(value, dict) or value.get("schemaVersion") != 1:
@@ -202,6 +274,8 @@ def validate_evidence(value: object, provider: str) -> None:
             or str(proof.get("checkpointSha256", "")).lower()
             != value["checkpointSha256"]):
         raise ValueError("real provider smoke evidence is incomplete")
+    if provider == "MT3":
+        validate_mt3_note_output(proof["output"])
     expected_provenance = {
         "checkpointSha256": value["checkpointSha256"],
         "modalImageId": value["modalImageId"],
@@ -219,7 +293,10 @@ def validate_evidence(value: object, provider: str) -> None:
         raise ValueError("release evidence source revision does not match CI release revision")
 
 
-def capture(provider: str, expected: dict, token: str, attempts: int = 30) -> dict:
+def capture(
+    provider: str, expected: dict, token: str, attempts: int = 30,
+    smoke_artifact_output: Path | None = None,
+) -> dict:
     metadata = capture_metadata(provider)
     if identity(metadata) != expected:
         raise ValueError("final Modal identity does not match refreshed identity")
@@ -236,6 +313,8 @@ def capture(provider: str, expected: dict, token: str, attempts: int = 30) -> di
             time.sleep(10)
     if health is None:
         raise RuntimeError("authenticated provider health never became ready")
+    if smoke_artifact_output is not None:
+        retain_smoke_artifact(health, metadata, smoke_artifact_output)
     final_metadata = capture_metadata(provider)
     if final_metadata != metadata:
         raise ValueError("Modal deployment identity changed during release capture")
@@ -268,6 +347,7 @@ def main() -> None:
     capture_parser.add_argument("--expected-identity", required=True)
     capture_parser.add_argument("--output", required=True)
     capture_parser.add_argument("--health-output")
+    capture_parser.add_argument("--smoke-artifact-output")
     args = parser.parse_args()
     if args.command == "observe":
         atomic_json(Path(args.output), capture_metadata(args.provider))
@@ -281,7 +361,15 @@ def main() -> None:
         if not token:
             raise ValueError("music worker token is unavailable")
         expected = json.loads(Path(args.expected_identity).read_text())
-        evidence = capture(args.provider, expected, token)
+        if args.provider == "ACE_STEP" and not args.smoke_artifact_output:
+            raise ValueError("ACE_STEP capture requires retained smoke artifact output")
+        evidence = capture(
+            args.provider, expected, token,
+            smoke_artifact_output=(
+                Path(args.smoke_artifact_output)
+                if args.smoke_artifact_output else None
+            ),
+        )
         atomic_json(Path(args.output), evidence)
         if args.health_output:
             atomic_json(Path(args.health_output), evidence["liveHealth"])

@@ -19,13 +19,13 @@ from modal_config import (
     JOB_MOUNT,
     JOB_VOLUME_NAME,
     MODEL_MOUNT,
-    MODEL_VOLUME_NAME,
     OUTPUT_MOUNT,
     OUTPUT_VOLUME_NAME,
     promotion_secret_name,
     RUNTIME_SECRET_NAME,
     provider_image_build_args,
     provider_app_name,
+    provider_model_volume_name,
     worker_environment,
 )
 
@@ -87,15 +87,15 @@ provider_images: dict[str, modal.Image] = {
         build_args=provider_image_build_args(DEPLOYMENTS["ALL_IN_ONE"]),
     ),
 }
-model_volume = modal.Volume.from_name(MODEL_VOLUME_NAME, create_if_missing=False)
+model_volumes = {
+    provider: modal.Volume.from_name(
+        provider_model_volume_name(provider), create_if_missing=False
+    )
+    for provider in release_providers
+}
 job_volume = modal.Volume.from_name(JOB_VOLUME_NAME, create_if_missing=False)
 output_volume = modal.Volume.from_name(OUTPUT_VOLUME_NAME, create_if_missing=False)
 runtime_secret = modal.Secret.from_name(RUNTIME_SECRET_NAME)
-volumes = {
-    MODEL_MOUNT: model_volume,
-    JOB_MOUNT: job_volume,
-    OUTPUT_MOUNT: output_volume,
-}
 
 
 def _worker_options(provider: str) -> dict:
@@ -107,7 +107,11 @@ def _worker_options(provider: str) -> dict:
             runtime_secret,
             modal.Secret.from_name(promotion_secret_name(provider)),
         ],
-        "volumes": volumes,
+        "volumes": {
+            MODEL_MOUNT: model_volumes[provider],
+            JOB_MOUNT: job_volume,
+            OUTPUT_MOUNT: output_volume,
+        },
         "timeout": deployment.timeout_seconds,
         "scaledown_window": deployment.idle_timeout_seconds,
         "max_containers": deployment.max_containers,
@@ -139,7 +143,7 @@ if "MT3" in release_providers:
     @provider_apps["MT3"].cls(**_worker_options("MT3"))
     @modal.concurrent(max_inputs=1)
     class MT3Worker:
-        @modal.asgi_app(label="mt3")
+        @modal.asgi_app(label="mt3-isolated")
         def endpoint(self):
             from app import app as fastapi_app
             return fastapi_app
@@ -149,7 +153,7 @@ if "ALL_IN_ONE" in release_providers:
     @provider_apps["ALL_IN_ONE"].cls(**_worker_options("ALL_IN_ONE"))
     @modal.concurrent(max_inputs=1)
     class AllInOneWorker:
-        @modal.asgi_app(label="all-in-one")
+        @modal.asgi_app(label="all-in-one-isolated")
         def endpoint(self):
             from app import app as fastapi_app
             return fastapi_app

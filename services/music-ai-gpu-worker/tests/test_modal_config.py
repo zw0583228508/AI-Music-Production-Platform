@@ -43,6 +43,20 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
         self.assertIn('@modal.asgi_app(label="ace-step-isolated")', modal_app_source)
         self.assertNotIn('@modal.asgi_app(label="ace-step")', modal_app_source)
 
+    def test_mt3_uses_an_isolated_webhook_and_model_volume(self):
+        modal_app_source = (ROOT / "modal_app.py").read_text()
+        self.assertIn('@modal.asgi_app(label="mt3-isolated")', modal_app_source)
+        self.assertNotIn('@modal.asgi_app(label="mt3")', modal_app_source)
+        self.assertEqual(
+            modal_config.provider_model_volume_name("MT3"),
+            "music-ai-mt3-models-v1",
+        )
+        self.assertNotEqual(
+            modal_config.provider_model_volume_name("MT3"),
+            modal_config.MODEL_VOLUME_NAME,
+        )
+        self.assertIn("model_volumes[provider]", modal_app_source)
+
     def test_each_manifest_provider_has_a_bounded_deployment(self):
         self.assertEqual(
             set(modal_config.DEPLOYMENTS),
@@ -57,7 +71,9 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             self.assertEqual(deployment.max_containers, 1)
             self.assertTrue((ROOT / "runners" / deployment.requirements_file).is_file())
             self.assertRegex(deployment.source_image_digest, r"^sha256:[0-9a-f]{64}$")
-            self.assertTrue(deployment.cuda_image.startswith("nvidia/cuda:"))
+            self.assertTrue(
+                deployment.cuda_image.startswith(("nvidia/cuda:", "nvidia/cuda@sha256:"))
+            )
             self.assertTrue(deployment.pytorch)
 
     def test_environment_is_provider_isolated_and_uses_durable_mounts(self):
@@ -69,9 +85,14 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             self.assertNotIn("MUSIC_GPU_OUTPUT_ROOT", environment)
             self.assertEqual(environment["MUSIC_GPU_MAX_CONCURRENT_JOBS"], "1")
             self.assertNotIn("MUSIC_AI_WORKER_TOKEN", environment)
-            self.assertEqual(
-                environment["MUSIC_GPU_CONTAINER_DIGEST"], deployment.source_image_digest
-            )
+            if deployment.provider == "MT3":
+                self.assertNotIn("MUSIC_GPU_CONTAINER_DIGEST", environment)
+                self.assertNotIn("MUSIC_GPU_SOURCE_REVISION", environment)
+            else:
+                self.assertEqual(
+                    environment["MUSIC_GPU_CONTAINER_DIGEST"],
+                    deployment.source_image_digest,
+                )
             module = deployment.provider.lower()
             self.assertEqual(
                 environment[f"MUSIC_GPU_RUNNER_{deployment.provider}"],
@@ -111,9 +132,15 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
                     "TRANSFORMERS_SPEC",
                     "ACCELERATE_SPEC",
             }
-            if deployment.provider in {"MR_MT3", "YOUR_MT3"}:
+            if deployment.provider in {"MT3", "MR_MT3", "YOUR_MT3"}:
                 expected.add("SOURCE_IMAGE_DIGEST")
                 self.assertEqual(build_args["SOURCE_IMAGE_DIGEST"], deployment.source_image_digest)
+            if deployment.provider == "MT3":
+                expected.add("SOURCE_REVISION")
+                self.assertRegex(
+                    build_args["SOURCE_REVISION"],
+                    r"^(?:[a-f0-9]{40}|UNSET)$",
+                )
             self.assertEqual(set(build_args), expected)
             self.assertNotIn("MUSIC_GPU_SOURCE_IMAGE_DIGEST", build_args)
 
@@ -124,6 +151,22 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             modal_config.DEPLOYMENTS["MT3"].transformers,
             "4.38.2",
         )
+        self.assertRegex(
+            modal_config.DEPLOYMENTS["MT3"].cuda_image,
+            r"^nvidia/cuda@sha256:[0-9a-f]{64}$",
+        )
+        self.assertIn(
+            "ghcr.io/astral-sh/uv@sha256:",
+            dockerfile,
+        )
+        self.assertIn(
+            "ghcr.io/astral-sh/uv@sha256:"
+            "1ececcacbbde240ffca54d400df86e4fdd38f29c1a2366299279d197e92eaed3",
+            dockerfile,
+        )
+        self.assertIn("MUSIC_GPU_RUNTIME_IDENTITY=1", dockerfile)
+        self.assertIn("MUSIC_GPU_CONTAINER_DIGEST=${SOURCE_IMAGE_DIGEST}", dockerfile)
+        self.assertIn("MUSIC_GPU_SOURCE_REVISION=${SOURCE_REVISION}", dockerfile)
 
     def test_wave_two_has_compatible_transformers_and_isolated_yourmt3_extras(self):
         mr = (ROOT / "Dockerfile.mr-mt3").read_text()
@@ -223,12 +266,15 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             self.assertNotIn("/provenance/runners/", dockerfile.read_text())
         self.assertNotIn("SOURCE_IMAGE_DIGEST", modal_app)
         for deployment in modal_config.DEPLOYMENTS.values():
-            self.assertEqual(
-                modal_config.worker_environment(deployment)[
+            if deployment.provider == "MT3":
+                observed = modal_config.provider_image_build_args(deployment)[
+                    "SOURCE_IMAGE_DIGEST"
+                ]
+            else:
+                observed = modal_config.worker_environment(deployment)[
                     "MUSIC_GPU_CONTAINER_DIGEST"
-                ],
-                deployment.source_image_digest,
-            )
+                ]
+            self.assertEqual(observed, deployment.source_image_digest)
 
     def test_source_digest_covers_every_copied_executable_input(self):
         source = (ROOT / "modal_config.py").read_text()
@@ -269,6 +315,10 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
     def test_secret_and_volume_names_are_explicitly_versioned(self):
         self.assertEqual(modal_config.RUNTIME_SECRET_NAME, "music-ai-worker-runtime")
         self.assertTrue(modal_config.MODEL_VOLUME_NAME.endswith("-v1"))
+        self.assertEqual(
+            modal_config.MT3_MODEL_VOLUME_NAME,
+            "music-ai-mt3-models-v1",
+        )
         self.assertTrue(modal_config.MR_MT3_MODEL_VOLUME_NAME.endswith("-v1"))
         self.assertEqual(
             modal_config.YOUR_MT3_MODEL_VOLUME_NAME,
@@ -452,16 +502,25 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             environment["MUSIC_PROVIDER_MT3_CHECKPOINT_SHA256"],
             "33f6bc4c0410a1c7c1c426c5406566de0b7418af2dc3dfd798496f70cef85622",
         )
+        details = modal_config.MANIFEST["providers"]["MT3"]
+        self.assertEqual(details["model_version"], "mt3-pytorch-multitrack")
+        self.assertEqual(details["checkpoint_license"], "Apache-2.0")
+        self.assertEqual(
+            details["checkpoint_asset_sha256"],
+            "b8a3807ed265059abd25ad7f68142c06c35e8f6144dcaa45bd55946a3745398f",
+        )
+        self.assertTrue(
+            details["official_checkpoint"]["all_converted_assignments_exact"]
+        )
 
-    def test_retained_mt3_l4_proof_matches_the_reviewed_deployment(self):
+    def test_retained_mt3_l4_proof_is_historical_and_not_current_release_evidence(self):
         record = json.loads((ROOT / "smoke_proofs" / "mt3-l4.json").read_text())
         proof = record["proof"]
         provenance = proof["provenance"]
         deployment = modal_config.DEPLOYMENTS["MT3"]
-        details = modal_config.MANIFEST["providers"]["MT3"]
         self.assertEqual(proof["provider"], deployment.provider)
-        self.assertEqual(proof["modelVersion"], deployment.model_version)
-        self.assertEqual(proof["revision"], deployment.source_revision)
+        self.assertNotEqual(proof["modelVersion"], deployment.model_version)
+        self.assertNotEqual(proof["revision"], deployment.source_revision)
         self.assertEqual(
             proof["checkpointSha256"],
             modal_config.worker_environment(deployment)[
@@ -476,23 +535,10 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
         self.assertRegex(
             provenance["sourceImageDigest"], r"^sha256:[0-9a-f]{64}$"
         )
-        self.assertEqual(
-            proof["sourceRevision"], details["adapter_revision"]
-        )
-        self.assertEqual(
-            proof["conversionSourceRevision"], details["conversion_revision"]
-        )
-        self.assertEqual(
-            proof["upstreamSourceRevision"], details["upstream_revision"]
-        )
         self.assertEqual(proof["checkpointLicense"], "NOASSERTION")
         self.assertEqual(
             proof["sourcePatch"],
             "Dockerfile.mt3:checkpoint-import-relocation",
-        )
-        self.assertEqual(
-            details["adapter_patch"],
-            "Dockerfile.mt3 exact transformers-to-torch checkpoint import relocation",
         )
         for field in (
             "sourceRevision",
@@ -514,6 +560,7 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
                 name: {
                     "url": f"https://example.test/{name}",
                     "sha256": __import__("hashlib").sha256(content).hexdigest(),
+                    "bytes": len(content),
                     "max_bytes": 1024,
                 }
                 for name, content in artifacts.items()
@@ -549,7 +596,7 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             ):
                 result = checkpoint_bootstrap.bootstrap_provider("MT3")
 
-            destination = root / "mt3-ismir2021"
+            destination = root / "mt3-official-multitrack"
             self.assertEqual(
                 {item.name for item in destination.iterdir()}, set(artifacts)
             )
