@@ -67,6 +67,10 @@ def _format_output(result: tuple[Any, ...]) -> dict[str, Any]:
             "start": tertiary_time(onset), "end": tertiary_time(end),
             "symbol": str(root) + qualities[intervals],
             "confidence": _confidence(harmony_logits, onset),
+            "timing": {
+                "startSeconds": tertiary_time(onset),
+                "endSeconds": tertiary_time(end),
+            },
         })
     timing = [{
         "start": float(beat_times[index]),

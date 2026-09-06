@@ -6,8 +6,10 @@ import hmac
 import json
 import math
 import os
+import platform
 from pathlib import Path
 from typing import Any
+from importlib.metadata import distribution, version
 
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -20,8 +22,12 @@ ASSET_ROOT = Path(os.getenv("SHEETSAGE_ASSET_ROOT", SPEC["asset_root"]))
 ASSET_MANIFEST = ASSET_ROOT / SPEC["asset_manifest"]
 
 
+def _token() -> str | None:
+    return os.getenv("SHEETSAGE_API_TOKEN") or os.getenv("MUSIC_AI_WORKER_TOKEN")
+
+
 def _auth(request: Request) -> None:
-    token = os.getenv("SHEETSAGE_API_TOKEN")
+    token = _token()
     supplied = request.headers.get("Authorization", "")
     if not token:
         raise HTTPException(503, "SheetSage authentication is not configured")
@@ -35,6 +41,55 @@ def _digest(path: Path) -> str:
         for part in iter(lambda: source.read(1024 * 1024), b""):
             hash_.update(part)
     return hash_.hexdigest()
+
+
+def distribution_digest(name: str) -> str:
+    installed = distribution(name)
+    digest = hashlib.sha256()
+    files = installed.files
+    if not files:
+        raise RuntimeError(f"{name} distribution file inventory is unavailable")
+    for relative in sorted(files, key=str):
+        if relative.suffix == ".pyc" or "__pycache__" in relative.parts:
+            continue
+        path = Path(installed.locate_file(relative))
+        if not path.is_file():
+            continue
+        digest.update(str(relative).encode())
+        digest.update(b"\0")
+        with path.open("rb") as source:
+            for part in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(part)
+    return digest.hexdigest()
+
+
+def runtime_identity() -> str:
+    files = {
+        name: _digest(ROOT / name)
+        for name in ("app.py", "inference.py", "smoke.py", "model_manifest.json")
+    }
+    identity = {
+        "files": files,
+        "python": platform.python_version(),
+        "packages": {
+            name: {
+                "version": version(name),
+                "contentSha256": distribution_digest(name),
+            }
+            for name in ("sheetsage-infer", "jukebox-infer", "madmom-infer")
+        },
+    }
+    return hashlib.sha256(
+        json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def sign_smoke_proof(value: dict[str, Any]) -> str:
+    token = _token()
+    if not token:
+        raise RuntimeError("SheetSage authentication is not configured")
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    return hmac.new(token.encode(), encoded, hashlib.sha256).hexdigest()
 
 
 def asset_state() -> tuple[bool, str, dict[str, Any] | None]:
@@ -69,9 +124,22 @@ def smoke_state() -> tuple[bool, str]:
         return False, "assets unavailable"
     try:
         value = json.loads(proof.read_text())
-        valid = (value["realInference"] is True and value["package"] == SPEC["package"]
-                 and value["assetManifestSha256"] == _digest(ASSET_MANIFEST)
-                 and isinstance(value["outputSha256"], str))
+        signature = value.pop("signature")
+        valid = (
+            value["realInference"] is True
+            and value["package"] == SPEC["package"]
+            and value["assetManifestSha256"] == _digest(ASSET_MANIFEST)
+            and value["runtimeSha256"] == runtime_identity()
+            and isinstance(value["fixtureSha256"], str)
+            and isinstance(value["outputSha256"], str)
+            and all(
+                len(digest) == 64
+                and all(character in "0123456789abcdef" for character in digest)
+                for digest in (value["fixtureSha256"], value["outputSha256"])
+            )
+            and isinstance(signature, str)
+            and hmac.compare_digest(signature, sign_smoke_proof(value))
+        )
     except (OSError, KeyError, TypeError, json.JSONDecodeError):
         valid = False
     return (True, "real inference smoke proof verified") if valid else (False, "real inference smoke proof is unavailable")
@@ -130,7 +198,9 @@ def health(request: Request) -> dict[str, Any]:
     )
     return {"provider": "SHEETSAGE", "version": SPEC["package"]["version"],
             "sourceRevision": SPEC["package"]["source_revision"], "assetsVerified": assets,
+            "runtimeReady": True, "checkpointReady": assets,
             "smokeTested": smoke, "healthy": assets and smoke,
+            "checksum": _digest(ASSET_MANIFEST) if assets else "",
             "status": "ready" if assets and smoke else (
                 "blocked" if not license_accepted else "unavailable"
             ),

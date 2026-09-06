@@ -224,6 +224,15 @@ export type SongModelData = SongModelCore & {
     downbeats: number[];
     tempoBpm: number;
   }>;
+  timingEvidence?: Array<{
+    provider: string;
+    version: string;
+    events: Array<{
+      start: number;
+      end: number;
+      beat: number;
+    }>;
+  }>;
   pitchEvidence?: Array<{
     provider: string;
     version: string;

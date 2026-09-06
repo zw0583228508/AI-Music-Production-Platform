@@ -57,7 +57,7 @@ export type StructureAnalysisResult = {
 };
 
 export type TranscriptionAnalysisResult = {
-  providerId: "BASIC_PITCH" | "MT3" | "MR_MT3" | "YOUR_MT3";
+  providerId: "BASIC_PITCH" | "MT3" | "MR_MT3" | "YOUR_MT3" | "SHEETSAGE";
   version: string;
   notes: MelodyNote[];
   confidence: number;
@@ -109,6 +109,15 @@ export type AnalysisProviderResults = {
     beats: number[];
     downbeats: number[];
     tempoBpm: number;
+  }>;
+  timingEvidence: Array<{
+    provider: "SHEETSAGE";
+    version: string;
+    events: Array<{
+      start: number;
+      end: number;
+      beat: number;
+    }>;
   }>;
   pitchEvidence: Array<{
     provider: "TORCHCREPE";
@@ -205,7 +214,9 @@ const providerToken = (providerId: AnalysisProviderId): string | undefined => {
       process.env.MUSIC_AI_WORKER_TOKEN;
   }
   if (providerId === "SHEETSAGE") {
-    return process.env.SHEETSAGE_API_TOKEN ?? process.env.SHEET_SAGE_API_TOKEN;
+    return process.env.SHEETSAGE_API_TOKEN ??
+      process.env.SHEET_SAGE_API_TOKEN ??
+      process.env.MUSIC_AI_WORKER_TOKEN;
   }
   return process.env[`MUSIC_PROVIDER_${providerId}_TOKEN`] ??
     process.env[`${providerId}_API_TOKEN`] ??
@@ -345,6 +356,48 @@ async function readProviderJson(
   }
 }
 
+async function readProviderAudioBase64(sourceUrl: string): Promise<string> {
+  const maxBytes = 32 * 1024 * 1024;
+  const response = await fetch(sourceUrl, {
+    signal: AbortSignal.timeout(2 * 60_000),
+  });
+  if (!response.ok || !response.body) {
+    throw new ProviderRequestError(
+      `SheetSage source download returned HTTP ${response.status}`,
+      "source-download-failed",
+      retryableStatus(response.status),
+      1,
+    );
+  }
+  const declaredLength = Number(response.headers.get("content-length") || 0);
+  if (declaredLength > maxBytes) {
+    throw new ProviderRequestError(
+      "SheetSage source exceeds the 32 MiB contract limit",
+      "source-too-large",
+      false,
+      1,
+    );
+  }
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > maxBytes) {
+      await reader.cancel();
+      throw new ProviderRequestError(
+        "SheetSage source exceeds the 32 MiB contract limit",
+        "source-too-large",
+        false,
+        1,
+      );
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("base64");
+}
 async function delay(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -485,6 +538,14 @@ async function requestProvider(
 
   const token = providerToken(providerId);
   const attestedVersion = await attestProviderHealth(providerId, endpoint, token);
+  const requestBody = providerId === "SHEETSAGE"
+    ? { audioBase64: await readProviderAudioBase64(input.sourceUrl) }
+    : {
+        provider: providerId,
+        sourceUrl: input.sourceUrl,
+        sourceType: input.sourceType,
+        durationSeconds: input.durationSeconds,
+      };
   let lastError: ProviderRequestError | null = null;
   for (let attempt = 1; attempt <= MAX_PROVIDER_ATTEMPTS; attempt += 1) {
     try {
@@ -499,12 +560,7 @@ async function requestProvider(
               ? { "Idempotency-Key": `${input.idempotencyKey}:${providerId}` }
               : {}),
           },
-          body: JSON.stringify({
-            provider: providerId,
-            sourceUrl: input.sourceUrl,
-            sourceType: input.sourceType,
-            durationSeconds: input.durationSeconds,
-          }),
+          body: JSON.stringify(requestBody),
            signal: AbortSignal.timeout(providerRequestTimeoutMs(providerId)),
         },
       );
@@ -985,7 +1041,7 @@ function parseTranscription(
     const start = value["start"] ?? value["onset"];
     const end = value["end"] ?? value["offset"];
     const pitch = value["pitch"] ?? value["midi"];
-    const velocity = value["velocity"];
+    const velocity = value["velocity"] ?? (providerId === "SHEETSAGE" ? 100 : undefined);
     const itemConfidence = value["confidence"];
     if (
       !finiteNumber(start) || start < 0 ||
@@ -1015,7 +1071,53 @@ function parseTranscription(
     confidence: overallConfidence,
   };
 }
-
+function parseSheetSage(
+  payload: unknown,
+  durationSeconds: number,
+): {
+  harmony: HarmonyAnalysisResult;
+  transcription: TranscriptionAnalysisResult;
+  timingEvidence: AnalysisProviderResults["timingEvidence"][number];
+} {
+  if (!isRecord(payload)) throw new Error("SHEETSAGE response must be an object");
+  const transcription = parseTranscription(
+    "SHEETSAGE",
+    { ...payload, notes: payload["melody"] },
+    durationSeconds,
+  );
+  const harmony = parseHarmony("SHEETSAGE", payload, durationSeconds);
+  const rawTiming = payload["timing"];
+  if (!Array.isArray(rawTiming) || !rawTiming.length) {
+    throw new Error("SHEETSAGE response must include timing evidence");
+  }
+  let previousStart = -1;
+  const events = rawTiming.map((value, index) => {
+    if (!isRecord(value)) {
+      throw new Error(`SHEETSAGE timing event ${index + 1} must be an object`);
+    }
+    const start = value["start"];
+    const end = value["end"];
+    const beat = value["beat"];
+    if (
+      !finiteNumber(start) || start < 0 || start <= previousStart ||
+      !finiteNumber(end) || end <= start || end > durationSeconds + 1 ||
+      !finiteNumber(beat)
+    ) {
+      throw new Error(`SHEETSAGE timing event ${index + 1} is invalid`);
+    }
+    previousStart = start;
+    return { start, end, beat };
+  });
+  return {
+    harmony,
+    transcription,
+    timingEvidence: {
+      provider: "SHEETSAGE",
+      version: transcription.version,
+      events,
+    },
+  };
+}
 function parseChordCandidate(
   value: unknown,
   providerId: string,
@@ -1886,6 +1988,7 @@ export async function runAnalysisProviders(
   const transcriptions: TranscriptionAnalysisResult[] = [];
   const harmony: HarmonyAnalysisResult[] = [];
   const rhythmEvidence: AnalysisProviderResults["rhythmEvidence"] = [];
+  const timingEvidence: AnalysisProviderResults["timingEvidence"] = [];
   const pitchEvidence: AnalysisProviderResults["pitchEvidence"] = [];
   const keyEvidence: AnalysisProviderResults["keyEvidence"] = [];
   let loudness: AnalysisProviderResults["loudness"] = null;
@@ -2014,9 +2117,25 @@ export async function runAnalysisProviders(
     schedule(
       "SHEETSAGE",
       "harmony",
-      (payload) => parseHarmony("SHEETSAGE", payload, input.durationSeconds),
+      (payload) => parseSheetSage(payload, input.durationSeconds),
       (result) => {
-        harmony.push(result);
+        harmony.push(result.harmony);
+        transcriptions.push(result.transcription);
+        timingEvidence.push(result.timingEvidence);
+        provenance.push({
+          capability: "melody",
+          provider: "SHEETSAGE",
+          version: result.transcription.version,
+          status: "ready",
+          attempts: 1,
+        });
+        provenance.push({
+          capability: "timing",
+          provider: "SHEETSAGE",
+          version: result.transcription.version,
+          status: "ready",
+          attempts: 1,
+        });
       },
     );
     schedule(
@@ -2066,6 +2185,7 @@ export async function runAnalysisProviders(
     }))),
     harmonyConfidence: fusedHarmony.confidence,
     rhythmEvidence,
+    timingEvidence,
     pitchEvidence,
     keyEvidence,
     loudness,

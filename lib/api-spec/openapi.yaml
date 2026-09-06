@@ -1293,6 +1293,23 @@ components:
               beats: { type: array, items: { type: number, minimum: 0 } }
               downbeats: { type: array, items: { type: number, minimum: 0 } }
               tempoBpm: { type: number, minimum: 20, maximum: 400 }
+        timingEvidence:
+          type: array
+          items:
+            type: object
+            required: [provider, version, events]
+            properties:
+              provider: { type: string, enum: [SHEETSAGE] }
+              version: { type: string }
+              events:
+                type: array
+                items:
+                  type: object
+                  required: [start, end, beat]
+                  properties:
+                    start: { type: number, minimum: 0 }
+                    end: { type: number, minimum: 0 }
+                    beat: { type: number }
         pitchEvidence:
           type: array
           items:

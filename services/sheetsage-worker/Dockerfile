@@ -10,7 +10,7 @@ COPY services/sheetsage-worker/requirements.txt /tmp/requirements.txt
 COPY --from=ghcr.io/astral-sh/uv:0.6.1 /uv /uvx /bin/
 RUN uv pip install --system -r /tmp/requirements.txt
 COPY services/sheetsage-worker/model_manifest.json services/sheetsage-worker/bootstrap_assets.py services/sheetsage-worker/modal_config.py /app/
-COPY services/sheetsage-worker/app.py services/sheetsage-worker/inference.py /app/
+COPY services/sheetsage-worker/app.py services/sheetsage-worker/inference.py services/sheetsage-worker/smoke.py /app/
 RUN useradd --system --home /app sheetsage \
     && mkdir -p /var/lib/sheetsage/assets /var/lib/sheetsage/smoke \
     && chown -R sheetsage:sheetsage /app /var/lib/sheetsage

@@ -20,3 +20,15 @@ The owner also confirmed the project is non-commercial for MusicGen's CC BY-NC 4
 **Why:** Weight installation must not infer license eligibility from package installation alone.
 
 **How to apply:** MusicGen provisioning may use its separately recorded acceptance, but exact immutable model revisions and real smoke evidence are still mandatory before READY.
+
+SheetSage's upstream asset table mixes checksum algorithms: its 40-character config checksums are SHA-1 identities, while provider readiness requires independently computed SHA-256 values.
+
+**Why:** Treating the upstream SHA-1 strings as SHA-256 made two authentic handcrafted config files appear corrupt even though they matched the source package exactly.
+
+**How to apply:** Verify upstream identity with the algorithm implied by its checksum length, then record and enforce SHA-256 separately in the local manifest.
+
+Persistent MIR smoke proofs must be signed and bind the asset manifest, fixture, output, local runtime files, and actual installed distribution contents without process caching.
+
+**Why:** A mutable volume proof or version-only runtime identity can survive a code or same-version package substitution and falsely preserve READY status.
+
+**How to apply:** Recompute the runtime fingerprint on every readiness check and require a fresh real-inference proof whenever any bound input changes.

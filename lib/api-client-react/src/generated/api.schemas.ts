@@ -281,6 +281,27 @@ export type SongModelRhythmEvidenceItem = {
   tempoBpm: number;
 };
 
+export type SongModelTimingEvidenceItemProvider = typeof SongModelTimingEvidenceItemProvider[keyof typeof SongModelTimingEvidenceItemProvider];
+
+
+export const SongModelTimingEvidenceItemProvider = {
+  SHEETSAGE: 'SHEETSAGE',
+} as const;
+
+export type SongModelTimingEvidenceItemEventsItem = {
+  /** @minimum 0 */
+  start: number;
+  /** @minimum 0 */
+  end: number;
+  beat: number;
+};
+
+export type SongModelTimingEvidenceItem = {
+  provider: SongModelTimingEvidenceItemProvider;
+  version: string;
+  events: SongModelTimingEvidenceItemEventsItem[];
+};
+
 export type SongModelPitchEvidenceItemProvider = typeof SongModelPitchEvidenceItemProvider[keyof typeof SongModelPitchEvidenceItemProvider];
 
 
@@ -800,6 +821,7 @@ export interface SongModel {
   confidenceByField: SongModelConfidenceByField;
   providerProvenance: ProviderProvenance[];
   rhythmEvidence?: SongModelRhythmEvidenceItem[];
+  timingEvidence?: SongModelTimingEvidenceItem[];
   pitchEvidence?: SongModelPitchEvidenceItem[];
   keyEvidence?: SongModelKeyEvidenceItem[];
   /** pyloudnorm evidence. samplePeak is linear sample peak, not true peak. */

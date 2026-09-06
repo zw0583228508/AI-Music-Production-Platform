@@ -1104,6 +1104,10 @@ export const getProjectSongModelResponseRhythmEvidenceItemDownbeatsItemMin = 0;
 export const getProjectSongModelResponseRhythmEvidenceItemTempoBpmMin = 20;
 export const getProjectSongModelResponseRhythmEvidenceItemTempoBpmMax = 400;
 
+export const getProjectSongModelResponseTimingEvidenceItemEventsItemStartMin = 0;
+
+export const getProjectSongModelResponseTimingEvidenceItemEventsItemEndMin = 0;
+
 export const getProjectSongModelResponsePitchEvidenceItemFramesItemTimeMin = 0;
 
 export const getProjectSongModelResponsePitchEvidenceItemFramesItemFrequencyHzMin = 0;
@@ -1315,6 +1319,15 @@ export const GetProjectSongModelResponse = zod.object({
   "beats": zod.array(zod.number().min(getProjectSongModelResponseRhythmEvidenceItemBeatsItemMin)),
   "downbeats": zod.array(zod.number().min(getProjectSongModelResponseRhythmEvidenceItemDownbeatsItemMin)),
   "tempoBpm": zod.number().min(getProjectSongModelResponseRhythmEvidenceItemTempoBpmMin).max(getProjectSongModelResponseRhythmEvidenceItemTempoBpmMax)
+})).optional(),
+  "timingEvidence": zod.array(zod.object({
+  "provider": zod.enum(['SHEETSAGE']),
+  "version": zod.string(),
+  "events": zod.array(zod.object({
+  "start": zod.number().min(getProjectSongModelResponseTimingEvidenceItemEventsItemStartMin),
+  "end": zod.number().min(getProjectSongModelResponseTimingEvidenceItemEventsItemEndMin),
+  "beat": zod.number()
+}))
 })).optional(),
   "pitchEvidence": zod.array(zod.object({
   "provider": zod.enum(['TORCHCREPE']),
@@ -1547,6 +1560,10 @@ export const correctProjectSongModelResponseRhythmEvidenceItemDownbeatsItemMin =
 export const correctProjectSongModelResponseRhythmEvidenceItemTempoBpmMin = 20;
 export const correctProjectSongModelResponseRhythmEvidenceItemTempoBpmMax = 400;
 
+export const correctProjectSongModelResponseTimingEvidenceItemEventsItemStartMin = 0;
+
+export const correctProjectSongModelResponseTimingEvidenceItemEventsItemEndMin = 0;
+
 export const correctProjectSongModelResponsePitchEvidenceItemFramesItemTimeMin = 0;
 
 export const correctProjectSongModelResponsePitchEvidenceItemFramesItemFrequencyHzMin = 0;
@@ -1758,6 +1775,15 @@ export const CorrectProjectSongModelResponse = zod.object({
   "beats": zod.array(zod.number().min(correctProjectSongModelResponseRhythmEvidenceItemBeatsItemMin)),
   "downbeats": zod.array(zod.number().min(correctProjectSongModelResponseRhythmEvidenceItemDownbeatsItemMin)),
   "tempoBpm": zod.number().min(correctProjectSongModelResponseRhythmEvidenceItemTempoBpmMin).max(correctProjectSongModelResponseRhythmEvidenceItemTempoBpmMax)
+})).optional(),
+  "timingEvidence": zod.array(zod.object({
+  "provider": zod.enum(['SHEETSAGE']),
+  "version": zod.string(),
+  "events": zod.array(zod.object({
+  "start": zod.number().min(correctProjectSongModelResponseTimingEvidenceItemEventsItemStartMin),
+  "end": zod.number().min(correctProjectSongModelResponseTimingEvidenceItemEventsItemEndMin),
+  "beat": zod.number()
+}))
 })).optional(),
   "pitchEvidence": zod.array(zod.object({
   "provider": zod.enum(['TORCHCREPE']),

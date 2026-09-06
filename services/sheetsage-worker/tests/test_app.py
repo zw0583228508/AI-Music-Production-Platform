@@ -19,6 +19,31 @@ class SheetSageTests(unittest.TestCase):
     def tearDown(self): self.tmp.cleanup()
     def test_assets_alone_do_not_report_ready(self):
         self.assertTrue(self.app.asset_state()[0]); self.assertFalse(self.app.smoke_state()[0])
+    def test_smoke_proof_requires_runtime_binding_and_signature(self):
+        with patch.object(self.app, "runtime_identity", return_value="d" * 64):
+            proof = {
+                "realInference": True,
+                "package": self.app.SPEC["package"],
+                "assetManifestSha256": self.app._digest(self.app.ASSET_MANIFEST),
+                "runtimeSha256": self.app.runtime_identity(),
+                "fixtureSha256": "a" * 64,
+                "outputSha256": "b" * 64,
+                "evidence": {"melodyEvents": 1, "chordEvents": 1, "timingEvents": 1},
+            }
+            proof["signature"] = self.app.sign_smoke_proof(proof)
+            (Path(self.tmp.name) / "smoke-proof.json").write_text(json.dumps(proof))
+            self.assertTrue(self.app.smoke_state()[0])
+            proof["runtimeSha256"] = "c" * 64
+            (Path(self.tmp.name) / "smoke-proof.json").write_text(json.dumps(proof))
+            self.assertFalse(self.app.smoke_state()[0])
+    def test_runtime_identity_changes_when_same_version_package_content_changes(self):
+        with patch.object(self.app, "version", return_value="same-version"), \
+             patch.object(self.app, "distribution_digest", return_value="a" * 64):
+            first = self.app.runtime_identity()
+        with patch.object(self.app, "version", return_value="same-version"), \
+             patch.object(self.app, "distribution_digest", return_value="b" * 64):
+            second = self.app.runtime_identity()
+        self.assertNotEqual(first, second)
     def test_output_requires_actual_melody_chords_and_timing(self):
         with self.assertRaises(self.app.InferenceError):
             self.app.validate_evidence({"melody": [], "chords": [], "timing": [], "confidence": .5})

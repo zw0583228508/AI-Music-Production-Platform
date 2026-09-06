@@ -40,23 +40,30 @@ def main() -> None:
         "SHEETSAGE_V02_HANDCRAFTED_MELODY_MODEL",
     )
     files = []
+    handcrafted_source = SPEC["handcrafted_asset_source"]
     for tag in tags:
         path = Path(sheetsage_assets.retrieve_asset(tag, delete_wrong=True))
         source = sheetsage_assets._ASSETS[tag]
-        files.append((path, tag, source["url"], source["checksum"],
-                      "openmirlab/sheetsage-infer@ee7c2aeeb8084840a4f938ae6913f566afdaebdc",
+        relative_path = source["path"].as_posix()
+        expected_sha256 = SPEC["required_asset_sha256"][relative_path]
+        if sha256(path) != expected_sha256:
+            raise SystemExit(f"SheetSage handcrafted asset SHA-256 mismatch: {tag}")
+        files.append((path, relative_path, tag, handcrafted_source["url"], source["checksum"],
+                      handcrafted_source["declared_by"],
                       "CC-BY-NC-SA-3.0"))
     for path in downbeats_blstm(cache_root=ASSET_ROOT / "madmom_infer" / "models"):
-        files.append((Path(path), "MADMOM_DOWNBEATS_BLSTM", 
-                      "https://raw.githubusercontent.com/CPJKU/madmom_models/master/" + Path(path).relative_to(ASSET_ROOT / "madmom_infer" / "models").as_posix(),
+        relative_path = f"madmom_infer/models/downbeats/2016/{Path(path).name}"
+        files.append((Path(path), relative_path, "MADMOM_DOWNBEATS_BLSTM",
+                      "https://raw.githubusercontent.com/CPJKU/madmom_models/master/" +
+                      Path(relative_path).relative_to("madmom_infer/models").as_posix(),
                       sha256(Path(path)), "content-addressed by package-pinned SHA-256",
                       "CC-BY-NC-SA-4.0"))
     assets = [{
-        "path": path.relative_to(ASSET_ROOT).as_posix(), "tag": tag,
+        "path": relative_path, "tag": tag,
         "bytes": path.stat().st_size, "sha256": sha256(path),
         "upstreamChecksum": checksum, "source": source, "revision": revision,
         "license": license_name,
-    } for path, tag, source, checksum, revision, license_name in files]
+    } for path, relative_path, tag, source, checksum, revision, license_name in files]
     if not assets:
         raise SystemExit("preloader did not materialize any SheetSage model assets")
     (ASSET_ROOT / SPEC["asset_manifest"]).write_text(json.dumps({

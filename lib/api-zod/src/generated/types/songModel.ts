@@ -28,6 +28,7 @@ import type { SongModelProvenance } from './songModelProvenance';
 import type { SongModelRhythmEvidenceItem } from './songModelRhythmEvidenceItem';
 import type { SongModelStatus } from './songModelStatus';
 import type { SongModelStem } from './songModelStem';
+import type { SongModelTimingEvidenceItem } from './songModelTimingEvidenceItem';
 import type { SongModelValidation } from './songModelValidation';
 import type { SourceStem } from './sourceStem';
 import type { TempoEvent } from './tempoEvent';
@@ -73,6 +74,7 @@ export interface SongModel {
   confidenceByField: SongModelConfidenceByField;
   providerProvenance: ProviderProvenance[];
   rhythmEvidence?: SongModelRhythmEvidenceItem[];
+  timingEvidence?: SongModelTimingEvidenceItem[];
   pitchEvidence?: SongModelPitchEvidenceItem[];
   keyEvidence?: SongModelKeyEvidenceItem[];
   /** pyloudnorm evidence. samplePeak is linear sample peak, not true peak. */

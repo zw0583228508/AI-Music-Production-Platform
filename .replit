@@ -42,7 +42,7 @@ timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
-packages = ["ffmpeg-full", "libgccjit", "libsndfile", "libxcrypt", "oneDNN", "pkg-config", "portmidi", "re2", "xsimd"]
+packages = ["ffmpeg-full", "libgccjit", "libsndfile", "libxcrypt", "oneDNN", "pkg-config", "portmidi", "re2", "xsimd", "megatools"]
 
 [userenv]
 
@@ -83,3 +83,5 @@ MADMOM_API_URL = "https://windot100--music-mir.modal.run"
 PYLOUDNORM_API_URL = "https://windot100--music-mir.modal.run"
 TORCHCREPE_API_URL = "https://windot100--music-mir.modal.run"
 MUSIC_PROVIDER_BEAT_THIS_URL = "https://windot100--beat-this.modal.run"
+SHEETSAGE_API_URL = "https://windot100--sheetsage.modal.run"
+SHEETSAGE_LICENSE_AUTHORIZED = "true"

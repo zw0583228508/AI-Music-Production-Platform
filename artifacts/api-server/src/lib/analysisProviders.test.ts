@@ -429,6 +429,100 @@ test("keeps absent providers explicit without fabricating analysis results", asy
   }
 });
 
+test("connects SheetSage melody, harmony, and timing provenance from real audio payloads", async () => {
+  const previous = new Map([
+    ["SHEETSAGE_API_URL", process.env.SHEETSAGE_API_URL],
+    ["SHEETSAGE_LICENSE_AUTHORIZED", process.env.SHEETSAGE_LICENSE_AUTHORIZED],
+    ["SHEETSAGE_API_TOKEN", process.env.SHEETSAGE_API_TOKEN],
+  ]);
+  let analyzePayload: Record<string, unknown> | null = null;
+  const server = createServer((request, response) => {
+    response.setHeader("Content-Type", "application/json");
+    if (request.method === "GET" && request.url === "/source.wav") {
+      response.end(Buffer.from("real-audio-fixture"));
+      return;
+    }
+    if (request.method === "GET" && request.url === "/health?provider=SHEETSAGE") {
+      response.end(JSON.stringify({
+        provider: "SHEETSAGE",
+        version: "0.2.1",
+        status: "ready",
+        runtimeReady: true,
+        checkpointReady: true,
+        smokeTested: true,
+        checksum: "a".repeat(64),
+      }));
+      return;
+    }
+    if (request.method === "POST" && request.url === "/analyze") {
+      let body = "";
+      request.on("data", (chunk) => {
+        body += chunk;
+      });
+      request.on("end", () => {
+        analyzePayload = JSON.parse(body) as Record<string, unknown>;
+        response.end(JSON.stringify({
+          provider: "SHEETSAGE",
+          modelVersion: "0.2.1",
+          confidence: 0.9,
+          melody: [{ start: 0, end: 1, pitch: 60, confidence: 0.91 }],
+          chords: [{
+            start: 0,
+            end: 2,
+            symbol: "C",
+            confidence: 0.89,
+            timing: { startSeconds: 0, endSeconds: 2 },
+          }],
+          timing: [{ start: 0, end: 0.5, beat: 0 }],
+        }));
+      });
+      return;
+    }
+    response.statusCode = 404;
+    response.end("{}");
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const endpoint = `http://127.0.0.1:${address.port}`;
+  process.env.SHEETSAGE_API_URL = endpoint;
+  process.env.SHEETSAGE_LICENSE_AUTHORIZED = "true";
+  process.env.SHEETSAGE_API_TOKEN = "test-token";
+  try {
+    const result = await runAnalysisProviders({
+      sourceUrl: `${endpoint}/source.wav`,
+      sourceType: "FULL_SONG",
+      durationSeconds: 2,
+    });
+    assert.equal(
+      analyzePayload?.["audioBase64"],
+      Buffer.from("real-audio-fixture").toString("base64"),
+    );
+    assert.equal(result.transcriptions[0]?.providerId, "SHEETSAGE");
+    assert.equal(result.transcriptions[0]?.notes[0]?.pitch, 60);
+    assert.equal(result.harmony[0]?.providerId, "SHEETSAGE");
+    assert.deepEqual(result.timingEvidence[0], {
+      provider: "SHEETSAGE",
+      version: "0.2.1",
+      events: [{ start: 0, end: 0.5, beat: 0 }],
+    });
+    assert.deepEqual(
+      new Set(result.provenance
+        .filter((item) => item.provider === "SHEETSAGE" && item.status === "ready")
+        .map((item) => item.capability)),
+      new Set(["harmony", "melody", "timing"]),
+    );
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    });
+  }
+});
+
 test("polls an asynchronous provider job and returns its completed result", async () => {
   let polls = 0;
   let idempotencyKey: string | undefined;

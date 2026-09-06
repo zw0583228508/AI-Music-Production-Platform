@@ -1459,6 +1459,7 @@ export async function analyzeProjectSource(
         ...providerResults.provenance,
       ],
       rhythmEvidence: providerResults.rhythmEvidence,
+      timingEvidence: providerResults.timingEvidence,
       pitchEvidence: providerResults.pitchEvidence,
       keyEvidence: providerResults.keyEvidence,
       loudness: providerResults.loudness,
