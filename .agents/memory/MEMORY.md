@@ -23,3 +23,4 @@
 - [MusicGen native runtime](musicgen-native-runtime.md) — exact AudioCraft builds native PyAV/PESQ; FFmpeg 4.4 satisfies PyAV 11 while remaining below version 5.
 - [MOSS media-runtime conflict](moss-media-runtime-conflict.md) — pinned MOSS and moss-audio revisions require incompatible TorchCodec lines; block rather than silently overriding either upstream.
 - [Modal container path portability](modal-container-path-portability.md) — Dockerfile-backed modules must resolve paths under both the repo tree and Modal’s flat `/app` layout.
+- [Deployment attestation gates](deployment-attestation-gates.md) — couple deploy and live validation; never send credentials to caller-selected endpoints or redirects.

@@ -1,0 +1,40 @@
+name: Deploy and attest SheetSage
+
+on:
+  workflow_dispatch:
+    inputs:
+      smoke_fixture:
+        description: Licensed real-audio filename already on the SheetSage smoke volume
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sheetsage-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Attest candidate before production promotion
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+      MUSIC_AI_WORKER_TOKEN: ${{ secrets.MUSIC_AI_WORKER_TOKEN }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Deploy candidate and require authenticated attestation
+        env:
+          SMOKE_FIXTURE: ${{ inputs.smoke_fixture }}
+        run: |
+          set -euo pipefail
+          uv run python services/sheetsage-worker/modal_app.py \
+            --fixture "$SMOKE_FIXTURE"

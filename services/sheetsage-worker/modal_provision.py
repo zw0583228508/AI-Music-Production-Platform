@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import sys
+import importlib
 
 _PACKAGE_ROOT = Path("/app") if Path("/app/modal_config.py").is_file() else Path(__file__).resolve().parent
 sys.path.insert(0, str(_PACKAGE_ROOT))
@@ -73,17 +74,25 @@ def smoke_remote(fixture_name: str) -> dict:
         raise RuntimeError("uploaded real-audio smoke fixture is unavailable")
     os.environ["SHEETSAGE_SMOKE_AUDIO"] = str(candidate)
     try:
-        import smoke  # noqa: F401  # smoke module executes real inference
+        run_real_smoke()
         proof = Path(MODEL_MOUNT) / "smoke-proof.json"
         if not proof.is_file():
             raise RuntimeError("real inference smoke did not persist proof")
-        return {"smokeProof": str(proof), "fixture": candidate.name}
+        from app import ASSET_MANIFEST, _digest
+        return {
+            "smokeProof": str(proof),
+            "fixture": candidate.name,
+            "manifestSha256": _digest(ASSET_MANIFEST),
+        }
     finally:
         model_volume.commit()
 
 
 @app.local_entrypoint()
-def main(action: str = "provision", fixture: str = "") -> None:
+def main(
+    action: str = "provision",
+    fixture: str = "",
+) -> None:
     if action == "provision":
         print(provision_assets.remote())
     elif action == "restore":
@@ -94,3 +103,11 @@ def main(action: str = "provision", fixture: str = "") -> None:
         print(smoke_remote.remote(fixture))
     else:
         raise ValueError("action must be provision, restore, or smoke")
+
+def run_real_smoke() -> None:
+    """Execute inference on every release, including in a reused container."""
+    loaded = sys.modules.get("smoke")
+    if loaded is None:
+        importlib.import_module("smoke")
+    else:
+        importlib.reload(loaded)

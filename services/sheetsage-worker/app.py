@@ -206,7 +206,8 @@ def health(request: Request) -> dict[str, Any]:
     return {"provider": "SHEETSAGE", "version": SPEC["package"]["version"],
             "sourceRevision": SPEC["package"]["source_revision"], "assetsVerified": assets,
             "runtimeReady": True, "checkpointReady": assets,
-            "smokeTested": smoke, "healthy": assets and smoke,
+            "smokeTested": smoke, "smokeProofVerified": smoke,
+            "healthy": assets and smoke,
             "checksum": _digest(ASSET_MANIFEST) if assets else "",
             "status": "ready" if assets and smoke else (
                 "blocked" if not license_accepted else "unavailable"

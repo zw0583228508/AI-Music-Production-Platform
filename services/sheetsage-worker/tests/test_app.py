@@ -19,6 +19,15 @@ class SheetSageTests(unittest.TestCase):
     def tearDown(self): self.tmp.cleanup()
     def test_assets_alone_do_not_report_ready(self):
         self.assertTrue(self.app.asset_state()[0]); self.assertFalse(self.app.smoke_state()[0])
+
+    def test_health_exposes_explicit_signed_smoke_gate(self):
+        from starlette.requests import Request
+        request = Request({"type": "http", "headers": [(b"authorization", b"Bearer test")]})
+        with patch.object(self.app, "asset_state", return_value=(True, "ok", {})), \
+             patch.object(self.app, "smoke_state", return_value=(True, "ok")), \
+             patch.object(self.app, "_digest", return_value="a" * 64):
+            health = self.app.health(request)
+        self.assertTrue(health["smokeProofVerified"])
     def test_smoke_proof_requires_runtime_binding_and_signature(self):
         with patch.object(self.app, "runtime_identity", return_value="d" * 64):
             proof = {
