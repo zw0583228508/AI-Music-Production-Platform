@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 concurrency:
   group: beat-this-production-release
@@ -12,7 +13,7 @@ concurrency:
 
 jobs:
   release:
-    name: Deploy, attest, and activate Beat This
+    name: Deploy, attest, and propose Beat This activation
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: production
@@ -167,10 +168,13 @@ jobs:
           pnpm --filter @workspace/api-server run typecheck
           pnpm --filter @workspace/api-server run test:gpu-promotion
 
-      - name: Activate the verified API promotion
+      - name: Publish the verified activation pull request
+        id: activation
         env:
+          GH_TOKEN: ${{ github.token }}
           RELEASE_BRANCH: ${{ github.ref_name }}
           SOURCE_REVISION: ${{ github.sha }}
+          RELEASE_ARTIFACT: beat-this-release-${{ github.run_id }}
         run: |
           set -euo pipefail
           git fetch origin "$RELEASE_BRANCH"
@@ -184,8 +188,45 @@ jobs:
           }
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore: activate verified Beat This release"
-          git push origin "HEAD:$RELEASE_BRANCH"
+          git commit -m "chore: activate verified Beat This release from $SOURCE_REVISION"
+
+          activation_branch="beat-this-activation/$SOURCE_REVISION"
+          git push origin "HEAD:refs/heads/$activation_branch"
+
+          evidence_sha256="$(sha256sum promotion/release-evidence.json | cut -d' ' -f1)"
+          bundle_sha256="$(sha256sum promotion/bundle.json | cut -d' ' -f1)"
+          cat > "$RUNNER_TEMP/beat-this-activation.md" <<EOF
+          ## Verified Beat This activation
+
+          This pull request is the only activation step. Merging it applies the
+          canonical API promotion without bypassing the release branch's review rules.
+
+          - Immutable source revision: \`$SOURCE_REVISION\`
+          - Signed bundle SHA-256: \`$bundle_sha256\`
+          - Release evidence SHA-256: \`$evidence_sha256\`
+          - Retained workflow artifact: \`$RELEASE_ARTIFACT\`
+          - Validation run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+
+          If review rejects or closes this proposal, the deployed worker is not made
+          canonical. Reopen or merge this same pull request to resume activation;
+          do not deploy a different worker revision.
+          EOF
+
+          pr_url="$(gh pr create \
+            --base "$RELEASE_BRANCH" \
+            --head "$activation_branch" \
+            --title "Activate verified Beat This release ${SOURCE_REVISION:0:12}" \
+            --body-file "$RUNNER_TEMP/beat-this-activation.md")"
+          echo "pull_request_url=$pr_url" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Beat This activation awaits protected-branch review"
+            echo
+            echo "The worker and signed evidence were validated, but are not active until this pull request is merged:"
+            echo
+            echo "$pr_url"
+            echo
+            echo "A rejection is safe and resumable: reopen or merge the same pull request without redeploying another revision."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Retain public release and smoke evidence
         if: always()

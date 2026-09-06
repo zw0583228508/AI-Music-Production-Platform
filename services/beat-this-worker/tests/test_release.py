@@ -107,6 +107,26 @@ def container_refresh(evidence):
 
 
 class BeatThisReleaseTests(unittest.TestCase):
+    def test_release_activation_uses_a_reviewed_source_revision_branch(self):
+        repository = Path(__file__).resolve().parents[3]
+        workflow = (
+            repository / ".github/workflows/release-beat-this.yml"
+        ).read_text()
+
+        self.assertIn("pull-requests: write", workflow)
+        self.assertIn(
+            'activation_branch="beat-this-activation/$SOURCE_REVISION"',
+            workflow,
+        )
+        self.assertIn('--base "$RELEASE_BRANCH"', workflow)
+        self.assertIn('--head "$activation_branch"', workflow)
+        self.assertIn(
+            'git push origin "HEAD:refs/heads/$activation_branch"',
+            workflow,
+        )
+        self.assertNotIn('git push origin "HEAD:$RELEASE_BRANCH"', workflow)
+        self.assertIn("Reopen or merge this same pull request", workflow)
+
     def test_modal_metadata_requires_one_deployed_app_and_latest_version(self):
         self.assertEqual(
             release_modal.deployed_app_id([
