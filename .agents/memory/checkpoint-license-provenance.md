@@ -1,0 +1,10 @@
+---
+name: Checkpoint license provenance
+description: License and byte provenance rules for externally hosted model weights.
+---
+
+An adapter or source repository’s license does not establish redistribution or commercial-use rights for checkpoint bytes hosted separately or credited to an external author. Keep the provider `BLOCKED_LICENSE` until an immutable grant from each checkpoint rights holder is retained and hash-bound.
+
+**Why:** A project can permissively license its code and metadata without having authority to relicense externally trained weights. Public download availability is not a research or commercial-use grant. Remote metadata can also be malformed; one upstream API returned a truncated LFS SHA-256 even though the licensed blob itself was valid.
+
+**How to apply:** Track backend, wrapper, architecture, and checkpoint licenses separately; trace every checkpoint to its originating asset; retain each owner’s immutable grant; and require that evidence before READY. Never pad or repair an invalid remote digest: when the asset is licensed to download, stream the exact immutable blob and compute its hash directly; otherwise retain the malformed metadata only as an unresolved blocker. While blocked, mark machine-readable manifests and catalogs unambiguously unavailable, reject bootstrap and deployment, stop any historical endpoint, reject authenticated worker health/execution before checkpoint or GPU work, and remove active promotions. In every API provider family, one central authorization predicate must run before exact, legacy, shared-token, or generic-gateway resolution and must gate registry construction, health, catalog status, selection, invocation, cancellation, and arrangement helpers. Prove both direct-worker and every API registry path execute zero inference.

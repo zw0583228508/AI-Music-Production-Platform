@@ -27,3 +27,4 @@
 - [Private recovery drills](private-recovery-drills.md) — verify owner archives in disposable storage with no production volume mount, and suppress URL-bearing exception chains.
 - [Crash-safe private temp storage](crash-safe-private-temp-storage.md) — isolate uploads per process and use OS-held locks to distinguish active data from crash remnants.
 - [Runtime package identity](runtime-package-identity.md) — provider health must bind the executing package bytes to pinned source and artifact provenance, not echo manifest metadata.
+- [Checkpoint license provenance](checkpoint-license-provenance.md) — code/model-card licenses do not authorize external weights; invalid remote digests require direct byte hashing.

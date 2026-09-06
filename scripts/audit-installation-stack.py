@@ -45,7 +45,7 @@ ENDPOINT_KEYS = {
     "DEMUCS": "DEMUCS_API_URL", "BASIC_PITCH": "BASIC_PITCH_API_URL",
     "MADMOM": "MADMOM_API_URL", "ESSENTIA": "ESSENTIA_API_URL",
     "CHROMA": "CHROMA_API_URL", "TORCHCREPE": "TORCHCREPE_API_URL",
-    "PYLOUDNORM": "PYLOUDNORM_API_URL",
+    "PYLOUDNORM": "PYLOUDNORM_API_URL", "SONGFORMER": "SONGFORMER_API_URL",
 }
 
 def report_errors(rows, report_text):
@@ -385,6 +385,199 @@ def evidence_errors(rows, root):
             ]
             if not all(required):
                 errors.append(f"{name}: ready classification lacks exact manifest/source/license/package/runtime/model/smoke/live-health evidence")
+    songformer = by_name.get("SONGFORMER", {})
+    if songformer:
+        manifest = read_json("services/songformer-worker/model_manifest.json")
+        license_manifest = read_json("services/songformer-worker/license_manifest.json")
+        local_status = read_json("services/songformer-worker/installation-status.json")
+        review = read_json(
+            "services/songformer-worker/release-evidence/license-review-v1.json"
+        )
+        stop_observation = read_json(
+            "services/songformer-worker/release-evidence/modal-app-stopped-v1.json"
+        )
+        try:
+            bootstrap_source = (
+                root / "services/songformer-worker/bootstrap_assets.py"
+            ).read_text()
+            modal_source = (
+                root / "services/songformer-worker/modal_app.py"
+            ).read_text()
+            worker_source = (
+                root / "services/songformer-worker/app.py"
+            ).read_text()
+            replit_source = (root / ".replit").read_text()
+        except OSError as exc:
+            errors.append(f"SONGFORMER: blocked boundary source missing: {exc}")
+            bootstrap_source = modal_source = worker_source = replit_source = ""
+        assets = manifest.get("assets", [])
+        local = local_status.get("providers", {}).get("SONGFORMER", {})
+        evidence = local.get("evidence", {})
+        components = license_manifest.get("components", {})
+        gate = manifest.get("licenseGate", {})
+        deployment = review.get("deployment", {})
+        expected_assets = {
+            (
+                "SONGFORMER", "ASLP-lab/SongFormer",
+                "a75880ed1b7375ac71860ec6c4fc9c899cf99515",
+                "SongFormer.safetensors", 104468437,
+                "87f17bfbed37014c6af4314abd9eb6971a94e3a95e9fc70f9e5ee33bdacb487b",
+                "5a24800e12ab357744f8b47e523ba3e6", False,
+            ),
+            (
+                "SONGFORMER", "ASLP-lab/SongFormer",
+                "a75880ed1b7375ac71860ec6c4fc9c899cf99515",
+                "SongFormer.pt", 104493286,
+                "25d749cc9a51dc0a999ea61c5c7ff42df7ed8ba95295a0530a82430f9483c14c",
+                "2c66c0bb91364e318e90dbc2d9a79ee2", False,
+            ),
+            (
+                "MUSICFM", "minzwon/MusicFM",
+                "4513b38bc25ad1d227b1980819b9691ba97f4d87",
+                "pretrained_msd.pt", 1316802088,
+                "218b483a0256ddef736267425fabb166fd97008983696bb9270def464b47bded",
+                "df930aceac8209818556c4a656a0714c", False,
+            ),
+            (
+                "MUSICFM", "minzwon/MusicFM",
+                "4513b38bc25ad1d227b1980819b9691ba97f4d87",
+                "msd_stats.json", 2277,
+                "c36c61ab10ca4d2e7fdfefc3fcc15205316bec276a06a47baa3641a62c546f22",
+                "75ab2e47b093e07378f7f703bdb82c14", False,
+            ),
+            (
+                "MUQ", "OpenMuQ/MuQ-large-msd-iter",
+                "0562a57814f6f8bbd9fdea0a25921a2fce1a841a",
+                "model.safetensors", 1333825096,
+                "273febab2be02872c37d2c37e48a9d6c52c1c9392f3eeeabd498efa281ccb7a6",
+                None, False,
+            ),
+            (
+                "MUQ", "OpenMuQ/MuQ-large-msd-iter",
+                "0562a57814f6f8bbd9fdea0a25921a2fce1a841a",
+                "config.json", 3133,
+                "237335ee27d8fb951ce778701a12a79e06c51ae636dd786f97e45f51ce532543",
+                None, False,
+            ),
+        }
+        actual_assets = {
+            (
+                item.get("component"), item.get("repository"),
+                item.get("revision"), item.get("path"),
+                item.get("remoteBytes"), item.get("remoteSha256"),
+                item.get("upstreamMd5"), item.get("locallyVerified"),
+            )
+            for item in assets
+        }
+        songformer_license = components.get("songformer", {})
+        musicfm_license = components.get("musicfm", {})
+        muq_license = components.get("muq", {})
+        stop_record = stop_observation.get("record", {})
+        required = [
+            songformer.get("finalStatus") == "BLOCKED_LICENSE",
+            songformer.get("licenseStatus") == "UNVERIFIED",
+            songformer.get("codeRepository")
+            == "https://github.com/ASLP-lab/SongFormer.git",
+            songformer.get("codeRevision")
+            == "139b2aa3b14bd1c6d961d0994e9fc975f1ef7fd5",
+            songformer.get("modelRepository")
+            == "composite:ASLP-lab/SongFormer+minzwon/MusicFM+OpenMuQ/MuQ-large-msd-iter",
+            songformer.get("modelRevision")
+            == "a75880ed1b7375ac71860ec6c4fc9c899cf99515+4513b38bc25ad1d227b1980819b9691ba97f4d87+0562a57814f6f8bbd9fdea0a25921a2fce1a841a",
+            songformer.get("assetsDownloaded") is False,
+            songformer.get("endpointDeployed") is False,
+            songformer.get("endpointConfigured") is False,
+            songformer.get("healthReady") is False,
+            songformer.get("promotionSigned") is False,
+            songformer.get("apiConnected") is False,
+            manifest.get("status") == "BLOCKED_LICENSE",
+            gate.get("status") == "BLOCKED_LICENSE",
+            gate.get("provisioningAllowed") is False,
+            gate.get("deploymentAllowed") is False,
+            gate.get("researchDeploymentAllowed") is False,
+            manifest.get("source", {}).get("commit")
+            == "139b2aa3b14bd1c6d961d0994e9fc975f1ef7fd5",
+            manifest.get("modelSources", {}).get("songformer", {}).get("revision")
+            == "a75880ed1b7375ac71860ec6c4fc9c899cf99515",
+            manifest.get("modelSources", {}).get("musicfm", {}).get("revision")
+            == "4513b38bc25ad1d227b1980819b9691ba97f4d87",
+            manifest.get("modelSources", {}).get("muq", {}).get("revision")
+            == "0562a57814f6f8bbd9fdea0a25921a2fce1a841a",
+            actual_assets == expected_assets,
+            license_manifest.get("classification") == "BLOCKED_LICENSE",
+            songformer_license.get("sourceCommit")
+            == manifest.get("source", {}).get("commit"),
+            songformer_license.get("modelRevision")
+            == manifest.get("modelSources", {}).get("songformer", {}).get("revision"),
+            songformer_license.get("sourceLicenseSha256")
+            == "1a0e476350ac340a5f96af1aef1a3a46e3f28e8be595dff9501dad084148b29e",
+            songformer_license.get("modelCardSha256")
+            == "91a9bae1abefaceff0696248128675b3bceab45d714702c001f4008804351e47",
+            musicfm_license.get("modelRevision")
+            == manifest.get("modelSources", {}).get("musicfm", {}).get("revision"),
+            musicfm_license.get("checkpointLicense") == "UNVERIFIED",
+            musicfm_license.get("modelRepositoryLicenseFilePresent") is False,
+            musicfm_license.get("sourceLicenseSha256")
+            == "5684e11c103b652a5fc59a2cc930c4bb63b5d4aa497e8519aaeb147bc4d34877",
+            musicfm_license.get("modelCardSha256")
+            == "3e0e15fa0c5cc81675bd69af8eb469d128a725c1a7bfc71f03b7877b7b650567",
+            muq_license.get("modelRevision")
+            == manifest.get("modelSources", {}).get("muq", {}).get("revision"),
+            muq_license.get("checkpointLicense") == "CC-BY-NC-4.0",
+            muq_license.get("sourceLicenseSha256")
+            == "8f4b76ec1ca72efcde8b595df518f3a861d83c04c275dea72eb4e3ba5d00a503",
+            muq_license.get("modelCardSha256")
+            == "8d7322961d39f52f83953bef164503d6fb84757b00326a0107c0e1d84b880465",
+            license_manifest.get("overall", {}).get("provisioningAllowed") is False,
+            license_manifest.get("overall", {}).get("researchDeploymentAllowed")
+            is False,
+            local.get("classification") == "BLOCKED_LICENSE",
+            evidence.get("assetsDownloaded") is False,
+            evidence.get("bootstrapBlockedBeforeNetwork") is True,
+            evidence.get("modalDeploymentFunctionsPresent") is False,
+            evidence.get("endpointConfigured") is False,
+            evidence.get("apiConnected") is False,
+            review.get("conclusion") == "BLOCKED_LICENSE",
+            review.get("provisioningAttempted") is False,
+            review.get("inferenceAttempted") is False,
+            deployment.get("modalAppId") == "ap-pba79GQ5ZnixHhtMx9lEmF",
+            deployment.get("state") == "stopped",
+            deployment.get("stoppedAt") == "2026-09-06T19:14:07Z",
+            deployment.get("observationSha256")
+            == evidence.get("modalStopObservationSha256"),
+            stop_observation.get("recordSha256")
+            == "a4f1070637935c24d2cb099e727d4a427aaf083a81fe8cdd201dcb41a708f3a4",
+            canonical_sha256(stop_record) == stop_observation.get("recordSha256"),
+            stop_record.get("app_id") == deployment.get("modalAppId"),
+            stop_record.get("state") == "stopped",
+            stop_record.get("stopped_at") == "2026-09-06 19:14:07+00:00",
+            review.get("songformer", {}).get("sourceCommit")
+            == manifest.get("source", {}).get("commit"),
+            review.get("songformer", {}).get("modelRevision")
+            == manifest.get("modelSources", {}).get("songformer", {}).get("revision"),
+            review.get("musicfm", {}).get("modelRevision")
+            == manifest.get("modelSources", {}).get("musicfm", {}).get("revision"),
+            review.get("muq", {}).get("modelRevision")
+            == manifest.get("modelSources", {}).get("muq", {}).get("revision"),
+            review.get("musicfm", {}).get("checkpoint", {}).get("remoteSha256")
+            == "218b483a0256ddef736267425fabb166fd97008983696bb9270def464b47bded",
+            "assert_license_cleared()" in bootstrap_source,
+            "snapshot_download" not in bootstrap_source,
+            "import subprocess" not in bootstrap_source,
+            "@modal.asgi_app" not in modal_source,
+            "@app.function" not in modal_source,
+            "Volume.from_name" not in modal_source,
+            "Image.from_dockerfile" not in modal_source,
+            '"status": "blocked_license"' in worker_source,
+            "SONGFORMER_API_URL =" not in replit_source,
+            "MUSIC_PROVIDER_SONGFORMER_URL =" not in replit_source,
+            "MUSIC_PROVIDER_SONGFORMER_ENDPOINT =" not in replit_source,
+        ]
+        if not all(required):
+            errors.append(
+                "SONGFORMER: license-blocked classification lacks exact remote "
+                "asset/license/teardown/bootstrap/Modal/worker/API evidence"
+            )
     for name in ("MUSICGEN_LARGE", "MUSICGEN_MELODY_LARGE"):
         row = by_name.get(name, {})
         if row.get("sourcePinned") and row.get("finalStatus") != "BLOCKED_NO_WEIGHTS":
