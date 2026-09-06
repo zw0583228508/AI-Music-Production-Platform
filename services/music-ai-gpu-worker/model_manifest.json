@@ -87,7 +87,8 @@
       },
       "runtime": {
         "cuda_image": "nvidia/cuda@sha256:2fcc4280646484290cc50dce5e65f388dd04352b07cbe89a635703bd1f9aedb6",
-        "transformers": "4.38.2"
+        "transformers": "4.38.2",
+        "uv_image": "ghcr.io/astral-sh/uv@sha256:1ececcacbbde240ffca54d400df86e4fdd38f29c1a2366299279d197e92eaed3"
       },
       "upstream_revision": "magenta/mt3@63e58268d9279cf91d9902bbdc166ab6d3c20c97",
       "upstream_license": "Apache-2.0",

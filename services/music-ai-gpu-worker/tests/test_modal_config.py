@@ -148,6 +148,11 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             "ghcr.io/astral-sh/uv@sha256:",
             dockerfile,
         )
+        self.assertIn(
+            "ghcr.io/astral-sh/uv@sha256:"
+            "1ececcacbbde240ffca54d400df86e4fdd38f29c1a2366299279d197e92eaed3",
+            dockerfile,
+        )
 
     def test_wave_two_has_compatible_transformers_and_isolated_yourmt3_extras(self):
         mr = (ROOT / "Dockerfile.mr-mt3").read_text()

@@ -20,7 +20,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
       ca-certificates ffmpeg git libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=ghcr.io/astral-sh/uv@sha256:90daa44de157845906efe44be26c188af81c4618bf99bd0f8b386231bb0eb577 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv@sha256:1ececcacbbde240ffca54d400df86e4fdd38f29c1a2366299279d197e92eaed3 /uv /uvx /bin/
 RUN uv python install 3.11.11
 RUN uv venv --python 3.11.11 /opt/music-ai-venv
 ENV PATH="/opt/music-ai-venv/bin:${PATH}"
