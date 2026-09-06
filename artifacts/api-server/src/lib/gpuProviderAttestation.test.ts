@@ -14,13 +14,13 @@ test("generic promotion environment compatibility remains fail closed for uncomm
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const record: GpuPromotionRecord = {
     schemaVersion: 1,
-    provider: "YOUR_MT3",
+    provider: "TEST_GPU",
     modalAppId: "ap-Test",
     modalDeploymentId: "v20",
     modalFunctionId: "fu-Test",
     modalImageId: "im-Test",
-    endpointOrigin: "https://bs-roformer.example.test",
-    modelVersion: "your-mt3",
+    endpointOrigin: "https://test-gpu.example.test",
+    modelVersion: "test-gpu",
     checkpointSha256: "5b84f37e8d444c8cb30c79d77f613a41c05868ff9c9ac6c7049c00aefae115aa",
     checkpointRevision: "your-mt3/checkpoint@immutable",
     sourceRevision: "4fb6a9ce92fe5689154c1a1af244a099f3d7af93",
@@ -43,11 +43,11 @@ test("generic promotion environment compatibility remains fail closed for uncomm
     Buffer.from(canonicalGpuPromotionJson(record)),
     privateKey,
   ).toString("base64");
-  const previousBundle = process.env.MUSIC_PROVIDER_YOUR_MT3_PROMOTION_BUNDLE;
+  const previousBundle = process.env.MUSIC_PROVIDER_TEST_GPU_PROMOTION_BUNDLE;
   const previousPublicKey = process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY;
   const previousProviderPublicKey =
-    process.env.MUSIC_PROVIDER_YOUR_MT3_PROMOTION_PUBLIC_KEY;
-  process.env.MUSIC_PROVIDER_YOUR_MT3_PROMOTION_BUNDLE = JSON.stringify({
+    process.env.MUSIC_PROVIDER_TEST_GPU_PROMOTION_PUBLIC_KEY;
+  process.env.MUSIC_PROVIDER_TEST_GPU_PROMOTION_BUNDLE = JSON.stringify({
     record,
     signature,
   });
@@ -55,7 +55,7 @@ test("generic promotion environment compatibility remains fail closed for uncomm
     type: "spki",
     format: "pem",
   }).toString();
-  process.env.MUSIC_PROVIDER_YOUR_MT3_PROMOTION_PUBLIC_KEY = testPublicKey;
+  process.env.MUSIC_PROVIDER_TEST_GPU_PROMOTION_PUBLIC_KEY = testPublicKey;
   process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY = testPublicKey;
   const health = {
     provider: record.provider,
@@ -83,7 +83,7 @@ test("generic promotion environment compatibility remains fail closed for uncomm
   try {
     assert.equal(
       gpuPromotionAttestationFailure(
-        "YOUR_MT3",
+        "TEST_GPU",
         `${record.endpointOrigin}/health`,
         health,
       ),
@@ -91,7 +91,7 @@ test("generic promotion environment compatibility remains fail closed for uncomm
     );
     assert.match(
       gpuPromotionAttestationFailure(
-        "YOUR_MT3",
+        "TEST_GPU",
         `${record.endpointOrigin}/health`,
         { ...health, modalImageId: "im-Other" },
       ) ?? "",
@@ -99,7 +99,7 @@ test("generic promotion environment compatibility remains fail closed for uncomm
     );
     assert.match(
       gpuPromotionAttestationFailure(
-        "YOUR_MT3",
+        "TEST_GPU",
         `${record.endpointOrigin}/health`,
         { ...health, checkpointSha256: "0".repeat(64) },
       ) ?? "",
@@ -107,9 +107,9 @@ test("generic promotion environment compatibility remains fail closed for uncomm
     );
   } finally {
     if (previousBundle === undefined) {
-      delete process.env.MUSIC_PROVIDER_YOUR_MT3_PROMOTION_BUNDLE;
+      delete process.env.MUSIC_PROVIDER_TEST_GPU_PROMOTION_BUNDLE;
     } else {
-      process.env.MUSIC_PROVIDER_YOUR_MT3_PROMOTION_BUNDLE = previousBundle;
+      process.env.MUSIC_PROVIDER_TEST_GPU_PROMOTION_BUNDLE = previousBundle;
     }
     if (previousPublicKey === undefined) {
       delete process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY;
@@ -117,9 +117,9 @@ test("generic promotion environment compatibility remains fail closed for uncomm
       process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY = previousPublicKey;
     }
     if (previousProviderPublicKey === undefined) {
-      delete process.env.MUSIC_PROVIDER_YOUR_MT3_PROMOTION_PUBLIC_KEY;
+      delete process.env.MUSIC_PROVIDER_TEST_GPU_PROMOTION_PUBLIC_KEY;
     } else {
-      process.env.MUSIC_PROVIDER_YOUR_MT3_PROMOTION_PUBLIC_KEY =
+      process.env.MUSIC_PROVIDER_TEST_GPU_PROMOTION_PUBLIC_KEY =
         previousProviderPublicKey;
     }
   }
@@ -160,6 +160,62 @@ test("the committed MT3 promotion attests its exact captured runtime identity", 
     ),
     null,
   );
+});
+
+test("the committed YOUR_MT3 promotion attests its exact captured runtime identity", () => {
+  const record = expectedGpuPromotionRecord("YOUR_MT3");
+  assert.ok(record);
+  assert.equal(record.modelVersion, "your-mt3");
+  assert.equal(record.runtime.transformers, "4.45.1");
+  assert.equal(
+    record.checkpointSha256,
+    "ae38e415c79efd5592dcb9b658cdb99ddb11d4c4e1eaa364cab04a052473fc25",
+  );
+  const health = {
+    provider: record.provider,
+    modalAppId: record.modalAppId,
+    modalDeploymentId: record.modalDeploymentId,
+    modalFunctionId: record.modalFunctionId,
+    modalImageId: record.modalImageId,
+    modelVersion: record.modelVersion,
+    checkpointSha256: record.checkpointSha256,
+    revision: record.checkpointRevision,
+    sourceRevision: record.sourceRevision,
+    sourceImageDigest: record.sourceImageDigest,
+    runtime: { pythonVersion: record.runtime.python },
+    framework: {
+      cuda_image: record.runtime.cudaImage,
+      cuda: record.runtime.cuda,
+      pytorch: record.runtime.pytorch,
+      torchvision: record.runtime.torchvision,
+      torchaudio: record.runtime.torchaudio,
+      torch_index_url: record.runtime.torchIndexUrl,
+      transformers: record.runtime.transformers,
+      accelerate: record.runtime.accelerate,
+    },
+  };
+  assert.equal(
+    gpuPromotionAttestationFailure(
+      "YOUR_MT3",
+      `${record.endpointOrigin}/health`,
+      health,
+    ),
+    null,
+  );
+  for (const drift of [
+    { modalImageId: "im-Other" },
+    { checkpointSha256: "0".repeat(64) },
+    { sourceImageDigest: `sha256:${"0".repeat(64)}` },
+  ]) {
+    assert.match(
+      gpuPromotionAttestationFailure(
+        "YOUR_MT3",
+        `${record.endpointOrigin}/health`,
+        { ...health, ...drift },
+      ) ?? "",
+      /runtime identity/,
+    );
+  }
 });
 
 test("Beat This startup requires the exact promoted health schema", () => {
