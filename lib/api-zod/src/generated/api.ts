@@ -23,7 +23,6 @@ export const HealthCheckResponse = zod.object({
   "timestamp": zod.string()
 })
 
-
 /**
  * @summary Get studio dashboard
  */
@@ -39,8 +38,6 @@ export const GetDashboardResponse = zod.object({
   "type": zod.enum(['analysis', 'arrangement', 'render', 'export'])
 }))
 })
-
-
 /**
  * @summary List active, staged, and previously active licensed instrument packs
  */
@@ -225,7 +222,6 @@ export const ListLicensedInstrumentPacksResponse = zod.object({
 }))
 })
 })
-
 
 /**
  * Streams a licensed plugin/library and its preapproved native host to private worker storage, then returns only after canonical smoke verification succeeds.
@@ -2673,7 +2669,7 @@ export const GenerateArrangementParams = zod.object({
   "arrangementId": zod.coerce.string()
 })
 
-export const generateArrangementBodyCandidatesMax = 3;
+export const generateArrangementBodyCandidatesMax = 5;
 
 export const generateArrangementBodyIdempotencyKeyMax = 200;
 

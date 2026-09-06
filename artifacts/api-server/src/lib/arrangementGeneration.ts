@@ -581,7 +581,16 @@ export async function queueArrangementGeneration(
     hardware,
     speed,
   });
-  const count = Math.max(1, Math.min(3, Math.round(input.candidates ?? 3)));
+  const count = Math.max(1, Math.min(5, Math.round(input.candidates ?? 3)));
+  if (
+    provider.readiness.maximumCandidates !== null &&
+    provider.readiness.maximumCandidates !== undefined &&
+    count > provider.readiness.maximumCandidates
+  ) {
+    throw new Error(
+      `${provider.definition.displayName} reports a maximum of ${provider.readiness.maximumCandidates} candidates per request; requested ${count}`,
+    );
+  }
   const sourceRequired = operation !== null;
   const requestedSourceArtifactId = input.sourceArtifactId?.trim() || null;
   const sourceArtifact = requestedSourceArtifactId
@@ -999,7 +1008,14 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
       .returning({ id: musicGenerationJobsTable.id });
     if (!rankingOwner) throw new Error("Generation job lease was lost");
 
-    const providerCandidates = result.candidates.slice(0, job.requestedCandidates);
+    if (result.candidates.length !== job.requestedCandidates) {
+      throw new ProviderIncompleteResultError(
+        provider.definition.id,
+        job.requestedCandidates,
+        result.candidates.length,
+      );
+    }
+    const providerCandidates = result.candidates;
     const artifactRows: Array<typeof musicArtifactsTable.$inferInsert> = [];
     const candidateRows: Array<
       typeof musicGenerationCandidatesTable.$inferInsert & {
@@ -1450,8 +1466,10 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
       error instanceof ProviderCancellationAcknowledgedError ||
       (abortController.signal.aborted && !cancellationUnconfirmed);
     const runtimeUnavailable = error instanceof ProviderRuntimeUnavailableError;
+    const incompleteProviderResult = error instanceof ProviderIncompleteResultError;
     const retryable = !cancelled && !cancellationUnconfirmed &&
       (!runtimeUnavailable || error.retryable) &&
+      !incompleteProviderResult &&
       !/invalid|unauthorized|forbidden|not configured|license/i.test(message);
     const willRetry = retryable && job.attempt < job.maxAttempts;
     const originalStatus = job.inputSnapshot.arrangement.status === "ready"
@@ -1487,6 +1505,8 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
               ? "PROVIDER_CANCELLATION_UNCONFIRMED"
               : runtimeUnavailable
                 ? "PROVIDER_RUNTIME_UNAVAILABLE"
+                  : incompleteProviderResult
+                    ? "PROVIDER_INCOMPLETE_RESULT"
                 : "PROVIDER_EXECUTION_FAILED",
           retryable,
           workerId: willRetry || cancellationUnconfirmed ? null : workerId,
@@ -1533,6 +1553,18 @@ class ProviderRuntimeUnavailableError extends Error {
     readonly retryable: boolean,
   ) {
     super(`${providerId} is configured but unavailable: ${detail}`);
+  }
+}
+
+class ProviderIncompleteResultError extends Error {
+  constructor(
+    providerId: string,
+    requested: number,
+    received: number,
+  ) {
+    super(
+      `${providerId} returned an incomplete candidate set: requested ${requested}, received ${received}`,
+    );
   }
 }
 

@@ -16,7 +16,7 @@ import type { GenerationInputTask } from './generationInputTask';
 export interface GenerationInput {
   /**
      * @minimum 1
-     * @maximum 3
+     * @maximum 5
      */
   candidates?: number;
   /**

@@ -952,6 +952,17 @@ function finiteNumber(value: unknown, field: string): number {
   }
   return value;
 }
+
+function reportedMaximumCandidates(payload: Record<string, unknown>): number | null {
+  const value = payload["maximumCandidates"] ?? payload["maxCandidates"] ??
+    payload["candidateLimit"];
+  return typeof value === "number" &&
+      Number.isInteger(value) &&
+      value >= 1 &&
+      value <= 5
+    ? value
+    : null;
+}
 export async function syncModelRegistry(): Promise<void> {
   for (const provider of MUSIC_PROVIDERS) {
     const localReady = provider.execution === "local" && provider.status === "ready";
@@ -1235,6 +1246,7 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
         latencyMs: Math.max(0, Date.now() - startedAt),
         message,
         reportedVersion,
+        maximumCandidates: reportedMaximumCandidates(payload),
         reportedChecksum: isSha256(reportedChecksum)
           ? reportedChecksum.toLowerCase()
           : null,
@@ -1262,6 +1274,7 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
           ? `Provider health check failed: ${error.message}`
           : "Provider health check failed.",
         reportedVersion: null,
+        maximumCandidates: null,
         reportedChecksum: null,
         runtimeProvenance: null,
       };
@@ -1689,6 +1702,7 @@ function initialProviderReadiness(configured: boolean): ProviderRuntimeSnapshot 
       ? "Configured endpoint has not passed a runtime health check."
       : "Provider endpoint is not configured.",
     reportedVersion: null,
+    maximumCandidates: null,
     reportedChecksum: null,
   };
 }

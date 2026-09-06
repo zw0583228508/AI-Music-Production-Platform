@@ -257,6 +257,9 @@ export type ProviderRuntimeSnapshot = {
   latencyMs: number | null;
   message: string | null;
   reportedVersion: string | null;
+  // A provider may advertise a lower per-request candidate ceiling during its
+  // health check. Absent means that the platform ceiling applies.
+  maximumCandidates?: number | null;
   reportedChecksum?: string | null;
   runtimeProvenance?: {
     model: string;

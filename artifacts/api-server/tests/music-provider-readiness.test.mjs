@@ -195,6 +195,7 @@ test("routes only to a worker with a verified checkpoint and runtime", async () 
       status: "ready",
       provider: "METEOR",
       checkpoint: { ready: true, version: "meteor", sha256: "b".repeat(64) },
+      maximumCandidates: 3,
       runtime: {
         ready: true,
         gpuReady: true,
@@ -215,6 +216,7 @@ test("routes only to a worker with a verified checkpoint and runtime", async () 
     assert.equal(catalogEntry.runtimeReady, true);
     assert.equal(catalogEntry.smokeTested, true);
     assert.equal(catalogEntry.reportedVersion, "meteor");
+    assert.equal(registry[0].readiness.maximumCandidates, 3);
     assert.equal(catalogEntry.lastHealth.status, "healthy");
     assert.equal(
       selectMusicProvider(registry, {

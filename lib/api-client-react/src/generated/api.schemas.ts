@@ -1569,7 +1569,7 @@ export type GenerationInputParameters = { [key: string]: unknown };
 export interface GenerationInput {
   /**
      * @minimum 1
-     * @maximum 3
+     * @maximum 5
      */
   candidates?: number;
   /**
