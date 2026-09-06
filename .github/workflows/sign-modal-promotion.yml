@@ -110,22 +110,23 @@ jobs:
 
       - name: Capture authenticated health and real smoke
         run: |
+          set -euo pipefail
+          smoke_args=()
+          if [ "$PROVIDER" = "ACE_STEP" ]; then
+            smoke_args+=(--smoke-artifact-output promotion/ace-step-smoke.wav)
+          fi
           uv run python services/music-ai-gpu-worker/release_modal.py \
             --provider "$PROVIDER" capture \
             --expected-identity promotion/worker-identity.json \
             --output promotion/release-evidence.json \
-            --health-output promotion/live-health.json
+            --health-output promotion/live-health.json \
+            "${smoke_args[@]}"
 
       - name: Retain authoritative evidence before signing
         uses: actions/upload-artifact@v4
         with:
           name: modal-provider-evidence-${{ inputs.provider }}-${{ github.run_id }}
-          path: |
-            promotion/candidate-metadata.json
-            promotion/worker-identity.json
-            promotion/container-refresh.json
-            promotion/release-evidence.json
-            promotion/live-health.json
+          path: promotion
           if-no-files-found: error
           retention-days: 90
 

@@ -557,6 +557,8 @@ def main(argv: list[str] | None = None) -> int:
                           for key in (
                               "name", "format", "sampleRate", "channels",
                               "durationSeconds", "bytes", "sha256",
+                              "peakAmplitude", "rmsAmplitude", "url",
+                              "capability", "expiresAt",
                           )
                       },
                   }})

@@ -57,7 +57,9 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             self.assertEqual(deployment.max_containers, 1)
             self.assertTrue((ROOT / "runners" / deployment.requirements_file).is_file())
             self.assertRegex(deployment.source_image_digest, r"^sha256:[0-9a-f]{64}$")
-            self.assertTrue(deployment.cuda_image.startswith("nvidia/cuda:"))
+            self.assertTrue(
+                deployment.cuda_image.startswith(("nvidia/cuda:", "nvidia/cuda@sha256:"))
+            )
             self.assertTrue(deployment.pytorch)
 
     def test_environment_is_provider_isolated_and_uses_durable_mounts(self):
