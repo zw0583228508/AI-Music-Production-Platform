@@ -14,6 +14,7 @@ source_sha256 = source_evidence.get("sourceSha256", "")
 if len(source_sha256) != 64: raise RuntimeError("real-audio source evidence is invalid")
 result = app.analyze_path(fixture)
 if len(result["beats"]) < 2: raise RuntimeError("Beat This produced no real beat sequence")
+if len(result["downbeats"]) < 1: raise RuntimeError("Beat This produced no real downbeat sequence")
 app.READINESS.parent.mkdir(parents=True, exist_ok=True)
 app.READINESS.write_text(json.dumps({
     "provider": "BEAT_THIS", "featureExecutionSucceeded": True,
@@ -24,4 +25,11 @@ app.READINESS.write_text(json.dumps({
                 "format": info.format, "subtype": info.subtype},
     "torch": torch.__version__,
     "torchaudio": torchaudio.__version__,
+    "result": {
+        "beatCount": len(result["beats"]),
+        "downbeatCount": len(result["downbeats"]),
+        "firstBeats": result["beats"][:8],
+        "firstDownbeats": result["downbeats"][:8],
+        "confidence": result["confidence"],
+    },
 }, sort_keys=True, separators=(",", ":")))

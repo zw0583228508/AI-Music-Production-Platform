@@ -94,6 +94,27 @@ def evidence_errors(rows, root):
                 and evidence.get("endpointConfigured") is True
                 and evidence.get("liveHealthStatus") == "ready"):
             errors.append("MR_MT3: READY lacks exact revision/SHA/63-note CUDA smoke/promotion/endpoint-health evidence")
+    beat = by_name.get("BEAT_THIS", {})
+    if beat.get("finalStatus") == "READY":
+        status = read_json("services/beat-this-worker/installation-status.json")
+        evidence = status.get("providers", {}).get("BEAT_THIS", {}).get("evidence", {})
+        smoke = evidence.get("realSmoke", {})
+        required = [
+            evidence.get("codeRevision") == beat.get("codeRevision"),
+            evidence.get("modelRevision") == beat.get("modelRevision"),
+            evidence.get("checkpointSha256") == "8c328b45f59d8dd3dff219253ff6a8d6482be57d0133a29140e2febbf8eb8331",
+            evidence.get("liveHealthStatus") == "ready",
+            evidence.get("signedPromotionRecordPresent") is True,
+            evidence.get("promotionSignatureValidated") is True,
+            evidence.get("apiAttestationValidated") is True,
+            evidence.get("endpointConfigured") is True,
+            smoke.get("beatCount", 0) > 1,
+            smoke.get("downbeatCount", 0) > 0,
+            bool(smoke.get("firstBeats")),
+            bool(smoke.get("firstDownbeats")),
+        ]
+        if not all(required):
+            errors.append("BEAT_THIS: READY lacks exact live identity, signed promotion, API attestation, or non-empty beat/downbeat smoke evidence")
     for name in ("MUSICGEN_LARGE", "MUSICGEN_MELODY_LARGE"):
         row = by_name.get(name, {})
         if row.get("sourcePinned") and row.get("finalStatus") != "BLOCKED_NO_WEIGHTS":

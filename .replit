@@ -91,3 +91,9 @@ MUSIC_PROVIDER_MR_MT3_PROMOTION_PUBLIC_KEY = """
 -----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEA1nioocAKfVqHnUpF+ioHpq1QjgUxckf9Q3qwHKg0e4Q=
 -----END PUBLIC KEY-----"""
+MUSIC_PROVIDER_BEAT_THIS_PROMOTION_BUNDLE = "{\"record\":{\"checkpointRevision\":\"b95c8ab0c58c2d9fcfd40508ae8dffbc05ac4f5c\",\"checkpointSha256\":\"8c328b45f59d8dd3dff219253ff6a8d6482be57d0133a29140e2febbf8eb8331\",\"endpointOrigin\":\"https://windot100--beat-this.modal.run\",\"modalAppId\":\"ap-PQ5CqhaR31JiEloxyPn8La\",\"modalDeploymentId\":\"v5\",\"modalFunctionId\":\"fu-KbPbWu24nJvCT8BqewUOR0\",\"modalImageId\":\"im-4V16rk3pGnKOjo3rPHQML4\",\"modelVersion\":\"1.1.0\",\"provider\":\"BEAT_THIS\",\"runtime\":{\"accelerate\":\"1.2.1\",\"cuda\":\"12.4.1\",\"cudaImage\":\"nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04\",\"python\":\"3.11.11\",\"pytorch\":\"2.5.1+cu124\",\"torchIndexUrl\":\"https://download.pytorch.org/whl/cu124\",\"torchaudio\":\"2.5.1+cu124\",\"torchvision\":\"0.20.1+cu124\",\"transformers\":\"4.47.1\"},\"schemaVersion\":1,\"sourceImageDigest\":\"sha256:0331219251e9a6995af8e27b2d49cd6a70e341956811094955a282f10bda96f4\",\"sourceRevision\":\"350507bdf206a79d766604ee5842c03cb6defd6b\"},\"signature\":\"Lz1/D59eJ+Kxtr/qSrc4beucEltkBSVU3QfWOnldK3tOgA6RkwuA85lIlSQMftAZvDkCr7y7DDlrWNNQzklDAQ==\"}"
+MUSIC_PROVIDER_BEAT_THIS_PROMOTION_PUBLIC_KEY = """
+-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAkeoJaIl4Ivvaj/TF7wfjlwQGXcYSh82snfpXhxYtHjc=
+-----END PUBLIC KEY-----
+"""

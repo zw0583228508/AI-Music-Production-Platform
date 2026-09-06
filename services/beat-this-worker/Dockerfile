@@ -6,7 +6,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.6.1 /uv /uvx /bin/
 RUN uv python install 3.11.11 && uv venv --python 3.11.11 /opt/beat-this
 ENV PATH="/opt/beat-this/bin:${PATH}"
 RUN uv pip install --python /opt/beat-this/bin/python \
-    torch==2.5.1+cu124 torchaudio==2.5.1+cu124 \
+    torch==2.5.1+cu124 torchvision==0.20.1+cu124 torchaudio==2.5.1+cu124 \
     --index-url https://download.pytorch.org/whl/cu124
 WORKDIR /app
 COPY attached_assets/0_שמוליק_סוכות_-_הילד_הזה_1788660426522.mp3 /tmp/beat-this-smoke-source.mp3

@@ -28,6 +28,14 @@ import fcntl
 import logging
 from contextlib import asynccontextmanager
 
+PRIVATE_TEMP_ROOT = Path(os.getenv(
+    "SHEETSAGE_PRIVATE_TEMP_ROOT",
+    os.getenv("SHEETSAGE_TEMP_DIR", tempfile.gettempdir()),
+))
+PROCESS_TEMP_DIR: Path | None = None
+PROCESS_TEMP_LOCK = None
+LOGGER = logging.getLogger("sheetsage-worker")
+
 
 def _token() -> str | None:
     return os.getenv("SHEETSAGE_API_TOKEN") or os.getenv("MUSIC_AI_WORKER_TOKEN")

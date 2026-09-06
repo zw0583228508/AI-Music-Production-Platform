@@ -1,6 +1,6 @@
 """Dedicated, authenticated Beat This GPU inference boundary."""
 from __future__ import annotations
-import base64, hashlib, hmac, ipaddress, json, os, socket, tempfile, threading, time
+import base64, hashlib, hmac, ipaddress, json, os, platform, re, socket, tempfile, threading, time
 from http.client import HTTPConnection, HTTPSConnection
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -40,10 +40,15 @@ def asset_ready() -> bool:
 
 def runtime_ready() -> bool:
     try:
-        import torch, torchaudio
+        import torch
         return (version("beat-this") == MANIFEST["version"] and
-                torch.__version__ == MANIFEST["runtime"]["torch"] and
-                torchaudio.__version__ == MANIFEST["runtime"]["torchaudio"] and
+                platform.python_version() == MANIFEST["runtime"]["python"] and
+                torch.__version__ == MANIFEST["runtime"]["pytorch"] and
+                all(version(name) == MANIFEST["runtime"][name] for name in (
+                    "torchvision", "torchaudio", "transformers", "accelerate"
+                )) and
+                ".".join(str(torch.version.cuda or "").split(".")[:2]) ==
+                    ".".join(MANIFEST["runtime"]["cuda"].split(".")[:2]) and
                 torch.cuda.is_available())
     except (ImportError, PackageNotFoundError): return False
 
@@ -52,7 +57,7 @@ def smoke_ready() -> bool:
     except (OSError, json.JSONDecodeError): return False
     return (proof.get("provider") == "BEAT_THIS" and proof.get("featureExecutionSucceeded") is True and
             proof.get("checkpoint", {}).get("sha256") == MANIFEST["checkpointSha256"] and
-            proof.get("torch") == MANIFEST["runtime"]["torch"] and
+            proof.get("torch") == MANIFEST["runtime"]["pytorch"] and
             proof.get("torchaudio") == MANIFEST["runtime"]["torchaudio"])
 
 def tracker():
@@ -111,13 +116,41 @@ def health(provider: str = "BEAT_THIS") -> dict:
     if provider != "BEAT_THIS": raise HTTPException(404, "provider is not exposed")
     package_ready, assets, smoke = runtime_ready(), asset_ready(), smoke_ready()
     ready = package_ready and assets and smoke
-    identity = json.dumps(MANIFEST, sort_keys=True).encode()
+    modal_image_id = os.getenv("MODAL_IMAGE_ID", "").strip()
+    modal_app_id = os.getenv("BEAT_THIS_MODAL_APP_ID", "").strip()
+    modal_deployment_id = os.getenv("BEAT_THIS_MODAL_DEPLOYMENT_ID", "").strip()
+    modal_function_id = os.getenv("BEAT_THIS_MODAL_FUNCTION_ID", "").strip()
+    source_revision = os.getenv("BEAT_THIS_SOURCE_REVISION", "").strip()
+    source_image_digest = os.getenv("BEAT_THIS_SOURCE_IMAGE_DIGEST", "").strip().lower()
+    identity_ready = (
+        bool(modal_app_id and modal_deployment_id and modal_function_id)
+        and bool(re.fullmatch(r"im-[A-Za-z0-9]+", modal_image_id))
+        and bool(re.fullmatch(r"[a-f0-9]{40}", source_revision))
+        and bool(re.fullmatch(r"sha256:[a-f0-9]{64}", source_image_digest))
+    )
+    ready = package_ready and assets and smoke and identity_ready
+    runtime = MANIFEST["runtime"]
     return {"provider": "BEAT_THIS", "status": "ready" if ready else "not_ready", "ready": ready,
-            "modelVersion": MANIFEST["version"], "checksum": hashlib.sha256(identity).hexdigest(),
+            "modelVersion": MANIFEST["version"], "checksum": MANIFEST["checkpointSha256"],
+            "checkpointSha256": MANIFEST["checkpointSha256"],
+            "revision": MANIFEST["sourceCommit"],
+            "sourceRevision": source_revision,
+            "sourceImageDigest": source_image_digest,
+            "modalAppId": modal_app_id, "modalDeploymentId": modal_deployment_id,
+            "modalFunctionId": modal_function_id, "modalImageId": modal_image_id,
+            "runtime": {"pythonVersion": runtime["python"]},
+            "framework": {
+                "python": runtime["python"], "cuda_image": runtime["cudaImage"],
+                "cuda": runtime["cuda"], "pytorch": runtime["pytorch"],
+                "torchvision": runtime["torchvision"], "torchaudio": runtime["torchaudio"],
+                "torch_index_url": runtime["torchIndexUrl"],
+                "transformers": runtime["transformers"], "accelerate": runtime["accelerate"],
+            },
             "packageName": "beat-this", "packageVersion": MANIFEST["version"],
             "packageReady": package_ready, "assetReady": assets, "featureExecutionReady": smoke,
             "runtimeReady": package_ready, "checkpointReady": assets, "smokeTested": smoke,
-            "gpuReady": package_ready, "reason": None if ready else "reviewed runtime, final0, and real-audio smoke proof are required"}
+            "gpuReady": package_ready, "identityReady": identity_ready,
+            "reason": None if ready else "reviewed runtime, final0, real-audio smoke proof, and complete deployment identity are required"}
 
 @app.post("/analyze", dependencies=[Depends(auth)])
 def analyze(request: AnalyzeRequest) -> dict:

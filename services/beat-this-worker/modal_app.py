@@ -8,16 +8,41 @@ APP_NAME = "beat-this-worker"
 ASSET_MOUNT = "/var/lib/beat-this"
 VOLUME_NAME = "beat-this-models-smoke-v1"
 SECRET_NAME = "music-ai-worker-runtime"
+IDENTITY_SECRET_NAME = "beat-this-deployment-identity-v1"
 SMOKE_TIMEOUT_SECONDS = 300
 IMAGE_SMOKE_FIXTURE = "/app/_smoke/real-audio.wav"
 ROOT = Path(__file__).resolve().parent
 REPO = next((p for p in (ROOT, *ROOT.parents) if (p / "pnpm-workspace.yaml").is_file()), ROOT)
+SOURCE_REVISION = os.environ.get("BEAT_THIS_SOURCE_REVISION", "").strip()
+if not re.fullmatch(r"[a-f0-9]{40}", SOURCE_REVISION):
+    raise RuntimeError(
+        "BEAT_THIS_SOURCE_REVISION must be a full Git revision; deploy through deploy.py"
+    )
 app = modal.App(APP_NAME)
 image = modal.Image.from_dockerfile(ROOT / "Dockerfile", context_dir=REPO)
 volume = modal.Volume.from_name(VOLUME_NAME, create_if_missing=True)
 secret = modal.Secret.from_name(SECRET_NAME)
+identity_secret = modal.Secret.from_name(IDENTITY_SECRET_NAME)
+SOURCE_IDENTITY_FILES = (
+    "Dockerfile", "app.py", "modal_app.py", "model_manifest.json",
+    "requirements.txt", "smoke_test.py",
+)
+
+def source_image_digest() -> str:
+    digest = hashlib.sha256()
+    for name in SOURCE_IDENTITY_FILES:
+        path = ROOT / name
+        digest.update(name.encode() + b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return "sha256:" + digest.hexdigest()
+
 common = {"image": image, "gpu": "L4", "volumes": {ASSET_MOUNT: volume},
-          "secrets": [secret], "timeout": 600}
+          "secrets": [secret, identity_secret], "timeout": 600,
+          "env": {
+              "BEAT_THIS_SOURCE_IMAGE_DIGEST": source_image_digest(),
+              "BEAT_THIS_SOURCE_REVISION": SOURCE_REVISION,
+          }}
 
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -75,7 +100,8 @@ def smoke_real_audio(fixture_path: str = IMAGE_SMOKE_FIXTURE) -> dict:
     proof = json.loads((Path(ASSET_MOUNT) / ".readiness" / "beat_this.json").read_text())
     volume.commit()
     return {"provider": "BEAT_THIS", "status": "smoke-attested",
-            "fixture": proof["fixture"], "checkpoint": proof["checkpoint"]}
+            "fixture": proof["fixture"], "checkpoint": proof["checkpoint"],
+            "result": proof["result"]}
 
 @app.local_entrypoint()
 def main(action: str = "smoke", fixture_path: str = IMAGE_SMOKE_FIXTURE) -> None:
