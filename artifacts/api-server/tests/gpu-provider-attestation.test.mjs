@@ -99,6 +99,11 @@ after(async () => {
   delete process.env.MUSIC_PROVIDER_MT3_PROMOTION_PUBLIC_KEY;
   delete process.env.MT3_API_URL;
   delete process.env.MUSIC_PROVIDER_MT3_URL;
+  delete process.env.MUSIC_PROVIDER_BS_ROFORMER_ENDPOINT;
+  delete process.env.MUSIC_PROVIDER_BS_ROFORMER_PROMOTION_BUNDLE;
+  delete process.env.MUSIC_PROVIDER_BS_ROFORMER_PROMOTION_PUBLIC_KEY;
+  delete process.env.BS_ROFORMER_API_URL;
+  delete process.env.MUSIC_PROVIDER_BS_ROFORMER_URL;
   delete process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY;
   delete process.env.MUSIC_PROVIDER_ACE_STEP_TOKEN;
   delete process.env.MUSIC_AI_WORKER_TOKEN;
@@ -775,6 +780,244 @@ test("MT3 requires exact signed deployment identity before every analysis POST",
         "health-attestation-failed",
         mismatch.name,
       );
+    }
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("BS-RoFormer retains signed candidate validation but is unroutable while license-blocked", async () => {
+  const runtimePins = {
+    python: "3.11.11",
+    cudaImage: "nvidia/cuda@sha256:test",
+    cuda: "12.4.1",
+    pytorch: "2.5.1+cu124",
+    torchvision: "0.20.1+cu124",
+    torchaudio: "2.5.1+cu124",
+    torchIndexUrl: "https://download.pytorch.org/whl/cu124",
+    transformers: "4.48.3",
+    accelerate: "1.3.0",
+  };
+  let health = {};
+  let healthRequests = 0;
+  let separationPosts = 0;
+  const server = createServer((request, response) => {
+    response.setHeader("Content-Type", "application/json");
+    if (
+      request.method === "GET"
+      && request.url === "/health?provider=BS_ROFORMER"
+    ) {
+      healthRequests += 1;
+      response.end(JSON.stringify(health));
+      return;
+    }
+    if (request.method === "POST" && request.url === "/separate") {
+      separationPosts += 1;
+      response.end(JSON.stringify({
+        version: "bs-roformer-viperx-v1",
+        confidence: 0.95,
+        stems: [
+          { role: "vocals", contentBase64: "UklGRg==", confidence: 0.95 },
+          { role: "instrumental", contentBase64: "UklGRg==", confidence: 0.94 },
+        ],
+      }));
+      return;
+    }
+    response.writeHead(404);
+    response.end(JSON.stringify({ error: "not found" }));
+  });
+  await listen(server);
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const endpointOrigin = `http://127.0.0.1:${address.port}`;
+  const record = {
+    schemaVersion: 1,
+    provider: "BS_ROFORMER",
+    modalAppId: "ap-BsRoformerPromoted42",
+    modalDeploymentId: "v42",
+    modalFunctionId: "fu-BsRoformerPromoted42",
+    modalImageId: "im-BsRoformerPromoted42",
+    endpointOrigin,
+    modelVersion: "bs-roformer-viperx-v1",
+    checkpointSha256: "a".repeat(64),
+    checkpointRevision: "puar-playground/bs-roformer@immutable",
+    sourceRevision: "git-bs-roformer-test-revision-42",
+    sourceImageDigest: `sha256:${"c".repeat(64)}`,
+    releaseEvidenceSha256: "e".repeat(64),
+    runtime: runtimePins,
+  };
+  const signedBundle = (candidate = record) => ({
+    record: candidate,
+    signature: signBytes(
+      null,
+      Buffer.from(canonicalGpuPromotionJson(candidate)),
+      promotionKeys.privateKey,
+    ).toString("base64"),
+  });
+  const exactHealth = () => ({
+    provider: record.provider,
+    status: "ready",
+    ready: true,
+    healthy: true,
+    checkpointReady: true,
+    runtimeReady: true,
+    smokeTested: true,
+    gpuReady: true,
+    modelVersion: record.modelVersion,
+    checksum: record.checkpointSha256,
+    checkpointSha256: record.checkpointSha256,
+    revision: record.checkpointRevision,
+    sourceRevision: record.sourceRevision,
+    sourceImageDigest: record.sourceImageDigest,
+    containerDigest: record.sourceImageDigest,
+    modalAppId: record.modalAppId,
+    modalDeploymentId: record.modalDeploymentId,
+    modalFunctionId: record.modalFunctionId,
+    modalImageId: record.modalImageId,
+    runtime: { pythonVersion: record.runtime.python },
+    framework: {
+      cuda_image: record.runtime.cudaImage,
+      cuda: record.runtime.cuda,
+      pytorch: record.runtime.pytorch,
+      torchvision: record.runtime.torchvision,
+      torchaudio: record.runtime.torchaudio,
+      torch_index_url: record.runtime.torchIndexUrl,
+      transformers: record.runtime.transformers,
+      accelerate: record.runtime.accelerate,
+    },
+  });
+  const endpointKeys = [
+    "MUSIC_PROVIDER_BS_ROFORMER_ENDPOINT",
+    "MUSIC_PROVIDER_BS_ROFORMER_URL",
+    "BS_ROFORMER_API_URL",
+    "BS_ROFORMER_SW_API_URL",
+    "MUSIC_PROVIDER_BS_ROFORMER_PROMOTION_BUNDLE",
+    "MUSIC_PROVIDER_BS_ROFORMER_PROMOTION_PUBLIC_KEY",
+    "MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY",
+    "MUSIC_GPU_PROMOTION_PUBLIC_KEY",
+    "BS_ROFORMER_API_TOKEN",
+    "BS_ROFORMER_SW_API_TOKEN",
+    "MUSIC_AI_WORKER_TOKEN",
+    "MUSIC_PROVIDER_DEMUCS_URL",
+    "DEMUCS_API_URL",
+  ];
+  const previous = new Map(endpointKeys.map((key) => [key, process.env[key]]));
+  const run = () => runAnalysisProviders({
+    sourceUrl: "https://storage.invalid/signed-source",
+    sourceType: "FULL_SONG",
+    durationSeconds: 5.12,
+  });
+  try {
+    for (const key of endpointKeys) delete process.env[key];
+    process.env.MUSIC_PROVIDER_BS_ROFORMER_ENDPOINT = endpointOrigin;
+    process.env.MUSIC_PROVIDER_BS_ROFORMER_URL = endpointOrigin;
+    process.env.BS_ROFORMER_API_URL = endpointOrigin;
+    process.env.BS_ROFORMER_SW_API_URL = endpointOrigin;
+    process.env.BS_ROFORMER_API_TOKEN = "blocked-api-token";
+    process.env.BS_ROFORMER_SW_API_TOKEN = "blocked-sw-token";
+    process.env.MUSIC_AI_WORKER_TOKEN = "blocked-shared-token";
+    process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY = promotionPublicKey;
+    process.env.MUSIC_PROVIDER_BS_ROFORMER_PROMOTION_BUNDLE =
+      JSON.stringify(signedBundle());
+    health = exactHealth();
+    assert.equal(
+      gpuPromotionAttestationFailure("BS_ROFORMER", endpointOrigin, health),
+      null,
+    );
+    const accepted = await run();
+    assert.equal(accepted.separation, null);
+    assert.equal(
+      accepted.provenance.find(
+        (item) => item.provider === "BS_ROFORMER",
+      )?.errorCode,
+      "not-configured",
+    );
+    assert.equal(healthRequests, 0);
+    assert.equal(separationPosts, 0);
+
+    const wrongKeys = generateKeyPairSync("ed25519");
+    const cases = [
+      {
+        name: "missing signature",
+        bundle: { record },
+      },
+      {
+        name: "bad signature",
+        bundle: {
+          record,
+          signature: signBytes(
+            null,
+            Buffer.from(canonicalGpuPromotionJson(record)),
+            wrongKeys.privateKey,
+          ).toString("base64"),
+        },
+      },
+      {
+        name: "endpoint origin",
+        bundle: signedBundle({ ...record, endpointOrigin: "https://drift.invalid" }),
+      },
+      {
+        name: "checkpoint",
+        mutateHealth: (value) => ({
+          ...value,
+          checksum: "b".repeat(64),
+          checkpointSha256: "b".repeat(64),
+        }),
+      },
+      {
+        name: "source revision",
+        mutateHealth: (value) => ({
+          ...value,
+          sourceRevision: "different-source-revision",
+        }),
+      },
+      {
+        name: "source image",
+        mutateHealth: (value) => ({
+          ...value,
+          sourceImageDigest: `sha256:${"f".repeat(64)}`,
+        }),
+      },
+      {
+        name: "Modal app",
+        mutateHealth: (value) => ({ ...value, modalAppId: "ap-BsDrift" }),
+      },
+      {
+        name: "Modal deployment",
+        mutateHealth: (value) => ({ ...value, modalDeploymentId: "v99" }),
+      },
+      {
+        name: "Modal function",
+        mutateHealth: (value) => ({ ...value, modalFunctionId: "fu-BsDrift" }),
+      },
+      {
+        name: "Modal image",
+        mutateHealth: (value) => ({ ...value, modalImageId: "im-BsDrift" }),
+      },
+      {
+        name: "runtime pin",
+        mutateHealth: (value) => ({
+          ...value,
+          framework: { ...value.framework, pytorch: "2.5.0+cu124" },
+        }),
+      },
+    ];
+    for (const mismatch of cases) {
+      health = mismatch.mutateHealth
+        ? mismatch.mutateHealth(exactHealth())
+        : exactHealth();
+      process.env.MUSIC_PROVIDER_BS_ROFORMER_PROMOTION_BUNDLE =
+        JSON.stringify(mismatch.bundle ?? signedBundle());
+      assert.ok(
+        gpuPromotionAttestationFailure("BS_ROFORMER", endpointOrigin, health),
+        mismatch.name,
+      );
+      assert.equal(healthRequests, 0, mismatch.name);
+      assert.equal(separationPosts, 0, mismatch.name);
     }
   } finally {
     for (const [key, value] of previous) {
