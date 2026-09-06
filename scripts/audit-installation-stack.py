@@ -117,6 +117,7 @@ ENDPOINT_KEYS = {
     "MADMOM": "MADMOM_API_URL", "ESSENTIA": "ESSENTIA_API_URL",
     "CHROMA": "CHROMA_API_URL", "TORCHCREPE": "TORCHCREPE_API_URL",
     "PYLOUDNORM": "PYLOUDNORM_API_URL", "SONGFORMER": "SONGFORMER_API_URL",
+    "LADA_BAND": "LADA_BAND_API_URL",
 }
 
 def report_errors(rows, report_text):
@@ -1591,6 +1592,192 @@ def evidence_errors(rows, root):
             errors.append(
                 "MOSS_MUSIC: BLOCKED_UPSTREAM lacks exact clean-resolver/native-"
                 "failure/source/model/license/no-downstream evidence"
+            )
+    lada_row = by_name.get("LADA_BAND", {})
+    lada_revision = "e4ff7918454d96912b366ef8e12e792b0066c1c6"
+    if lada_row.get("codeRevision") == lada_revision:
+        base = Path("services/lada-band-worker")
+        status = read_json(base / "installation-status.json")
+        local = status.get("providers", {}).get("LADA_BAND", {})
+        manifest = read_json(base / "model_manifest.json")
+        license_manifest = read_json(base / "license_manifest.json")
+        review = read_json(base / "release-evidence/license-review.json")
+        try:
+            review_preimage = (
+                root / base / "release-evidence/license-review.json"
+            ).read_bytes()
+            license_gate = (root / base / "license_gate.py").read_text()
+            app_source = (root / base / "app.py").read_text()
+            bootstrap = (root / base / "bootstrap_assets.py").read_text()
+            inference_source = (root / base / "inference.py").read_text()
+            smoke_source = (root / base / "smoke.py").read_text()
+            dockerfile = (root / base / "Dockerfile").read_text()
+            modal_provision = (root / base / "modal_provision.py").read_text()
+            modal_app = (root / base / "modal_app.py").read_text()
+            api_source = (
+                root / "artifacts/api-server/src/lib/musicProviders.ts"
+            ).read_text()
+        except OSError:
+            review_preimage = b""
+            license_gate = app_source = bootstrap = inference_source = ""
+            smoke_source = dockerfile = ""
+            modal_provision = modal_app = api_source = ""
+        evidence = local.get("evidence", {})
+        source = review.get("source", {})
+        model = review.get("model", {})
+        decision = review.get("decision", {})
+        selected_metadata = model.get("selectedMetadata", {})
+        expected_false = (
+            "approvedGatedAccountEvidenceRetained",
+            "acceptedTermsEvidenceRetained",
+            "firstPartySourceGrantRetained",
+            "firstPartyModelGrantRetained",
+            "completeThirdPartyWeightGrantsRetained",
+            "licenseAcceptanceEnvironmentPresent",
+            "licensedAccessTokenPresent",
+            "assetInventoryPresent",
+            "volumeProvisioned",
+            "runtimeBuilt",
+            "realSmokeProofPresent",
+            "endpointDeployed",
+            "endpointConfigured",
+            "promotionSigned",
+            "healthReady",
+            "apiConnected",
+        )
+        expected_true = (
+            "workerLicenseGateEnforced",
+            "bootstrapBlockedBeforeNetwork",
+            "inferenceBoundaryLicenseGateEnforced",
+            "smokeLicenseGateEnforced",
+            "dockerBuildBlockedBeforeUpstreamDownload",
+            "modalProvisionBlockedBeforeGpu",
+            "modalDeployBlockedBeforeGpu",
+            "apiProductionRoutingBlocked",
+        )
+        required = [
+            status.get("schemaVersion") == 2,
+            local.get("classification") == "BLOCKED_LICENSE",
+            local.get("source", {}).get("repository")
+            == "Duoluoluos/TME-LaDA-Band",
+            local.get("source", {}).get("revision") == lada_revision,
+            local.get("source", {}).get("firstPartyLicenseStatus")
+            == "UNSPECIFIED_BY_OWNER",
+            local.get("model", {}).get("repository")
+            == "sDuoluoluos/LaDA-Band",
+            local.get("model", {}).get("revision")
+            == "6d444caee85385677b0652ecb0b2b8220436dd37",
+            local.get("model", {}).get("gating") == "manual",
+            local.get("model", {}).get("license") == "other",
+            evidence.get("licenseReviewSha256")
+            == "478ef64a685931453bd5d285205101f69697af164fb0ee9a5893fec0bc0315c5",
+            hashlib.sha256(review_preimage).hexdigest()
+            == evidence.get("licenseReviewSha256"),
+            all(evidence.get(key) is False for key in expected_false),
+            all(evidence.get(key) is True for key in expected_true),
+            manifest.get("source", {}).get("revision") == lada_revision,
+            manifest.get("model", {}).get("revision")
+            == "6d444caee85385677b0652ecb0b2b8220436dd37",
+            manifest.get("routing_status") == "BLOCKED_LICENSE",
+            manifest.get("license_evidence")
+            == "release-evidence/license-review.json",
+            license_manifest.get("schemaVersion") == 2,
+            license_manifest.get("license_status") == "UNVERIFIED",
+            license_manifest.get("routing_status") == "BLOCKED_LICENSE",
+            license_manifest.get("source_first_party_license")
+            == "UNSPECIFIED_BY_OWNER",
+            license_manifest.get("model_card_license") == "other",
+            license_manifest.get("model_access") == "MANUAL_GATED_APPROVAL",
+            license_manifest.get("commercial_use_permitted") is False,
+            license_manifest.get("research_use_permitted") is False,
+            license_manifest.get("redistribution_permitted") is False,
+            license_manifest.get("environment_values_are_authorization_evidence")
+            is False,
+            review.get("observation", {}).get("observedUtcDate")
+            == "2026-09-06",
+            review.get("observation", {}).get("operatorLocalDate")
+            == "2026-09-07",
+            review.get("observation", {}).get("operatorTimezone")
+            == "Asia/Jerusalem",
+            source.get("revision") == lada_revision,
+            source.get("firstPartyLicenseFilePresent") is False,
+            source.get("firstPartyLicenseStatus") == "UNSPECIFIED_BY_OWNER",
+            source.get("readme", {}).get("gitBlobOid")
+            == "147cdc04814195311f943acd1be57dd53b316a8c",
+            source.get("readme", {}).get("sha256")
+            == "65a5c4e67a461afd83f9d61d15c2d00c088ac7267c2de0424d447c84e339a4e7",
+            "terms must be specified by the project owners"
+            in source.get("readme", {}).get("retainedLicenseClause", ""),
+            source.get("thirdPartyNotices", {}).get("sha256")
+            == "403630b8eb297e6058119a32cb257cbdc9673214e35af325872f25e85b1d0d08",
+            model.get("revision")
+            == "6d444caee85385677b0652ecb0b2b8220436dd37",
+            model.get("selectedMetadataSha256")
+            == "91e49ed07c4590b6000a6a6f43054341bce2a7dc1e1bdccdc56a7865283ffcf1",
+            canonical_sha256(selected_metadata)
+            == model.get("selectedMetadataSha256"),
+            selected_metadata.get("gated") == "manual",
+            selected_metadata.get("cardData", {}).get("license") == "other",
+            selected_metadata.get("cardData", {}).get("extra_gated_prompt")
+            == (
+                "By submitting this request, you confirm the repository will "
+                "be used only for non-commercial research."
+            ),
+            model.get("manualApprovalRequired") is True,
+            model.get("approvedAccountEvidenceRetained") is False,
+            model.get("acceptedTermsEvidenceRetained") is False,
+            model.get("firstPartyModelGrantRetained") is False,
+            model.get("completeThirdPartyWeightGrantsRetained") is False,
+            decision.get("classification") == "BLOCKED_LICENSE",
+            all(
+                decision.get(key) is False
+                for key in (
+                    "researchUseAuthorized",
+                    "commercialUseAuthorized",
+                    "assetDownloadAuthorized",
+                    "runtimeBuildAuthorized",
+                    "provisioningAuthorized",
+                    "inferenceAuthorized",
+                    "deploymentAuthorized",
+                    "promotionAuthorized",
+                    "apiRoutingAuthorized",
+                )
+            ),
+            "authorization_state" in app_source,
+            bootstrap.find("require_authorization(")
+            < bootstrap.find("from huggingface_hub import snapshot_download"),
+            inference_source.find('require_authorization("LaDA-Band inference")')
+            < inference_source.find("subprocess.run("),
+            smoke_source.find('require_authorization("LaDA-Band smoke")')
+            < smoke_source.find("infer(fixture.read_bytes()"),
+            dockerfile.find(
+                "BLOCKED_LICENSE: LaDA-Band image build refused before upstream download"
+            ) < dockerfile.find("apt-get update"),
+            dockerfile.find(
+                "BLOCKED_LICENSE: LaDA-Band image build refused before upstream download"
+            ) < dockerfile.find("RUN git clone"),
+            '"license_status": "RESEARCH_ONLY_AUTHORIZED"' in dockerfile,
+            '"runtimeBuildAuthorized": true' in dockerfile,
+            modal_provision.find("require_authorization(")
+            < modal_provision.find("import modal"),
+            modal_app.find("require_authorization(") < modal_app.find("import modal"),
+            "environment_values_are_authorization_evidence" in license_gate,
+            'id: "LADA_BAND"' in api_source,
+            'status: "unavailable"' in api_source,
+            "UNVERIFIED first-party source/model rights" in api_source,
+            lada_row.get("finalStatus") == "BLOCKED_LICENSE",
+            lada_row.get("licenseStatus") == "UNVERIFIED",
+            lada_row.get("runtimeBuilt") is False,
+            lada_row.get("assetsDownloaded") is False,
+            lada_row.get("realSmokePassed") is False,
+            lada_row.get("endpointDeployed") is False,
+            lada_row.get("promotionSigned") is False,
+            lada_row.get("apiConnected") is False,
+        ]
+        if not all(required):
+            errors.append(
+                "LADA_BAND: BLOCKED_LICENSE lacks exact source/model/gating/"
+                "no-provision/no-routing evidence"
             )
     hafm_row = by_name.get("HAFM", {})
     hafm_revision = "d9aa19a5820a4c1563ab405d437933480f71d5b9"

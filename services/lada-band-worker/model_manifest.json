@@ -6,5 +6,7 @@
   "source": {"repository": "Duoluoluos/TME-LaDA-Band", "revision": "e4ff7918454d96912b366ef8e12e792b0066c1c6"},
   "model": {"repository": "sDuoluoluos/LaDA-Band", "revision": "6d444caee85385677b0652ecb0b2b8220436dd37", "required_trees": ["checkpoints", "pretrained"]},
   "runtime": {"python": "3.10", "cuda": "12.1", "gpu": "L40S"},
+  "license_evidence": "release-evidence/license-review.json",
+  "routing_status": "BLOCKED_LICENSE",
   "role": "PRIMARY_DIRECT_V2A_RESEARCH_CANDIDATE"
 }

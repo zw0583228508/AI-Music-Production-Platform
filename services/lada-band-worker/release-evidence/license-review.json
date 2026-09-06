@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "provider": "LADA_BAND",
+  "observation": {
+    "observedUtcDate": "2026-09-06",
+    "operatorLocalDate": "2026-09-07",
+    "operatorTimezone": "Asia/Jerusalem"
+  },
+  "source": {
+    "repository": "https://github.com/Duoluoluos/TME-LaDA-Band",
+    "revision": "e4ff7918454d96912b366ef8e12e792b0066c1c6",
+    "revisionObserved": true,
+    "firstPartyLicenseFilePresent": false,
+    "firstPartyLicenseStatus": "UNSPECIFIED_BY_OWNER",
+    "readme": {
+      "gitBlobOid": "147cdc04814195311f943acd1be57dd53b316a8c",
+      "sha256": "65a5c4e67a461afd83f9d61d15c2d00c088ac7267c2de0424d447c84e339a4e7",
+      "retainedLicenseClause": "First-party LaDA-Band source and model-weight terms must be specified by the project owners before redistribution or commercial use."
+    },
+    "thirdPartyNotices": {
+      "gitBlobOid": "3892e985fc632047ca8c194c4ced6d8e15489cb6",
+      "sha256": "403630b8eb297e6058119a32cb257cbdc9673214e35af325872f25e85b1d0d08",
+      "retainedClause": "The first-party LaDA-Band source and model-weight licenses must be specified by the project owners before redistribution or commercial use. The gated model repository has separate research-use terms."
+    },
+    "vendoredComponents": [
+      {
+        "component": "MuCodec code",
+        "license": "MIT",
+        "licenseSha256": "cf9b17822d1fcd4ff32ccbe14183386fb3adf6f2ff92dc184130823f7fc28173"
+      },
+      {
+        "component": "MuCodec weights",
+        "license": "CC-BY-NC-4.0",
+        "licenseSha256": "1d8ca66080a2701508a70be4ddad4be28c509bcc3397a682fb8edf767fdd7a00"
+      },
+      {
+        "component": "CLaMP3 code",
+        "license": "MIT",
+        "licenseSha256": "6e9a44c0fb1e9293b91229a7f1019cbcf232297c561a4ae6e4a500aff1c57d10"
+      }
+    ]
+  },
+  "model": {
+    "repository": "sDuoluoluos/LaDA-Band",
+    "revision": "6d444caee85385677b0652ecb0b2b8220436dd37",
+    "metadataEndpoint": "https://huggingface.co/api/models/sDuoluoluos/LaDA-Band/revision/6d444caee85385677b0652ecb0b2b8220436dd37",
+    "selectedMetadataSha256": "91e49ed07c4590b6000a6a6f43054341bce2a7dc1e1bdccdc56a7865283ffcf1",
+    "selectedMetadata": {
+      "cardData": {
+        "extra_gated_button_content": "Submit request",
+        "extra_gated_description": "Please complete the form below. Access is reviewed manually.",
+        "extra_gated_fields": {
+          "Email": {
+            "type": "text"
+          },
+          "I confirm that I will NOT use this repository for commercial purposes": {
+            "type": "checkbox"
+          },
+          "I confirm that I will use this repository only for research": {
+            "type": "checkbox"
+          },
+          "Institution": {
+            "type": "text"
+          },
+          "Name": {
+            "type": "text"
+          },
+          "Role / Position": {
+            "options": [
+              "Undergrad student",
+              "Graduate student",
+              "PhD student",
+              "Research staff",
+              "Assistant Professor",
+              "Other"
+            ],
+            "type": "select"
+          }
+        },
+        "extra_gated_heading": "Request access to LaDA-Band",
+        "extra_gated_prompt": "By submitting this request, you confirm the repository will be used only for non-commercial research.",
+        "gated": true,
+        "license": "other"
+      },
+      "disabled": false,
+      "gated": "manual",
+      "id": "sDuoluoluos/LaDA-Band",
+      "private": false,
+      "sha": "6d444caee85385677b0652ecb0b2b8220436dd37",
+      "tags": [
+        "safetensors",
+        "license:other",
+        "region:us"
+      ],
+      "usedStorage": 57954905544
+    },
+    "manualApprovalRequired": true,
+    "approvedAccountEvidenceRetained": false,
+    "acceptedTermsEvidenceRetained": false,
+    "authorizedAccessTokenPresent": false,
+    "firstPartyModelGrantRetained": false,
+    "completeThirdPartyWeightGrantsRetained": false
+  },
+  "decision": {
+    "classification": "BLOCKED_LICENSE",
+    "researchUseAuthorized": false,
+    "commercialUseAuthorized": false,
+    "assetDownloadAuthorized": false,
+    "runtimeBuildAuthorized": false,
+    "provisioningAuthorized": false,
+    "inferenceAuthorized": false,
+    "deploymentAuthorized": false,
+    "promotionAuthorized": false,
+    "apiRoutingAuthorized": false,
+    "reason": "The exact model revision is manually gated for non-commercial research, but no approved-account/accepted-terms evidence is retained. The pinned public source also contains no first-party license file and says its first-party source/model terms still require owner specification."
+  }
+}

@@ -1,10 +1,22 @@
 {
+  "schemaVersion": 2,
   "provider": "LADA_BAND",
   "source_repository": "Duoluoluos/TME-LaDA-Band",
+  "source_revision": "e4ff7918454d96912b366ef8e12e792b0066c1c6",
   "model_repository": "sDuoluoluos/LaDA-Band",
-  "license": "NONCOMMERCIAL_RESEARCH_ONLY",
-  "commercial_status": "RESEARCH_ONLY",
+  "model_revision": "6d444caee85385677b0652ecb0b2b8220436dd37",
+  "license_status": "UNVERIFIED",
+  "routing_status": "BLOCKED_LICENSE",
+  "intended_use_if_authorized": "NONCOMMERCIAL_RESEARCH_ONLY",
+  "commercial_use_permitted": false,
+  "research_use_permitted": false,
+  "redistribution_permitted": false,
+  "source_first_party_license": "UNSPECIFIED_BY_OWNER",
+  "model_card_license": "other",
+  "model_access": "MANUAL_GATED_APPROVAL",
+  "evidence_file": "release-evidence/license-review.json",
   "acceptance_environment": "LADA_BAND_ACCEPT_NONCOMMERCIAL_RESEARCH",
   "required_value": "accepted",
-  "access_token_environment": "HF_TOKEN"
+  "access_token_environment": "HF_TOKEN",
+  "environment_values_are_authorization_evidence": false
 }

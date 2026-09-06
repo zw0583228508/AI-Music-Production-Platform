@@ -111,7 +111,50 @@ after(async () => {
   delete process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY;
   delete process.env.MUSIC_PROVIDER_ACE_STEP_TOKEN;
   delete process.env.MUSIC_AI_WORKER_TOKEN;
+  delete process.env.LADA_BAND_API_URL;
+  delete process.env.LADA_BAND_ACCEPT_NONCOMMERCIAL_RESEARCH;
   await unlink(harnessPath).catch(() => undefined);
+});
+
+test("LaDA remains license blocked despite endpoint and env configuration", async () => {
+  process.env.LADA_BAND_API_URL = "https://lada.invalid";
+  process.env.LADA_BAND_ACCEPT_NONCOMMERCIAL_RESEARCH = "accepted";
+  try {
+    const descriptor = MUSIC_PROVIDERS.find(
+      (provider) => provider.id === "LADA_BAND",
+    );
+    assert.ok(descriptor);
+    assert.equal(descriptor.status, "unavailable");
+    assert.equal(
+      descriptor.license,
+      "UNVERIFIED first-party source/model rights",
+    );
+    assert.match(descriptor.notes, /BLOCKED_LICENSE/);
+
+    const provider = createProviderRegistry().find(
+      (candidate) => candidate.definition.id === "LADA_BAND",
+    );
+    assert.ok(provider);
+    assert.equal(provider.available, false);
+    assert.match(provider.readiness.message, /research-only|LADA_BAND/);
+    assert.throws(() => selectMusicProvider([provider], {
+      task: "ACCOMPANIMENT",
+      requestedProvider: "LADA_BAND",
+      hardware: "GPU",
+      speed: "QUALITY",
+    }), /research-only|LADA_BAND/);
+    await assert.rejects(
+      () => provider.generate({}),
+      /research-only|LADA_BAND/,
+    );
+    await assert.rejects(
+      () => runArrangementProvider(descriptor, {}),
+      /research-only|LADA_BAND/,
+    );
+  } finally {
+    delete process.env.LADA_BAND_API_URL;
+    delete process.env.LADA_BAND_ACCEPT_NONCOMMERCIAL_RESEARCH;
+  }
 });
 
 function listen(server) {
