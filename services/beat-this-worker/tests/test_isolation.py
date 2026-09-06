@@ -85,7 +85,10 @@ class BeatThisIsolationTests(unittest.TestCase):
         )
         self.assertIn('VOLUME_NAME = "beat-this-models-smoke-v1"', source)
         self.assertIn('SECRET_NAME = "music-ai-worker-runtime"', source)
-        self.assertIn('IDENTITY_SECRET_NAME = "beat-this-deployment-identity-v1"', source)
+        self.assertIn(
+            '"beat-this-candidate-deployment-identity-v1"', source
+        )
+        self.assertIn('"beat-this-deployment-identity-v1"', source)
         self.assertIn('"gpu": "L4"', source)
         self.assertIn('"BEAT_THIS_MODAL_APP_NAME": APP_NAME', source)
         self.assertIn('"BEAT_THIS_MODAL_ENDPOINT_LABEL": ENDPOINT_LABEL', source)

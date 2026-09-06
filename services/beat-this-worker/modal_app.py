@@ -13,7 +13,11 @@ if not re.fullmatch(r"beat-this(?:-candidate)?", ENDPOINT_LABEL):
 ASSET_MOUNT = "/var/lib/beat-this"
 VOLUME_NAME = "beat-this-models-smoke-v1"
 SECRET_NAME = "music-ai-worker-runtime"
-IDENTITY_SECRET_NAME = "beat-this-deployment-identity-v1"
+IDENTITY_SECRET_NAME = (
+    "beat-this-candidate-deployment-identity-v1"
+    if APP_NAME == "beat-this-candidate"
+    else "beat-this-deployment-identity-v1"
+)
 SMOKE_TIMEOUT_SECONDS = 300
 IMAGE_SMOKE_FIXTURE = "/app/_smoke/real-audio.wav"
 ROOT = Path(__file__).resolve().parent

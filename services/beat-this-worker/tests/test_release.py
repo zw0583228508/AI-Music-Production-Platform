@@ -155,6 +155,24 @@ class BeatThisReleaseTests(unittest.TestCase):
         self.assertIn(
             '--expected-source-revision "$SOURCE_REVISION"', workflow
         )
+        self.assertIn('--base "$BASE_BRANCH"', workflow)
+        self.assertNotIn("--base main", workflow)
+        self.assertIn("--release-branch", workflow)
+        candidate_deploy = workflow.index(
+            "deploy.py --candidate"
+        )
+        production_deploy = workflow.index(
+            "Deploy the exact production worker revision"
+        )
+        self.assertLess(candidate_deploy, production_deploy)
+        self.assertIn(
+            "--app-name beat-this-candidate", workflow
+        )
+        self.assertIn("--app-name beat-this-worker", workflow)
+        self.assertNotIn(
+            "modal secret create beat-this-deployment-identity-v1",
+            workflow,
+        )
 
     def test_modal_metadata_requires_one_deployed_app_and_latest_version(self):
         self.assertEqual(
@@ -270,11 +288,14 @@ class BeatThisReleaseTests(unittest.TestCase):
 
     def test_candidate_refresh_uses_trusted_derived_origin_and_evidence(self):
         evidence = release_evidence()
+        evidence["endpointOrigin"] = (
+            "https://workspace--beat-this-candidate.modal.run"
+        )
         expected = release_modal.expected_health(evidence)
         report = {"provider": "BEAT_THIS", "finalStatus": "ready"}
         with patch.object(
             promote_modal,
-            "candidate_origin_from_production",
+            "trusted_candidate_origin",
             return_value="https://workspace--beat-this-candidate.modal.run",
         ) as derive, patch.object(
             promote_modal,
@@ -295,6 +316,136 @@ class BeatThisReleaseTests(unittest.TestCase):
             attempts=4,
             delay_seconds=10,
         )
+
+    def test_candidate_and_production_identity_flow_stays_isolated(self):
+        candidate_metadata = {
+            "modalAppId": "ap-Candidate",
+            "modalDeploymentId": "v3",
+            "modalFunctionId": "fu-Candidate",
+            "endpointOrigin": (
+                "https://workspace--beat-this-candidate.modal.run"
+            ),
+        }
+        production_metadata = {
+            "modalAppId": "ap-Production",
+            "modalDeploymentId": "v8",
+            "modalFunctionId": "fu-Production",
+            "endpointOrigin": "https://workspace--beat-this.modal.run",
+        }
+        self.assertNotEqual(
+            release_modal.identity(candidate_metadata),
+            release_modal.identity(production_metadata),
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate_identity = root / "candidate-identity.json"
+            candidate_refresh = root / "candidate-refresh.json"
+            production_identity = root / "production-identity.json"
+            production_refresh = root / "production-refresh.json"
+            with patch.object(
+                release_modal.subprocess, "run"
+            ) as run, patch.object(
+                release_modal, "running_container_ids", return_value=[]
+            ), patch.object(release_modal, "wait_for_stopped_containers"):
+                release_modal.install_identity(
+                    candidate_metadata,
+                    candidate_identity,
+                    candidate_refresh,
+                    release_modal.CANDIDATE_APP_NAME,
+                )
+                release_modal.install_identity(
+                    production_metadata,
+                    production_identity,
+                    production_refresh,
+                    release_modal.APP_NAME,
+                )
+            secret_names = [
+                call.args[0][5]
+                for call in run.call_args_list
+                if call.args[0][3:5] == ["secret", "create"]
+            ]
+            self.assertEqual(
+                secret_names,
+                [
+                    "beat-this-candidate-deployment-identity-v1",
+                    "beat-this-deployment-identity-v1",
+                ],
+            )
+            self.assertEqual(
+                json.loads(candidate_identity.read_text())[
+                    "BEAT_THIS_MODAL_APP_ID"
+                ],
+                "ap-Candidate",
+            )
+            self.assertEqual(
+                json.loads(production_identity.read_text())[
+                    "BEAT_THIS_MODAL_APP_ID"
+                ],
+                "ap-Production",
+            )
+
+            candidate_evidence = release_evidence()
+            candidate_evidence.update(candidate_metadata)
+            production_evidence = release_evidence()
+            production_evidence.update(production_metadata)
+            production_evidence["releaseBranch"] = "release/beat-this"
+            with patch.object(
+                promote_modal,
+                "trusted_candidate_origin",
+                return_value=candidate_evidence["endpointOrigin"],
+            ), patch.object(
+                promote_modal,
+                "refresh_candidate_and_verify",
+                return_value={
+                    "provider": "BEAT_THIS",
+                    "finalStatus": "ready",
+                },
+            ) as refresh_candidate:
+                release_modal.verified_candidate_refresh(
+                    candidate_evidence, "token", attempts=1
+                )
+            candidate_expected = refresh_candidate.call_args.args[2]
+            self.assertEqual(
+                candidate_expected["modalAppId"], "ap-Candidate"
+            )
+            self.assertEqual(
+                candidate_expected["modalDeploymentId"], "v3"
+            )
+
+            production_record = promotion_record(production_evidence)
+            private_key = root / "private.pem"
+            subprocess.run(
+                [
+                    "openssl", "genpkey", "-algorithm", "Ed25519",
+                    "-out", str(private_key),
+                ],
+                check=True,
+            )
+            production_bundle = {
+                "record": production_record,
+                "signature": promote_modal.sign(
+                    production_record, private_key
+                ),
+            }
+            api_output = root / "promotion.generated.ts"
+            release_output = root / "release.json"
+            activate_promotion.activate(
+                production_bundle,
+                promote_modal.public_key(private_key),
+                production_evidence,
+                json.loads(production_refresh.read_text()),
+                matching_health(production_record),
+                api_output,
+                release_output,
+            )
+            activated = json.loads(release_output.read_text())
+            self.assertEqual(
+                activated["record"]["modalAppId"], "ap-Production"
+            )
+            self.assertNotIn(
+                "ap-Candidate", api_output.read_text()
+            )
 
     def test_validation_precedes_canonical_record_replacement(self):
         evidence = release_evidence()
