@@ -235,6 +235,29 @@ class BeatThisReleaseTests(unittest.TestCase):
             release_modal.verified_health(evidence, "token", attempts=3)
         fetch.assert_called_once()
 
+    def test_container_refresh_waits_for_modal_stop_convergence(self):
+        with patch.object(
+            release_modal,
+            "running_container_ids",
+            side_effect=[["ta-Old"], ["ta-Old"], []],
+        ) as containers, patch.object(release_modal.time, "sleep") as sleep:
+            release_modal.wait_for_stopped_containers(
+                "ap-Live", ["ta-Old"], attempts=3, delay_seconds=1
+            )
+        self.assertEqual(containers.call_count, 3)
+        self.assertEqual(sleep.call_count, 2)
+
+        with patch.object(
+            release_modal,
+            "running_container_ids",
+            return_value=["ta-Old"],
+        ), patch.object(release_modal.time, "sleep"), self.assertRaisesRegex(
+            RuntimeError, "old Beat This containers"
+        ):
+            release_modal.wait_for_stopped_containers(
+                "ap-Live", ["ta-Old"], attempts=2, delay_seconds=0
+            )
+
     def test_candidate_refresh_uses_trusted_derived_origin_and_evidence(self):
         evidence = release_evidence()
         expected = release_modal.expected_health(evidence)
