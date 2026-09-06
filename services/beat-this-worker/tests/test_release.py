@@ -557,8 +557,10 @@ class BeatThisReleaseTests(unittest.TestCase):
             verify()
 
             altered_signature = copy.deepcopy(bundle)
+            first = altered_signature["signature"][0]
             altered_signature["signature"] = (
-                "A" + altered_signature["signature"][1:]
+                ("B" if first == "A" else "A")
+                + altered_signature["signature"][1:]
             )
             with self.assertRaisesRegex(ValueError, "signature"):
                 verify(bundle=altered_signature)
