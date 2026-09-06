@@ -818,6 +818,14 @@ export type ChordCandidateProvenance = {
   evidence?: string[];
 };
 
+export type ChordBassSupportEvidence = {
+  start: number;
+  end: number;
+  pitch: number;
+  confidence: number;
+  provider: string;
+};
+
 export type ChordHarmonyEvent = {
   /** Legacy timing and display fields. */
   start: number;
@@ -836,6 +844,7 @@ export type ChordHarmonyEvent = {
   timing?: ChordTiming;
   melodyConflictEvidence?: MelodyConflictEvidence[];
   candidateProvenance?: ChordCandidateProvenance[];
+  bassSupportEvidence?: ChordBassSupportEvidence[];
 };
 export type SongModelFieldStatus = {
   status: "detected" | "low_confidence" | "failed" | "not_available";
@@ -930,7 +939,35 @@ export const musicGenerationCandidatesTable = pgTable(
   },
 );
 
-export type GenerationParameters = Record<string, unknown>;
+export type HarmonyCandidateRationale = {
+  symbol: string;
+  function: string;
+  score: number;
+  melodyFit: number;
+  bassFit: number;
+  voiceLeading: number;
+  selected: boolean;
+};
+
+export type HarmonyDecisionEvidence = {
+  start: number;
+  end: number;
+  symbol: string;
+  function?: string;
+  source: "song_model_chord_evidence" | "deterministic_candidate_scoring";
+  score?: number;
+  melodyFit?: number;
+  bassFit?: number;
+  voiceLeading?: number;
+  harmonicBars?: number;
+  complexity?: number;
+  candidateRationale?: HarmonyCandidateRationale[];
+  bassSupportEvidence?: ChordBassSupportEvidence[];
+};
+
+export type GenerationParameters = Record<string, unknown> & {
+  harmonyDecisions?: HarmonyDecisionEvidence[];
+};
 
 export type StyleSpec = {
   genre: string; subgenre: string; era: string;
@@ -949,7 +986,17 @@ export type TrackModel = {
   automation: AutomationPoint[]; source: string; version: number; provenance: ArtifactProvenance;
   /** Optional section-level intent and renderer mapping for canonical plans. */
   directive?: TrackDirective;
+  appliedDirectives?: AppliedTrackDirective[];
   mapping?: TrackMappingMetadata;
+};
+
+export type AppliedTrackDirective = {
+  section: string;
+  startBar: number;
+  endBar: number;
+  start: number;
+  end: number;
+  directive: TrackDirective;
 };
 
 export type ControlEvent = {

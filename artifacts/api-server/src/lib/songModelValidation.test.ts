@@ -138,6 +138,55 @@ test("arrangement eligibility blocks invalid and low-confidence Song Models", ()
   }
 });
 
+test("canonical validation rejects malformed nested chord decision evidence", () => {
+  const fused = fuseProviderSongModels([
+    { provider: "valid", output: validSongModel, confidence: 0.9 },
+  ]);
+  assert.equal(fused.accepted, true);
+  if (!fused.accepted) return;
+
+  const invalidConflict = structuredClone(fused.model) as any;
+  invalidConflict.chords[0].melodyConflictEvidence = [{}];
+  const conflictResult = validateCanonicalSongModel(invalidConflict);
+  assert.equal(conflictResult.success, false);
+  assert.ok(issueCodes(conflictResult).includes("INVALID_MELODY_CONFLICT_EVIDENCE"));
+
+  const invalidCandidate = structuredClone(fused.model) as any;
+  invalidCandidate.chords[0].candidateProvenance = [{
+    candidateId: "candidate-1",
+    provider: "provider",
+    score: "high",
+  }];
+  const candidateResult = validateCanonicalSongModel(invalidCandidate);
+  assert.equal(candidateResult.success, false);
+  assert.ok(issueCodes(candidateResult).includes("INVALID_CHORD_CANDIDATE_PROVENANCE"));
+
+  for (const timing of [
+    { startBeat: -1, durationBeats: 4 },
+    { startBeat: 0 },
+    { startSeconds: 0, endSeconds: -1 },
+    { startSeconds: 1, endSeconds: 2 },
+  ]) {
+    const invalidTiming = structuredClone(fused.model) as any;
+    invalidTiming.chords[0].timing = timing;
+    const timingResult = validateCanonicalSongModel(invalidTiming);
+    assert.equal(timingResult.success, false);
+    assert.ok(issueCodes(timingResult).includes("INVALID_CANONICAL_CHORD_TIMING"));
+  }
+
+  const invalidBassSupport = structuredClone(fused.model) as any;
+  invalidBassSupport.chords[0].bassSupportEvidence = [{
+    start: 0,
+    end: 1,
+    pitch: 128,
+    confidence: 1,
+    provider: "",
+  }];
+  const bassSupportResult = validateCanonicalSongModel(invalidBassSupport);
+  assert.equal(bassSupportResult.success, false);
+  assert.ok(issueCodes(bassSupportResult).includes("INVALID_CHORD_BASS_SUPPORT"));
+});
+
 test("arrangement eligibility blocks flagged tempo drift and octave jumps", () => {
   for (const output of [tempoDriftSongModel, octaveJumpSongModel]) {
     const fused = fuseProviderSongModels([

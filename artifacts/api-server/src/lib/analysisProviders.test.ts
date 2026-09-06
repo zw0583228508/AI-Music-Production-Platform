@@ -5,6 +5,7 @@ import test from "node:test";
 import { canonicalGpuPromotionJson, type GpuPromotionRecord } from "./gpuProviderAttestation";
 import {
   parseHarmony,
+  fuseHarmonyEvidence,
   parseSeparation,
   runAnalysisProviders,
 } from "./analysisProviders";
@@ -27,6 +28,78 @@ test("parses valid harmony evidence and rejects out-of-range chords", () => {
       { start: 3, end: 5.1, symbol: "C", roman: "I", confidence: 0.9 },
     ],
   }, 4), /invalid/);
+});
+
+test("fusion rebuilds timing when adjacent provider segments merge", () => {
+  const first = parseHarmony("SHEETSAGE", {
+    version: "1",
+    confidence: .9,
+    chords: [{ start: 0, end: 1, symbol: "C", roman: "I", confidence: .9, timing: { startSeconds: 0, endSeconds: 1 } }],
+  }, 2);
+  const second = parseHarmony("CHROMA", {
+    version: "1",
+    confidence: .9,
+    chords: [{ start: 1, end: 2, symbol: "C", roman: "I", confidence: .9, timing: { startSeconds: 1, endSeconds: 2 } }],
+  }, 2);
+  const fused = fuseHarmonyEvidence([first, second]);
+  assert.equal(fused.chords.length, 1);
+  assert.deepEqual(fused.chords[0].timing, { startSeconds: 0, endSeconds: 2 });
+});
+
+test("validates nested chord decision evidence from harmony providers", () => {
+  const valid = parseHarmony("SHEETSAGE", {
+    version: "1.2.0",
+    confidence: 0.91,
+    chords: [{
+      start: 0,
+      end: 2,
+      symbol: "Cmaj7",
+      roman: "Imaj7",
+      confidence: 0.9,
+      melodyConflictEvidence: [{
+        noteId: "melody-1",
+        pitch: 71,
+        start: 0.5,
+        end: 1,
+        conflict: "avoid_note",
+        severity: 0.25,
+        explanation: "The melody briefly forms a minor ninth.",
+      }],
+      candidateProvenance: [{
+        candidateId: "candidate-1",
+        provider: "SHEETSAGE",
+        modelVersion: "1.2.0",
+        score: 0.93,
+        selected: true,
+        evidence: ["Strong melody and bass agreement."],
+      }],
+    }],
+  }, 2);
+  assert.equal(valid.candidates[0].melodyConflictEvidence?.[0].conflict, "avoid_note");
+  assert.equal(valid.candidates[0].candidateProvenance?.[0].score, 0.93);
+
+  for (const malformed of [
+    { melodyConflictEvidence: [{}] },
+    { melodyConflictEvidence: [{ conflict: 7 }] },
+    { candidateProvenance: [{ candidateId: "candidate-1", provider: "SHEETSAGE", score: "high" }] },
+    { candidateProvenance: "not-an-array" },
+    { timing: { startBeat: -1, durationBeats: 4 } },
+    { timing: { startBeat: 0 } },
+    { timing: { startSeconds: 0, endSeconds: 3 } },
+  ]) {
+    assert.throws(() => parseHarmony("SHEETSAGE", {
+      version: "1.2.0",
+      confidence: 0.91,
+      chords: [{
+        start: 0,
+        end: 2,
+        symbol: "Cmaj7",
+        roman: "Imaj7",
+        confidence: 0.9,
+        ...malformed,
+      }],
+    }, 2), /invalid|must be/);
+  }
 });
 
 test("accepts unique provider stem data and rejects duplicate roles", () => {

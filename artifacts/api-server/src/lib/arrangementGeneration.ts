@@ -20,6 +20,7 @@ import {
   type ArrangementPlan,
   type CandidateEvaluation,
   type GenerationParameters,
+  type HarmonyDecisionEvidence,
   type MusicGenerationTask,
   type SongModelData,
   type TrackModel,
@@ -45,6 +46,7 @@ import {
   createArrangementPlan,
   createStyleSpec,
   decodePcm16Wav,
+  HarmonyEngine,
   QualityEngine,
   renderMusicPipeline,
 } from "./musicEngines";
@@ -243,6 +245,7 @@ export const generationCandidateResponse = (
   summary: row.summary,
   status: row.status,
   parameters: row.parameters,
+  harmonyDecisions: row.parameters.harmonyDecisions ?? [],
   parentArtifactIds: row.parentArtifactIds,
   plan: row.plan,
   trackModels: row.trackModels,
@@ -279,6 +282,7 @@ function materializeCandidate(input: CandidateMaterializationInput): {
   trackModels: TrackModel[];
   styleSpec: ReturnType<typeof createStyleSpec>;
   engineParameters: Record<string, number | string | boolean>;
+  harmonyDecisions: HarmonyDecisionEvidence[];
 } {
   const { candidate, source, songModel, tracks } = input;
   const engineParameters = {
@@ -385,6 +389,57 @@ function materializeCandidate(input: CandidateMaterializationInput): {
           songModel.tempoMap[0]?.bpm ?? 92,
           songModel.meterMap[0]?.meter,
         );
+  const harmonyDecisions = new HarmonyEngine().generate(songModel, plan).map((harmony) => {
+    const decision = harmony.decision ?? {};
+    const numberField = (key: string) =>
+      typeof decision[key] === "number" && Number.isFinite(decision[key])
+        ? decision[key] as number
+        : undefined;
+    const source = decision.source === "song_model_chord_evidence"
+      ? "song_model_chord_evidence" as const
+      : "deterministic_candidate_scoring" as const;
+    const candidateRationale = Array.isArray(decision.candidateRationale)
+      ? decision.candidateRationale.filter(
+          (item): item is NonNullable<HarmonyDecisionEvidence["candidateRationale"]>[number] =>
+            Boolean(item) &&
+            typeof item === "object" &&
+            typeof (item as { symbol?: unknown }).symbol === "string" &&
+            typeof (item as { function?: unknown }).function === "string" &&
+            typeof (item as { score?: unknown }).score === "number" &&
+            typeof (item as { melodyFit?: unknown }).melodyFit === "number" &&
+            typeof (item as { bassFit?: unknown }).bassFit === "number" &&
+            typeof (item as { voiceLeading?: unknown }).voiceLeading === "number" &&
+            typeof (item as { selected?: unknown }).selected === "boolean",
+        )
+      : undefined;
+    const bassSupportEvidence = Array.isArray(decision.bassSupportEvidence)
+      ? decision.bassSupportEvidence.filter(
+          (item): item is NonNullable<HarmonyDecisionEvidence["bassSupportEvidence"]>[number] =>
+            Boolean(item) &&
+            typeof item === "object" &&
+            typeof (item as { start?: unknown }).start === "number" &&
+            typeof (item as { end?: unknown }).end === "number" &&
+            typeof (item as { pitch?: unknown }).pitch === "number" &&
+            typeof (item as { confidence?: unknown }).confidence === "number" &&
+            typeof (item as { provider?: unknown }).provider === "string",
+        ).slice(0, 16)
+      : undefined;
+    return {
+      start: harmony.start,
+      end: harmony.end,
+      symbol: harmony.symbol,
+      function: harmony.function,
+      source,
+      score: numberField("score"),
+      melodyFit: numberField("melodyFit"),
+      bassFit: numberField("bassFit"),
+      voiceLeading: numberField("voiceLeading"),
+      harmonicBars: numberField("harmonicBars"),
+      complexity: numberField("complexity"),
+      ...(candidateRationale?.length ? { candidateRationale } : {}),
+      ...(bassSupportEvidence?.length ? { bassSupportEvidence } : {}),
+    };
+  });
   const playabilityErrors = validateCanonicalTrackModels(
     trackModels,
     tracks.map((track) => track.id),
@@ -394,7 +449,7 @@ function materializeCandidate(input: CandidateMaterializationInput): {
       `Generated TrackModels are not playable: ${playabilityErrors.join("; ")}`,
     );
   }
-  return { plan, trackModels, styleSpec, engineParameters };
+  return { plan, trackModels, styleSpec, engineParameters, harmonyDecisions };
 }
 
 function normalizeSongModelSnapshot(value: unknown): SongModelData {
@@ -1001,6 +1056,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
       let phase: CandidateEvaluation["status"] = "rendering";
       let evaluation: CandidateEvaluation;
       let materializedTrackModels: TrackModel[] | null = null;
+      let materializedHarmonyDecisions: HarmonyDecisionEvidence[] = [];
       let evaluatedPlan: ArrangementPlan | null = null;
       let evaluatedStyleSpec: ReturnType<typeof createStyleSpec> | null = null;
       let evaluationScore = 0;
@@ -1026,6 +1082,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           },
         });
         materializedTrackModels = materialized.trackModels;
+        materializedHarmonyDecisions = materialized.harmonyDecisions;
         evaluatedPlan = materialized.plan;
         evaluatedStyleSpec = materialized.styleSpec;
         const evaluatedAt = new Date().toISOString();
@@ -1306,6 +1363,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           ...job.parameters,
           ...candidate.parameters,
           providerScore: candidate.score,
+          harmonyDecisions: materializedHarmonyDecisions,
         },
         parentArtifactIds: candidateParentIds,
         plan: candidate.plan,

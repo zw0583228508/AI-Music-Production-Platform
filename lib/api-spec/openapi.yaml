@@ -1617,6 +1617,12 @@ components:
           description: Candidate-level provider evidence for this selected chord.
           items:
             $ref: "#/components/schemas/ChordCandidateProvenance"
+        bassSupportEvidence:
+          type: array
+          maxItems: 16
+          description: Observed provider bass notes that supported this selected chord.
+          items:
+            $ref: "#/components/schemas/ChordBassSupportEvidence"
     ChordTiming:
       type: object
       properties:
@@ -1624,6 +1630,15 @@ components:
         durationBeats: { type: number, exclusiveMinimum: 0 }
         startSeconds: { type: number, minimum: 0 }
         endSeconds: { type: number, minimum: 0 }
+    ChordBassSupportEvidence:
+      type: object
+      required: [start, end, pitch, confidence, provider]
+      properties:
+        start: { type: number, minimum: 0 }
+        end: { type: number, minimum: 0 }
+        pitch: { type: number, minimum: 0, maximum: 127 }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        provider: { type: string, minLength: 1, maxLength: 512 }
     MelodyConflictEvidence:
       type: object
       required: [conflict]
@@ -2193,7 +2208,7 @@ components:
           type: [string, "null"]
     GenerationCandidate:
       type: object
-      required: [id, jobId, provider, modelVersion, seed, rank, label, score, confidence, summary, status, parameters, parentArtifactIds, plan, trackModels, evaluation, createdAt]
+      required: [id, jobId, provider, modelVersion, seed, rank, label, score, confidence, summary, status, parameters, parentArtifactIds, plan, trackModels, harmonyDecisions, evaluation, createdAt]
       properties:
         id: { type: string }
         jobId: { type: string }
@@ -2243,9 +2258,50 @@ components:
           type: [array, "null"]
           items:
             $ref: "#/components/schemas/TrackModel"
+        harmonyDecisions:
+          type: array
+          items:
+            $ref: "#/components/schemas/HarmonyDecisionEvidence"
         evaluation:
           $ref: "#/components/schemas/CandidateEvaluation"
         createdAt: { type: string }
+    HarmonyCandidateRationale:
+      type: object
+      required: [symbol, function, score, melodyFit, bassFit, voiceLeading, selected]
+      properties:
+        symbol: { type: string }
+        function: { type: string }
+        score: { type: number }
+        melodyFit: { type: number }
+        bassFit: { type: number }
+        voiceLeading: { type: number }
+        selected: { type: boolean }
+    HarmonyDecisionEvidence:
+      type: object
+      required: [start, end, symbol, source]
+      properties:
+        start: { type: number, minimum: 0 }
+        end: { type: number, minimum: 0 }
+        symbol: { type: string }
+        function: { type: string }
+        source:
+          type: string
+          enum: [song_model_chord_evidence, deterministic_candidate_scoring]
+        score: { type: number }
+        melodyFit: { type: number }
+        bassFit: { type: number }
+        voiceLeading: { type: number }
+        harmonicBars: { type: number, minimum: 1 }
+        complexity: { type: number, minimum: 1, maximum: 10 }
+        candidateRationale:
+          type: array
+          items:
+            $ref: "#/components/schemas/HarmonyCandidateRationale"
+        bassSupportEvidence:
+          type: array
+          maxItems: 16
+          items:
+            $ref: "#/components/schemas/ChordBassSupportEvidence"
     GenerationProvider:
       type: object
       required: [id, name, modelVersion, tasks, hardware, speeds, available, status, configured, checkpointReady, runtimeReady, smokeTested, reportedVersion, lastHealth]
@@ -2679,6 +2735,10 @@ components:
         provenance: { $ref: "#/components/schemas/ArtifactProvenance" }
         directive:
           $ref: "#/components/schemas/TrackDirective"
+        appliedDirectives:
+          type: array
+          items:
+            $ref: "#/components/schemas/AppliedTrackDirective"
         mapping:
           $ref: "#/components/schemas/TrackMappingMetadata"
     StyleSpec:
@@ -2735,6 +2795,17 @@ components:
         exit: { $ref: "#/components/schemas/OrchestrationCue" }
         transition: { type: string }
         fill: { type: boolean }
+    AppliedTrackDirective:
+      type: object
+      required: [section, startBar, endBar, start, end, directive]
+      properties:
+        section: { type: string }
+        startBar: { type: number, minimum: 1 }
+        endBar: { type: number, minimum: 1 }
+        start: { type: number, minimum: 0 }
+        end: { type: number, minimum: 0 }
+        directive:
+          $ref: "#/components/schemas/TrackDirective"
     TrackMappingMetadata:
       type: object
       properties:

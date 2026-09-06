@@ -313,10 +313,85 @@ function validateChords(value: unknown, duration: number | undefined, issues: Mu
     if (chord.inversion !== undefined && (!Number.isInteger(chord.inversion) || typeof chord.inversion !== "number" || chord.inversion < 0)) {
       issues.push(issue("INVALID_CANONICAL_CHORD_FIELD", "error", `${path}.inversion`, "inversion must be a non-negative integer when supplied."));
     }
-    if (chord.timing !== undefined && (!isRecord(chord.timing) ||
-      (chord.timing.startSeconds !== undefined && !isFiniteNumber(chord.timing.startSeconds)) ||
-      (chord.timing.endSeconds !== undefined && !isFiniteNumber(chord.timing.endSeconds)))) {
-      issues.push(issue("INVALID_CANONICAL_CHORD_FIELD", "error", `${path}.timing`, "Canonical chord timing must contain finite values when supplied."));
+    if (chord.timing !== undefined) {
+      const timing = chord.timing;
+      const beatPairSupplied = isRecord(timing) && (timing.startBeat !== undefined || timing.durationBeats !== undefined);
+      const secondsPairSupplied = isRecord(timing) && (timing.startSeconds !== undefined || timing.endSeconds !== undefined);
+      if (
+        !isRecord(timing) ||
+        (!beatPairSupplied && !secondsPairSupplied) ||
+        (beatPairSupplied && (!isFiniteNumber(timing.startBeat) || timing.startBeat < 0 || !isFiniteNumber(timing.durationBeats) || timing.durationBeats <= 0)) ||
+        (secondsPairSupplied && (!isFiniteNumber(timing.startSeconds) || timing.startSeconds < 0 || !isFiniteNumber(timing.endSeconds) || timing.endSeconds <= timing.startSeconds)) ||
+        (isFiniteNumber(timing.startSeconds) && isFiniteNumber(chord.start) && Math.abs(timing.startSeconds - chord.start) > 0.05) ||
+        (isFiniteNumber(timing.endSeconds) && isFiniteNumber(chord.end) && Math.abs(timing.endSeconds - chord.end) > 0.05)
+      ) {
+        issues.push(issue("INVALID_CANONICAL_CHORD_TIMING", "error", `${path}.timing`, "Canonical chord timing must contain complete, positive, consistent beat or second ranges."));
+      }
+    }
+    if (chord.melodyConflictEvidence !== undefined) {
+      if (!Array.isArray(chord.melodyConflictEvidence) || chord.melodyConflictEvidence.length > 64) {
+        issues.push(issue("INVALID_MELODY_CONFLICT_EVIDENCE", "error", `${path}.melodyConflictEvidence`, "Melody conflict evidence must be a bounded array."));
+      } else {
+        chord.melodyConflictEvidence.forEach((evidence, evidenceIndex) => {
+          const evidencePath = `${path}.melodyConflictEvidence.${evidenceIndex}`;
+          if (
+            !isRecord(evidence) ||
+            !["clash", "avoid_note", "unresolved_tension", "unknown"].includes(String(evidence.conflict)) ||
+            (evidence.noteId !== undefined && (typeof evidence.noteId !== "string" || !evidence.noteId.trim() || evidence.noteId.length > 512)) ||
+            (evidence.pitch !== undefined && (!Number.isInteger(evidence.pitch) || (evidence.pitch as number) < 0 || (evidence.pitch as number) > 127)) ||
+            (evidence.start !== undefined && (!isFiniteNumber(evidence.start) || evidence.start < 0)) ||
+            (evidence.end !== undefined && (!isFiniteNumber(evidence.end) || evidence.end < 0)) ||
+            (isFiniteNumber(evidence.start) && isFiniteNumber(evidence.end) && evidence.end <= evidence.start) ||
+            (evidence.severity !== undefined && (!isFiniteNumber(evidence.severity) || evidence.severity < 0 || evidence.severity > 1)) ||
+            (evidence.explanation !== undefined && (typeof evidence.explanation !== "string" || !evidence.explanation.trim() || evidence.explanation.length > 512))
+          ) {
+            issues.push(issue("INVALID_MELODY_CONFLICT_EVIDENCE", "error", evidencePath, "Melody conflict evidence contains invalid fields."));
+          }
+        });
+      }
+    }
+    if (chord.bassSupportEvidence !== undefined) {
+      if (!Array.isArray(chord.bassSupportEvidence) || chord.bassSupportEvidence.length > 16) {
+        issues.push(issue("INVALID_CHORD_BASS_SUPPORT", "error", `${path}.bassSupportEvidence`, "Chord bass support must be a bounded array."));
+      } else {
+        chord.bassSupportEvidence.forEach((evidence, evidenceIndex) => {
+          const evidencePath = `${path}.bassSupportEvidence.${evidenceIndex}`;
+          if (
+            !isRecord(evidence) ||
+            !isFiniteNumber(evidence.start) || evidence.start < 0 ||
+            !isFiniteNumber(evidence.end) || evidence.end <= evidence.start ||
+            typeof evidence.pitch !== "number" || !Number.isInteger(evidence.pitch) || evidence.pitch < 0 || evidence.pitch > 127 ||
+            !isFiniteNumber(evidence.confidence) || evidence.confidence < 0 || evidence.confidence > 1 ||
+            typeof evidence.provider !== "string" || !evidence.provider.trim() || evidence.provider.length > 512
+          ) {
+            issues.push(issue("INVALID_CHORD_BASS_SUPPORT", "error", evidencePath, "Chord bass support contains invalid timing, pitch, confidence, or provider."));
+          }
+        });
+      }
+    }
+    if (chord.candidateProvenance !== undefined) {
+      if (!Array.isArray(chord.candidateProvenance) || chord.candidateProvenance.length > 64) {
+        issues.push(issue("INVALID_CHORD_CANDIDATE_PROVENANCE", "error", `${path}.candidateProvenance`, "Chord candidate provenance must be a bounded array."));
+      } else {
+        chord.candidateProvenance.forEach((candidate, candidateIndex) => {
+          const candidatePath = `${path}.candidateProvenance.${candidateIndex}`;
+          if (
+            !isRecord(candidate) ||
+            typeof candidate.candidateId !== "string" || !candidate.candidateId.trim() || candidate.candidateId.length > 512 ||
+            typeof candidate.provider !== "string" || !candidate.provider.trim() || candidate.provider.length > 512 ||
+            (candidate.modelVersion !== undefined && (typeof candidate.modelVersion !== "string" || !candidate.modelVersion.trim() || candidate.modelVersion.length > 512)) ||
+            (candidate.score !== undefined && (!isFiniteNumber(candidate.score) || candidate.score < 0 || candidate.score > 100)) ||
+            (candidate.selected !== undefined && typeof candidate.selected !== "boolean") ||
+            (candidate.evidence !== undefined && (
+              !Array.isArray(candidate.evidence) ||
+              candidate.evidence.length > 64 ||
+              !candidate.evidence.every((item) => typeof item === "string" && item.trim() && item.length <= 512)
+            ))
+          ) {
+            issues.push(issue("INVALID_CHORD_CANDIDATE_PROVENANCE", "error", candidatePath, "Chord candidate provenance contains invalid fields."));
+          }
+        });
+      }
     }
   });
 }

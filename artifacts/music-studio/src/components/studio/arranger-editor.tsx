@@ -4,6 +4,9 @@ import type {
   Analysis,
   Arrangement,
   ArrangementSection,
+  ChordEvent as SongModelChordEvent,
+  HarmonyDecisionEvidence,
+  SongModel,
   Track,
   ArrangementRevision
 } from "@workspace/api-client-react";
@@ -62,6 +65,8 @@ type ArrangerEditorProps = {
   projectId: string;
   arrangement?: Arrangement;
   analysis?: Analysis;
+  songModel?: SongModel;
+  harmonyDecisions?: HarmonyDecisionEvidence[];
   tracks: Track[];
   copilotResult?: CopilotEditorResult | null;
   playheadSeconds?: number;
@@ -203,6 +208,8 @@ export function ArrangerEditor({
   projectId,
   arrangement,
   analysis,
+  songModel,
+  harmonyDecisions = [],
   tracks,
   copilotResult,
   playheadSeconds = 0,
@@ -471,6 +478,33 @@ export function ArrangerEditor({
     ? Math.max(4, (selectedSection.endBar - selectedSection.startBar + 1) * 4)
     : 16;
   const selectedChord = selectedSection?.chords.find((chord) => chord.id === selectedChordId) ?? selectedSection?.chords[0];
+  const selectedChordEvidence = useMemo<SongModelChordEvent | undefined>(() => {
+    if (!songModel || !selectedSection || !selectedChord) return undefined;
+    const beatsPerBarAtSelection = Number(analysis?.meter?.split("/")[0]) || 4;
+    const absoluteBeat = (selectedSection.startBar - 1) * beatsPerBarAtSelection + selectedChord.startBeat;
+    const beatMatches = songModel.chords
+      .filter((chord) => chord.timing?.startBeat !== undefined)
+      .sort((left, right) =>
+        Math.abs((left.timing?.startBeat ?? 0) - absoluteBeat)
+        - Math.abs((right.timing?.startBeat ?? 0) - absoluteBeat)
+      );
+    if (beatMatches[0] && Math.abs((beatMatches[0].timing?.startBeat ?? 0) - absoluteBeat) < beatsPerBarAtSelection) {
+      return beatMatches[0];
+    }
+    const bar = songModel.bars.find((candidate) => candidate.bar === selectedSection.startBar);
+    if (!bar) return undefined;
+    const secondsPerBeat = (bar.end - bar.start) / Math.max(1, bar.beats);
+    const chordTime = bar.start + selectedChord.startBeat * secondsPerBeat;
+    return songModel.chords.find((chord) => chord.start <= chordTime && chord.end > chordTime);
+  }, [analysis?.meter, selectedChord, selectedSection, songModel]);
+  const selectedHarmonyDecision = useMemo<HarmonyDecisionEvidence | undefined>(() => {
+    if (!selectedSection || !selectedChord || !songModel?.bars.length) return undefined;
+    const bar = songModel.bars.find((candidate) => candidate.bar === selectedSection.startBar);
+    if (!bar) return undefined;
+    const secondsPerBeat = (bar.end - bar.start) / Math.max(1, bar.beats);
+    const chordTime = bar.start + selectedChord.startBeat * secondsPerBeat;
+    return harmonyDecisions.find((decision) => decision.start <= chordTime && decision.end > chordTime);
+  }, [harmonyDecisions, selectedChord, selectedSection, songModel?.bars]);
   const selectedNote = notes.find((note) => note.id === selectedNoteId);
   const snapStep = snap && snapValue !== "off"
     ? ({ "1/4": 1, "1/8": 0.5, "1/16": 0.25, triplet: 1 / 3 }[snapValue] ?? 0.25)
@@ -1052,6 +1086,126 @@ export function ArrangerEditor({
                     </div>
                     <div className="mt-4 rounded-lg border bg-muted/20 p-3 text-xs text-muted-foreground">
                       <span className="font-semibold text-foreground">{selectedChord.symbol}</span> is scoped to beat {selectedChord.startBeat + 1} and edits only <span className="font-semibold text-foreground">{selectedSection?.name}</span>. Choose an alternative to compare voicings without regenerating the arrangement.
+                    </div>
+                    <div className="mt-3 space-y-3 rounded-lg border p-3" data-testid="chord-decision-evidence">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Why this chord</div>
+                        <div className="flex items-center gap-1.5">
+                          {selectedChordEvidence && selectedChordEvidence.symbol !== selectedChord.symbol && (
+                            <Badge variant="outline" className="text-[10px]">evidence for {selectedChordEvidence.symbol}</Badge>
+                          )}
+                          {selectedChordEvidence?.function
+                            ? <Badge variant="secondary" className="text-[10px]">{selectedChordEvidence.function}</Badge>
+                            : <span className="text-[10px] italic text-muted-foreground">Function not recorded</span>}
+                        </div>
+                      </div>
+                      {selectedChordEvidence ? (
+                        <>
+                          {selectedChordEvidence.symbol !== selectedChord.symbol && (
+                            <div className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[10px] text-amber-800 dark:text-amber-300">
+                              This evidence explains the analyzed {selectedChordEvidence.symbol}, not the edited {selectedChord.symbol}. No rationale has been recorded for the edit yet.
+                            </div>
+                          )}
+                          <div className="grid gap-2 text-xs sm:grid-cols-3">
+                            <div className="rounded border bg-muted/20 p-2">
+                              <div className="text-[9px] uppercase text-muted-foreground">Analysis</div>
+                              <div className="mt-1 font-medium">{selectedChordEvidence.roman || "Roman numeral not recorded"}</div>
+                              <div className="mt-0.5 text-[10px] text-muted-foreground">
+                                {Math.round(selectedChordEvidence.confidence * 100)}% confidence
+                                {selectedChordEvidence.bass ? ` · bass ${selectedChordEvidence.bass}` : " · bass not recorded"}
+                              </div>
+                            </div>
+                            <div className="rounded border bg-muted/20 p-2 sm:col-span-2">
+                              <div className="text-[9px] uppercase text-muted-foreground">Supporting evidence</div>
+                              {selectedChordEvidence.candidateProvenance?.some((candidate) => candidate.evidence?.length) ? (
+                                <ul className="mt-1 space-y-1 text-[10px] text-muted-foreground">
+                                  {selectedChordEvidence.candidateProvenance.flatMap((candidate) =>
+                                    (candidate.evidence ?? []).map((evidence) => (
+                                      <li key={`${candidate.candidateId}-${evidence}`}>
+                                        <span className="font-medium text-foreground">{candidate.provider}:</span> {evidence}
+                                      </li>
+                                    )))}
+                                </ul>
+                              ) : <div className="mt-1 text-[10px] italic text-muted-foreground">No supporting evidence was recorded.</div>}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-[9px] uppercase text-muted-foreground">Observed bass support</div>
+                            {selectedChordEvidence.bassSupportEvidence?.length ? (
+                              <div className="mt-1 grid gap-1 sm:grid-cols-2">
+                                {selectedChordEvidence.bassSupportEvidence.map((evidence, index) => (
+                                  <div key={`${evidence.provider}-${evidence.start}-${evidence.pitch}-${index}`} className="rounded border px-2 py-1.5 text-[10px]">
+                                    <span className="font-medium">{evidence.provider}</span>
+                                    <span className="text-muted-foreground"> observed MIDI {evidence.pitch} · {evidence.start.toFixed(2)}–{evidence.end.toFixed(2)}s · {Math.round(evidence.confidence * 100)}% confidence</span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : <div className="mt-1 text-[10px] italic text-muted-foreground">No provider bass observation supported this chord.</div>}
+                          </div>
+                          <div>
+                            <div className="text-[9px] uppercase text-muted-foreground">Melody conflicts</div>
+                            {selectedChordEvidence.melodyConflictEvidence?.length ? (
+                              <div className="mt-1 flex flex-wrap gap-1.5">
+                                {selectedChordEvidence.melodyConflictEvidence.map((conflict, index) => (
+                                  <Badge key={`${conflict.noteId ?? conflict.pitch ?? index}-${conflict.conflict}`} variant="outline" className="h-auto whitespace-normal py-1 text-[10px]">
+                                    {typeof conflict.conflict === "string" ? conflict.conflict.replaceAll("_", " ") : "unknown conflict"}
+                                    {typeof conflict.severity === "number" && Number.isFinite(conflict.severity) ? ` · ${Math.round(conflict.severity * 100)}%` : ""}
+                                    {typeof conflict.explanation === "string" && conflict.explanation ? ` · ${conflict.explanation}` : ""}
+                                  </Badge>
+                                ))}
+                              </div>
+                            ) : <div className="mt-1 text-[10px] italic text-muted-foreground">No melody conflicts were recorded.</div>}
+                          </div>
+                          <div>
+                            <div className="text-[9px] uppercase text-muted-foreground">Candidate rationale</div>
+                            {selectedChordEvidence.candidateProvenance?.length ? (
+                              <div className="mt-1 space-y-1">
+                                {selectedChordEvidence.candidateProvenance.map((candidate) => (
+                                  <div key={candidate.candidateId} className="flex items-center gap-2 rounded border px-2 py-1.5 text-[10px]">
+                                    <Badge variant={candidate.selected ? "default" : "outline"} className="text-[9px]">{candidate.selected ? "selected" : "considered"}</Badge>
+                                    <span className="font-medium">{candidate.provider}</span>
+                                    <span className="text-muted-foreground">{typeof candidate.score === "number" && Number.isFinite(candidate.score) ? `score ${candidate.score.toFixed(2)}` : "score not recorded"}</span>
+                                    <span className="ml-auto truncate text-muted-foreground">{candidate.modelVersion ?? "model version not recorded"}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : <div className="mt-1 text-[10px] italic text-muted-foreground">No candidate rationale was recorded.</div>}
+                          </div>
+                        </>
+                      ) : selectedHarmonyDecision ? (
+                        <div className="space-y-3" data-testid="deterministic-harmony-evidence">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant="outline">engine choice</Badge>
+                            <span className="font-medium">{selectedHarmonyDecision.function ?? selectedHarmonyDecision.symbol}</span>
+                            {selectedHarmonyDecision.symbol !== selectedChord.symbol && (
+                              <span className="text-[10px] text-muted-foreground">recorded for {selectedHarmonyDecision.symbol}; editor currently shows {selectedChord.symbol}</span>
+                            )}
+                          </div>
+                          <div className="grid gap-2 text-[10px] sm:grid-cols-4">
+                            <div className="rounded border p-2"><div className="text-muted-foreground">Melody fit</div><div className="mt-1 font-mono">{selectedHarmonyDecision.melodyFit !== undefined ? `${Math.round(selectedHarmonyDecision.melodyFit * 100)}%` : "not scored"}</div></div>
+                            <div className="rounded border p-2"><div className="text-muted-foreground">Bass fit</div><div className="mt-1 font-mono">{selectedHarmonyDecision.bassFit !== undefined ? `${Math.round(selectedHarmonyDecision.bassFit * 100)}%` : "not scored"}</div></div>
+                            <div className="rounded border p-2"><div className="text-muted-foreground">Voice leading</div><div className="mt-1 font-mono">{selectedHarmonyDecision.voiceLeading !== undefined ? selectedHarmonyDecision.voiceLeading.toFixed(2) : "not scored"}</div></div>
+                            <div className="rounded border p-2"><div className="text-muted-foreground">Total score</div><div className="mt-1 font-mono">{selectedHarmonyDecision.score !== undefined ? selectedHarmonyDecision.score.toFixed(2) : "not scored"}</div></div>
+                          </div>
+                          <div>
+                            <div className="text-[9px] uppercase text-muted-foreground">Candidate rationale</div>
+                            {selectedHarmonyDecision.candidateRationale?.length ? (
+                              <div className="mt-1 space-y-1">
+                                {selectedHarmonyDecision.candidateRationale.map((candidate) => (
+                                  <div key={`${candidate.symbol}-${candidate.score}`} className="flex items-center gap-2 rounded border px-2 py-1.5 text-[10px]">
+                                    <Badge variant={candidate.selected ? "default" : "outline"} className="text-[9px]">{candidate.selected ? "selected" : "considered"}</Badge>
+                                    <span className="font-medium">{candidate.function}</span>
+                                    <span className="text-muted-foreground">score {candidate.score.toFixed(2)}</span>
+                                    <span className="ml-auto text-muted-foreground">melody {Math.round(candidate.melodyFit * 100)}% · bass {Math.round(candidate.bassFit * 100)}%</span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : <div className="mt-1 text-[10px] italic text-muted-foreground">No alternatives were recorded.</div>}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-xs italic text-muted-foreground">No analysis evidence is linked to this chord. Its reason cannot be shown without inferring one.</div>
+                      )}
                     </div>
                   </>
                 ) : <div className="flex min-h-[160px] flex-col items-center justify-center text-center text-sm text-muted-foreground"><Music2 className="mb-2 h-8 w-8 opacity-30" />Select a chord block to edit its harmony.</div>}

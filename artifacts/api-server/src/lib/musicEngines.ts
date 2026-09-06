@@ -587,6 +587,7 @@ export class HarmonyEngine {
             alterations: chord.alterations, inversion: chord.inversion, bass: chord.bass,
             melodyConflictEvidence: chord.melodyConflictEvidence,
             candidateProvenance: chord.candidateProvenance,
+            bassSupportEvidence: chord.bassSupportEvidence,
           },
         };
       });
@@ -622,7 +623,7 @@ export class HarmonyEngine {
         const candidates = finalChange
           ? [0, 4] // tonic or dominant at a phrase boundary
           : [0, 1, 2, 3, 4, 5, 6]; // complete diatonic degree palette
-        const selected = candidates
+        const rankedCandidates = candidates
           .map((degree) => {
             // Stack scale thirds, rather than applying one fixed third, so
             // each degree gets its actual major/minor/diminished quality.
@@ -647,7 +648,8 @@ export class HarmonyEngine {
               (degree === (sectionIndex + bar) % 6 ? .04 : 0);
             return { degree, pcs, score: melodyFit + bassFit * .45 + functional + voiceLeading, melodyFit, bassFit, voiceLeading };
           })
-          .sort((a, b) => b.score - a.score || a.degree - b.degree)[0];
+          .sort((a, b) => b.score - a.score || a.degree - b.degree);
+        const selected = rankedCandidates[0];
         const absoluteRoot = root - tonicPc + selected.pcs[0];
         const names = minor
           ? ["i", "ii°", "III", "iv", "v", "VI", "VII"]
@@ -661,7 +663,24 @@ export class HarmonyEngine {
           tones,
           symbol: names[selected.degree] ?? "I",
           function: names[selected.degree] ?? "I",
-          decision: { source: "deterministic_candidate_scoring", score: round(selected.score), melodyFit: round(selected.melodyFit), bassFit: round(selected.bassFit), voiceLeading: round(selected.voiceLeading), harmonicBars, complexity },
+          decision: {
+            source: "deterministic_candidate_scoring",
+            score: round(selected.score),
+            melodyFit: round(selected.melodyFit),
+            bassFit: round(selected.bassFit),
+            voiceLeading: round(selected.voiceLeading),
+            harmonicBars,
+            complexity,
+            candidateRationale: rankedCandidates.map((candidate) => ({
+              symbol: names[candidate.degree] ?? "I",
+              function: names[candidate.degree] ?? "I",
+              score: round(candidate.score),
+              melodyFit: round(candidate.melodyFit),
+              bassFit: round(candidate.bassFit),
+              voiceLeading: round(candidate.voiceLeading),
+              selected: candidate.degree === selected.degree,
+            })),
+          },
         };
       });
     });
@@ -684,7 +703,7 @@ export class CompositionEngine {
     return input.tracks.map((track) => {
       const definition = getInstrumentDefinition(track.instrument || track.name, track.role);
       const notes: MusicalNote[] = [];
-      let appliedDirective: TrackDirective | undefined;
+      const appliedDirectives: NonNullable<TrackModel["appliedDirectives"]> = [];
       const identity = `${track.name} ${track.role}`.toLowerCase();
       if (identity.includes("vocal") && input.songModel.melody.length) {
         // Melody evidence is never extrapolated. It is merely split at
@@ -699,7 +718,16 @@ export class CompositionEngine {
             : action !== "none";
           if (!active || action === "none") return;
           const directive = section.trackDirectives?.[track.id] ?? section.trackDirectives?.[track.name];
-          appliedDirective ??= directive;
+          if (directive) {
+            appliedDirectives.push({
+              section: section.section,
+              startBar: section.startBar,
+              endBar: section.endBar,
+              start: sectionStart,
+              end: sectionEnd,
+              directive,
+            });
+          }
           input.songModel.melody.forEach((note, noteIndex) => {
             const start = Math.max(sectionStart, note.start);
             const end = Math.min(sectionEnd, note.end);
@@ -719,13 +747,22 @@ export class CompositionEngine {
           const sectionStart = (section.startBar - 1) * barSeconds;
           const sectionEnd = section.endBar * barSeconds;
           const action = section.tracks[track.id] ?? section.tracks[track.name] ?? "main_harmony";
-          const directive = section.trackDirectives?.[track.id] ??
-            section.trackDirectives?.[track.name];
-          appliedDirective ??= directive;
           const active = section.activeTracks
             ? section.activeTracks.includes(track.id) || section.activeTracks.includes(track.name)
             : action !== "none";
           if (!active || action === "none") return;
+          const directive = section.trackDirectives?.[track.id] ??
+            section.trackDirectives?.[track.name];
+          if (directive) {
+            appliedDirectives.push({
+              section: section.section,
+              startBar: section.startBar,
+              endBar: section.endBar,
+              start: sectionStart,
+              end: sectionEnd,
+              directive,
+            });
+          }
           const rhythmic = directive?.rhythmicActivity ?? section.density;
           const step = identity.includes("drum") || identity.includes("rhythm")
             ? beat * (rhythmic > .7 ? .5 : 1)
@@ -786,7 +823,8 @@ export class CompositionEngine {
         cc: [],
         articulations: [],
         automation: [],
-        directive: appliedDirective,
+        directive: appliedDirectives.length === 1 ? appliedDirectives[0].directive : undefined,
+        appliedDirectives,
         mapping: {
           midiChannel: definition.family === "drums" ? 9 : undefined,
           program: definition.id === "bass" ? 33 : definition.family === "strings" ? 48 : 0,
@@ -892,18 +930,21 @@ export class PerformanceEngine {
     const cc: ControlEvent[] = [];
     const automation: AutomationPoint[] = [];
     track.notes.forEach((note, index) => {
+      const appliedDirective = track.appliedDirectives?.find(
+        (item) => item.start <= note.start && item.end > note.start,
+      )?.directive ?? track.directive;
       const offset = Math.sin((randomSeed % 31 + index * 13) * 0.37) * profile.timing;
-      const directiveVelocity = track.directive?.dynamicTarget === undefined
+      const directiveVelocity = appliedDirective?.dynamicTarget === undefined
         ? 0
-        : (track.directive.dynamicTarget - .5) * 18;
+        : (appliedDirective.dynamicTarget - .5) * 18;
       const velocity = midi(note.velocity + directiveVelocity + variation(index) + (index % profile.accentEvery === 0 ? style.dynamics.accentStrength * 10 : 0));
       const preferredArticulation = track.instrumentDefinition.family === "drums"
         ? (note.pitch === 38 && index % 4 !== 0 ? "ghost" : note.pitch === 36 ? "kick" : "closed_hat")
         : track.instrumentDefinition.family === "strings"
           ? (note.duration < 0.25 ? "spiccato" : "legato")
           : note.duration < 0.2 ? "staccato" : "sustain";
-      const directedArticulation = track.directive?.articulationFamily &&
-        track.instrumentDefinition.directiveMappings?.articulationFamilies?.[track.directive.articulationFamily]
+      const directedArticulation = appliedDirective?.articulationFamily &&
+        track.instrumentDefinition.directiveMappings?.articulationFamilies?.[appliedDirective.articulationFamily]
           ?.find((candidate) => track.instrumentDefinition.articulations.includes(candidate));
       const articulation = track.instrumentDefinition.articulations.includes(directedArticulation ?? preferredArticulation)
         ? directedArticulation ?? preferredArticulation

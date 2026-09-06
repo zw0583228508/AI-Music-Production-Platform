@@ -5,6 +5,7 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { ChordBassSupportEvidence } from './chordBassSupportEvidence';
 import type { ChordCandidateProvenance } from './chordCandidateProvenance';
 import type { ChordTiming } from './chordTiming';
 import type { MelodyConflictEvidence } from './melodyConflictEvidence';
@@ -31,4 +32,9 @@ export interface ChordEvent {
   melodyConflictEvidence?: MelodyConflictEvidence[];
   /** Candidate-level provider evidence for this selected chord. */
   candidateProvenance?: ChordCandidateProvenance[];
+  /**
+     * Observed provider bass notes that supported this selected chord.
+     * @maxItems 16
+     */
+  bassSupportEvidence?: ChordBassSupportEvidence[];
 }

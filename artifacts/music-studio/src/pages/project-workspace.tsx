@@ -26,6 +26,7 @@ import {
   getListGenerationCandidatesQueryKey,
   ExportResult,
   GenerationCandidate,
+  HarmonyDecisionEvidence,
   ArrangementMode,
   Arrangement,
   ArrangementSection
@@ -93,6 +94,22 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+
+function readHarmonyDecisions(value: unknown): HarmonyDecisionEvidence[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((decision): decision is HarmonyDecisionEvidence =>
+    Boolean(decision) &&
+    typeof decision === "object" &&
+    typeof (decision as { start?: unknown }).start === "number" &&
+    Number.isFinite((decision as { start: number }).start) &&
+    typeof (decision as { end?: unknown }).end === "number" &&
+    Number.isFinite((decision as { end: number }).end) &&
+    typeof (decision as { symbol?: unknown }).symbol === "string" &&
+    ["song_model_chord_evidence", "deterministic_candidate_scoring"].includes(
+      String((decision as { source?: unknown }).source),
+    ));
+}
+
 export default function ProjectWorkspace() {
   const [, params] = useRoute("/projects/:projectId");
   const projectId = params?.projectId || "";
@@ -330,6 +347,11 @@ export default function ProjectWorkspace() {
     },
   );
   const generationCandidates = generationCandidatesQuery.data ?? [];
+  const activeHarmonyDecisions = generationCandidates.find(
+    (candidate) => candidate.id === activeArrangement?.sourceCandidateId,
+  )?.harmonyDecisions ?? readHarmonyDecisions(
+    activeArrangement?.generationProvenance?.parameters?.["harmonyDecisions"],
+  );
   const generationRunning =
     generateArrangement.isPending ||
     generationJob?.status === "queued" ||
@@ -978,6 +1000,8 @@ export default function ProjectWorkspace() {
                   projectId={projectId}
                   arrangement={activeArrangement}
                   analysis={analysis}
+                  songModel={songModel}
+                  harmonyDecisions={activeHarmonyDecisions}
                   tracks={tracks ?? []}
                   copilotResult={copilotEditorResult}
                   onSelectionChange={setEditorSelection}
@@ -1469,10 +1493,48 @@ export default function ProjectWorkspace() {
                                   </div>
 
                                   <div className="sm:col-span-2 mt-2 space-y-3">
+                                    <div className="font-medium text-foreground border-b pb-1">Harmony Decisions</div>
+                                    {candidate.harmonyDecisions.length > 0 ? (
+                                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                        {candidate.harmonyDecisions.map((decision, decisionIndex) => (
+                                          <div key={`${decision.start}-${decision.symbol}-${decisionIndex}`} className="rounded-md border bg-card p-2 text-xs">
+                                            <div className="flex items-center justify-between gap-2">
+                                              <span className="font-mono font-semibold text-foreground">{decision.symbol}</span>
+                                              <Badge variant="outline" className="text-[9px]">
+                                                {decision.source === "deterministic_candidate_scoring" ? "engine choice" : "Song Model"}
+                                              </Badge>
+                                            </div>
+                                            <div className="mt-1 text-[10px] text-muted-foreground">
+                                              {decision.function ?? "Function not recorded"} · {decision.start.toFixed(2)}–{decision.end.toFixed(2)}s
+                                            </div>
+                                            {decision.source === "deterministic_candidate_scoring" && (
+                                              <div className="mt-2 grid grid-cols-2 gap-1 text-[10px] text-muted-foreground">
+                                                <span>Melody {decision.melodyFit !== undefined ? `${Math.round(decision.melodyFit * 100)}%` : "not scored"}</span>
+                                                <span>Bass {decision.bassFit !== undefined ? `${Math.round(decision.bassFit * 100)}%` : "not scored"}</span>
+                                                <span>Voice leading {decision.voiceLeading !== undefined ? decision.voiceLeading.toFixed(2) : "not scored"}</span>
+                                                <span>Total {decision.score !== undefined ? decision.score.toFixed(2) : "not scored"}</span>
+                                              </div>
+                                            )}
+                                            {decision.candidateRationale?.length ? (
+                                              <div className="mt-2 text-[10px] text-muted-foreground">
+                                                Considered: {decision.candidateRationale.map((candidateChoice) =>
+                                                  `${candidateChoice.function} ${candidateChoice.score.toFixed(2)}${candidateChoice.selected ? " (selected)" : ""}`
+                                                ).join(" · ")}
+                                              </div>
+                                            ) : null}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <div className="text-xs italic text-muted-foreground">No harmony decision evidence was recorded for this candidate.</div>
+                                    )}
+                                  </div>
+
+                                  <div className="sm:col-span-2 mt-2 space-y-3">
                                     <div className="font-medium text-foreground border-b pb-1">Orchestration Models</div>
                                     {candidate.trackModels && candidate.trackModels.length > 0 ? (
                                       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                                        {candidate.trackModels.map((track: any) => (
+                                        {candidate.trackModels.map((track) => (
                                           <div key={track.id} className="rounded-md border p-2 bg-card text-xs">
                                             <div className="flex items-center justify-between mb-1">
                                               <span className="font-semibold text-foreground truncate mr-2" title={track.instrument}>{track.instrument}</span>
@@ -1488,6 +1550,53 @@ export default function ProjectWorkspace() {
                                               <span className="truncate ml-2" title={track.provenance?.model || "Standard"}>
                                                 {track.provenance?.model || "Standard"} {track.provenance?.version ? `v${track.provenance.version}` : ""}
                                               </span>
+                                            </div>
+                                            <div className="mt-3 space-y-2 border-t pt-2" data-testid={`track-decision-${track.id}`}>
+                                              <div>
+                                                <div className="text-[9px] font-semibold uppercase tracking-wider text-foreground">Directive</div>
+                                                {track.appliedDirectives?.length ? (
+                                                  <div className="mt-1 space-y-2">
+                                                    {track.appliedDirectives.map((applied) => (
+                                                      <div key={`${applied.section}-${applied.startBar}-${applied.endBar}`} className="rounded border p-2">
+                                                        <div className="mb-1 text-[9px] font-medium uppercase text-foreground">
+                                                          {applied.section} · bars {applied.startBar}–{applied.endBar}
+                                                        </div>
+                                                        <div className="flex flex-wrap gap-1">
+                                                          {applied.directive.role && <Badge variant="secondary" className="text-[9px]">role {applied.directive.role}</Badge>}
+                                                          {applied.directive.register && <Badge variant="outline" className="text-[9px]">register {applied.directive.register}</Badge>}
+                                                          {applied.directive.articulationFamily && <Badge variant="outline" className="text-[9px]">{applied.directive.articulationFamily}</Badge>}
+                                                          {applied.directive.dynamicTarget !== undefined && <Badge variant="outline" className="text-[9px]">dynamic {Math.round(applied.directive.dynamicTarget * 100)}%</Badge>}
+                                                          {applied.directive.rhythmicActivity !== undefined && <Badge variant="outline" className="text-[9px]">rhythm {Math.round(applied.directive.rhythmicActivity * 100)}%</Badge>}
+                                                          {applied.directive.harmonicActivity !== undefined && <Badge variant="outline" className="text-[9px]">harmony {Math.round(applied.directive.harmonicActivity * 100)}%</Badge>}
+                                                          {applied.directive.fill !== undefined && <Badge variant="outline" className="text-[9px]">{applied.directive.fill ? "fill enabled" : "no fill"}</Badge>}
+                                                          {applied.directive.transition && <Badge variant="outline" className="text-[9px]">transition {applied.directive.transition}</Badge>}
+                                                        </div>
+                                                      </div>
+                                                    ))}
+                                                  </div>
+                                                ) : <div className="mt-1 italic text-muted-foreground">No orchestration directive was recorded.</div>}
+                                              </div>
+                                              <div>
+                                                <div className="text-[9px] font-semibold uppercase tracking-wider text-foreground">Resolved mapping</div>
+                                                {track.mapping ? (
+                                                  <div className="mt-1 space-y-1 text-muted-foreground">
+                                                    <div className="flex flex-wrap gap-x-3 gap-y-1">
+                                                      <span>{track.mapping.midiChannel !== undefined ? `MIDI channel ${track.mapping.midiChannel}` : "MIDI channel not recorded"}</span>
+                                                      <span>{track.mapping.program !== undefined ? `program ${track.mapping.program}` : "program not recorded"}</span>
+                                                    </div>
+                                                    <div>
+                                                      {Object.keys(track.mapping.articulationMap ?? {}).length
+                                                        ? `Articulations: ${Object.entries(track.mapping.articulationMap ?? {}).map(([name, value]) => `${name}→${value}`).join(", ")}`
+                                                        : "No articulation mapping recorded."}
+                                                    </div>
+                                                    <div>
+                                                      {Object.keys(track.mapping.controlMap ?? {}).length
+                                                        ? `Controls: ${Object.entries(track.mapping.controlMap ?? {}).map(([name, value]) => `${name}→CC${value}`).join(", ")}`
+                                                        : "No control mapping recorded."}
+                                                    </div>
+                                                  </div>
+                                                ) : <div className="mt-1 italic text-muted-foreground">No resolved renderer mapping was recorded.</div>}
+                                              </div>
                                             </div>
                                           </div>
                                         ))}

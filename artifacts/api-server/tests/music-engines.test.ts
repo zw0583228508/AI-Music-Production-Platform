@@ -9,6 +9,7 @@ import {
   HarmonyEngine,
 } from "../src/lib/musicEngines";
 import { fuseHarmonyEvidence, parseHarmony } from "../src/lib/analysisProviders";
+import { fuseProviderSongModels } from "../src/lib/songModelValidation";
 
 const song = (overrides: Partial<SongModelData> = {}): SongModelData => ({
   contractVersion: "1.0",
@@ -104,6 +105,10 @@ test("generated harmony scores reliable melody fit and creates functional domina
   assert.equal(cadence.at(-2)?.symbol, "V");
   assert.equal(cadence.at(-1)?.symbol, "I");
   assert.notEqual(cadence.at(-1)?.decision?.voiceLeading, undefined);
+  const rationale = cadence.at(-1)?.decision?.candidateRationale;
+  assert.ok(Array.isArray(rationale));
+  assert.ok(rationale.length >= 2);
+  assert.equal(rationale.filter((candidate: { selected: boolean }) => candidate.selected).length, 1);
 });
 
 test("generated harmony uses absolute non-C evidence and correct major/minor diatonic triads", () => {
@@ -158,6 +163,63 @@ test("canonical provider chord fields survive parsing and fusion", () => {
   assert.equal(chord.bass, "B");
   assert.equal(chord.function, "dominant");
   assert.equal(chord.candidateProvenance?.[0]?.candidateId, "p-1");
+});
+
+test("provider bass evidence survives canonical fusion and changes harmony rationale", () => {
+  const bassEvidence = [{
+    start: 0,
+    end: 2,
+    pitch: 67,
+    confidence: .95,
+    provider: "BASS",
+  }];
+  const fused = fuseProviderSongModels([{
+    provider: "BASS",
+    confidence: .95,
+    output: {
+      ...song({ keyMap: [{ time: 0, key: "C major", confidence: 1 }] }),
+      bass: bassEvidence,
+    },
+  }]);
+  assert.equal(fused.accepted, true);
+  assert.deepEqual(fused.model.bass, bassEvidence);
+  const [decision] = new HarmonyEngine().generate(
+    fused.model,
+    planFor(fused.model, 7, { harmonyComplexity: 8 }),
+  );
+  assert.ok(Number(decision.decision?.bassFit) > 0);
+  const rationale = decision.decision?.candidateRationale as Array<{
+    function: string;
+    bassFit: number;
+  }>;
+  assert.ok(rationale.some((candidate) =>
+    candidate.function === "V" && candidate.bassFit > 0));
+});
+
+test("separate chord and bass providers preserve observed bass support in chord rationale", () => {
+  const chordProvider = parseHarmony("SHEETSAGE", {
+    version: "1",
+    confidence: .9,
+    chords: [{ start: 0, end: 2, symbol: "C", roman: "I", confidence: .9 }],
+  }, 2);
+  const bassProvider = parseHarmony("BASS", {
+    version: "1",
+    confidence: .95,
+    bass: [{ start: 0, end: 2, pitch: 48, confidence: .92 }],
+  }, 2);
+  const [fusedChord] = fuseHarmonyEvidence([chordProvider, bassProvider]).chords;
+  assert.deepEqual(fusedChord.bassSupportEvidence, [{
+    start: 0,
+    end: 2,
+    pitch: 48,
+    confidence: .92,
+    provider: "BASS",
+  }]);
+  const [harmony] = new HarmonyEngine().generate(
+    song({ chords: [fusedChord], bass: bassProvider.bass.map((note) => ({ ...note, provider: "BASS" })) }),
+    planFor(song()),
+  );
+  assert.deepEqual(harmony.decision?.bassSupportEvidence, fusedChord.bassSupportEvidence);
 });
 
 test("bass evidence and complexity alter deterministic candidate scoring and harmonic rhythm", () => {
@@ -220,7 +282,7 @@ test("director membership/directives drive composition without fabricating an ab
   });
   assert.equal(tracks.find((track) => track.id === "voice")?.notes.length, 0);
   const piano = tracks.find((track) => track.id === "piano")!;
-  assert.equal(piano.directive?.register, "middle");
+  assert.equal(piano.appliedDirectives?.[0].directive.register, "middle");
   assert.ok(piano.mapping?.articulationMap && piano.mapping?.controlMap);
   assert.ok(piano.cc.some((event) => event.controller === 11));
 });
@@ -251,6 +313,7 @@ test("vocal evidence obeys ID and legacy-name section activation and clips at bo
   plan.sections[1].activeTracks = [];
   const [fullyInactive] = buildTrackModels(vocalInput);
   assert.equal(fullyInactive.notes.length, 0);
+  assert.deepEqual(fullyInactive.appliedDirectives, []);
 
   plan.sections[1].activeTracks = ["Voice"];
   plan.sections[1].tracks.Voice = "none";
@@ -294,7 +357,9 @@ test("ID-keyed directive categories produce mapped, audible orchestration change
     songModel: model, plan, style: plan.style, seed: 2,
     tracks: [{ id: "drums", name: "Drums", role: "rhythm" }],
   })[0];
-  assert.equal(drums.directive?.rhythmicActivity, plan.sections[0].trackDirectives?.drums.rhythmicActivity);
+  assert.equal(drums.directive, undefined);
+  assert.deepEqual(drums.appliedDirectives?.map((item) => item.section), ["verse", "chorus"]);
+  assert.equal(drums.appliedDirectives?.[0].directive.rhythmicActivity, plan.sections[0].trackDirectives?.drums.rhythmicActivity);
   assert.equal(drums.mapping?.midiChannel, 9);
   assert.ok(drums.notes.some((note) => note.id.endsWith("-fill")));
   assert.ok(drums.articulations.every((event) => drums.instrumentDefinition.articulations.includes(event.name)));

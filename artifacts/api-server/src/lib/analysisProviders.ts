@@ -165,6 +165,18 @@ function confidence(value: unknown, label: string): number {
   return value;
 }
 
+const MAX_EVIDENCE_ITEMS = 64;
+const MAX_EVIDENCE_TEXT_LENGTH = 512;
+
+function evidenceString(value: unknown, label: string): string {
+  if (typeof value !== "string") throw new Error(`${label} must be a string`);
+  const normalized = value.trim();
+  if (!normalized || normalized.length > MAX_EVIDENCE_TEXT_LENGTH) {
+    throw new Error(`${label} must be between 1 and ${MAX_EVIDENCE_TEXT_LENGTH} characters`);
+  }
+  return normalized;
+}
+
 function providerVersion(payload: Record<string, unknown>, providerId: string): string {
   const version = payload["version"];
   if (typeof version !== "string" || !version.trim()) {
@@ -945,6 +957,122 @@ function parseChordCandidate(
   }
   const timing = value["timing"];
   if (timing !== undefined && !isRecord(timing)) throw new Error(`${providerId} chord ${index + 1} has invalid timing`);
+  const evidenceLabel = `${providerId} chord ${index + 1}`;
+  let parsedTiming: ChordEvent["timing"];
+  if (timing) {
+    const startBeat = timing["startBeat"];
+    const durationBeats = timing["durationBeats"];
+    const startSeconds = timing["startSeconds"];
+    const endSeconds = timing["endSeconds"];
+    const beatPairSupplied = startBeat !== undefined || durationBeats !== undefined;
+    const secondsPairSupplied = startSeconds !== undefined || endSeconds !== undefined;
+    if (
+      (!beatPairSupplied && !secondsPairSupplied) ||
+      (beatPairSupplied && (!finiteNumber(startBeat) || startBeat < 0 || !finiteNumber(durationBeats) || durationBeats <= 0)) ||
+      (secondsPairSupplied && (!finiteNumber(startSeconds) || startSeconds < 0 || !finiteNumber(endSeconds) || endSeconds <= startSeconds)) ||
+      (finiteNumber(startSeconds) && Math.abs(startSeconds - start) > 0.05) ||
+      (finiteNumber(endSeconds) && Math.abs(endSeconds - end) > 0.05)
+    ) {
+      throw new Error(`${evidenceLabel} has invalid timing`);
+    }
+    parsedTiming = {
+      ...(beatPairSupplied ? { startBeat, durationBeats } : {}),
+      ...(secondsPairSupplied ? { startSeconds, endSeconds } : {}),
+    };
+  }
+  const melodyConflictEvidence = value["melodyConflictEvidence"];
+  if (
+    melodyConflictEvidence !== undefined &&
+    (!Array.isArray(melodyConflictEvidence) || melodyConflictEvidence.length > MAX_EVIDENCE_ITEMS)
+  ) {
+    throw new Error(`${evidenceLabel} has invalid melodyConflictEvidence`);
+  }
+  const parsedMelodyConflictEvidence = melodyConflictEvidence?.map((raw, evidenceIndex) => {
+    const label = `${evidenceLabel} melody conflict ${evidenceIndex + 1}`;
+    if (!isRecord(raw)) throw new Error(`${label} must be an object`);
+    const conflict = raw["conflict"];
+    if (!["clash", "avoid_note", "unresolved_tension", "unknown"].includes(String(conflict))) {
+      throw new Error(`${label} has invalid conflict`);
+    }
+    const noteId = raw["noteId"];
+    const pitch = raw["pitch"];
+    const evidenceStart = raw["start"];
+    const evidenceEnd = raw["end"];
+    const severity = raw["severity"];
+    const explanation = raw["explanation"];
+    if (noteId !== undefined) evidenceString(noteId, `${label} noteId`);
+    if (pitch !== undefined && (!integer(pitch) || pitch < 0 || pitch > 127)) {
+      throw new Error(`${label} has invalid pitch`);
+    }
+    if (evidenceStart !== undefined && (!finiteNumber(evidenceStart) || evidenceStart < 0)) {
+      throw new Error(`${label} has invalid start`);
+    }
+    if (evidenceEnd !== undefined && (!finiteNumber(evidenceEnd) || evidenceEnd < 0)) {
+      throw new Error(`${label} has invalid end`);
+    }
+    if (
+      finiteNumber(evidenceStart) &&
+      finiteNumber(evidenceEnd) &&
+      evidenceEnd <= evidenceStart
+    ) {
+      throw new Error(`${label} has invalid timing`);
+    }
+    if (severity !== undefined && (!finiteNumber(severity) || severity < 0 || severity > 1)) {
+      throw new Error(`${label} has invalid severity`);
+    }
+    if (explanation !== undefined) evidenceString(explanation, `${label} explanation`);
+    return {
+      ...(noteId !== undefined ? { noteId: evidenceString(noteId, `${label} noteId`) } : {}),
+      ...(pitch !== undefined ? { pitch } : {}),
+      ...(evidenceStart !== undefined ? { start: evidenceStart } : {}),
+      ...(evidenceEnd !== undefined ? { end: evidenceEnd } : {}),
+      conflict: conflict as "clash" | "avoid_note" | "unresolved_tension" | "unknown",
+      ...(severity !== undefined ? { severity } : {}),
+      ...(explanation !== undefined ? { explanation: evidenceString(explanation, `${label} explanation`) } : {}),
+    };
+  });
+  const candidateProvenance = value["candidateProvenance"];
+  if (
+    candidateProvenance !== undefined &&
+    (!Array.isArray(candidateProvenance) || candidateProvenance.length > MAX_EVIDENCE_ITEMS)
+  ) {
+    throw new Error(`${evidenceLabel} has invalid candidateProvenance`);
+  }
+  const parsedCandidateProvenance = candidateProvenance?.map((raw, candidateIndex) => {
+    const label = `${evidenceLabel} candidate provenance ${candidateIndex + 1}`;
+    if (!isRecord(raw)) throw new Error(`${label} must be an object`);
+    const candidateId = evidenceString(raw["candidateId"], `${label} candidateId`);
+    const provider = evidenceString(raw["provider"], `${label} provider`);
+    const modelVersion = raw["modelVersion"];
+    const score = raw["score"];
+    const selected = raw["selected"];
+    const evidence = raw["evidence"];
+    if (modelVersion !== undefined) evidenceString(modelVersion, `${label} modelVersion`);
+    if (score !== undefined && (!finiteNumber(score) || score < 0 || score > 100)) {
+      throw new Error(`${label} has invalid score`);
+    }
+    if (selected !== undefined && typeof selected !== "boolean") {
+      throw new Error(`${label} has invalid selected`);
+    }
+    if (
+      evidence !== undefined &&
+      (!Array.isArray(evidence) ||
+        evidence.length > MAX_EVIDENCE_ITEMS ||
+        !evidence.every((item) => typeof item === "string"))
+    ) {
+      throw new Error(`${label} has invalid evidence`);
+    }
+    const parsedEvidence = evidence?.map((item, itemIndex) =>
+      evidenceString(item, `${label} evidence ${itemIndex + 1}`));
+    return {
+      candidateId,
+      provider,
+      ...(modelVersion !== undefined ? { modelVersion: evidenceString(modelVersion, `${label} modelVersion`) } : {}),
+      ...(score !== undefined ? { score } : {}),
+      ...(selected !== undefined ? { selected } : {}),
+      ...(parsedEvidence !== undefined ? { evidence: parsedEvidence } : {}),
+    };
+  });
   return {
     start,
     end,
@@ -958,9 +1086,9 @@ function parseChordCandidate(
     ...(inversion !== undefined ? { inversion } : {}),
     ...(optionalString("bass") ? { bass: optionalString("bass") } : {}),
     ...(optionalString("function") ? { function: optionalString("function") } : {}),
-    ...(timing ? { timing: timing as ChordEvent["timing"] } : {}),
-    ...(Array.isArray(value["melodyConflictEvidence"]) ? { melodyConflictEvidence: value["melodyConflictEvidence"] as ChordEvent["melodyConflictEvidence"] } : {}),
-    ...(Array.isArray(value["candidateProvenance"]) ? { candidateProvenance: value["candidateProvenance"] as ChordEvent["candidateProvenance"] } : {}),
+    ...(parsedTiming ? { timing: parsedTiming } : {}),
+    ...(parsedMelodyConflictEvidence !== undefined ? { melodyConflictEvidence: parsedMelodyConflictEvidence } : {}),
+    ...(parsedCandidateProvenance !== undefined ? { candidateProvenance: parsedCandidateProvenance } : {}),
   };
 }
 
@@ -1114,6 +1242,7 @@ export function fuseHarmonyEvidence(
       strongest: number;
       candidate?: ChordEvent;
       provider?: string;
+      bassSupportEvidence?: NonNullable<ChordEvent["bassSupportEvidence"]>;
     }>();
     for (const { candidate, result } of active) {
       providersUsed.add(result.providerId);
@@ -1134,9 +1263,13 @@ export function fuseHarmonyEvidence(
       const pitchClasses = chordPitchClasses(candidate.symbol);
       const root = pitchClasses[0];
       if (root !== undefined) {
-        const bassSupport = results.flatMap((item) => item.bass)
+        const bassSupportEvidence = results.flatMap((item) => item.bass
           .filter((note) => overlap(note, segment) && note.pitch % 12 === root)
+          .map((note) => ({ ...note, provider: item.providerId })))
+          .slice(0, 16);
+        const bassSupport = bassSupportEvidence
           .reduce((sum, note) => sum + note.confidence, 0);
+        current.bassSupportEvidence = bassSupportEvidence;
         const supportingBassProviders = results
           .filter((item) => item.bass.some((note) =>
             overlap(note, segment) && note.pitch % 12 === root))
@@ -1179,6 +1312,22 @@ export function fuseHarmonyEvidence(
       Math.abs(previous.end - segment.start) < 0.001
     ) {
       previous.end = segment.end;
+      previous.bassSupportEvidence = [
+        ...(previous.bassSupportEvidence ?? []),
+        ...(winner.bassSupportEvidence ?? []),
+      ].filter((evidence, evidenceIndex, all) =>
+        all.findIndex((candidate) =>
+          candidate.provider === evidence.provider &&
+          candidate.pitch === evidence.pitch &&
+          candidate.start === evidence.start &&
+          candidate.end === evidence.end) === evidenceIndex)
+        .slice(0, 16);
+      if (previous.timing) {
+        previous.timing = {
+          startSeconds: previous.start,
+          endSeconds: previous.end,
+        };
+      }
       previous.confidence = Number(
         ((previous.confidence + fusedConfidence) / 2).toFixed(4),
       );
@@ -1197,10 +1346,13 @@ export function fuseHarmonyEvidence(
               inversion: winner.candidate.inversion,
               bass: winner.candidate.bass,
               function: winner.candidate.function,
-              timing: winner.candidate.timing,
+              timing: winner.candidate.timing
+                ? { startSeconds: segment.start, endSeconds: segment.end }
+                : undefined,
               melodyConflictEvidence: winner.candidate.melodyConflictEvidence,
               candidateProvenance: winner.candidate.candidateProvenance ??
                 [{ candidateId: `${winner.provider}:${segment.start}-${segment.end}`, provider: winner.provider!, selected: true }],
+              bassSupportEvidence: winner.bassSupportEvidence,
             }
           : {}),
       });

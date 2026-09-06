@@ -5,6 +5,7 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { AppliedTrackDirective } from './appliedTrackDirective';
 import type { ArticulationEvent } from './articulationEvent';
 import type { ArtifactProvenance } from './artifactProvenance';
 import type { ControlEvent } from './controlEvent';
@@ -27,5 +28,6 @@ export interface TrackModel {
   version: number;
   provenance: ArtifactProvenance;
   directive?: TrackDirective;
+  appliedDirectives?: AppliedTrackDirective[];
   mapping?: TrackMappingMetadata;
 }

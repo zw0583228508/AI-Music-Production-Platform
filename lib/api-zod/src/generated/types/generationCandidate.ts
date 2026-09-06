@@ -10,6 +10,7 @@ import type { GenerationCandidateParameters } from './generationCandidateParamet
 import type { GenerationCandidatePlan } from './generationCandidatePlan';
 import type { GenerationCandidateProvider } from './generationCandidateProvider';
 import type { GenerationCandidateStatus } from './generationCandidateStatus';
+import type { HarmonyDecisionEvidence } from './harmonyDecisionEvidence';
 import type { TrackModel } from './trackModel';
 
 export interface GenerationCandidate {
@@ -34,6 +35,7 @@ export interface GenerationCandidate {
   plan: GenerationCandidatePlan;
   /** @nullable */
   trackModels: TrackModel[] | null;
+  harmonyDecisions: HarmonyDecisionEvidence[];
   evaluation: CandidateEvaluation;
   createdAt: string;
 }

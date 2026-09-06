@@ -1077,6 +1077,20 @@ export const getProjectSongModelResponseChordsItemMelodyConflictEvidenceItemEndM
 export const getProjectSongModelResponseChordsItemMelodyConflictEvidenceItemSeverityMin = 0;
 export const getProjectSongModelResponseChordsItemMelodyConflictEvidenceItemSeverityMax = 1;
 
+export const getProjectSongModelResponseChordsItemBassSupportEvidenceItemStartMin = 0;
+
+export const getProjectSongModelResponseChordsItemBassSupportEvidenceItemEndMin = 0;
+
+export const getProjectSongModelResponseChordsItemBassSupportEvidenceItemPitchMin = 0;
+export const getProjectSongModelResponseChordsItemBassSupportEvidenceItemPitchMax = 127;
+
+export const getProjectSongModelResponseChordsItemBassSupportEvidenceItemConfidenceMin = 0;
+export const getProjectSongModelResponseChordsItemBassSupportEvidenceItemConfidenceMax = 1;
+
+export const getProjectSongModelResponseChordsItemBassSupportEvidenceItemProviderMax = 512;
+
+export const getProjectSongModelResponseChordsItemBassSupportEvidenceMax = 16;
+
 
 export const getProjectSongModelResponseStemsItemConfidenceMin = 0;
 export const getProjectSongModelResponseStemsItemConfidenceMax = 1;
@@ -1216,7 +1230,14 @@ export const GetProjectSongModelResponse = zod.object({
   "score": zod.number().optional(),
   "selected": zod.boolean().optional(),
   "evidence": zod.array(zod.string()).optional()
-})).optional().describe('Candidate-level provider evidence for this selected chord.')
+})).optional().describe('Candidate-level provider evidence for this selected chord.'),
+  "bassSupportEvidence": zod.array(zod.object({
+  "start": zod.number().min(getProjectSongModelResponseChordsItemBassSupportEvidenceItemStartMin),
+  "end": zod.number().min(getProjectSongModelResponseChordsItemBassSupportEvidenceItemEndMin),
+  "pitch": zod.number().min(getProjectSongModelResponseChordsItemBassSupportEvidenceItemPitchMin).max(getProjectSongModelResponseChordsItemBassSupportEvidenceItemPitchMax),
+  "confidence": zod.number().min(getProjectSongModelResponseChordsItemBassSupportEvidenceItemConfidenceMin).max(getProjectSongModelResponseChordsItemBassSupportEvidenceItemConfidenceMax),
+  "provider": zod.string().min(1).max(getProjectSongModelResponseChordsItemBassSupportEvidenceItemProviderMax)
+})).max(getProjectSongModelResponseChordsItemBassSupportEvidenceMax).optional().describe('Observed provider bass notes that supported this selected chord.')
 })),
   "sections": zod.array(zod.object({
   "name": zod.string(),
@@ -1424,6 +1445,20 @@ export const correctProjectSongModelResponseChordsItemMelodyConflictEvidenceItem
 export const correctProjectSongModelResponseChordsItemMelodyConflictEvidenceItemSeverityMin = 0;
 export const correctProjectSongModelResponseChordsItemMelodyConflictEvidenceItemSeverityMax = 1;
 
+export const correctProjectSongModelResponseChordsItemBassSupportEvidenceItemStartMin = 0;
+
+export const correctProjectSongModelResponseChordsItemBassSupportEvidenceItemEndMin = 0;
+
+export const correctProjectSongModelResponseChordsItemBassSupportEvidenceItemPitchMin = 0;
+export const correctProjectSongModelResponseChordsItemBassSupportEvidenceItemPitchMax = 127;
+
+export const correctProjectSongModelResponseChordsItemBassSupportEvidenceItemConfidenceMin = 0;
+export const correctProjectSongModelResponseChordsItemBassSupportEvidenceItemConfidenceMax = 1;
+
+export const correctProjectSongModelResponseChordsItemBassSupportEvidenceItemProviderMax = 512;
+
+export const correctProjectSongModelResponseChordsItemBassSupportEvidenceMax = 16;
+
 
 export const correctProjectSongModelResponseStemsItemConfidenceMin = 0;
 export const correctProjectSongModelResponseStemsItemConfidenceMax = 1;
@@ -1563,7 +1598,14 @@ export const CorrectProjectSongModelResponse = zod.object({
   "score": zod.number().optional(),
   "selected": zod.boolean().optional(),
   "evidence": zod.array(zod.string()).optional()
-})).optional().describe('Candidate-level provider evidence for this selected chord.')
+})).optional().describe('Candidate-level provider evidence for this selected chord.'),
+  "bassSupportEvidence": zod.array(zod.object({
+  "start": zod.number().min(correctProjectSongModelResponseChordsItemBassSupportEvidenceItemStartMin),
+  "end": zod.number().min(correctProjectSongModelResponseChordsItemBassSupportEvidenceItemEndMin),
+  "pitch": zod.number().min(correctProjectSongModelResponseChordsItemBassSupportEvidenceItemPitchMin).max(correctProjectSongModelResponseChordsItemBassSupportEvidenceItemPitchMax),
+  "confidence": zod.number().min(correctProjectSongModelResponseChordsItemBassSupportEvidenceItemConfidenceMin).max(correctProjectSongModelResponseChordsItemBassSupportEvidenceItemConfidenceMax),
+  "provider": zod.string().min(1).max(correctProjectSongModelResponseChordsItemBassSupportEvidenceItemProviderMax)
+})).max(correctProjectSongModelResponseChordsItemBassSupportEvidenceMax).optional().describe('Observed provider bass notes that supported this selected chord.')
 })),
   "sections": zod.array(zod.object({
   "name": zod.string(),
@@ -2987,10 +3029,58 @@ export const listGenerationCandidatesResponseTrackModelsItemDirectiveExitBeatMin
 
 export const listGenerationCandidatesResponseTrackModelsItemDirectiveExitDurationBeatsExclusiveMin = 0;
 
+
+
+export const listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemStartMin = 0;
+
+export const listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemEndMin = 0;
+
+export const listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveRhythmicActivityMin = 0;
+export const listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveRhythmicActivityMax = 1;
+
+export const listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveHarmonicActivityMin = 0;
+export const listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveHarmonicActivityMax = 1;
+
+export const listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveDynamicTargetMin = 0;
+export const listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveDynamicTargetMax = 1;
+
+export const listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveEntryBarMin = 0;
+
+export const listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveEntryBeatMin = 0;
+
+export const listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveEntryDurationBeatsExclusiveMin = 0;
+
+export const listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveExitBarMin = 0;
+
+export const listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveExitBeatMin = 0;
+
+export const listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveExitDurationBeatsExclusiveMin = 0;
+
 export const listGenerationCandidatesResponseTrackModelsItemMappingMidiChannelMax = 16;
 
 export const listGenerationCandidatesResponseTrackModelsItemMappingProgramMin = 0;
 export const listGenerationCandidatesResponseTrackModelsItemMappingProgramMax = 127;
+
+export const listGenerationCandidatesResponseHarmonyDecisionsItemStartMin = 0;
+
+export const listGenerationCandidatesResponseHarmonyDecisionsItemEndMin = 0;
+
+
+export const listGenerationCandidatesResponseHarmonyDecisionsItemComplexityMax = 10;
+
+export const listGenerationCandidatesResponseHarmonyDecisionsItemBassSupportEvidenceItemStartMin = 0;
+
+export const listGenerationCandidatesResponseHarmonyDecisionsItemBassSupportEvidenceItemEndMin = 0;
+
+export const listGenerationCandidatesResponseHarmonyDecisionsItemBassSupportEvidenceItemPitchMin = 0;
+export const listGenerationCandidatesResponseHarmonyDecisionsItemBassSupportEvidenceItemPitchMax = 127;
+
+export const listGenerationCandidatesResponseHarmonyDecisionsItemBassSupportEvidenceItemConfidenceMin = 0;
+export const listGenerationCandidatesResponseHarmonyDecisionsItemBassSupportEvidenceItemConfidenceMax = 1;
+
+export const listGenerationCandidatesResponseHarmonyDecisionsItemBassSupportEvidenceItemProviderMax = 512;
+
+export const listGenerationCandidatesResponseHarmonyDecisionsItemBassSupportEvidenceMax = 16;
 
 export const listGenerationCandidatesResponseEvaluationQualityReportOneScoreMin = 0;
 export const listGenerationCandidatesResponseEvaluationQualityReportOneScoreMax = 1;
@@ -3176,6 +3266,35 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "transition": zod.string().optional(),
   "fill": zod.boolean().optional()
 }).optional(),
+  "appliedDirectives": zod.array(zod.object({
+  "section": zod.string(),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "start": zod.number().min(listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemStartMin),
+  "end": zod.number().min(listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemEndMin),
+  "directive": zod.object({
+  "role": zod.string().optional(),
+  "register": zod.string().optional(),
+  "rhythmicActivity": zod.number().min(listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveRhythmicActivityMin).max(listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveRhythmicActivityMax).optional(),
+  "harmonicActivity": zod.number().min(listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveHarmonicActivityMin).max(listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveHarmonicActivityMax).optional(),
+  "dynamicTarget": zod.number().min(listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveDynamicTargetMin).max(listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveDynamicTargetMax).optional(),
+  "articulationFamily": zod.string().optional(),
+  "entry": zod.object({
+  "bar": zod.number().min(listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveEntryBarMin).optional(),
+  "beat": zod.number().min(listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveEntryBeatMin).optional(),
+  "mode": zod.string().optional(),
+  "durationBeats": zod.number().gt(listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveEntryDurationBeatsExclusiveMin).optional()
+}).optional(),
+  "exit": zod.object({
+  "bar": zod.number().min(listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveExitBarMin).optional(),
+  "beat": zod.number().min(listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveExitBeatMin).optional(),
+  "mode": zod.string().optional(),
+  "durationBeats": zod.number().gt(listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveExitDurationBeatsExclusiveMin).optional()
+}).optional(),
+  "transition": zod.string().optional(),
+  "fill": zod.boolean().optional()
+})
+})).optional(),
   "mapping": zod.object({
   "midiChannel": zod.number().min(1).max(listGenerationCandidatesResponseTrackModelsItemMappingMidiChannelMax).optional(),
   "program": zod.number().min(listGenerationCandidatesResponseTrackModelsItemMappingProgramMin).max(listGenerationCandidatesResponseTrackModelsItemMappingProgramMax).optional(),
@@ -3183,6 +3302,35 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "controlMap": zod.record(zod.string(), zod.number()).optional()
 }).optional()
 })).nullable(),
+  "harmonyDecisions": zod.array(zod.object({
+  "start": zod.number().min(listGenerationCandidatesResponseHarmonyDecisionsItemStartMin),
+  "end": zod.number().min(listGenerationCandidatesResponseHarmonyDecisionsItemEndMin),
+  "symbol": zod.string(),
+  "function": zod.string().optional(),
+  "source": zod.enum(['song_model_chord_evidence', 'deterministic_candidate_scoring']),
+  "score": zod.number().optional(),
+  "melodyFit": zod.number().optional(),
+  "bassFit": zod.number().optional(),
+  "voiceLeading": zod.number().optional(),
+  "harmonicBars": zod.number().min(1).optional(),
+  "complexity": zod.number().min(1).max(listGenerationCandidatesResponseHarmonyDecisionsItemComplexityMax).optional(),
+  "candidateRationale": zod.array(zod.object({
+  "symbol": zod.string(),
+  "function": zod.string(),
+  "score": zod.number(),
+  "melodyFit": zod.number(),
+  "bassFit": zod.number(),
+  "voiceLeading": zod.number(),
+  "selected": zod.boolean()
+})).optional(),
+  "bassSupportEvidence": zod.array(zod.object({
+  "start": zod.number().min(listGenerationCandidatesResponseHarmonyDecisionsItemBassSupportEvidenceItemStartMin),
+  "end": zod.number().min(listGenerationCandidatesResponseHarmonyDecisionsItemBassSupportEvidenceItemEndMin),
+  "pitch": zod.number().min(listGenerationCandidatesResponseHarmonyDecisionsItemBassSupportEvidenceItemPitchMin).max(listGenerationCandidatesResponseHarmonyDecisionsItemBassSupportEvidenceItemPitchMax),
+  "confidence": zod.number().min(listGenerationCandidatesResponseHarmonyDecisionsItemBassSupportEvidenceItemConfidenceMin).max(listGenerationCandidatesResponseHarmonyDecisionsItemBassSupportEvidenceItemConfidenceMax),
+  "provider": zod.string().min(1).max(listGenerationCandidatesResponseHarmonyDecisionsItemBassSupportEvidenceItemProviderMax)
+})).max(listGenerationCandidatesResponseHarmonyDecisionsItemBassSupportEvidenceMax).optional()
+})),
   "evaluation": zod.object({
   "status": zod.enum(['plan_received', 'rendering', 'render_succeeded', 'analyzing', 'evaluated', 'render_failed', 'analysis_failed']),
   "providerScore": zod.number(),

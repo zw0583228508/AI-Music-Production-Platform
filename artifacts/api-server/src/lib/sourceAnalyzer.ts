@@ -1371,6 +1371,7 @@ export async function analyzeProjectSource(
       beats,
       bars,
       melody,
+      bass: midi ? [] : providerResults.bassEvidence,
       chords: midi ? [] : providerResults.chords,
       sections,
       energy,

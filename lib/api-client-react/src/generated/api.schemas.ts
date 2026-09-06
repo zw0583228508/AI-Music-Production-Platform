@@ -484,6 +484,28 @@ export interface ChordCandidateProvenance {
   evidence?: string[];
 }
 
+export interface ChordBassSupportEvidence {
+  /** @minimum 0 */
+  start: number;
+  /** @minimum 0 */
+  end: number;
+  /**
+     * @minimum 0
+     * @maximum 127
+     */
+  pitch: number;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  confidence: number;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  provider: string;
+}
+
 export interface ChordEvent {
   start: number;
   end: number;
@@ -506,6 +528,11 @@ export interface ChordEvent {
   melodyConflictEvidence?: MelodyConflictEvidence[];
   /** Candidate-level provider evidence for this selected chord. */
   candidateProvenance?: ChordCandidateProvenance[];
+  /**
+     * Observed provider bass notes that supported this selected chord.
+     * @maxItems 16
+     */
+  bassSupportEvidence?: ChordBassSupportEvidence[];
 }
 
 export interface Section {
@@ -1913,6 +1940,19 @@ export interface TrackDirective {
   fill?: boolean;
 }
 
+export interface AppliedTrackDirective {
+  section: string;
+  /** @minimum 1 */
+  startBar: number;
+  /** @minimum 1 */
+  endBar: number;
+  /** @minimum 0 */
+  start: number;
+  /** @minimum 0 */
+  end: number;
+  directive: TrackDirective;
+}
+
 export type TrackMappingMetadataArticulationMap = {[key: string]: string | number};
 
 export type TrackMappingMetadataControlMap = {[key: string]: number};
@@ -1945,7 +1985,50 @@ export interface TrackModel {
   version: number;
   provenance: ArtifactProvenance;
   directive?: TrackDirective;
+  appliedDirectives?: AppliedTrackDirective[];
   mapping?: TrackMappingMetadata;
+}
+
+export type HarmonyDecisionEvidenceSource = typeof HarmonyDecisionEvidenceSource[keyof typeof HarmonyDecisionEvidenceSource];
+
+
+export const HarmonyDecisionEvidenceSource = {
+  song_model_chord_evidence: 'song_model_chord_evidence',
+  deterministic_candidate_scoring: 'deterministic_candidate_scoring',
+} as const;
+
+export interface HarmonyCandidateRationale {
+  symbol: string;
+  function: string;
+  score: number;
+  melodyFit: number;
+  bassFit: number;
+  voiceLeading: number;
+  selected: boolean;
+}
+
+export interface HarmonyDecisionEvidence {
+  /** @minimum 0 */
+  start: number;
+  /** @minimum 0 */
+  end: number;
+  symbol: string;
+  function?: string;
+  source: HarmonyDecisionEvidenceSource;
+  score?: number;
+  melodyFit?: number;
+  bassFit?: number;
+  voiceLeading?: number;
+  /** @minimum 1 */
+  harmonicBars?: number;
+  /**
+     * @minimum 1
+     * @maximum 10
+     */
+  complexity?: number;
+  candidateRationale?: HarmonyCandidateRationale[];
+  /** @maxItems 16 */
+  bassSupportEvidence?: ChordBassSupportEvidence[];
 }
 
 export interface GenerationCandidate {
@@ -1970,6 +2053,7 @@ export interface GenerationCandidate {
   plan: GenerationCandidatePlan;
   /** @nullable */
   trackModels: TrackModel[] | null;
+  harmonyDecisions: HarmonyDecisionEvidence[];
   evaluation: CandidateEvaluation;
   createdAt: string;
 }
