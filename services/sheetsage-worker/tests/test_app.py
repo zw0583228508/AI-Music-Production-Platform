@@ -17,6 +17,34 @@ class SheetSageTests(unittest.TestCase):
         inventory = {"package": self.app.SPEC["package"], "assets": [{"path": "model.bin", "bytes": 10, "sha256": digest}]}
         (Path(self.tmp.name) / "assets.manifest.json").write_text(json.dumps(inventory))
     def tearDown(self): self.tmp.cleanup()
+    def _request(self, chunks, *, authorization=b"Bearer test"):
+        from starlette.requests import Request
+        messages = iter(chunks)
+        async def receive():
+            message = next(messages)
+            if isinstance(message, BaseException):
+                raise message
+            return {
+                "type": "http.request",
+                "body": message,
+                "more_body": message != b"",
+            }
+        return Request({
+            "type": "http",
+            "method": "POST",
+            "headers": [(b"authorization", authorization)],
+        }, receive)
+
+    def _tracked_temporary_files(self):
+        created = []
+        original = tempfile.NamedTemporaryFile
+        def tracked(*args, **kwargs):
+            kwargs["dir"] = self.tmp.name
+            target = original(*args, **kwargs)
+            created.append(Path(target.name))
+            return target
+        return created, tracked
+
     def test_assets_alone_do_not_report_ready(self):
         self.assertTrue(self.app.asset_state()[0]); self.assertFalse(self.app.smoke_state()[0])
 
@@ -157,6 +185,75 @@ class SheetSageTests(unittest.TestCase):
             with self.assertRaises(self.app.HTTPException) as raised:
                 asyncio.run(self.app.analyze(request))
         self.assertEqual(raised.exception.status_code, 413)
+        run_model.assert_not_called()
+
+    def test_interrupted_chunked_upload_removes_partial_audio(self):
+        request = self._request((b"first-", b"second-", RuntimeError("upload interrupted")))
+        created, tracked = self._tracked_temporary_files()
+        with patch.object(self.app, "asset_state", return_value=(True, "ready", {})), \
+             patch.object(self.app, "smoke_state", return_value=(True, "ready")), \
+             patch.object(self.app.tempfile, "NamedTemporaryFile", side_effect=tracked), \
+             patch.object(self.app, "run") as run_model:
+            with self.assertRaisesRegex(RuntimeError, "upload interrupted"):
+                asyncio.run(self.app.analyze(request))
+        self.assertEqual(len(created), 1)
+        self.assertFalse(created[0].exists())
+        run_model.assert_not_called()
+
+    def test_request_cancellation_removes_partial_audio(self):
+        request = self._request((b"first-", b"second-", asyncio.CancelledError()))
+        created, tracked = self._tracked_temporary_files()
+        with patch.object(self.app, "asset_state", return_value=(True, "ready", {})), \
+             patch.object(self.app, "smoke_state", return_value=(True, "ready")), \
+             patch.object(self.app.tempfile, "NamedTemporaryFile", side_effect=tracked), \
+             patch.object(self.app, "run") as run_model:
+            with self.assertRaises(asyncio.CancelledError):
+                asyncio.run(self.app.analyze(request))
+        self.assertEqual(len(created), 1)
+        self.assertFalse(created[0].exists())
+        run_model.assert_not_called()
+
+    def test_inference_failure_removes_completed_upload(self):
+        request = self._request((b"first-", b"second-", b""))
+        created, tracked = self._tracked_temporary_files()
+        async def fake_run_in_threadpool(function, path, *_args):
+            return function(path, *_args)
+        with patch.object(self.app, "asset_state", return_value=(True, "ready", {})), \
+             patch.object(self.app, "smoke_state", return_value=(True, "ready")), \
+             patch.object(self.app.tempfile, "NamedTemporaryFile", side_effect=tracked), \
+             patch.object(self.app, "run", side_effect=self.app.InferenceError("bad audio")), \
+             patch.object(self.app, "run_in_threadpool", side_effect=fake_run_in_threadpool):
+            with self.assertRaises(self.app.HTTPException) as raised:
+                asyncio.run(self.app.analyze(request))
+        self.assertEqual(raised.exception.status_code, 422)
+        self.assertEqual(len(created), 1)
+        self.assertFalse(created[0].exists())
+
+    def test_streamed_size_limit_removes_partial_audio(self):
+        request = self._request((b"first", b"second"))
+        created, tracked = self._tracked_temporary_files()
+        with patch.object(self.app, "MAX_AUDIO_BYTES", 8), \
+             patch.object(self.app, "asset_state", return_value=(True, "ready", {})), \
+             patch.object(self.app, "smoke_state", return_value=(True, "ready")), \
+             patch.object(self.app.tempfile, "NamedTemporaryFile", side_effect=tracked), \
+             patch.object(self.app, "run") as run_model:
+            with self.assertRaises(self.app.HTTPException) as raised:
+                asyncio.run(self.app.analyze(request))
+        self.assertEqual(raised.exception.status_code, 413)
+        self.assertEqual(raised.exception.detail, "audio payload exceeds 512 MiB")
+        self.assertEqual(len(created), 1)
+        self.assertFalse(created[0].exists())
+        run_model.assert_not_called()
+
+    def test_authentication_rejection_does_not_create_partial_audio(self):
+        request = self._request((b"private-audio",), authorization=b"Bearer wrong")
+        created, tracked = self._tracked_temporary_files()
+        with patch.object(self.app.tempfile, "NamedTemporaryFile", side_effect=tracked), \
+             patch.object(self.app, "run") as run_model:
+            with self.assertRaises(self.app.HTTPException) as raised:
+                asyncio.run(self.app.analyze(request))
+        self.assertEqual(raised.exception.status_code, 401)
+        self.assertEqual(created, [])
         run_model.assert_not_called()
 
 if __name__ == "__main__": unittest.main()
