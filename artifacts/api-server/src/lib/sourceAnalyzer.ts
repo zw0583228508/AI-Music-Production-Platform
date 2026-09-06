@@ -752,6 +752,7 @@ async function analyzeProjectSourceBeforeTask1(sourceId: string): Promise<void> 
       beats,
       bars,
       melody: fuseCanonicalNotes(providerResults.transcriptions),
+      bass: providerResults.bassEvidence,
       chords: providerResults.chords,
       sections,
       energy,

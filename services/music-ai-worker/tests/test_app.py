@@ -8,6 +8,7 @@ import tempfile
 import unittest
 import unittest.mock
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import numpy as np
 import soundfile as sf
@@ -16,11 +17,65 @@ from fastapi import HTTPException
 sys.path.insert(0, str(Path(__file__).parents[1]))
 import app
 
+from capability_boundary import (
+    require_symbolic_packages,
+    smoke_midi_round_trip,
+    smoke_pedalboard_builtins,
+)
+
 
 def wav64():
     stream = io.BytesIO()
     sf.write(stream, np.zeros((160, 1), dtype=np.float32), 8000, format="WAV")
     return base64.b64encode(stream.getvalue()).decode()
+
+
+def protected_route_status(
+    method: str,
+    path: str,
+    *,
+    headers: dict[str, str] | None = None,
+    payload: dict | None = None,
+) -> int:
+    """Exercise the ASGI route/dependency stack without an httpx test client."""
+    body = json.dumps(payload).encode() if payload is not None else b""
+    target = urlsplit(path)
+    request_headers = [(key.lower().encode(), value.encode()) for key, value in (headers or {}).items()]
+    if body:
+        request_headers.extend([
+            (b"content-type", b"application/json"),
+            (b"content-length", str(len(body)).encode()),
+        ])
+    sent = False
+    response_status = None
+
+    async def receive():
+        nonlocal sent
+        if sent:
+            return {"type": "http.disconnect"}
+        sent = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    async def send(message):
+        nonlocal response_status
+        if message["type"] == "http.response.start":
+            response_status = message["status"]
+
+    asyncio.run(app.app({
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": method,
+        "scheme": "http",
+        "path": target.path,
+        "raw_path": target.path.encode(),
+        "query_string": target.query.encode(),
+        "headers": request_headers,
+        "client": ("127.0.0.1", 12345),
+        "server": ("worker.test", 80),
+    }, receive, send))
+    assert response_status is not None
+    return response_status
 
 
 def write_track_sensitive_renderer(path: Path):
@@ -133,6 +188,120 @@ Path(a.attestation).write_text(json.dumps({
 
 
 class WorkerTests(unittest.TestCase):
+    def test_provider_endpoints_fail_closed_without_a_configured_token(self):
+        for environment in ({}, {"MUSIC_AI_WORKER_TOKEN": "   "}):
+            with self.subTest(blank=bool(environment)), unittest.mock.patch.dict(
+                app.os.environ, environment, clear=True
+            ):
+                for provider in (
+                    "BASIC_PITCH",
+                    "DEMUCS",
+                    "PEDALBOARD_BUILTIN",
+                    "VST3",
+                    "SFIZZ_VSCO2_CE",
+                ):
+                    with self.subTest(provider=provider):
+                        self.assertEqual(
+                            protected_route_status("GET", f"/health?provider={provider}"),
+                            401,
+                        )
+                self.assertEqual(
+                    protected_route_status(
+                        "POST",
+                        "/process",
+                        payload={"provider": "PEDALBOARD_BUILTIN", "audio_base64": wav64()},
+                    ),
+                    401,
+                )
+
+    def test_provider_endpoints_reject_missing_or_wrong_bearer_tokens(self):
+        with unittest.mock.patch.dict(
+            app.os.environ, {"MUSIC_AI_WORKER_TOKEN": "worker-test-token"}, clear=True
+        ):
+            for headers in ({}, {"Authorization": "Bearer wrong-token"}):
+                for provider in (
+                    "BASIC_PITCH",
+                    "DEMUCS",
+                    "PEDALBOARD_BUILTIN",
+                    "VST3",
+                    "SFIZZ_VSCO2_CE",
+                ):
+                    with self.subTest(headers=bool(headers), provider=provider):
+                        self.assertEqual(
+                            protected_route_status(
+                                "GET", f"/health?provider={provider}", headers=headers
+                            ),
+                            401,
+                        )
+                self.assertEqual(
+                    protected_route_status(
+                        "POST",
+                        "/process",
+                        headers=headers,
+                        payload={"provider": "PEDALBOARD_BUILTIN", "audio_base64": wav64()},
+                    ),
+                    401,
+                )
+
+    def test_provider_endpoints_accept_the_configured_bearer_token(self):
+        with unittest.mock.patch.dict(
+            app.os.environ, {"MUSIC_AI_WORKER_TOKEN": "worker-test-token"}, clear=True
+        ):
+            headers = {"Authorization": "Bearer worker-test-token"}
+            for provider in (
+                "BASIC_PITCH",
+                "DEMUCS",
+                "PEDALBOARD_BUILTIN",
+                "VST3",
+                "SFIZZ_VSCO2_CE",
+            ):
+                with self.subTest(provider=provider):
+                    self.assertEqual(
+                            protected_route_status(
+                                "GET", f"/health?provider={provider}", headers=headers
+                            ),
+                        200,
+                    )
+            self.assertEqual(
+                protected_route_status(
+                    "POST",
+                    "/process",
+                    headers=headers,
+                    payload={"provider": "PEDALBOARD_BUILTIN", "audio_base64": wav64()},
+                ),
+                200,
+            )
+
+    def test_symbolic_python_capability_imports(self):
+        require_symbolic_packages()
+
+    def test_minimal_midi_round_trip_serializes_across_supported_packages(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            evidence = smoke_midi_round_trip(Path(tmp))
+        self.assertGreaterEqual(evidence["noteOnEvents"], 1)
+        self.assertGreaterEqual(evidence["tracks"], 1)
+
+    def test_pedalboard_builtin_processing_is_non_silent_and_finite(self):
+        evidence = smoke_pedalboard_builtins()
+        self.assertEqual(evidence["channels"], 1)
+        self.assertEqual(evidence["frames"], 128)
+        self.assertGreater(evidence["peak"], 0)
+        self.assertLess(evidence["peak"], 1)
+
+    def test_native_adapters_are_explicitly_unavailable_without_attestation(self):
+        with unittest.mock.patch.dict("os.environ", {}, clear=True):
+            for provider in ("VST3", "SFIZZ_VSCO2_CE"):
+                with self.subTest(provider=provider):
+                    health = app.renderer_health(provider)
+                    self.assertEqual(health["status"], "unavailable")
+                    self.assertFalse(health["healthy"])
+                    self.assertTrue(health["optionalAdapter"])
+                    self.assertTrue(health["reason"])
+                    self.assertEqual(
+                        health["requirements"],
+                        app.NATIVE_ADAPTER_REQUIREMENTS[provider],
+                    )
+
     def test_file_checksum_is_streamed_in_bounded_chunks(self):
         payload = (b"licensed-large-pack" * (2 * 1024 * 1024 // 19 + 1))[:2 * 1024 * 1024]
         with tempfile.TemporaryDirectory() as tmp:

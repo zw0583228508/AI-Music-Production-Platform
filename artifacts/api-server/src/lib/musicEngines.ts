@@ -11,6 +11,7 @@ import type {
   ControlEvent,
   ArticulationEvent,
   AutomationPoint,
+  TrackDirective,
 } from "@workspace/db";
 import { createHash } from "node:crypto";
 
@@ -248,6 +249,20 @@ const RANGE = (min: number, max: number) => ({
     { name: "high", min: Math.round(min + (max - min) * 0.68), max, character: "bright" },
   ],
 });
+const directiveMappings = (id: string) => ({
+  registers: {
+    low: { min: id === "bass" ? 28 : 36, max: id === "bass" ? 45 : 60 },
+    middle: { min: id === "bass" ? 36 : 48, max: id === "bass" ? 60 : 78 },
+    high: { min: id === "bass" ? 48 : 60, max: id === "bass" ? 67 : 96 },
+  },
+  articulationFamilies: {
+    legato: ["legato", "sustain", "normal", "finger"],
+    accent: ["marcato", "hard", "pick", "snare", "kick"],
+    tight: ["staccato", "spiccato", "mute", "closed_hat"],
+  },
+  dynamicTargets: { pp: 42, mp: 64, mf: 84, f: 108 },
+  controls: { dynamics: 1, expression: 11, articulation: 32 },
+});
 
 export function getInstrumentDefinition(instrument: string, role = ""): InstrumentDefinition {
   const id = instrument.toLowerCase().replace(/[^a-z0-9]+/g, "_");
@@ -264,6 +279,7 @@ export function getInstrumentDefinition(instrument: string, role = ""): Instrume
       articulations: ["kick", "snare", "ghost", "flam", "closed_hat", "open_hat", "ride", "tom_fill"],
       constraints: { maxLeap: 46, minNoteDuration: 0.04, maxSimultaneousNotes: 4, hands: 2, feet: 2 },
       controls: { dynamics: [1, 11], expression: [11], pitchBend: false, aftertouch: false },
+      directiveMappings: directiveMappings("drums"),
     };
   }
   if (normalized.includes("bass")) {
@@ -278,6 +294,7 @@ export function getInstrumentDefinition(instrument: string, role = ""): Instrume
       articulations: ["finger", "pick", "slap", "mute", "slide"],
       constraints: { maxLeap: 12, minNoteDuration: 0.08, maxSimultaneousNotes: 1, strings: 4 },
       controls: { dynamics: [1], expression: [11], pitchBend: true, aftertouch: false },
+      directiveMappings: directiveMappings("bass"),
     };
   }
   if (normalized.includes("violin") || normalized.includes("cello") || normalized.includes("string")) {
@@ -294,6 +311,7 @@ export function getInstrumentDefinition(instrument: string, role = ""): Instrume
       articulations: ["legato", "sustain", "staccato", "spiccato", "pizzicato", "tremolo", "trill", "harmonic", "vibrato"],
       constraints: { maxLeap: cello ? 12 : 10, minNoteDuration: 0.1, maxSimultaneousNotes: cello ? 2 : 4, strings: 4 },
       controls: { dynamics: [1], expression: [11], pitchBend: true, aftertouch: true },
+      directiveMappings: directiveMappings(cello ? "cello" : "strings"),
     };
   }
   if (normalized.includes("horn") || normalized.includes("brass") || normalized.includes("trumpet")) {
@@ -308,6 +326,7 @@ export function getInstrumentDefinition(instrument: string, role = ""): Instrume
       articulations: ["legato", "marcato", "staccato", "fall", "doit", "shake", "mute"],
       constraints: { maxLeap: 12, minNoteDuration: 0.12, maxSimultaneousNotes: 1, breathSeconds: 8 },
       controls: { dynamics: [1], expression: [11], pitchBend: true, aftertouch: true },
+      directiveMappings: directiveMappings("brass"),
     };
   }
   if (normalized.includes("guitar")) {
@@ -322,6 +341,7 @@ export function getInstrumentDefinition(instrument: string, role = ""): Instrume
       articulations: ["pick", "strum_up", "strum_down", "slide", "hammer_on", "pull_off", "palm_mute"],
       constraints: { maxLeap: 16, minNoteDuration: 0.08, maxSimultaneousNotes: 6, strings: 6, frets: 22 },
       controls: { dynamics: [1], expression: [11], pitchBend: true, aftertouch: false },
+      directiveMappings: directiveMappings("guitar"),
     };
   }
   if (normalized.includes("pad") || normalized.includes("synth")) {
@@ -336,6 +356,7 @@ export function getInstrumentDefinition(instrument: string, role = ""): Instrume
       articulations: ["sustain", "pluck", "rise", "fall"],
       constraints: { maxLeap: 24, minNoteDuration: 0.2, maxSimultaneousNotes: 8 },
       controls: { dynamics: [1], expression: [11], sustain: 64, pitchBend: true, aftertouch: true },
+      directiveMappings: directiveMappings("synth_pad"),
     };
   }
   return {
@@ -349,12 +370,13 @@ export function getInstrumentDefinition(instrument: string, role = ""): Instrume
     articulations: ["soft", "normal", "hard", "sustain", "staccato"],
     constraints: { maxLeap: 24, minNoteDuration: 0.05, maxSimultaneousNotes: 10, hands: 2 },
     controls: { dynamics: [1], expression: [11], sustain: 64, pitchBend: false, aftertouch: true },
+    directiveMappings: directiveMappings("piano"),
   };
 }
 
 export function createStyleSpec(
   style: string,
-  controls: { density: number; harmonyComplexity: number; energy: number },
+  controls: { density: number; harmonyComplexity: number; energy: number; orchestraSize?: number; rhythmIntensity?: number },
 ): StyleSpec {
   const genre = style.split(/\s+/)[0]?.toLowerCase() || "pop";
   const cinematic = style.toLowerCase().includes("cinematic") || style.toLowerCase().includes("orchestra");
@@ -363,10 +385,10 @@ export function createStyleSpec(
     subgenre: style.toLowerCase().replace(/\s+/g, "_"),
     era: "modern",
     tempoCharacter: controls.energy > 0.72 ? "driving" : "steady",
-    rhythm: { swing: genre === "jazz" ? 0.18 : 0, syncopation: clamp(controls.density * 0.7), subdivision: genre === "edm" ? "16th" : "8th" },
+    rhythm: { swing: genre === "jazz" ? 0.18 : 0, syncopation: clamp(controls.density * 0.45 + (controls.rhythmIntensity ?? .6) * .4), subdivision: (controls.rhythmIntensity ?? .6) > .72 || genre === "edm" ? "16th" : "8th" },
     harmony: { complexity: controls.harmonyComplexity, tension: clamp((controls.harmonyComplexity - 1) / 9), voicing: cinematic ? "wide" : "close" },
     instrumentation: { preferredFamilies: cinematic ? ["keys", "strings", "brass", "drums"] : ["keys", "strings", "bass", "drums"], avoid: [] },
-    orchestration: { density: controls.density, registerSpread: cinematic ? 0.9 : 0.65, dynamics: controls.energy > 0.7 ? "arc" : "intimate" },
+    orchestration: { density: clamp(controls.density * .65 + (controls.orchestraSize ?? .5) * .35), registerSpread: clamp((cinematic ? .72 : .48) + (controls.orchestraSize ?? .5) * .35), dynamics: controls.energy > 0.7 ? "arc" : "intimate" },
     production: { stereoWidth: cinematic ? 0.85 : 0.65, room: cinematic ? "scoring_stage" : "studio", mixProfile: "streaming" },
     dynamics: { range: cinematic ? 0.8 : 0.6, accentStrength: clamp(0.35 + controls.energy * 0.5) },
   };
@@ -389,7 +411,7 @@ export function createArrangementPlan(input: {
   version: number;
   songModel: SongModelData;
   style: StyleSpec;
-  tracks: Array<{ name: string; role: string }>;
+  tracks: Array<{ id?: string; name: string; role: string }>;
   parameters: Record<string, number | string | boolean>;
   parentIds?: string[];
 }): ArrangementPlan {
@@ -397,6 +419,8 @@ export function createArrangementPlan(input: {
     ? input.songModel.sections
     : [{ name: "Full Song", startBar: 1, endBar: 16, energy: input.style.dynamics.accentStrength }];
   const modulationSemitones = Number(input.parameters.modulationSemitones ?? 0);
+  const orchestraSize = clamp(Number(input.parameters.orchestraSize ?? .5));
+  const rhythmIntensity = clamp(Number(input.parameters.rhythmIntensity ?? .6));
   const sections: ArrangementPlanSection[] = sourceSections.map((section, index) => {
     const operations = section.energy > 0.75
       ? ["build_up", "countermelody"]
@@ -406,16 +430,46 @@ export function createArrangementPlan(input: {
     if (index === sourceSections.length - 1 && modulationSemitones !== 0) {
       operations.push(`modulate:${modulationSemitones}`);
     }
+    const directives: Record<string, TrackDirective> = {};
+    const layerCount = Math.max(1, Math.ceil(input.tracks.length * clamp(.25 + orchestraSize * .55 + section.energy * .2)));
+    const ordered = [...input.tracks].sort((left, right) =>
+      Number(/bass|drum|rhythm/.test(`${right.name} ${right.role}`.toLowerCase())) -
+      Number(/bass|drum|rhythm/.test(`${left.name} ${left.role}`.toLowerCase())));
+    const enabledIds = new Set(ordered.slice(0, layerCount).map((track) => track.id ?? track.name));
+    const tracks = Object.fromEntries(input.tracks.map((track) => {
+      const identity = `${track.name} ${track.role}`.toLowerCase();
+      const trackId = track.id ?? track.name;
+      const operation = enabledIds.has(trackId) ? operationForTrack(track, section) : "none";
+      const percussion = /drum|rhythm|percussion/.test(identity);
+      const bass = identity.includes("bass");
+      const melodic = /vocal|voice|melody/.test(identity);
+      directives[trackId] = {
+        role: track.role,
+        register: bass ? "low" : melodic ? "high" : section.energy > .68 ? "high" : "middle",
+        rhythmicActivity: round(clamp(percussion
+          ? section.energy * .45 + rhythmIntensity * .55
+          : (input.style.rhythm.syncopation * .45 + section.energy * .55) * (.55 + rhythmIntensity * .45))),
+        harmonicActivity: round(clamp(percussion || melodic ? 0 : input.style.harmony.complexity / 10 * .55 + section.energy * .3)),
+        dynamicTarget: round(clamp(.28 + section.energy * .68)),
+        articulationFamily: percussion ? (section.energy > .7 ? "accent" : "tight") : section.energy > .72 ? "accent" : "legato",
+        entry: { bar: section.startBar, mode: index === 0 ? "downbeat" : "phrase_entry" },
+        exit: { bar: section.endBar, mode: index === sourceSections.length - 1 ? "cadence" : "release" },
+        transition: index === 0 ? "none" : section.energy > sourceSections[index - 1].energy ? "build" : "thin",
+        fill: percussion && index < sourceSections.length - 1 && section.energy >= .55 && rhythmIntensity >= .45,
+      };
+      return [track.name, operation];
+    }));
     return {
       section: section.name.toLowerCase().replace(/\s+/g, "_"),
       startBar: section.startBar,
       endBar: section.endBar,
       energy: round(clamp(section.energy)),
       density: round(clamp(input.style.orchestration.density * 0.65 + section.energy * 0.35)),
-      tracks: Object.fromEntries(input.tracks.map((track) => [
-        track.name,
-        operationForTrack(track, section),
-      ])),
+      tracks,
+      activeTracks: input.tracks
+        .filter((track) => tracks[track.name] !== "none")
+        .map((track) => track.id ?? track.name),
+      trackDirectives: directives,
       operations,
     };
   });
@@ -437,25 +491,179 @@ function keyRoot(key: string): number {
   return 48 + (names[`${match[1].toUpperCase()}${match[2] || ""}`] ?? 0);
 }
 
+function styleComplexity(plan: ArrangementPlan): number {
+  return plan.style.harmony.complexity;
+}
+
+function canonicalChordPitchClasses(chord: SongModelData["chords"][number]): number[] {
+  const legacy = legacyChordDetails(chord.symbol);
+  const rootName = chord.root || legacy.root;
+  const root = keyRoot(rootName) % 12;
+  const quality = (chord.quality ?? legacy.quality).toLowerCase();
+  const intervals = quality.includes("dim") ? [0, 3, 6]
+    : quality.includes("aug") ? [0, 4, 8]
+      : quality.includes("sus2") ? [0, 2, 7]
+        : quality.includes("sus") ? [0, 5, 7]
+          : /(^|[^a-z])m(?!aj)/.test(quality) || quality.includes("minor") ? [0, 3, 7]
+            : [0, 4, 7];
+  // Explicit canonical arrays win, but legacy Song Models only supplied a
+  // display symbol, so its extension/alteration spelling remains musical data.
+  const extensions = chord.extensions ?? legacy.extensions;
+  const alterations = chord.alterations ?? legacy.alterations;
+  const tokens = [...extensions, ...alterations]
+    .join(" ")
+    .match(/(?:maj)?(?:6|7|9|11|13)|[#b](?:5|9|11|13)/gi) ?? [];
+  for (const token of tokens) {
+    const normalized = token.toLowerCase();
+    const degree = Number(normalized.match(/\d+/)?.[0]);
+    const interval = degree === 6 ? 9 : degree === 7 ? (normalized.includes("maj") ? 11 : 10)
+      : degree === 9 ? 14 : degree === 11 ? 17 : degree === 13 ? 21 : degree === 5 ? 7 : 0;
+    const altered = normalized.startsWith("#") ? interval + 1 : normalized.startsWith("b") ? interval - 1 : interval;
+    if (altered && !intervals.includes(altered % 12)) intervals.push(altered % 12);
+  }
+  if (quality === "dominant" && extensions.some((extension) => /(?:9|11|13)/.test(extension)) && !intervals.includes(10)) {
+    intervals.push(10);
+  }
+  let pcs = intervals.map((interval) => (root + interval) % 12);
+  const inversion = Math.max(0, Math.min(chord.inversion ?? legacy.inversion, pcs.length));
+  pcs = [...pcs.slice(inversion), ...pcs.slice(0, inversion)];
+  const bass = chord.bass ?? legacy.bass;
+  if (bass) {
+    const bassPc = keyRoot(bass) % 12;
+    const at = pcs.indexOf(bassPc);
+    // A non-chord slash bass is a real voicing instruction, not a guessed
+    // provider field, so retain it as the lowest pitch class.
+    pcs = at >= 0 ? [bassPc, ...pcs.filter((pc) => pc !== bassPc)] : [bassPc, ...pcs];
+  }
+  return pcs;
+}
+
+function legacyChordDetails(symbol: string): {
+  root: string; quality: string; extensions: string[]; alterations: string[]; bass?: string; inversion: number;
+} {
+  const match = symbol.trim().replace("♯", "#").replace("♭", "b")
+    .match(/^([A-Ga-g][#b]?)([^/]*)?(?:\/([A-Ga-g][#b]?))?$/);
+  const root = match?.[1] ?? symbol;
+  const suffix = match?.[2] ?? "";
+  const bass = match?.[3];
+  const lower = suffix.toLowerCase();
+  const quality = /(?:^|:)m(?!aj)|min/.test(lower) ? "minor"
+    : /dim|ø|o/.test(lower) ? "diminished"
+      : /aug|\+/.test(lower) ? "augmented"
+        : /sus/.test(lower) ? "suspended"
+          : (/(?:7|9|11|13)/.test(lower) && !lower.includes("maj")) ? "dominant" : "major";
+  const extensions = (lower.match(/(?:maj)?(?:6|7|9|11|13)/g) ?? []);
+  const alterations = (lower.match(/[#b](?:5|9|11|13)/g) ?? []);
+  // A slash whose bass is a chord member implies that inversion for legacy
+  // symbols. `canonicalChordPitchClasses` makes the final bass ordering.
+  const triad = quality === "minor" ? [0, 3, 7] : quality === "diminished" ? [0, 3, 6] : [0, 4, 7];
+  const bassPc = bass ? keyRoot(bass) % 12 : -1;
+  const inversion = bassPc < 0 ? 0 : Math.max(0, triad.map((interval) => (keyRoot(root) + interval) % 12).indexOf(bassPc));
+  return { root, quality, extensions, alterations, bass, inversion };
+}
+
+function readBassEvidence(songModel: SongModelData): Array<{ start: number; end: number; pitch: number; confidence?: number }> {
+  return (songModel.bass ?? []).filter((note) => note.confidence >= .6);
+}
+
 export class HarmonyEngine {
-  generate(songModel: SongModelData, plan: ArrangementPlan): Array<{ start: number; end: number; root: number; tones: number[]; symbol: string }> {
+  generate(songModel: SongModelData, plan: ArrangementPlan): Array<{ start: number; end: number; root: number; tones: number[]; symbol: string; function?: string; decision?: Record<string, unknown> }> {
     if (songModel.chords.length) {
       return songModel.chords.map((chord) => {
-        const root = keyRoot(chord.symbol);
-        return { start: chord.start, end: chord.end, root, tones: [root, root + 4, root + 7, root + 11], symbol: chord.symbol };
+        const root = keyRoot(chord.root || chord.symbol);
+        const pcs = canonicalChordPitchClasses(chord);
+        // Chord evidence is authoritative when it exists.  Do not invent an
+        // extension merely because a renderer can play one.
+        return {
+          start: chord.timing?.startSeconds ?? chord.start,
+          end: chord.timing?.endSeconds ?? chord.end,
+          root,
+          tones: pcs.map((pc) => root - (root % 12) + pc),
+          symbol: chord.symbol,
+          function: chord.function ?? chord.roman,
+          decision: {
+            source: "song_model_chord_evidence",
+            root: chord.root, quality: chord.quality, extensions: chord.extensions,
+            alterations: chord.alterations, inversion: chord.inversion, bass: chord.bass,
+            melodyConflictEvidence: chord.melodyConflictEvidence,
+            candidateProvenance: chord.candidateProvenance,
+          },
+        };
       });
     }
     const root = keyRoot(songModel.keyMap[0]?.key || "C");
-    const progression = [0, 5, 7, 9];
+    const tonicPc = root % 12;
+    const minor = /minor|\bmin\b|\bm\b/i.test(songModel.keyMap[0]?.key ?? "");
+    const scale = minor ? [0, 2, 3, 5, 7, 8, 10] : [0, 2, 4, 5, 7, 9, 11];
     const barSeconds = secondsPerBar(
       songModel.tempoMap[0]?.bpm || 92,
       songModel.meterMap[0]?.meter,
     );
-    return plan.sections.flatMap((section, index) => {
+    const melodyAt = (start: number, end: number) => songModel.melody
+      .filter((note) => note.confidence >= .6 && note.start < end && note.end > start)
+      .map((note) => note.pitch % 12);
+    const complexity = Math.max(1, Math.min(10, Number(plan.parameters?.harmonyComplexity ?? styleComplexity(plan))));
+    const harmonicBars = complexity >= 8 ? 1 : complexity >= 5 ? 2 : 4;
+    const bassEvidence = readBassEvidence(songModel);
+    let priorTones: number[] = [];
+    return plan.sections.flatMap((section, sectionIndex) => {
       const sectionStart = (section.startBar - 1) * barSeconds;
       const sectionEnd = section.endBar * barSeconds;
-      const offset = progression[index % progression.length];
-      return [{ start: sectionStart, end: sectionEnd, root: root + offset, tones: [root + offset, root + offset + 4, root + offset + 7, root + offset + 11], symbol: `${root + offset}` }];
+      const bars = Math.max(1, section.endBar - section.startBar + 1);
+      const changes = Math.ceil(bars / harmonicBars);
+      return Array.from({ length: changes }, (_, change) => {
+        const bar = change * harmonicBars;
+        const start = sectionStart + bar * barSeconds;
+        const end = Math.min(sectionEnd, start + harmonicBars * barSeconds);
+        // Candidate functions are scored against reliable melody evidence and
+        // phrase position. This is deterministic, not claimed analysis output.
+        const finalChange = change === changes - 1;
+        const penultimate = change === changes - 2;
+        const candidates = finalChange
+          ? [0, 4] // tonic or dominant at a phrase boundary
+          : [0, 1, 2, 3, 4, 5, 6]; // complete diatonic degree palette
+        const selected = candidates
+          .map((degree) => {
+            // Stack scale thirds, rather than applying one fixed third, so
+            // each degree gets its actual major/minor/diminished quality.
+            const pcs = [0, 2, 4].map((step) => (tonicPc + scale[(degree + step) % 7]) % 12);
+            if (complexity >= 7 && (degree === 0 || degree === 4)) {
+              pcs.push((tonicPc + scale[(degree + 6) % 7]) % 12);
+            }
+            const melody = melodyAt(start, end);
+            const melodyFit = melody.length
+              ? melody.filter((pitch) => pcs.includes(pitch)).length / melody.length
+              : 0.5;
+            const bass = bassEvidence.filter((note) => note.start < end && note.end > start);
+            const bassFit = bass.length
+              ? bass.filter((note) => note.pitch % 12 === (tonicPc + scale[degree]) % 12).length / bass.length
+              : 0;
+            const voicing = pcs.map((pc) => root - tonicPc + pc);
+            const voiceLeading = priorTones.length
+              ? -voicing.reduce((sum, tone, voice) => sum + Math.min(...priorTones.map((previous) => Math.abs(tone - previous))), 0) / (voicing.length * 24)
+              : 0;
+            const functional = (finalChange && degree === 0 ? .35 : 0) +
+              (penultimate && degree === 4 ? .25 : 0) +
+              (degree === (sectionIndex + bar) % 6 ? .04 : 0);
+            return { degree, pcs, score: melodyFit + bassFit * .45 + functional + voiceLeading, melodyFit, bassFit, voiceLeading };
+          })
+          .sort((a, b) => b.score - a.score || a.degree - b.degree)[0];
+        const absoluteRoot = root - tonicPc + selected.pcs[0];
+        const names = minor
+          ? ["i", "ii°", "III", "iv", "v", "VI", "VII"]
+          : ["I", "ii", "iii", "IV", "V", "vi", "vii°"];
+        const tones = selected.pcs.map((pc) => root - tonicPc + pc);
+        priorTones = tones;
+        return {
+          start,
+          end,
+          root: absoluteRoot,
+          tones,
+          symbol: names[selected.degree] ?? "I",
+          function: names[selected.degree] ?? "I",
+          decision: { source: "deterministic_candidate_scoring", score: round(selected.score), melodyFit: round(selected.melodyFit), bassFit: round(selected.bassFit), voiceLeading: round(selected.voiceLeading), harmonicBars, complexity },
+        };
+      });
     });
   }
 }
@@ -476,40 +684,96 @@ export class CompositionEngine {
     return input.tracks.map((track) => {
       const definition = getInstrumentDefinition(track.instrument || track.name, track.role);
       const notes: MusicalNote[] = [];
+      let appliedDirective: TrackDirective | undefined;
       const identity = `${track.name} ${track.role}`.toLowerCase();
       if (identity.includes("vocal") && input.songModel.melody.length) {
-        input.songModel.melody.forEach((note, index) => notes.push({
-          id: `${track.id}-melody-${index}`,
-          start: note.start,
-          duration: Math.max(definition.constraints.minNoteDuration, note.end - note.start),
-          pitch: midi(note.pitch),
-          velocity: midi(note.velocity * 127),
-          voice: "melody",
-        }));
-      } else {
+        // Melody evidence is never extrapolated. It is merely split at
+        // explicitly active section boundaries so a vocal arrangement can
+        // enter/leave without leaking notes through inactive sections.
         input.plan.sections.forEach((section, sectionIndex) => {
           const sectionStart = (section.startBar - 1) * barSeconds;
           const sectionEnd = section.endBar * barSeconds;
-          const action = section.tracks[track.name] || "main_harmony";
-          if (action === "none") return;
-          const chord = input.harmony[sectionIndex % Math.max(1, input.harmony.length)];
-          const step = identity.includes("drum") || identity.includes("rhythm") ? beat : beat * 2;
+          const action = section.tracks[track.id] ?? section.tracks[track.name] ?? "main_harmony";
+          const active = section.activeTracks
+            ? section.activeTracks.includes(track.id) || section.activeTracks.includes(track.name)
+            : action !== "none";
+          if (!active || action === "none") return;
+          const directive = section.trackDirectives?.[track.id] ?? section.trackDirectives?.[track.name];
+          appliedDirective ??= directive;
+          input.songModel.melody.forEach((note, noteIndex) => {
+            const start = Math.max(sectionStart, note.start);
+            const end = Math.min(sectionEnd, note.end);
+            if (end <= start) return;
+            notes.push({
+              id: `${track.id}-melody-${noteIndex}-${sectionIndex}`,
+              start: round(start),
+              duration: round(end - start),
+              pitch: Math.max(definition.playableRange.min, Math.min(definition.playableRange.max, midi(note.pitch))),
+              velocity: midi(note.velocity * 127),
+              voice: "melody",
+            });
+          });
+        });
+      } else if (!identity.includes("vocal")) {
+        input.plan.sections.forEach((section, sectionIndex) => {
+          const sectionStart = (section.startBar - 1) * barSeconds;
+          const sectionEnd = section.endBar * barSeconds;
+          const action = section.tracks[track.id] ?? section.tracks[track.name] ?? "main_harmony";
+          const directive = section.trackDirectives?.[track.id] ??
+            section.trackDirectives?.[track.name];
+          appliedDirective ??= directive;
+          const active = section.activeTracks
+            ? section.activeTracks.includes(track.id) || section.activeTracks.includes(track.name)
+            : action !== "none";
+          if (!active || action === "none") return;
+          const rhythmic = directive?.rhythmicActivity ?? section.density;
+          const step = identity.includes("drum") || identity.includes("rhythm")
+            ? beat * (rhythmic > .7 ? .5 : 1)
+            : beat * (directive?.harmonicActivity && directive.harmonicActivity > .65 ? 1 : 2);
           for (let time = sectionStart; time < sectionEnd; time += step) {
             const beatIndex = Math.round((time - sectionStart) / beat);
+            const chord = input.harmony.find((candidate) =>
+              candidate.start <= time + .001 && candidate.end > time + .001)
+              ?? input.harmony.find((candidate) => candidate.start < sectionEnd && candidate.end > sectionStart);
             const chordTone = chord?.tones[(beatIndex + sectionIndex) % (chord?.tones.length || 1)] ?? 60;
-            const pitch = identity.includes("bass")
+            let pitch = identity.includes("bass")
               ? chordTone - 24
               : identity.includes("drum") || identity.includes("rhythm")
                 ? [36, 42, 38, 42][beatIndex % 4]
-                : chordTone + (identity.includes("string") ? 12 : identity.includes("brass") ? 12 : 0);
+                : chordTone + (directive?.register === "high" || identity.includes("string") || identity.includes("brass") ? 12 : 0);
+            const targetRegister = directive?.register
+              ? definition.registers.find((register) => register.name === directive.register)
+              : undefined;
+            const preferred = targetRegister ?? definition.comfortableRange;
+            while (pitch < preferred.min) pitch += 12;
+            while (pitch > preferred.max) pitch -= 12;
+            pitch = Math.max(preferred.min, Math.min(preferred.max, pitch));
+            pitch = Math.max(definition.playableRange.min, Math.min(definition.playableRange.max, pitch));
+            const isEntry = Math.abs(time - sectionStart) < .001;
+            const isExit = time + step >= sectionEnd;
             notes.push({
               id: `${track.id}-${sectionIndex}-${beatIndex}`,
               start: round(time),
-              duration: round(Math.min(step * (identity.includes("pad") ? 1.8 : 0.9), sectionEnd - time)),
+              duration: round(Math.min(
+                step * (identity.includes("pad") ? 1.8 : isExit ? .65 : .9),
+                sectionEnd - time,
+              )),
               pitch: midi(pitch),
-              velocity: midi(54 + section.energy * 52 + (beatIndex % 4 === 0 ? 8 : 0)),
+              velocity: midi(42 + (directive?.dynamicTarget ?? section.energy) * 66 +
+                (isEntry ? 6 : 0) + (directive?.transition === "build" ? beatIndex * .5 : 0) +
+                (beatIndex % 4 === 0 ? 8 : 0)),
               voice: identity.includes("bass") ? "bass" : identity.includes("drum") ? "percussion" : "harmony",
             });
+            if (directive?.fill && (identity.includes("drum") || identity.includes("rhythm")) && isExit) {
+              notes.push({
+                id: `${track.id}-${sectionIndex}-${beatIndex}-fill`,
+                start: round(Math.max(sectionStart, sectionEnd - beat * .5)),
+                duration: round(Math.max(definition.constraints.minNoteDuration, beat * .22)),
+                pitch: 45,
+                velocity: midi(62 + section.energy * 55),
+                voice: "percussion",
+              });
+            }
           }
         });
       }
@@ -522,6 +786,13 @@ export class CompositionEngine {
         cc: [],
         articulations: [],
         automation: [],
+        directive: appliedDirective,
+        mapping: {
+          midiChannel: definition.family === "drums" ? 9 : undefined,
+          program: definition.id === "bass" ? 33 : definition.family === "strings" ? 48 : 0,
+          articulationMap: Object.fromEntries(definition.articulations.map((articulation, index) => [articulation, 24 + index])),
+          controlMap: definition.directiveMappings?.controls,
+        },
         source: "COMPOSITION_ENGINE",
         version: 1,
         provenance: provenance("COMPOSITION_ENGINE", "1.0.0", { bpm }),
@@ -605,7 +876,11 @@ export class VoiceLeadingEngine {
 
 export class PerformanceEngine {
   perform(track: TrackModel, style: StyleSpec, seed = 0): TrackModel {
-    const profile: PerformanceProfile = track.instrumentDefinition.family === "drums"
+    const profile: PerformanceProfile = /vocal|voice|melody/i.test(track.role)
+      // Section-gated source melody must not be humanized across a hard
+      // arrangement boundary; its evidence timing is preserved exactly.
+      ? { timing: 0, velocityVariation: 6, legatoOverlap: 0.02, accentEvery: 4, ccRate: 2 }
+      : track.instrumentDefinition.family === "drums"
       ? { timing: 0.012, velocityVariation: 9, legatoOverlap: 0, accentEvery: 4, ccRate: 2 }
       : track.instrumentDefinition.family === "strings"
         ? { timing: 0.018, velocityVariation: 6, legatoOverlap: 0.04, accentEvery: 4, ccRate: 4 }
@@ -618,14 +893,20 @@ export class PerformanceEngine {
     const automation: AutomationPoint[] = [];
     track.notes.forEach((note, index) => {
       const offset = Math.sin((randomSeed % 31 + index * 13) * 0.37) * profile.timing;
-      const velocity = midi(note.velocity + variation(index) + (index % profile.accentEvery === 0 ? style.dynamics.accentStrength * 10 : 0));
+      const directiveVelocity = track.directive?.dynamicTarget === undefined
+        ? 0
+        : (track.directive.dynamicTarget - .5) * 18;
+      const velocity = midi(note.velocity + directiveVelocity + variation(index) + (index % profile.accentEvery === 0 ? style.dynamics.accentStrength * 10 : 0));
       const preferredArticulation = track.instrumentDefinition.family === "drums"
         ? (note.pitch === 38 && index % 4 !== 0 ? "ghost" : note.pitch === 36 ? "kick" : "closed_hat")
         : track.instrumentDefinition.family === "strings"
           ? (note.duration < 0.25 ? "spiccato" : "legato")
           : note.duration < 0.2 ? "staccato" : "sustain";
-      const articulation = track.instrumentDefinition.articulations.includes(preferredArticulation)
-        ? preferredArticulation
+      const directedArticulation = track.directive?.articulationFamily &&
+        track.instrumentDefinition.directiveMappings?.articulationFamilies?.[track.directive.articulationFamily]
+          ?.find((candidate) => track.instrumentDefinition.articulations.includes(candidate));
+      const articulation = track.instrumentDefinition.articulations.includes(directedArticulation ?? preferredArticulation)
+        ? directedArticulation ?? preferredArticulation
         : track.instrumentDefinition.articulations[0] ?? "normal";
       notes.push({ ...note, start: Math.max(0, round(note.start + offset)), duration: round(note.duration + (articulation === "legato" ? profile.legatoOverlap : 0)), velocity });
       articulations.push({
@@ -646,8 +927,12 @@ export class PerformanceEngine {
     const lastTime = notes.at(-1)?.start ?? 0;
     for (let time = 0; time <= lastTime + 0.01; time += 1 / profile.ccRate) {
       const phase = lastTime ? time / lastTime : 0;
-      cc.push({ controller: 1, time: round(time), value: round(0.35 + Math.sin(phase * Math.PI) * 0.35) * 127 });
-      cc.push({ controller: 11, time: round(time), value: round(clamp(0.62 + Math.sin(phase * Math.PI) * 0.3)) * 127 });
+      if (track.instrumentDefinition.controls.dynamics.includes(1)) {
+        cc.push({ controller: 1, time: round(time), value: round(0.35 + Math.sin(phase * Math.PI) * 0.35) * 127 });
+      }
+      if (track.instrumentDefinition.controls.expression.includes(11)) {
+        cc.push({ controller: 11, time: round(time), value: round(clamp(0.62 + Math.sin(phase * Math.PI) * 0.3)) * 127 });
+      }
     }
     if (track.instrumentDefinition.controls.sustain) cc.push({ controller: 64, time: 0, value: 127 });
     return {
@@ -1167,7 +1452,12 @@ export function buildTrackModels(input: {
     input.songModel.meterMap[0]?.meter,
   );
   const voiced = new VoiceLeadingEngine().apply(modulated);
-  return voiced.map((track) => new PerformanceEngine().perform(track, input.style, input.seed ?? hashSeed(input.plan.id)));
+  // Version is part of the identity: regenerating a saved Song Model produces
+  // byte-stable expressive events, while a corrected model intentionally does not.
+  const deterministicSeed = hashSeed(
+    `${input.plan.id}:song-model:${input.plan.songModelVersion}:${input.seed ?? 0}`,
+  );
+  return voiced.map((track) => new PerformanceEngine().perform(track, input.style, deterministicSeed));
 }
 
 function chordPitchClasses(symbol: string): number[] {
@@ -1381,7 +1671,20 @@ export function renderMusicPipeline(input: {
     : buildTrackModels(input);
   const finalNoteEnd = Math.max(0, ...trackModels.flatMap((track) =>
     track.notes.map((note) => note.start + note.duration)));
-  const durationSeconds = Math.max(1, input.durationSeconds || finalNoteEnd + 1 || 8);
+  const bpm = input.quality?.bpm ?? input.songModel.tempoMap[0]?.bpm ?? 92;
+  const meter = input.quality?.meter ??
+    input.songModel.meterMap[0]?.meter ??
+    "4/4";
+  const barSeconds = secondsPerBar(bpm, meter);
+  const plannedEnd = Math.max(
+    0,
+    ...input.plan.sections.map((section) => section.endBar * barSeconds),
+  );
+  const durationSeconds = Math.max(
+    1,
+    input.durationSeconds ??
+      (plannedEnd > 0 ? plannedEnd + 1 : finalNoteEnd + 1 || 8),
+  );
   const registry = new SoundLibraryRegistry();
   const localRenderer = new LocalExpressiveRenderer();
   const rendered = trackModels.map((trackModel) => {
@@ -1402,10 +1705,8 @@ export function renderMusicPipeline(input: {
   const mastered = new MasterEngine().process(mix, input.masterProfile);
   const quality = new QualityEngine().assess(trackModels, mix, input.plan, {
     ...input.quality,
-    bpm: input.quality?.bpm ?? input.songModel.tempoMap[0]?.bpm ?? 92,
-    meter: input.quality?.meter ??
-      input.songModel.meterMap[0]?.meter ??
-      "4/4",
+    bpm,
+    meter,
   });
   const renderProvenance = rendered.map(({ trackModel, renderer }) => provenance(renderer, "1.0.0", { sampleRate, durationSeconds }, [trackModel.provenance.model]));
   return {

@@ -5,6 +5,7 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { ArrangementPlanSectionTrackDirectives } from './arrangementPlanSectionTrackDirectives';
 import type { ArrangementPlanSectionTracks } from './arrangementPlanSectionTracks';
 
 export interface ArrangementPlanSection {
@@ -15,4 +16,8 @@ export interface ArrangementPlanSection {
   density: number;
   tracks: ArrangementPlanSectionTracks;
   operations: string[];
+  /** Explicit track ids active in this section. */
+  activeTracks?: string[];
+  /** Per-track orchestration intent indexed by track id. */
+  trackDirectives?: ArrangementPlanSectionTrackDirectives;
 }

@@ -16,7 +16,9 @@ import {
   type GeneratedExportFile,
   renderArrangementExport,
   rendererEvidenceTechnicalMetadata,
+  processingEvidenceTechnicalMetadata,
 } from "./exportEngine";
+import { processPedalboardBuiltinWav, type PedalboardProcessingEvidence } from "./pedalboardBuiltin";
 import { resolveExportSongModel } from "./exportLineage";
 import { applyArrangementEditorChanges } from "./musicEngines";
 import { validateCanonicalTrackModels } from "./musicProviders";
@@ -41,6 +43,8 @@ type ExportInputSnapshot = {
   includeMix?: boolean;
   includeMetadata?: boolean;
   masterProfile?: "STREAMING" | "DYNAMIC" | "CLASSICAL" | "POP" | "LOUD" | "FILM";
+  processingProvider?: "PEDALBOARD_BUILTIN";
+  pedalboardProcessing?: boolean;
 };
 
 const sha256 = (value: Buffer | string) => createHash("sha256").update(value).digest("hex");
@@ -229,9 +233,46 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
         "The selected arrangement has neither symbolic tracks nor verified provider audio",
       );
     }
-    const renderedFiles = [...deterministicFiles, ...providerAudioFiles]
+    let renderedFiles = [...deterministicFiles, ...providerAudioFiles]
       .filter((file) => (input.includeMix !== false || !["MIX", "PREMASTER", "MASTER"].includes(file.type)) &&
       (input.includeMetadata !== false || file.type !== "METADATA"));
+    const pedalboardRequested = input.processingProvider === "PEDALBOARD_BUILTIN" ||
+      input.pedalboardProcessing === true ||
+      process.env.PEDALBOARD_BUILTIN_EXPORT_PROCESSING === "true";
+    const processingEvidence: Record<string, PedalboardProcessingEvidence> = {};
+    if (pedalboardRequested) {
+      // The product contract applies mastering effects to final mixes only, never
+      // to stems (which would make stems unsuitable for remixing).
+      renderedFiles = await Promise.all(renderedFiles.map(async (file) => {
+        if (!["MIX", "MASTER"].includes(file.type) || file.format !== "WAV") return file;
+        const processed = await processPedalboardBuiltinWav(file.data);
+        processingEvidence[file.name] = processed.evidence;
+        return {
+          ...file,
+          data: processed.data,
+          processingEvidence: processed.evidence,
+          provenance: {
+            ...file.provenance,
+            model: processed.evidence.provider,
+            version: processed.evidence.version,
+            parameters: {
+              ...file.provenance.parameters,
+              processingStatus: processed.evidence.status,
+              processingInputSha256: processed.evidence.inputSha256,
+              processingOutputSha256: processed.evidence.outputSha256,
+            },
+          },
+        };
+      }));
+      if (!Object.keys(processingEvidence).length) {
+        throw new Error("Pedalboard processing was requested but no final WAV was available");
+      }
+      renderedFiles = renderedFiles.map((file) => {
+        if (file.name !== "project/manifest.json") return file;
+        const metadata = JSON.parse(file.data.toString()) as Record<string, unknown>;
+        return { ...file, data: Buffer.from(JSON.stringify({ ...metadata, processingEvidence }, null, 2)) };
+      });
+    }
     await heartbeat("packaging", 70);
     const fileArtifactIds = Object.fromEntries(renderedFiles.map((file) => [file.name, artifactIdFor(job.id, file.name)]));
     const artifactGraph = Object.fromEntries(renderedFiles.map((file) => [file.name, {
@@ -239,13 +280,14 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
       parentIds: file.provenance.parentIds,
     }]));
     const exportProject = { ...project, bpm, key, meter };
-    const bundle = createExportBundle(exportProject, arrangement, tracks, input, input.version, "", input.exportId, renderedFiles, artifactGraph);
+    const bundle = createExportBundle(exportProject, arrangement, tracks, input, input.version, "", input.exportId, renderedFiles, artifactGraph, processingEvidence);
     const storageObjectId = `${input.exportId}-${sha256(bundle.zip)}`;
     const storageObjectPath = `/api/storage/objects/exports/${storageObjectId}.zip`;
     await heartbeat("persisting", 85);
     const artifactRows = bundle.package.files.map((file) => {
       const renderedFile = renderedFiles.find((item) => item.name === file.name);
       const evidence = renderedFile?.rendererEvidence;
+        const processing = renderedFile?.processingEvidence;
       return {
         id: fileArtifactIds[file.name], projectId: project.id, type: file.type, label: file.name, version: input.version,
         size: file.size, format: file.format, url: bundle.package.url, hash: sha256(bundle.files.get(file.name) ?? file.name),
@@ -279,6 +321,7 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
             role: evidence.role,
             ...rendererEvidenceTechnicalMetadata(evidence),
           } : {}),
+          ...processingEvidenceTechnicalMetadata(processing),
         },
       };
     });
@@ -338,6 +381,8 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
            stemCount: renderEvidence.length,
            nativeStemCount,
            fallbackStemCount: renderEvidence.length - nativeStemCount,
+            pedalboardProcessing: pedalboardRequested ? "processed" : "not-requested",
+            processingEvidence: JSON.stringify(processingEvidence),
          },
       }).where(eq(musicArtifactsTable.id, input.exportId));
       await transaction.update(musicProjectsTable).set({ status: "ready" }).where(eq(musicProjectsTable.id, project.id));

@@ -11,6 +11,7 @@ import type { InstrumentDefinitionControls } from './instrumentDefinitionControl
 import type { InstrumentDefinitionFamily } from './instrumentDefinitionFamily';
 import type { InstrumentDefinitionPlayableRange } from './instrumentDefinitionPlayableRange';
 import type { InstrumentDefinitionRegistersItem } from './instrumentDefinitionRegistersItem';
+import type { InstrumentDirectiveMappings } from './instrumentDirectiveMappings';
 
 export interface InstrumentDefinition {
   id: string;
@@ -23,4 +24,5 @@ export interface InstrumentDefinition {
   articulations: string[];
   constraints: InstrumentDefinitionConstraints;
   controls: InstrumentDefinitionControls;
+  directiveMappings?: InstrumentDirectiveMappings;
 }

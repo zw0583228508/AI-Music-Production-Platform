@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { SFZ_SAMPLE_LIBRARY } from "./sfz-sample-library";
 import type { GeneratedExportFile } from "./exportEngine";
+import type { PedalboardProcessingEvidence } from "./pedalboardBuiltin";
 import {
   expectedGpuCheckpointSha256,
   isGpuAttestedProvider,
@@ -816,6 +817,7 @@ export function createExportBundle(
   exportId?: string,
   renderedFiles?: GeneratedExportFile[],
   artifactGraph?: Record<string, ExportArtifactGraphEntry>,
+  processingEvidence?: Record<string, PedalboardProcessingEvidence>,
 ): ExportBundle {
   const generation = arrangement.generationProvenance;
   const expectedCheckpoint = generation && isGpuAttestedProvider(generation.provider)
@@ -957,6 +959,7 @@ export function createExportBundle(
       artifactId: artifactGraph?.[file.name]?.artifactId ?? null,
       parentIds: artifactGraph?.[file.name]?.parentIds ?? [],
     })),
+    processingEvidence: processingEvidence ?? {},
     notes: "WAV files are linear PCM and MIDI includes tempo, meter, expression CC11, modulation CC74, and articulation events.",
   };
   const manifestData = Buffer.from(JSON.stringify(manifest, null, 2));

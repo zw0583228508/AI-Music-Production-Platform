@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRoute } from "wouter";
-import { 
-  useGetProject, 
-  useListArrangements, 
+import {
+  useGetProject,
+  useListArrangements,
   useCreateArrangement,
   useGenerateArrangement,
   useGetGenerationJob,
@@ -21,19 +21,19 @@ import {
   useGetProjectSongModel,
   getGetProjectSongModelQueryKey,
   getListArtifactsQueryKey,
+  getListTracksQueryKey,
   getGetGenerationJobQueryKey,
   getListGenerationCandidatesQueryKey,
   ExportResult,
   GenerationCandidate,
   ArrangementMode,
-  ArrangementStatus,
   Arrangement,
   ArrangementSection
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getGetProjectQueryKey, getListArrangementsQueryKey } from "@workspace/api-client-react";
-import { 
-  Wand2, 
+import {
+  Wand2,
   SlidersHorizontal,
   Bot,
   Activity,
@@ -60,7 +60,6 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
@@ -120,7 +119,7 @@ export default function ProjectWorkspace() {
       staleTime: 10_000,
     },
   });
-  
+
   const createArrangement = useCreateArrangement();
   const updateArrangement = useUpdateArrangement();
   const generateArrangement = useGenerateArrangement();
@@ -375,9 +374,11 @@ export default function ProjectWorkspace() {
   const [localHarmony, setLocalHarmony] = useState<number>(5);
   const [localEnergy, setLocalEnergy] = useState<number>(0.5);
   const [localDensity, setLocalDensity] = useState<number>(0.5);
-  
+  const [localOrchestraSize, setLocalOrchestraSize] = useState<number>(0.5);
+  const [localRhythmIntensity, setLocalRhythmIntensity] = useState<number>(0.5);
+
   const initializedArrangementRef = useRef<string | null>(null);
-  
+
   useEffect(() => {
     const revisionKey = activeArrangement
       ? `${activeArrangement.id}:${activeArrangement.version}`
@@ -387,6 +388,8 @@ export default function ProjectWorkspace() {
       setLocalHarmony(activeArrangement.harmonyComplexity);
       setLocalEnergy(activeArrangement.energy);
       setLocalDensity(activeArrangement.density);
+      setLocalOrchestraSize(activeArrangement.orchestraSize ?? 0.5);
+      setLocalRhythmIntensity(activeArrangement.rhythmIntensity ?? 0.5);
     }
   }, [activeArrangement]);
 
@@ -395,14 +398,28 @@ export default function ProjectWorkspace() {
     if (param === 'harmony') setLocalHarmony(value);
     if (param === 'energy') setLocalEnergy(value);
     if (param === 'density') setLocalDensity(value);
+    if (param === 'orchestraSize') setLocalOrchestraSize(value);
+    if (param === 'rhythmIntensity') setLocalRhythmIntensity(value);
   };
 
   const commitParamChange = (param: string, value: number) => {
     if (!activeArrangement || revisionPreviewing) return;
+
+    const paramKeyMap: Record<string, keyof Pick<Arrangement, 'harmonyComplexity' | 'energy' | 'density' | 'orchestraSize' | 'rhythmIntensity'>> = {
+      harmony: 'harmonyComplexity',
+      energy: 'energy',
+      density: 'density',
+      orchestraSize: 'orchestraSize',
+      rhythmIntensity: 'rhythmIntensity'
+    };
+
+    const key = paramKeyMap[param];
+    if (!key) return;
+
     updateArrangement.mutate({
       arrangementId: activeArrangement.id,
       data: {
-        [param === 'harmony' ? 'harmonyComplexity' : param]: value,
+        [key]: value,
         expectedVersion: activeArrangement.version,
       }
     }, {
@@ -507,6 +524,9 @@ export default function ProjectWorkspace() {
           });
           queryClient.invalidateQueries({
             queryKey: getGetProjectQueryKey(projectId),
+          });
+          queryClient.invalidateQueries({
+            queryKey: getListTracksQueryKey(projectId),
           });
           if (generationJobId) {
             queryClient.invalidateQueries({
@@ -621,8 +641,8 @@ export default function ProjectWorkspace() {
       }
     }, {
       onSuccess: (res) => {
-        setCopilotMessages(prev => [...prev, { 
-          role: 'assistant', 
+        setCopilotMessages(prev => [...prev, {
+          role: 'assistant',
           text: res.reply,
            operations: res.operations,
            interpreter: res.interpreter,
@@ -650,12 +670,21 @@ export default function ProjectWorkspace() {
       <ScrollArea className="flex-1">
         <div className="p-2 space-y-1">
           {tracks?.map(track => (
-            <div key={track.id} className="flex items-center gap-3 p-2 rounded-md hover:bg-sidebar-accent/50 group text-sm border border-transparent hover:border-sidebar-border transition-all">
-              <div className="w-2 h-2 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: track.color || 'hsl(var(--primary))' }} />
-              <div className="flex-1 truncate font-medium">{track.name}</div>
-              <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity gap-1">
-                <button className={cn("h-5 w-5 rounded flex items-center justify-center text-[10px] font-bold border", track.muted ? "bg-red-500/10 text-red-500 border-red-500/20" : "bg-muted text-muted-foreground hover:bg-background")}>M</button>
-                <button className={cn("h-5 w-5 rounded flex items-center justify-center text-[10px] font-bold border", track.solo ? "bg-yellow-500/10 text-yellow-600 border-yellow-500/20" : "bg-muted text-muted-foreground hover:bg-background")}>S</button>
+            <div key={track.id} className="flex flex-col p-2 rounded-md hover:bg-sidebar-accent/50 group text-sm border border-transparent hover:border-sidebar-border transition-all">
+              <div className="flex items-center gap-3 w-full">
+                <div className="w-2 h-2 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: track.color || 'hsl(var(--primary))' }} />
+                <div className="flex-1 truncate font-medium">{track.name}</div>
+                <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity gap-1">
+                  <button className={cn("h-5 w-5 rounded flex items-center justify-center text-[10px] font-bold border", track.muted ? "bg-red-500/10 text-red-500 border-red-500/20" : "bg-muted text-muted-foreground hover:bg-background")}>M</button>
+                  <button className={cn("h-5 w-5 rounded flex items-center justify-center text-[10px] font-bold border", track.solo ? "bg-yellow-500/10 text-yellow-600 border-yellow-500/20" : "bg-muted text-muted-foreground hover:bg-background")}>S</button>
+                </div>
+              </div>
+              <div className="flex gap-2 pl-5 mt-1 opacity-60 text-[10px] uppercase font-semibold">
+                <span>{track.role}</span>
+                <span>•</span>
+                <span>{track.kind}</span>
+                <span>•</span>
+                <span className={track.status === 'rendered' ? "text-emerald-500" : ""}>{track.status}</span>
               </div>
             </div>
           ))}
@@ -867,7 +896,7 @@ export default function ProjectWorkspace() {
 
       {/* Main Workspace Area */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        
+
         {/* Left Panel: Tracks */}
         <aside className="hidden w-64 border-r bg-sidebar flex-col shrink-0 z-10 shadow-[2px_0_10px_rgba(0,0,0,0.02)] md:flex">
           {renderTracksPanel()}
@@ -907,8 +936,8 @@ export default function ProjectWorkspace() {
 
             <div className="flex-1 bg-muted/30 rounded-md border flex items-stretch p-1 gap-1 relative z-10">
               {analysis?.sections?.length ? analysis.sections.map((section, idx) => (
-                <div 
-                  key={idx} 
+                <div
+                  key={idx}
                   className="relative rounded-[4px] border flex flex-col justify-between p-1.5 overflow-hidden group cursor-pointer hover:border-primary/50 transition-colors"
                   style={{ flex: section.endBar - section.startBar, backgroundColor: `hsl(var(--primary) / ${0.05 + (section.energy * 0.2)})` }}
                 >
@@ -976,7 +1005,7 @@ export default function ProjectWorkspace() {
 
             <TabsContent value="arrangement" className="flex-1 min-h-0 overflow-auto m-0 p-6">
               <div className="max-w-3xl mx-auto space-y-6">
-                
+
                 {/* Arrangement Selector */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -1016,8 +1045,8 @@ export default function ProjectWorkspace() {
                             <Label className="text-sm font-semibold">Harmony Complexity</Label>
                             <span className="font-mono text-xs bg-muted px-2 py-1 rounded">{localHarmony}/10</span>
                           </div>
-                          <Slider 
-                            value={[localHarmony]} 
+                          <Slider
+                            value={[localHarmony]}
                             min={1} max={10} step={1}
                             onValueChange={([v]) => handleParamChange('harmony', v)}
                             onValueCommit={([v]) => commitParamChange('harmony', v)}
@@ -1030,8 +1059,8 @@ export default function ProjectWorkspace() {
                             <Label className="text-sm font-semibold">Energy Level</Label>
                             <span className="font-mono text-xs bg-muted px-2 py-1 rounded">{Math.round(localEnergy * 100)}%</span>
                           </div>
-                          <Slider 
-                            value={[localEnergy]} 
+                          <Slider
+                            value={[localEnergy]}
                             min={0} max={1} step={0.05}
                             onValueChange={([v]) => handleParamChange('energy', v)}
                             onValueCommit={([v]) => commitParamChange('energy', v)}
@@ -1044,13 +1073,41 @@ export default function ProjectWorkspace() {
                             <Label className="text-sm font-semibold">Instrumentation Density</Label>
                             <span className="font-mono text-xs bg-muted px-2 py-1 rounded">{Math.round(localDensity * 100)}%</span>
                           </div>
-                          <Slider 
-                            value={[localDensity]} 
+                          <Slider
+                            value={[localDensity]}
                             min={0} max={1} step={0.05}
                             onValueChange={([v]) => handleParamChange('density', v)}
                             onValueCommit={([v]) => commitParamChange('density', v)}
                           />
                           <p className="text-xs text-muted-foreground">Number of simultaneous parts and textural thickness.</p>
+                        </div>
+
+                        <div className="space-y-4">
+                          <div className="flex justify-between items-center">
+                            <Label className="text-sm font-semibold">Orchestra Size</Label>
+                            <span className="font-mono text-xs bg-muted px-2 py-1 rounded">{Math.round(localOrchestraSize * 100)}%</span>
+                          </div>
+                          <Slider
+                            value={[localOrchestraSize]}
+                            min={0} max={1} step={0.05}
+                            onValueChange={([v]) => handleParamChange('orchestraSize', v)}
+                            onValueCommit={([v]) => commitParamChange('orchestraSize', v)}
+                          />
+                          <p className="text-xs text-muted-foreground">Scale of the arrangement from intimate solo to full symphony.</p>
+                        </div>
+
+                        <div className="space-y-4">
+                          <div className="flex justify-between items-center">
+                            <Label className="text-sm font-semibold">Rhythm Intensity</Label>
+                            <span className="font-mono text-xs bg-muted px-2 py-1 rounded">{Math.round(localRhythmIntensity * 100)}%</span>
+                          </div>
+                          <Slider
+                            value={[localRhythmIntensity]}
+                            min={0} max={1} step={0.05}
+                            onValueChange={([v]) => handleParamChange('rhythmIntensity', v)}
+                            onValueCommit={([v]) => commitParamChange('rhythmIntensity', v)}
+                          />
+                          <p className="text-xs text-muted-foreground">Complexity and drive of the underlying rhythmic foundation.</p>
                         </div>
                       </CardContent>
                     </Card>
@@ -1130,7 +1187,7 @@ export default function ProjectWorkspace() {
                         })}
                       </CardContent>
                     </Card>
-                    
+
                     {activeArrangement.mode !== "PRO_SCORE" && (
                       <Card>
                         <CardContent className="grid gap-4 p-4 md:grid-cols-2">
@@ -1206,9 +1263,9 @@ export default function ProjectWorkspace() {
                       </Card>
                     )}
                     <div className="flex justify-end">
-                      <Button 
-                        size="lg" 
-                        onClick={handleGenerate} 
+                      <Button
+                        size="lg"
+                        onClick={handleGenerate}
                         disabled={
                           generationRunning ||
                           availableArrangementProviders?.length === 0
@@ -1238,9 +1295,9 @@ export default function ProjectWorkspace() {
                     )}
                   </div>
                 ) : (
-                  <EmptyState 
-                    icon={SlidersHorizontal} 
-                    title="No Arrangement Selected" 
+                  <EmptyState
+                    icon={SlidersHorizontal}
+                    title="No Arrangement Selected"
                     description="Create an arrangement to direct the generation."
                     action={<Button onClick={handleCreateArrangement}>Create Arrangement</Button>}
                   />
@@ -1378,7 +1435,7 @@ export default function ProjectWorkspace() {
                                       {quality.weaknesses.join(" · ")}
                                     </div>
                                   </div>
-                                  <div className="flex flex-wrap gap-2 sm:col-span-2">
+                                  <div className="flex flex-wrap gap-2 sm:col-span-2 mt-2">
                                     {candidate.evaluation.artifacts.map((artifact) => (
                                       <Button key={artifact.id} size="sm" variant="outline" asChild>
                                         <a href={artifact.url} download>
@@ -1388,6 +1445,58 @@ export default function ProjectWorkspace() {
                                       </Button>
                                     ))}
                                   </div>
+
+                                  <div className="sm:col-span-2 mt-4 space-y-3">
+                                    <div className="font-medium text-foreground border-b pb-1">Arrangement Plan</div>
+                                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                      {(candidate.plan.sections as any[]).map((section, idx) => (
+                                        <div key={idx} className="rounded-md border p-2 bg-card text-xs">
+                                          <div className="flex items-center justify-between mb-1">
+                                            <span className="font-semibold text-foreground truncate mr-2">{section.section || section.name || `Section ${idx+1}`}</span>
+                                            <span className="text-muted-foreground text-[10px] whitespace-nowrap">Bar {section.startBar}-{section.endBar}</span>
+                                          </div>
+                                          <div className="text-muted-foreground grid grid-cols-2 gap-1 mt-2">
+                                            <div>Tracks: {section.activeTracks?.length ?? section.tracks?.length ?? 0}</div>
+                                            <div>Energy: {Math.round((section.energy ?? 0) * 100)}%</div>
+                                            <div>Density: {Math.round((section.density ?? 0) * 100)}%</div>
+                                            {(section.trackDirectives && Object.keys(section.trackDirectives).length > 0) ? (
+                                              <div className="truncate col-span-2 text-[10px]">Directives: {Object.keys(section.trackDirectives).length}</div>
+                                            ) : null}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+
+                                  <div className="sm:col-span-2 mt-2 space-y-3">
+                                    <div className="font-medium text-foreground border-b pb-1">Orchestration Models</div>
+                                    {candidate.trackModels && candidate.trackModels.length > 0 ? (
+                                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                        {candidate.trackModels.map((track: any) => (
+                                          <div key={track.id} className="rounded-md border p-2 bg-card text-xs">
+                                            <div className="flex items-center justify-between mb-1">
+                                              <span className="font-semibold text-foreground truncate mr-2" title={track.instrument}>{track.instrument}</span>
+                                              <Badge variant="outline" className="text-[9px] uppercase px-1 py-0 h-4 whitespace-nowrap">{track.role}</Badge>
+                                            </div>
+                                            <div className="text-muted-foreground flex items-center justify-between mt-2 text-[10px]">
+                                              <span>{track.notes?.length ?? 0} notes</span>
+                                              <span>{track.cc?.length ?? 0} CCs</span>
+                                              <span>{track.articulations?.length ?? 0} arts</span>
+                                            </div>
+                                            <div className="mt-2 text-muted-foreground text-[10px] flex justify-between">
+                                              <span>Model:</span>
+                                              <span className="truncate ml-2" title={track.provenance?.model || "Standard"}>
+                                                {track.provenance?.model || "Standard"} {track.provenance?.version ? `v${track.provenance.version}` : ""}
+                                              </span>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <div className="text-muted-foreground italic text-xs">No distinct orchestration models provided.</div>
+                                    )}
+                                  </div>
+
                                   {quality.warnings.length > 0 && (
                                     <div className="text-amber-700 dark:text-amber-400 sm:col-span-2">
                                       {quality.warnings.join(" ")}

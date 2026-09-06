@@ -767,13 +767,15 @@ export type SongModelCore = {
     confidence: number;
     source: string;
   }>;
-  chords: Array<{
+  /** Observed bass notes from harmony providers; absent/empty means no bass evidence. */
+  bass?: Array<{
     start: number;
     end: number;
-    symbol: string;
-    roman: string;
+    pitch: number;
     confidence: number;
+    provider?: string;
   }>;
+  chords: ChordHarmonyEvent[];
   sections: AnalysisSection[];
   energy: number[];
 };
@@ -784,6 +786,56 @@ export type ArtifactProvenance = {
   parameters: Record<string, number | string | boolean>;
   parentIds: string[];
   createdBy: string;
+};
+/**
+ * The original chord fields remain required so Song Models written before the
+ * canonical harmony contract can continue to be read unchanged. The remaining
+ * fields enrich an event when a harmony provider can supply them.
+ */
+export type ChordTiming = {
+  startBeat?: number;
+  durationBeats?: number;
+  startSeconds?: number;
+  endSeconds?: number;
+};
+
+export type MelodyConflictEvidence = {
+  noteId?: string;
+  pitch?: number;
+  start?: number;
+  end?: number;
+  conflict: "clash" | "avoid_note" | "unresolved_tension" | "unknown";
+  severity?: number;
+  explanation?: string;
+};
+
+export type ChordCandidateProvenance = {
+  candidateId: string;
+  provider: string;
+  modelVersion?: string;
+  score?: number;
+  selected?: boolean;
+  evidence?: string[];
+};
+
+export type ChordHarmonyEvent = {
+  /** Legacy timing and display fields. */
+  start: number;
+  end: number;
+  symbol: string;
+  roman: string;
+  confidence: number;
+  /** Canonical harmony fields; optional for legacy persisted Song Models. */
+  root?: string;
+  quality?: string;
+  extensions?: string[];
+  alterations?: string[];
+  inversion?: number;
+  bass?: string;
+  function?: string;
+  timing?: ChordTiming;
+  melodyConflictEvidence?: MelodyConflictEvidence[];
+  candidateProvenance?: ChordCandidateProvenance[];
 };
 export type SongModelFieldStatus = {
   status: "detected" | "low_confidence" | "failed" | "not_available";
@@ -895,6 +947,9 @@ export type TrackModel = {
   id: string; instrument: string; instrumentDefinition: InstrumentDefinition; role: string;
   notes: MusicalNote[]; cc: ControlEvent[]; articulations: ArticulationEvent[];
   automation: AutomationPoint[]; source: string; version: number; provenance: ArtifactProvenance;
+  /** Optional section-level intent and renderer mapping for canonical plans. */
+  directive?: TrackDirective;
+  mapping?: TrackMappingMetadata;
 };
 
 export type ControlEvent = {
@@ -915,6 +970,8 @@ export type InstrumentDefinition = {
     breathSeconds?: number; strings?: number; frets?: number; hands?: number; feet?: number;
   };
   controls: { dynamics: number[]; expression: number[]; sustain?: number; pitchBend: boolean; aftertouch: boolean };
+  /** Maps provider-neutral directives onto instrument-specific renderer data. */
+  directiveMappings?: InstrumentDirectiveMappings;
 };
 
 export type AutomationPoint = { parameter: string; time: number; value: number };
@@ -922,6 +979,44 @@ export type AutomationPoint = { parameter: string; time: number; value: number }
 export type ArrangementPlanSection = {
   section: string; startBar: number; endBar: number; energy: number; density: number;
   tracks: Record<string, string>; operations: string[];
+  /** Explicit membership; `tracks` remains the compatibility role map. */
+  activeTracks?: string[];
+  /** Provider-neutral orchestration intent indexed by track id. */
+  trackDirectives?: Record<string, TrackDirective>;
+};
+
+export type OrchestrationCue = {
+  bar?: number;
+  beat?: number;
+  mode?: string;
+  durationBeats?: number;
+};
+
+export type TrackDirective = {
+  role?: string;
+  register?: string;
+  rhythmicActivity?: number;
+  harmonicActivity?: number;
+  dynamicTarget?: number;
+  articulationFamily?: string;
+  entry?: OrchestrationCue;
+  exit?: OrchestrationCue;
+  transition?: string;
+  fill?: boolean;
+};
+
+export type TrackMappingMetadata = {
+  midiChannel?: number;
+  program?: number;
+  articulationMap?: Record<string, string | number>;
+  controlMap?: Record<string, number>;
+};
+
+export type InstrumentDirectiveMappings = {
+  registers?: Record<string, { min: number; max: number }>;
+  articulationFamilies?: Record<string, string[]>;
+  dynamicTargets?: Record<string, number>;
+  controls?: Record<string, number>;
 };
 
 export type ArrangementPlan = {

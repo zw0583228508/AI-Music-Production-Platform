@@ -17,6 +17,7 @@ import {
   type RenderedTrack,
 } from "./musicEngines";
 import { validateCanonicalTrackModels } from "./musicProviders";
+import type { PedalboardProcessingEvidence } from "./pedalboardBuiltin";
 
 export type ExportTrack = {
   id: string;
@@ -35,6 +36,7 @@ export type GeneratedExportFile = {
   data: Buffer;
   provenance: ArtifactProvenance;
   rendererEvidence?: ExportRendererEvidence;
+  processingEvidence?: PedalboardProcessingEvidence;
 };
 
 export type ExportRendererEvidence = {
@@ -73,6 +75,21 @@ export function rendererEvidenceTechnicalMetadata(
     ...(evidence.rendererOutputSha256 ? { rendererOutputSha256: evidence.rendererOutputSha256 } : {}),
     ...(evidence.stemOutputSha256 ? { stemOutputSha256: evidence.stemOutputSha256 } : {}),
     ...(evidence.fallbackReason ? { fallbackReason: evidence.fallbackReason } : {}),
+  };
+}
+
+export function processingEvidenceTechnicalMetadata(
+  evidence?: PedalboardProcessingEvidence,
+): Record<string, string | number> {
+  if (!evidence) return {};
+  return {
+    processingProvider: evidence.provider,
+    processingVersion: evidence.version,
+    processingStatus: evidence.status,
+    processingGainDb: evidence.parameters.gainDb,
+    processingThresholdDb: evidence.parameters.thresholdDb,
+    processingInputSha256: evidence.inputSha256,
+    processingOutputSha256: evidence.outputSha256,
   };
 }
 

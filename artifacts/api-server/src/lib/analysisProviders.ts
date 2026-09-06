@@ -85,6 +85,7 @@ export type AnalysisProviderResults = {
   transcriptions: TranscriptionAnalysisResult[];
   harmony: HarmonyAnalysisResult[];
   chords: ChordEvent[];
+  bassEvidence: Array<{ start: number; end: number; pitch: number; confidence: number; provider?: string }>;
   harmonyConfidence: number;
   provenance: ProviderProvenance[];
 };
@@ -924,12 +925,42 @@ function parseChordCandidate(
   if (!chordPattern.test(normalizedSymbol)) {
     throw new Error(`${providerId} chord ${index + 1} has an invalid symbol`);
   }
+  const stringArray = (field: string): string[] | undefined => {
+    const raw = value[field];
+    if (raw === undefined) return undefined;
+    if (!Array.isArray(raw) || !raw.every((item) => typeof item === "string")) {
+      throw new Error(`${providerId} chord ${index + 1} has invalid ${field}`);
+    }
+    return raw.map((item) => item.trim()).filter(Boolean);
+  };
+  const optionalString = (field: string): string | undefined => {
+    const raw = value[field];
+    if (raw === undefined) return undefined;
+    if (typeof raw !== "string" || !raw.trim()) throw new Error(`${providerId} chord ${index + 1} has invalid ${field}`);
+    return raw.trim();
+  };
+  const inversion = value["inversion"];
+  if (inversion !== undefined && (!integer(inversion) || inversion < 0)) {
+    throw new Error(`${providerId} chord ${index + 1} has invalid inversion`);
+  }
+  const timing = value["timing"];
+  if (timing !== undefined && !isRecord(timing)) throw new Error(`${providerId} chord ${index + 1} has invalid timing`);
   return {
     start,
     end,
     symbol: normalizedSymbol,
     roman: typeof roman === "string" ? roman.trim() : "",
     confidence: itemConfidence,
+    ...(optionalString("root") ? { root: optionalString("root") } : {}),
+    ...(optionalString("quality") ? { quality: optionalString("quality") } : {}),
+    ...(stringArray("extensions") ? { extensions: stringArray("extensions") } : {}),
+    ...(stringArray("alterations") ? { alterations: stringArray("alterations") } : {}),
+    ...(inversion !== undefined ? { inversion } : {}),
+    ...(optionalString("bass") ? { bass: optionalString("bass") } : {}),
+    ...(optionalString("function") ? { function: optionalString("function") } : {}),
+    ...(timing ? { timing: timing as ChordEvent["timing"] } : {}),
+    ...(Array.isArray(value["melodyConflictEvidence"]) ? { melodyConflictEvidence: value["melodyConflictEvidence"] as ChordEvent["melodyConflictEvidence"] } : {}),
+    ...(Array.isArray(value["candidateProvenance"]) ? { candidateProvenance: value["candidateProvenance"] as ChordEvent["candidateProvenance"] } : {}),
   };
 }
 
@@ -1081,6 +1112,8 @@ export function fuseHarmonyEvidence(
       score: number;
       roman: string;
       strongest: number;
+      candidate?: ChordEvent;
+      provider?: string;
     }>();
     for (const { candidate, result } of active) {
       providersUsed.add(result.providerId);
@@ -1094,6 +1127,8 @@ export function fuseHarmonyEvidence(
       if (directScore > current.strongest) {
         current.strongest = directScore;
         current.roman = candidate.roman;
+          current.candidate = candidate;
+          current.provider = result.providerId;
       }
 
       const pitchClasses = chordPitchClasses(candidate.symbol);
@@ -1153,6 +1188,21 @@ export function fuseHarmonyEvidence(
         symbol,
         roman: winner.roman,
         confidence: Number(fusedConfidence.toFixed(4)),
+        ...(winner.candidate
+          ? {
+              root: winner.candidate.root,
+              quality: winner.candidate.quality,
+              extensions: winner.candidate.extensions,
+              alterations: winner.candidate.alterations,
+              inversion: winner.candidate.inversion,
+              bass: winner.candidate.bass,
+              function: winner.candidate.function,
+              timing: winner.candidate.timing,
+              melodyConflictEvidence: winner.candidate.melodyConflictEvidence,
+              candidateProvenance: winner.candidate.candidateProvenance ??
+                [{ candidateId: `${winner.provider}:${segment.start}-${segment.end}`, provider: winner.provider!, selected: true }],
+            }
+          : {}),
       });
     }
   }
@@ -1367,6 +1417,10 @@ export async function runAnalysisProviders(
     transcriptions,
     harmony,
     chords: fusedHarmony.chords,
+    bassEvidence: harmony.flatMap((result) => result.bass.map((note) => ({
+      ...note,
+      provider: result.providerId,
+    }))),
     harmonyConfidence: fusedHarmony.confidence,
     provenance,
   };

@@ -55,6 +55,22 @@ MAX_RENDER_SECONDS = float(os.getenv("MUSIC_AI_MAX_RENDER_SECONDS", "300"))
 MAX_ASSET_UPLOAD_BYTES = int(os.getenv("MUSIC_AI_MAX_ASSET_UPLOAD_BYTES", str(2 * 1024 * 1024 * 1024)))
 ASSET_STATE_FILENAME = ".licensed_asset_state.json"
 ASSET_STATE_LOCK = threading.Lock()
+NATIVE_ADAPTER_REQUIREMENTS = {
+    "VST3": [
+        "an approved executable native MIDI host",
+        "a compatible licensed VST3 asset",
+        "asset and host SHA-256 values in the private manifest",
+        "approved instrument/control mappings",
+        "canonical TrackModel smoke evidence with host and output attestation",
+    ],
+    "SFIZZ_VSCO2_CE": [
+        "an approved executable sfizz native host",
+        "a compatible licensed VSCO/SFZ library",
+        "library and host SHA-256 values in the private manifest",
+        "approved instrument/control mappings",
+        "canonical TrackModel smoke evidence with host and output attestation",
+    ],
+}
 
 app = FastAPI(title="Music AI Worker", version="1.0.0")
 
@@ -89,9 +105,13 @@ async def request_size_limit(request: FastAPIRequest, call_next):
 
 
 def _require_auth(request: FastAPIRequest) -> None:
-    token = os.getenv("MUSIC_AI_WORKER_TOKEN")
-    if token and request.headers.get("Authorization") != f"Bearer {token}":
-        raise HTTPException(401, "invalid bearer token")
+    """Protect every provider capability endpoint, even if configuration drifts."""
+    token = (os.getenv("MUSIC_AI_WORKER_TOKEN") or "").strip()
+    authorization = request.headers.get("Authorization")
+    if not token or not authorization or not secrets.compare_digest(
+        authorization, f"Bearer {token}"
+    ):
+        raise HTTPException(401, "worker authentication is required")
 
 
 def _require_admin_auth(request: FastAPIRequest) -> None:
@@ -1048,15 +1068,18 @@ def renderer_health(provider: str) -> dict:
         }
     except Exception as exc:
         return {
-            "status": "unhealthy",
+            "status": "unavailable",
             "healthy": False,
             "provider": provider,
+            "optionalAdapter": True,
             "runtimeReady": False,
             "checkpointReady": False,
             "packageReady": False,
             "modelVersion": None,
             "checksum": None,
             "smokeTested": False,
+            "reason": str(exc),
+            "requirements": NATIVE_ADAPTER_REQUIREMENTS[provider],
             "error": str(exc),
             "asset": None,
             "smokeEvidence": None,

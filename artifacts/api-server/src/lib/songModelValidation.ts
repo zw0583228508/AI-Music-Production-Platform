@@ -249,6 +249,24 @@ function validateMelody(value: unknown, duration: number | undefined, issues: Mu
   });
 }
 
+function validateBassEvidence(value: unknown, duration: number | undefined, issues: MutableIssue[]): void {
+  if (value === undefined) return; // legacy models predate optional bass evidence
+  if (!Array.isArray(value)) {
+    issues.push(issue("INVALID_BASS_EVIDENCE", "error", "bass", "Bass evidence must be an array."));
+    return;
+  }
+  value.forEach((note, index) => {
+    const path = `bass.${index}`;
+    if (!isRecord(note) || !isFiniteNumber(note.start) || !isFiniteNumber(note.end) ||
+      note.start < 0 || note.end <= note.start || (duration !== undefined && note.end > duration + .05) ||
+      !Number.isInteger(note.pitch) || (note.pitch as number) < 0 || (note.pitch as number) > 127 ||
+      !confidenceValue(note.confidence, `${path}.confidence`, issues) ||
+      (note.provider !== undefined && (typeof note.provider !== "string" || !note.provider.trim()))) {
+      issues.push(issue("INVALID_BASS_EVIDENCE", "error", path, "Bass evidence must have valid timing, pitch, confidence, and optional provider."));
+    }
+  });
+}
+
 function validateChords(value: unknown, duration: number | undefined, issues: MutableIssue[]): void {
   if (!Array.isArray(value)) {
     issues.push(issue("INVALID_CHORDS", "error", "chords", "Chords must be an array."));
@@ -282,6 +300,24 @@ function validateChords(value: unknown, duration: number | undefined, issues: Mu
       issues.push(issue("INVALID_ROMAN_NUMERAL", "error", `${path}.roman`, "Roman numeral is required."));
     }
     confidenceValue(chord.confidence, `${path}.confidence`, issues);
+    for (const field of ["root", "quality", "bass", "function"] as const) {
+      if (chord[field] !== undefined && (typeof chord[field] !== "string" || !chord[field].trim())) {
+        issues.push(issue("INVALID_CANONICAL_CHORD_FIELD", "error", `${path}.${field}`, `${field} must be a non-empty string when supplied.`));
+      }
+    }
+    for (const field of ["extensions", "alterations"] as const) {
+      if (chord[field] !== undefined && (!Array.isArray(chord[field]) || !chord[field].every((item) => typeof item === "string" && item.trim()))) {
+        issues.push(issue("INVALID_CANONICAL_CHORD_FIELD", "error", `${path}.${field}`, `${field} must be an array of non-empty strings when supplied.`));
+      }
+    }
+    if (chord.inversion !== undefined && (!Number.isInteger(chord.inversion) || typeof chord.inversion !== "number" || chord.inversion < 0)) {
+      issues.push(issue("INVALID_CANONICAL_CHORD_FIELD", "error", `${path}.inversion`, "inversion must be a non-negative integer when supplied."));
+    }
+    if (chord.timing !== undefined && (!isRecord(chord.timing) ||
+      (chord.timing.startSeconds !== undefined && !isFiniteNumber(chord.timing.startSeconds)) ||
+      (chord.timing.endSeconds !== undefined && !isFiniteNumber(chord.timing.endSeconds)))) {
+      issues.push(issue("INVALID_CANONICAL_CHORD_FIELD", "error", `${path}.timing`, "Canonical chord timing must contain finite values when supplied."));
+    }
   });
 }
 
@@ -436,6 +472,7 @@ export function validateSongModelCore(input: unknown): ValidationResult<SongMode
   validateMeterMap(input.meterMap, issues);
   validateTimedEvents(input.keyMap, "keyMap", issues);
   validateMelody(input.melody, duration, issues);
+  validateBassEvidence(input.bass, duration, issues);
   validateChords(input.chords, duration, issues);
   validateSections(input.sections, issues);
   if (!Array.isArray(input.energy) || input.energy.length === 0) {

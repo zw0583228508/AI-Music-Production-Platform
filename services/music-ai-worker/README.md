@@ -10,9 +10,13 @@ uv run python services/music-ai-worker/smoke_test.py
 uv run uvicorn app:app --app-dir services/music-ai-worker --host 0.0.0.0 --port 8008
 ```
 
-`MUSIC_AI_WORKER_TOKEN` enables bearer authentication. Inputs are limited by
-`MUSIC_AI_MAX_SOURCE_BYTES`, `MUSIC_AI_MAX_INPUT_BYTES`, and
-`MUSIC_AI_MAX_DURATION_SECONDS`; public HTTP(S) sources only are accepted.
+`MUSIC_AI_WORKER_TOKEN` is required bearer authentication for every provider
+capability endpoint (`/health`, `/analyze`, `/separate`, `/process`, and
+`/render`). The worker fails closed with `401` when the token is unset, blank,
+missing, or incorrect. The one-time capability artifact download route remains
+public by design: its unguessable, short-lived artifact ID is the capability.
+Inputs are limited by `MUSIC_AI_MAX_SOURCE_BYTES`, `MUSIC_AI_MAX_INPUT_BYTES`,
+and `MUSIC_AI_MAX_DURATION_SECONDS`; public HTTP(S) sources only are accepted.
 Native renderers are optional and fail closed. Licensed assets must be placed in
 a private, worker-readable mount outside Git (for example
 `MUSIC_AI_ASSET_ROOT=/var/lib/music-ai/assets`) and selected by
@@ -73,8 +77,7 @@ The API server authorizes administrators with `MUSIC_STUDIO_ADMIN_IDS` and/or
 `MUSIC_STUDIO_ADMIN_EMAILS`, then streams multipart uploads to the worker using
 the existing `MUSIC_AI_WORKER_TOKEN`. Set `MUSIC_AI_WORKER_URL` on the API
 server (the renderer-specific worker URLs remain supported as fallbacks).
-Asset administration fails closed when that token is absent, even if ordinary
-worker inference is intentionally left unauthenticated.
+Asset administration also fails closed when that token is absent.
 
 Before a host can be uploaded, add its exact identity and SHA-256 to
 `MUSIC_AI_APPROVED_NATIVE_HOSTS` as a JSON array, for example

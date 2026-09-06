@@ -1241,6 +1241,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/NoteEvent"
+        bass:
+          type: array
+          description: Optional observed bass evidence. An omitted or empty array means no provider bass evidence was available.
+          items:
+            $ref: "#/components/schemas/BassEvidenceEvent"
         chords:
           type: array
           items:
@@ -1564,15 +1569,86 @@ components:
         velocity: { type: number }
         confidence: { type: number }
         source: { type: string }
+    BassEvidenceEvent:
+      type: object
+      required: [start, end, pitch, confidence]
+      properties:
+        start: { type: number, minimum: 0 }
+        end: { type: number, minimum: 0 }
+        pitch: { type: number, minimum: 0, maximum: 127 }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        provider: { type: string }
     ChordEvent:
       type: object
       required: [start, end, symbol, roman, confidence]
       properties:
+        # Legacy fields remain required; canonical fields below are additive.
         start: { type: number }
         end: { type: number }
         symbol: { type: string }
         roman: { type: string }
         confidence: { type: number }
+        root:
+          type: string
+          description: Canonical chromatic root (for example C, F#, or Bb).
+        quality:
+          type: string
+          description: Canonical chord quality independent of display symbol.
+        extensions:
+          type: array
+          items: { type: string }
+        alterations:
+          type: array
+          items: { type: string }
+        inversion: { type: number, minimum: 0 }
+        bass: { type: string }
+        function:
+          type: string
+          description: Harmonic function in the current tonal context.
+        timing:
+          $ref: "#/components/schemas/ChordTiming"
+        melodyConflictEvidence:
+          type: array
+          description: Melody-note evidence considered when selecting this chord.
+          items:
+            $ref: "#/components/schemas/MelodyConflictEvidence"
+        candidateProvenance:
+          type: array
+          description: Candidate-level provider evidence for this selected chord.
+          items:
+            $ref: "#/components/schemas/ChordCandidateProvenance"
+    ChordTiming:
+      type: object
+      properties:
+        startBeat: { type: number, minimum: 0 }
+        durationBeats: { type: number, exclusiveMinimum: 0 }
+        startSeconds: { type: number, minimum: 0 }
+        endSeconds: { type: number, minimum: 0 }
+    MelodyConflictEvidence:
+      type: object
+      required: [conflict]
+      properties:
+        noteId: { type: string }
+        pitch: { type: number }
+        start: { type: number, minimum: 0 }
+        end: { type: number, minimum: 0 }
+        conflict:
+          type: string
+          enum: [clash, avoid_note, unresolved_tension, unknown]
+        severity: { type: number, minimum: 0, maximum: 1 }
+        explanation: { type: string }
+    ChordCandidateProvenance:
+      type: object
+      required: [candidateId, provider]
+      properties:
+        candidateId: { type: string }
+        provider: { type: string }
+        modelVersion: { type: string }
+        score: { type: number }
+        selected: { type: boolean }
+        evidence:
+          type: array
+          items: { type: string }
     HealthStatus:
       type: object
       properties:
@@ -2584,6 +2660,8 @@ components:
             sustain: { type: number }
             pitchBend: { type: boolean }
             aftertouch: { type: boolean }
+        directiveMappings:
+          $ref: "#/components/schemas/InstrumentDirectiveMappings"
     TrackModel:
       type: object
       required: [id, instrument, instrumentDefinition, role, notes, cc, articulations, automation, source, version, provenance]
@@ -2599,6 +2677,10 @@ components:
         source: { type: string }
         version: { type: number }
         provenance: { $ref: "#/components/schemas/ArtifactProvenance" }
+        directive:
+          $ref: "#/components/schemas/TrackDirective"
+        mapping:
+          $ref: "#/components/schemas/TrackMappingMetadata"
     StyleSpec:
       type: object
       required: [genre, subgenre, era, tempoCharacter, rhythm, harmony, instrumentation, orchestration, production, dynamics]
@@ -2624,6 +2706,69 @@ components:
         density: { type: number }
         tracks: { type: object, additionalProperties: { type: string } }
         operations: { type: array, items: { type: string } }
+        activeTracks:
+          type: array
+          description: Explicit track ids active in this section.
+          items: { type: string }
+        trackDirectives:
+          type: object
+          description: Per-track orchestration intent indexed by track id.
+          additionalProperties:
+            $ref: "#/components/schemas/TrackDirective"
+    OrchestrationCue:
+      type: object
+      properties:
+        bar: { type: number, minimum: 0 }
+        beat: { type: number, minimum: 0 }
+        mode: { type: string }
+        durationBeats: { type: number, exclusiveMinimum: 0 }
+    TrackDirective:
+      type: object
+      properties:
+        role: { type: string }
+        register: { type: string }
+        rhythmicActivity: { type: number, minimum: 0, maximum: 1 }
+        harmonicActivity: { type: number, minimum: 0, maximum: 1 }
+        dynamicTarget: { type: number, minimum: 0, maximum: 1 }
+        articulationFamily: { type: string }
+        entry: { $ref: "#/components/schemas/OrchestrationCue" }
+        exit: { $ref: "#/components/schemas/OrchestrationCue" }
+        transition: { type: string }
+        fill: { type: boolean }
+    TrackMappingMetadata:
+      type: object
+      properties:
+        midiChannel: { type: number, minimum: 1, maximum: 16 }
+        program: { type: number, minimum: 0, maximum: 127 }
+        articulationMap:
+          type: object
+          additionalProperties:
+            oneOf: [{ type: string }, { type: number }]
+        controlMap:
+          type: object
+          additionalProperties: { type: number }
+    InstrumentDirectiveMappings:
+      type: object
+      properties:
+        registers:
+          type: object
+          additionalProperties:
+            type: object
+            required: [min, max]
+            properties:
+              min: { type: number }
+              max: { type: number }
+        articulationFamilies:
+          type: object
+          additionalProperties:
+            type: array
+            items: { type: string }
+        dynamicTargets:
+          type: object
+          additionalProperties: { type: number }
+        controls:
+          type: object
+          additionalProperties: { type: number }
     ArrangementPlan:
       type: object
       required: [id, version, sections, style, songModelVersion, parameters, provenance]

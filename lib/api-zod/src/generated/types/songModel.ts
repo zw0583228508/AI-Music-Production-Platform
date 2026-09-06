@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { BarEvent } from './barEvent';
+import type { BassEvidenceEvent } from './bassEvidenceEvent';
 import type { BeatEvent } from './beatEvent';
 import type { ChordEvent } from './chordEvent';
 import type { KeyEvent } from './keyEvent';
@@ -55,6 +56,8 @@ export interface SongModel {
   beats: BeatEvent[];
   bars: BarEvent[];
   melody: NoteEvent[];
+  /** Optional observed bass evidence. An omitted or empty array means no provider bass evidence was available. */
+  bass?: BassEvidenceEvent[];
   chords: ChordEvent[];
   sections: Section[];
   energy: number[];

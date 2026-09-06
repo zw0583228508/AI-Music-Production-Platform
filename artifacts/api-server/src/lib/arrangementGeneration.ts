@@ -296,6 +296,8 @@ function materializeCandidate(input: CandidateMaterializationInput): {
     density: source.density,
     harmonyComplexity: source.harmonyComplexity,
     energy: source.energy,
+    orchestraSize: source.orchestraSize,
+    rhythmIntensity: source.rhythmIntensity,
   });
   const generatedPlan = createArrangementPlan({
     arrangementId: input.candidateId,
@@ -337,16 +339,32 @@ function materializeCandidate(input: CandidateMaterializationInput): {
       if (!providerSection) return section;
       const enabled = new Set(providerSection.tracks.flatMap((track) =>
         [...(descriptorByToken.get(track.toLowerCase()) ?? [])]));
-      return {
-        ...section,
-        energy: providerSection.energy,
-        density: providerSection.density,
-        tracks: Object.fromEntries(
+        const roleOperations = Object.fromEntries(
           Object.entries(section.tracks).map(([trackName, operation]) => [
             trackName,
             enabled.has(trackName) ? operation : "none",
           ]),
-        ),
+        );
+        const enabledIds = new Set(
+          tracks.filter((track) => enabled.has(track.name)).map((track) => track.id),
+        );
+        return {
+        ...section,
+        energy: providerSection.energy,
+        density: providerSection.density,
+          tracks: roleOperations,
+          // Canonical plans use stable IDs; old persisted plans may still
+          // carry names, which are resolved once at this boundary.
+          activeTracks: [...enabledIds],
+          trackDirectives: Object.fromEntries(
+            Object.entries(section.trackDirectives ?? {})
+              .flatMap(([key, directive]) => {
+                const resolved = tracks.find((track) => track.id === key || track.name === key);
+                return resolved && enabledIds.has(resolved.id)
+                  ? [[resolved.id, directive]]
+                  : [];
+              }),
+          ),
       };
     }),
   };
@@ -418,6 +436,7 @@ function normalizeSongModelSnapshot(value: unknown): SongModelData {
     meterMap: raw.meterMap ?? [],
     keyMap: raw.keyMap ?? [],
     melody: raw.melody ?? [],
+    bass: raw.bass ?? [],
     chords: raw.chords ?? [],
     sections: raw.sections ?? [],
     energy: raw.energy ?? [],

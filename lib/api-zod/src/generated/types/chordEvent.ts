@@ -5,6 +5,9 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { ChordCandidateProvenance } from './chordCandidateProvenance';
+import type { ChordTiming } from './chordTiming';
+import type { MelodyConflictEvidence } from './melodyConflictEvidence';
 
 export interface ChordEvent {
   start: number;
@@ -12,4 +15,20 @@ export interface ChordEvent {
   symbol: string;
   roman: string;
   confidence: number;
+  /** Canonical chromatic root (for example C, F#, or Bb). */
+  root?: string;
+  /** Canonical chord quality independent of display symbol. */
+  quality?: string;
+  extensions?: string[];
+  alterations?: string[];
+  /** @minimum 0 */
+  inversion?: number;
+  bass?: string;
+  /** Harmonic function in the current tonal context. */
+  function?: string;
+  timing?: ChordTiming;
+  /** Melody-note evidence considered when selecting this chord. */
+  melodyConflictEvidence?: MelodyConflictEvidence[];
+  /** Candidate-level provider evidence for this selected chord. */
+  candidateProvenance?: ChordCandidateProvenance[];
 }

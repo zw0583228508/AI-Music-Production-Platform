@@ -12,8 +12,14 @@ import soundfile as sf
 ROOT = Path(__file__).resolve().parent
 MANIFEST = json.loads((ROOT / "model_manifest.json").read_text())
 import app as worker_app
+from capability_boundary import smoke_midi_round_trip, smoke_pedalboard_builtins
 
 with tempfile.TemporaryDirectory() as tmp:
+    tmp_path = Path(tmp)
+    midi_evidence = smoke_midi_round_trip(tmp_path / "midi")
+    assert midi_evidence["noteOnEvents"] >= 1
+    pedalboard_evidence = smoke_pedalboard_builtins()
+    assert pedalboard_evidence["frames"] == 128
     audio = Path(tmp) / "tone.wav"
     sf.write(audio, np.sin(np.arange(22050, dtype=np.float32) * 440 * 2 * np.pi / 22050), 22050)
     from basic_pitch.inference import ICASSP_2022_MODEL_PATH, Model, predict
@@ -25,8 +31,6 @@ with tempfile.TemporaryDirectory() as tmp:
     assert Model(f"{ICASSP_2022_MODEL_PATH}.onnx").predict(
         np.zeros((1, 43844, 1), dtype=np.float32)
     )
-    from pedalboard import Gain, Pedalboard
-    assert Pedalboard([Gain(gain_db=-3)])(np.zeros((1, 32), dtype=np.float32), 22050).shape == (1, 32)
     import torch
     cache = Path(torch.hub.get_dir()) / "checkpoints"
     checkpoint = cache / MANIFEST["demucs"]["checkpoint_file"]
@@ -62,11 +66,14 @@ for renderer_provider, marker_name in (("VST3", "vst3"), ("SFIZZ_VSCO2_CE", "sfi
         # configured-but-invalid asset is recorded as unhealthy instead of
         # enabling a renderer or blocking the deterministic local renderer.
         renderer_evidence[marker_name] = {
+            "status": "unavailable",
+            "optionalAdapter": True,
             "trackModelRendered": False,
             "audible": False,
             "canonicalSensitivity": False,
             "nativeHostAttested": False,
-            "error": str(exc),
+            "reason": str(exc),
+            "requirements": worker_app.NATIVE_ADAPTER_REQUIREMENTS[renderer_provider],
         }
 
 ready = ROOT / ".readiness"
@@ -74,7 +81,9 @@ ready.mkdir(exist_ok=True)
 (ready / f"{MANIFEST['readiness_key']}.json").write_text(json.dumps({
     "basic_pitch": True,
     "onnx": True,
+    "midi": midi_evidence,
     "pedalboard": True,
+    "pedalboardEvidence": pedalboard_evidence,
     "demucs": True,
     **renderer_evidence,
 }))

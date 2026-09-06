@@ -420,12 +420,92 @@ export interface NoteEvent {
   source: string;
 }
 
+export interface BassEvidenceEvent {
+  /** @minimum 0 */
+  start: number;
+  /** @minimum 0 */
+  end: number;
+  /**
+     * @minimum 0
+     * @maximum 127
+     */
+  pitch: number;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  confidence: number;
+  provider?: string;
+}
+
+export interface ChordTiming {
+  /** @minimum 0 */
+  startBeat?: number;
+  /** @exclusiveMinimum 0 */
+  durationBeats?: number;
+  /** @minimum 0 */
+  startSeconds?: number;
+  /** @minimum 0 */
+  endSeconds?: number;
+}
+
+export type MelodyConflictEvidenceConflict = typeof MelodyConflictEvidenceConflict[keyof typeof MelodyConflictEvidenceConflict];
+
+
+export const MelodyConflictEvidenceConflict = {
+  clash: 'clash',
+  avoid_note: 'avoid_note',
+  unresolved_tension: 'unresolved_tension',
+  unknown: 'unknown',
+} as const;
+
+export interface MelodyConflictEvidence {
+  noteId?: string;
+  pitch?: number;
+  /** @minimum 0 */
+  start?: number;
+  /** @minimum 0 */
+  end?: number;
+  conflict: MelodyConflictEvidenceConflict;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  severity?: number;
+  explanation?: string;
+}
+
+export interface ChordCandidateProvenance {
+  candidateId: string;
+  provider: string;
+  modelVersion?: string;
+  score?: number;
+  selected?: boolean;
+  evidence?: string[];
+}
+
 export interface ChordEvent {
   start: number;
   end: number;
   symbol: string;
   roman: string;
   confidence: number;
+  /** Canonical chromatic root (for example C, F#, or Bb). */
+  root?: string;
+  /** Canonical chord quality independent of display symbol. */
+  quality?: string;
+  extensions?: string[];
+  alterations?: string[];
+  /** @minimum 0 */
+  inversion?: number;
+  bass?: string;
+  /** Harmonic function in the current tonal context. */
+  function?: string;
+  timing?: ChordTiming;
+  /** Melody-note evidence considered when selecting this chord. */
+  melodyConflictEvidence?: MelodyConflictEvidence[];
+  /** Candidate-level provider evidence for this selected chord. */
+  candidateProvenance?: ChordCandidateProvenance[];
 }
 
 export interface Section {
@@ -567,6 +647,8 @@ export interface SongModel {
   beats: BeatEvent[];
   bars: BarEvent[];
   melody: NoteEvent[];
+  /** Optional observed bass evidence. An omitted or empty array means no provider bass evidence was available. */
+  bass?: BassEvidenceEvent[];
   chords: ChordEvent[];
   sections: Section[];
   energy: number[];
@@ -1695,6 +1777,24 @@ export const InstrumentDefinitionFamily = {
   synth: 'synth',
 } as const;
 
+export type InstrumentDirectiveMappingsRegisters = {[key: string]: {
+  min: number;
+  max: number;
+}};
+
+export type InstrumentDirectiveMappingsArticulationFamilies = {[key: string]: string[]};
+
+export type InstrumentDirectiveMappingsDynamicTargets = {[key: string]: number};
+
+export type InstrumentDirectiveMappingsControls = {[key: string]: number};
+
+export interface InstrumentDirectiveMappings {
+  registers?: InstrumentDirectiveMappingsRegisters;
+  articulationFamilies?: InstrumentDirectiveMappingsArticulationFamilies;
+  dynamicTargets?: InstrumentDirectiveMappingsDynamicTargets;
+  controls?: InstrumentDirectiveMappingsControls;
+}
+
 export type InstrumentDefinitionPlayableRange = {
   min: number;
   max: number;
@@ -1742,6 +1842,7 @@ export interface InstrumentDefinition {
   articulations: string[];
   constraints: InstrumentDefinitionConstraints;
   controls: InstrumentDefinitionControls;
+  directiveMappings?: InstrumentDirectiveMappings;
 }
 
 export interface MusicalNote {
@@ -1777,6 +1878,60 @@ export interface ArtifactProvenance {
   createdBy: string;
 }
 
+export interface OrchestrationCue {
+  /** @minimum 0 */
+  bar?: number;
+  /** @minimum 0 */
+  beat?: number;
+  mode?: string;
+  /** @exclusiveMinimum 0 */
+  durationBeats?: number;
+}
+
+export interface TrackDirective {
+  role?: string;
+  register?: string;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  rhythmicActivity?: number;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  harmonicActivity?: number;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  dynamicTarget?: number;
+  articulationFamily?: string;
+  entry?: OrchestrationCue;
+  exit?: OrchestrationCue;
+  transition?: string;
+  fill?: boolean;
+}
+
+export type TrackMappingMetadataArticulationMap = {[key: string]: string | number};
+
+export type TrackMappingMetadataControlMap = {[key: string]: number};
+
+export interface TrackMappingMetadata {
+  /**
+     * @minimum 1
+     * @maximum 16
+     */
+  midiChannel?: number;
+  /**
+     * @minimum 0
+     * @maximum 127
+     */
+  program?: number;
+  articulationMap?: TrackMappingMetadataArticulationMap;
+  controlMap?: TrackMappingMetadataControlMap;
+}
+
 export interface TrackModel {
   id: string;
   instrument: string;
@@ -1789,6 +1944,8 @@ export interface TrackModel {
   source: string;
   version: number;
   provenance: ArtifactProvenance;
+  directive?: TrackDirective;
+  mapping?: TrackMappingMetadata;
 }
 
 export interface GenerationCandidate {
@@ -2114,6 +2271,11 @@ export interface StyleSpec {
 
 export type ArrangementPlanSectionTracks = {[key: string]: string};
 
+/**
+ * Per-track orchestration intent indexed by track id.
+ */
+export type ArrangementPlanSectionTrackDirectives = {[key: string]: TrackDirective};
+
 export interface ArrangementPlanSection {
   section: string;
   startBar: number;
@@ -2122,6 +2284,10 @@ export interface ArrangementPlanSection {
   density: number;
   tracks: ArrangementPlanSectionTracks;
   operations: string[];
+  /** Explicit track ids active in this section. */
+  activeTracks?: string[];
+  /** Per-track orchestration intent indexed by track id. */
+  trackDirectives?: ArrangementPlanSectionTrackDirectives;
 }
 
 export type ArrangementPlanParameters = { [key: string]: unknown };

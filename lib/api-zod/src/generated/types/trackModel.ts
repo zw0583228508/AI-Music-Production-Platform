@@ -11,6 +11,8 @@ import type { ControlEvent } from './controlEvent';
 import type { InstrumentDefinition } from './instrumentDefinition';
 import type { MusicalNote } from './musicalNote';
 import type { TrackAutomationPoint } from './trackAutomationPoint';
+import type { TrackDirective } from './trackDirective';
+import type { TrackMappingMetadata } from './trackMappingMetadata';
 
 export interface TrackModel {
   id: string;
@@ -24,4 +26,6 @@ export interface TrackModel {
   source: string;
   version: number;
   provenance: ArtifactProvenance;
+  directive?: TrackDirective;
+  mapping?: TrackMappingMetadata;
 }
