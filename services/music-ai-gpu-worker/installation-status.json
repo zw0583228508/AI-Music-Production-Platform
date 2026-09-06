@@ -87,6 +87,61 @@
         "Commercial READY is prohibited by the approved CC-BY-NC-SA-4.0 terms for all eight Harmonix fold weights; this promotion is authorized only for non-commercial research."
       ]
     },
+    "BS_ROFORMER": {
+      "classification": "BLOCKED_LICENSE",
+      "evidence": {
+        "modelManifestSource": "services/music-ai-gpu-worker/model_manifest.json#providers.BS_ROFORMER",
+        "releaseEvidenceSource": "services/music-ai-gpu-worker/release-evidence/bs-roformer/bs-roformer-release-evidence-v1.json",
+        "sourceLicenseEvidenceSource": "services/music-ai-gpu-worker/release-evidence/bs-roformer/source-license-evidence-v1.json",
+        "sourceRevision": "3716be1ea31c3d5dc753f1c936a1afe7b32d868f",
+        "backendRevision": "b0f1386fcced25f559f3e61c9f08a73cd9bddf80",
+        "backendGitTree": "b0c7a8c6bfdd685afe6ef461fb0ebcded209d4b3",
+        "backendPackageArtifactSha256": "46f3d5eb4b666a54adcb67524258c3cb6f96e185db97a3e1e1ef7efaea4e1848",
+        "backendPackageTreeSha256": "5bb32bcf207335b80f21ba97fee037b5a4f4137dd9739bb7f232b15a1025164a",
+        "modelRevision": "b1361b816daca507f079d85e935c291bcb0a5351",
+        "observedCheckpointSha256": "5b84f37e8d444c8cb30c79d77f613a41c05868ff9c9ac6c7049c00aefae115aa",
+        "observedConfigSha256": "9df444dbc1a704e23858e0315a211ec5fa4c69f92ecefb173d05e8f721ed2b1f",
+        "backendLicenseSpdx": "MIT",
+        "wrapperModelCardDeclaredLicenseSpdx": "MIT",
+        "checkpointLicenseStatus": "UNVERIFIED",
+        "upstreamCheckpointOriginGrantRetained": false,
+        "commercialUsePermitted": false,
+        "realGpuSmokeObserved": true,
+        "realGpuSmokeProofPresent": true,
+        "realGpuSmokeDevice": "NVIDIA L4",
+        "realGpuSmokeInputBytes": 983084,
+        "realGpuSmokeInputDurationSeconds": 5.12,
+        "realGpuSmokeInputSha256": "b2626121f7f2987843d7212c82b8f1222f2f023fc3d4b07c07ede1b24535feb9",
+        "realGpuSmokeStemCount": 2,
+        "realGpuSmokeStemRoles": [
+          "vocals",
+          "instrumental"
+        ],
+        "realGpuSmokeVocalsSha256": "e72e1766fe61b8b50dbaf444de727624d74adeb3fe0953ac099f20a9ff62f2a3",
+        "realGpuSmokeInstrumentalSha256": "40b32ec4bb03a70c4ebf95d5225fc1d7aca4c2fa2cdf881b0fc7e8c573803c55",
+        "allStemsNonSilent": true,
+        "allStemsDistinctFromInputAndEachOther": true,
+        "nonSilentOutputVerified": true,
+        "signedPromotionRecordPresent": true,
+        "promotionSignatureValidated": true,
+        "promotionActiveForRouting": false,
+        "apiAttestationValidated": true,
+        "apiZeroPostMismatchRegression": true,
+        "apiConnected": false,
+        "modalAppId": "ap-q64PXgdTqUnxFZB6oXGyrX",
+        "modalDeploymentId": "v2",
+        "modalFunctionId": "fu-3mnjwSyt6sSPpQhPAb9Dr4",
+        "modalImageId": "im-0WkDxzfFiZzox5l0C0v73Z",
+        "sourceImageDigest": "sha256:fe09172d855d2df2794058e5d4ddc89ff93382f1360d540a5640bacba7dac0d6",
+        "endpointDeployed": true,
+        "endpointConfigured": false,
+        "endpointOrigin": "https://windot100--bs-roformer-isolated.modal.run",
+        "liveHealthStatus": "ready"
+      },
+      "blockers": [
+        "The pinned Hugging Face repository is an unofficial wrapper. It credits the checkpoint to ViperX and an external TRvlvr release, but no checkpoint-owner license, redistribution grant, or commercial-use authorization is retained."
+      ]
+    },
     "MT3": {
       "classification": "READY",
       "evidence": {

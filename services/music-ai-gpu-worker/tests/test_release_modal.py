@@ -23,6 +23,13 @@ activation_spec = importlib.util.spec_from_file_location(
 activate_promotion = importlib.util.module_from_spec(activation_spec)
 assert activation_spec and activation_spec.loader
 activation_spec.loader.exec_module(activate_promotion)
+sys.modules["activate_promotion"] = activate_promotion
+deactivation_spec = importlib.util.spec_from_file_location(
+    "gpu_deactivate_promotion", ROOT / "deactivate_promotion.py"
+)
+deactivate_promotion = importlib.util.module_from_spec(deactivation_spec)
+assert deactivation_spec and deactivation_spec.loader
+deactivation_spec.loader.exec_module(deactivate_promotion)
 
 
 def mt3_output():
@@ -170,6 +177,26 @@ class GenericModalReleaseTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "evidence drift"):
                     activate_promotion.activate({}, "", {}, {}, {}, output)
             self.assertEqual(output.read_text(), original)
+
+    def test_deactivation_removes_only_requested_canonical_provider(self):
+        with __import__("tempfile").TemporaryDirectory() as directory:
+            output = Path(directory) / "gpuPromotions.generated.ts"
+            canonical = {
+                "schemaVersion": 1,
+                "publicKey": "test-public-key\n",
+                "bundles": {
+                    "BS_ROFORMER": {"record": {"provider": "BS_ROFORMER"}},
+                    "MT3": {"record": {"provider": "MT3"}},
+                },
+            }
+            activate_promotion.write_canonical(canonical, output)
+            deactivate_promotion.deactivate("BS_ROFORMER", output)
+            updated = activate_promotion.read_canonical(output)
+            self.assertNotIn("BS_ROFORMER", updated["bundles"])
+            self.assertEqual(updated["bundles"]["MT3"], canonical["bundles"]["MT3"])
+            self.assertEqual(updated["publicKey"], canonical["publicKey"])
+            with self.assertRaisesRegex(ValueError, "not active"):
+                deactivate_promotion.deactivate("BS_ROFORMER", output)
 
 
 if __name__ == "__main__":

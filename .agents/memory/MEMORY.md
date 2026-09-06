@@ -28,3 +28,4 @@
 - [Crash-safe private temp storage](crash-safe-private-temp-storage.md) — isolate uploads per process and use OS-held locks to distinguish active data from crash remnants.
 - [Runtime package identity](runtime-package-identity.md) — provider health must bind the executing package bytes to pinned source and artifact provenance, not echo manifest metadata.
 - [Modal digest-only image references](modal-digest-only-image-references.md) — use repository@sha256 in Modal, but verify GHCR digest availability and prefer the platform manifest.
+- [Checkpoint license provenance](checkpoint-license-provenance.md) — an unofficial wrapper’s model-card license does not authorize externally sourced checkpoint bytes.
