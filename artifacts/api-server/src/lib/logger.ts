@@ -49,9 +49,28 @@ function redactSensitiveFields(
   return copy;
 }
 
-export const logger = pino({
+function protectChildBindings(
+  loggerInstance: pino.Logger,
+  createChild: pino.Logger["child"] = loggerInstance.child,
+): pino.Logger {
+  loggerInstance.child = ((bindings, options) =>
+    protectChildBindings(
+      createChild.call(
+        loggerInstance,
+        redactSensitiveFields(bindings) as pino.Bindings,
+        options,
+      ),
+      createChild,
+    )) as pino.Logger["child"];
+  return loggerInstance;
+}
+
+export const logger = protectChildBindings(pino({
   level: process.env.LOG_LEVEL ?? "info",
   formatters: {
+    bindings(bindings) {
+      return redactSensitiveFields(bindings) as Record<string, unknown>;
+    },
     log(object) {
       return redactSensitiveFields(object) as Record<string, unknown>;
     },
@@ -69,4 +88,4 @@ export const logger = pino({
           options: { colorize: true },
         },
       }),
-});
+}));

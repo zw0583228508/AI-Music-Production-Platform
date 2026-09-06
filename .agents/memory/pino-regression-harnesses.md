@@ -14,3 +14,9 @@ Recursive formatter redaction must sanitize into a cycle-safe copy rather than m
 **Why:** In-place sanitization can corrupt caller state or throw on frozen data, while skipping custom instances leaves a structural path for private values to reach serialized logs.
 
 **How to apply:** Regression fixtures for deep redaction should include arrays, frozen nested values, caller-state assertions, and a custom class instance with both sensitive and benign enumerable fields.
+
+Pino's `formatters.bindings` does not sanitize application context supplied later through `logger.child()`. Persistent child context must be sanitized before child creation, and that protection must carry forward to children created from children.
+
+**Why:** Payload formatting and initial binding formatting can appear to provide a complete privacy boundary while provider metadata persisted on child loggers bypasses both paths.
+
+**How to apply:** Treat `child()` as its own serialization boundary. Sanitize a cycle-safe copy of bindings before delegating to Pino, and apply the same protected child factory to every returned logger.

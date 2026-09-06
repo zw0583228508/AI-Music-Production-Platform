@@ -92,15 +92,51 @@ await build({
 
       Object.freeze(payload.integrations.attempts[0].response.links);
       Object.freeze(payload.integrations.attempts[1].response.auth.credentials);
-      logger.info(payload, "export_object_reclamation_summary");
+      const bindings = {
+        integration: {
+          provider: "storage-provider",
+          connection: {
+            signedUrl:
+              "https://storage.example/binding.wav?token=binding-secret",
+            credentials: {
+              clientSecret: "binding-credential-secret",
+            },
+            region: "us-west-2",
+          },
+          attempts: [
+            {
+              authorization: "Bearer binding-authorization-secret",
+              retryable: false,
+            },
+          ],
+        },
+      };
+      Object.freeze(bindings.integration.connection.credentials);
+      const integrationLogger = logger.child(bindings);
+      const requestBindings = {
+        requestContext: {
+          operation: "provider_download",
+          credentials: {
+            accessToken: "child-binding-credential-secret",
+          },
+          traceId: "trace-safe-789",
+        },
+      };
+      Object.freeze(requestBindings.requestContext.credentials);
+      const requestLogger = integrationLogger.child(requestBindings);
+      requestLogger.info(payload, "export_object_reclamation_summary");
 
       if (
         payload.integrations.attempts[0].response.links.signed_url !==
           "https://storage.example/deep.wav?token=deep-secret" ||
         payload.integrations.attempts[1].response.auth.credentials.accessKey !==
-          "array-credential-secret"
+          "array-credential-secret" ||
+        bindings.integration.connection.credentials.clientSecret !==
+          "binding-credential-secret" ||
+        requestBindings.requestContext.credentials.accessToken !==
+          "child-binding-credential-secret"
       ) {
-        throw new Error("logger mutated the caller's payload");
+        throw new Error("logger mutated caller-owned data");
       }
     `,
     resolveDir: apiDirectory,
@@ -151,6 +187,10 @@ test("serialized logs redact private URLs and credentials while preserving opera
     "request-secret",
     "request-cookie-secret",
     "response-cookie-secret",
+    "binding-secret",
+    "binding-credential-secret",
+    "binding-authorization-secret",
+    "child-binding-credential-secret",
     "X-Goog-Signature",
     "X-Goog-Credential",
   ]) {
@@ -191,6 +231,15 @@ test("serialized logs redact private URLs and credentials while preserving opera
   assert.equal(entry.integrations.wrapper.inner.credentials, "[Redacted]");
   assert.equal(entry.integrations.wrapper.safeKind, "custom-wrapper");
   assert.equal(entry.integrations.wrapper.inner.retryable, true);
+  assert.equal(entry.integration.provider, "storage-provider");
+  assert.equal(entry.integration.connection.signedUrl, "[Redacted]");
+  assert.equal(entry.integration.connection.credentials, "[Redacted]");
+  assert.equal(entry.integration.connection.region, "us-west-2");
+  assert.equal(entry.integration.attempts[0].authorization, "[Redacted]");
+  assert.equal(entry.integration.attempts[0].retryable, false);
+  assert.equal(entry.requestContext.operation, "provider_download");
+  assert.equal(entry.requestContext.credentials, "[Redacted]");
+  assert.equal(entry.requestContext.traceId, "trace-safe-789");
   assert.equal(entry.req.headers.authorization, "[Redacted]");
   assert.equal(entry.req.headers.cookie, "[Redacted]");
   assert.equal(entry.res.headers["set-cookie"], "[Redacted]");
