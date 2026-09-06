@@ -1,0 +1,10 @@
+{
+  "provider": "SONGFORMER",
+  "sourceRepository": "ASLP-lab/SongFormer",
+  "sourceCommit": "139b2aa3b14bd1c6d961d0994e9fc975f1ef7fd5",
+  "sourceLicense": "CC-BY-4.0",
+  "modelRepository": "ASLP-lab/SongFormer",
+  "modelRevision": "a75880ed1b7375ac71860ec6c4fc9c899cf99515",
+  "modelLicense": "CC-BY-4.0",
+  "commercialReviewRequired": true
+}

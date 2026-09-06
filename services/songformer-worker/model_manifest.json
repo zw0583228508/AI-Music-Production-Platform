@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "provider": "SONGFORMER",
+  "status": "NOT_READY_PENDING_BOOTSTRAP_AND_REAL_AUDIO_SMOKE",
+  "runtime": {"python": "3.10", "baseImage": "ubuntu:22.04", "gpuRequired": true},
+  "source": {
+    "repository": "https://github.com/ASLP-lab/SongFormer.git",
+    "commit": "139b2aa3b14bd1c6d961d0994e9fc975f1ef7fd5",
+    "submodules": true
+  },
+  "huggingFace": {"repository": "ASLP-lab/SongFormer", "revision": "a75880ed1b7375ac71860ec6c4fc9c899cf99515"},
+  "assets": [
+    {"path": "SongFormer.safetensors", "md5": "5a24800e12ab357744f8b47e523ba3e6"},
+    {"path": "SongFormer.pt", "md5": "2c66c0bb91364e318e90dbc2d9a79ee2"},
+    {"path": "MusicFM/pretrained_msd.pt", "md5": "df930aceac8209818556c4a656a0714c"},
+    {"path": "MusicFM/msd_stats.json", "md5": "75ab2e47b093e07378f7f703bdb82c14"}
+  ]
+}

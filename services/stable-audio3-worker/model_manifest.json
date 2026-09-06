@@ -1,0 +1,40 @@
+{
+  "provider_family": "STABLE_AUDIO_3",
+  "source": {
+    "repository": "https://github.com/Stability-AI/stable-audio-3.git",
+    "revision": "779434a908193105335fd8d833418603625b2859"
+  },
+  "asset_root": "/var/lib/stable-audio3/models",
+  "artifact_root": "/var/lib/stable-audio3/artifacts",
+  "asset_manifest": "asset-inventory.json",
+  "smoke_proof": "smoke-proof.json",
+  "runtime": {
+    "python": ">=3.10",
+    "torch": "2.7.1",
+    "torchaudio": "2.7.1",
+    "transformers": ">=5.8.0",
+    "numpy": ">=2.2.6",
+    "safetensors": ">=0.7",
+    "huggingface_hub": ">=1.7",
+    "soundfile": ">=0.13.1",
+    "installer": "uv sync"
+  },
+  "license": {
+    "acceptance_environment": "STABILITY_AI_LICENSE_ACCEPTED",
+    "required_value": "true",
+    "token_environment": "STABILITY_AI_HF_TOKEN"
+  },
+  "models": {
+    "STABLE_AUDIO_3_SMALL_MUSIC": {
+      "repository": "stabilityai/stable-audio-3-small-music",
+      "revision": "0fef1392cd842149a2b6d445e181c97608faac06",
+      "model_version": "0fef1392cd842149a2b6d445e181c97608faac06"
+    },
+    "STABLE_AUDIO_3_MEDIUM": {
+      "repository": "stabilityai/stable-audio-3-medium",
+      "revision": "27b5a21b791b1b033d193a9e1e3ce78493f102f9",
+      "model_version": "27b5a21b791b1b033d193a9e1e3ce78493f102f9"
+    }
+  },
+  "role": "SECTION_REPAIR_ENGINE_2"
+}

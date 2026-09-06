@@ -1,0 +1,4 @@
+mt3-infer[full] @ git+https://github.com/openmirlab/mt3-infer.git@280a95817a67da0ae46987ddbb18c946963afffe
+absl-py==2.1.0
+mido==1.3.3
+soundfile==0.13.1

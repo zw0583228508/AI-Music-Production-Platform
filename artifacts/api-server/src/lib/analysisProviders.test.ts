@@ -410,6 +410,8 @@ test("keeps absent providers explicit without fabricating analysis results", asy
       new Set([
         "ALL_IN_ONE",
         "MT3",
+        "MR_MT3",
+        "YOUR_MT3",
         "BS_ROFORMER",
         "SHEETSAGE",
         "CHROMA",

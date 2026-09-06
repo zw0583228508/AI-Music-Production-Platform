@@ -1,0 +1,26 @@
+# Isolated only: never share this runtime with any existing music provider.
+FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential cmake git ffmpeg espeak-ng python3.11 python3.11-dev python3.11-venv && rm -rf /var/lib/apt/lists/*
+RUN python3.11 -m venv /opt/diffrhythm2-venv
+RUN ln -s /opt/diffrhythm2-venv/bin/python /usr/local/bin/python && \
+    ln -s /opt/diffrhythm2-venv/bin/python /usr/local/bin/python3 && \
+    ln -s /opt/diffrhythm2-venv/bin/python /usr/local/bin/python3.11 && \
+    /usr/local/bin/python -c 'import sys; assert sys.version_info[:2] == (3, 11), sys.version'
+COPY services/diffrhythm2-worker/requirements.txt /tmp/requirements.txt
+RUN /opt/diffrhythm2-venv/bin/pip install --no-cache-dir -r /tmp/requirements.txt && /opt/diffrhythm2-venv/bin/pip install --no-cache-dir torch==2.7.0 torchaudio==2.7.0
+RUN set -eux; \
+    git clone https://github.com/xiaomi-research/diffrhythm2.git /opt/diffrhythm2; \
+    git -C /opt/diffrhythm2 checkout --detach 13a7b091f45124f611e36ee674973234f38d55b6; \
+    actual_revision="$(git -C /opt/diffrhythm2 rev-parse HEAD)"; \
+    echo "DiffRhythm2 checked-out revision: ${actual_revision}"; \
+    test "${actual_revision}" = "13a7b091f45124f611e36ee674973234f38d55b6"; \
+    test -s /opt/diffrhythm2/requirements.txt; \
+    echo "Pinned DiffRhythm2 upstream requirements:"; \
+    cat /opt/diffrhythm2/requirements.txt; \
+    /opt/diffrhythm2-venv/bin/pip install --no-cache-dir -r /opt/diffrhythm2/requirements.txt
+COPY services/diffrhythm2-worker /app
+RUN useradd --system diffrhythm2 && mkdir -p /var/lib/diffrhythm2/{models,artifacts} && chown -R diffrhythm2:diffrhythm2 /app /var/lib/diffrhythm2
+USER diffrhythm2
+WORKDIR /app
+ENV HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+CMD ["/opt/diffrhythm2-venv/bin/python","-m","uvicorn","app:app","--host","0.0.0.0","--port","8016"]

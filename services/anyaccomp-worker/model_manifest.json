@@ -1,0 +1,30 @@
+{
+  "provider": "ANYACCOMP",
+  "model_version": "anyaccomp",
+  "asset_root": "/var/lib/anyaccomp/models",
+  "artifact_root": "/var/lib/anyaccomp/artifacts",
+  "asset_manifest": "asset-inventory.json",
+  "smoke_proof": "smoke-proof.json",
+  "source": {
+    "repository": "https://github.com/open-mmlab/Amphion.git",
+    "revision": null,
+    "subdirectory": "models/tts/anyaccomp"
+  },
+  "weights": {
+    "repository": "amphion/anyaccomp",
+    "revision": null,
+    "required_components": ["VQ", "Flow Matching", "Vocoder"]
+  },
+  "runtime": {
+    "python": "3.9",
+    "pytorch": "2.3.1",
+    "torchaudio": "2.3.1",
+    "torchvision": "0.18.1",
+    "transformers": "4.47.1",
+    "accelerate": "1.6.0"
+  },
+  "license": {
+    "commercial_use_environment": "ANYACCOMP_COMMERCIAL_USE_AUTHORIZED",
+    "required_value": "true"
+  }
+}

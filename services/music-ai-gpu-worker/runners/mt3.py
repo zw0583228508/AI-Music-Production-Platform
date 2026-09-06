@@ -40,13 +40,25 @@ class OfficialMt3Backend:
     def transcribe(self, audio: Path, checkpoint: Path) -> list[dict[str, Any]]:
         require_distribution_version(BACKEND_DISTRIBUTION, BACKEND_VERSION)
         try:
-            import soundfile as sf
-            from mt3_infer import transcribe
+            from mt3_infer import get_model_info, transcribe
+            from mt3_infer.utils.audio import load_audio
         except ImportError as exc:  # pragma: no cover - deployment dependency
             raise RunnerError("mt3-infer==0.1.3 is not installed") from exc
-        samples, sample_rate = sf.read(str(audio), dtype="float32")
+        model_name = os.getenv("MT3_INFER_MODEL", "mt3_pytorch")
+        model_info = get_model_info(model_name)
+        expected_rate = model_info.get("metadata", {}).get("sample_rate")
+        if (isinstance(expected_rate, bool) or not isinstance(expected_rate, int)
+                or expected_rate <= 0):
+            raise RunnerError(f"mt3-infer model {model_name} has no valid sample rate")
+        # Use the pinned toolkit's official loader so model registry metadata,
+        # mono conversion, and automatic resampling remain one reviewed path.
+        samples, sample_rate = load_audio(str(audio), sr=expected_rate)
+        if sample_rate != expected_rate:
+            raise RunnerError(
+                f"mt3-infer audio loader returned {sample_rate}Hz; expected {expected_rate}Hz"
+            )
         midi = transcribe(
-            samples, sr=sample_rate, model=os.getenv("MT3_INFER_MODEL", "mt3_pytorch"),
+            samples, sr=sample_rate, model=model_name,
             checkpoint_path=str(checkpoint), device="cuda", auto_download=False,
         )
         events = _midi_notes(midi)

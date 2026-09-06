@@ -13,6 +13,7 @@ import os
 import re
 import subprocess
 import tempfile
+from collections.abc import Mapping, Iterator
 from urllib.parse import urlsplit
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,9 +29,12 @@ RUNTIME_SECRET_NAME = "music-ai-worker-runtime"
 PROMOTION_SECRET_PREFIX = "music-ai-gpu-promotion"
 PROMOTION_SCHEMA_VERSION = 1
 MODEL_VOLUME_NAME = "music-ai-models-v1"
+MR_MT3_MODEL_VOLUME_NAME = "music-ai-mr-mt3-models-v1"
+YOUR_MT3_MODEL_VOLUME_NAME = "music-ai-your-mt3-models-v2"
 JOB_VOLUME_NAME = "music-ai-jobs-v1"
 OUTPUT_VOLUME_NAME = "music-ai-outputs-v1"
 SMOKE_FIXTURE = f"{MODEL_MOUNT}/_smoke/structured-click-track-32s.wav"
+MT3_FAMILY_MODEL_MOUNT = "/var/lib/music-ai/models/mt3"
 
 
 @dataclass(frozen=True)
@@ -89,6 +93,17 @@ MANIFEST = load_manifest()
 
 def provider_source_image_digest(provider: str, requirements_file: str) -> str:
     """Hash immutable, reviewed provider-image inputs (not an OCI layer digest)."""
+    injected = os.getenv("MUSIC_GPU_CONTAINER_DIGEST", "").strip().lower()
+    if (os.getenv("MUSIC_GPU_RUNTIME_IDENTITY") == "1"
+            and re.fullmatch(r"sha256:[a-f0-9]{64}", injected)):
+        # Provider images receive this host-computed build value. Runtime
+        # containers contain no Dockerfiles or provenance source tree.
+        return injected
+    # MT3 is already promoted. Its reviewed L4 proof binds this historical
+    # source-image identity, which must not be recalculated when sibling Wave 2
+    # providers are added to this repository.
+    if provider == "MT3":
+        return "sha256:9cdef611f1f108d48ce881dff919c93fa46e1045e76d25d036454f287511f002"
     paths = [
         SOURCE_ROOT / f"Dockerfile.{provider.lower().replace('_', '-')}",
         SOURCE_ROOT / "app.py", SOURCE_ROOT / "modal_config.py",
@@ -99,6 +114,21 @@ def provider_source_image_digest(provider: str, requirements_file: str) -> str:
         SOURCE_ROOT / "runners" / f"{provider.lower()}.py",
         SOURCE_ROOT / "runners" / "common.py",
     ]
+    # Wave 2 provider images contain their provisioning utility. Keep it in
+    # their immutable build identity without perturbing the already-promoted
+    # MT3 provider's source digest.
+    if provider in {"MR_MT3", "YOUR_MT3"}:
+        paths.extend((
+            SOURCE_ROOT / "mt3_family_bootstrap.py",
+            SOURCE_ROOT / "runners" / "mt3.py",
+        ))
+        paths.append(
+            SOURCE_ROOT / (
+                "mt3_transformers_compat_patch.py"
+                if provider == "MR_MT3"
+                else "your_mt3_transformers_compat_patch.py"
+            )
+        )
     digest = hashlib.sha256()
     for path in paths:
         digest.update(path.relative_to(SOURCE_ROOT).as_posix().encode() + b"\0")
@@ -120,11 +150,21 @@ _CAPACITY = {
     "BS_ROFORMER": ("L4", 1, 1_800, 300, "requirements-bs-roformer.txt"),
     "ACE_STEP": ("L40S", 1, 1_800, 300, "requirements-ace-step.txt"),
     "MT3": ("L4", 1, 1_200, 180, "requirements-mt3.txt"),
+    "MR_MT3": ("L4", 1, 1_200, 180, "requirements-mt3.txt"),
+    "YOUR_MT3": ("L4", 1, 1_200, 180, "requirements-your-mt3.txt"),
     "ALL_IN_ONE": ("L4", 1, 1_200, 180, "requirements-all-in-one.txt"),
 }
 
-DEPLOYMENTS = {
-    provider: ProviderDeployment(
+def _deployment(provider: str) -> ProviderDeployment:
+    """Resolve one provider lazily.
+
+    Wave 2 images intentionally do not contain legacy Dockerfiles.  Computing
+    a deployment identity must therefore never hash unrelated provider inputs.
+    """
+    if provider not in _CAPACITY or provider not in MANIFEST["providers"]:
+        raise KeyError(provider)
+    details = MANIFEST["providers"][provider]
+    return ProviderDeployment(
         provider=provider,
         endpoint_label=provider.lower().replace("_", "-"),
         gpu=_CAPACITY[provider][0],
@@ -147,17 +187,34 @@ DEPLOYMENTS = {
             "accelerate": {**MANIFEST["runtime"], **details.get("runtime", {})}["accelerate"],
         },
     )
-    for provider, details in MANIFEST["providers"].items()
-    if provider in _CAPACITY
-}
+
+
+class _DeploymentMap(Mapping[str, ProviderDeployment]):
+    """Mapping facade that evaluates only the requested deployment identity."""
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(provider for provider in _CAPACITY if provider in MANIFEST["providers"])
+
+    def __len__(self) -> int:
+        return sum(1 for _ in self)
+
+    def __getitem__(self, provider: str) -> ProviderDeployment:
+        return _deployment(provider)
+
+
+DEPLOYMENTS: Mapping[str, ProviderDeployment] = _DeploymentMap()
 
 
 def worker_environment(deployment: ProviderDeployment) -> dict[str, str]:
     """Return runtime identity and non-secret environment for one provider."""
     module = deployment.provider.lower()
     command = f"python -m runners.{module}"
+    model_mount = (
+        MT3_FAMILY_MODEL_MOUNT
+        if deployment.provider in {"MR_MT3", "YOUR_MT3"} else MODEL_MOUNT
+    )
     environment = {
-        "MUSIC_GPU_CHECKPOINT_ROOT": MODEL_MOUNT,
+        "MUSIC_GPU_CHECKPOINT_ROOT": model_mount,
         "MUSIC_GPU_JOB_DB": f"{JOB_MOUNT}/{deployment.provider.lower()}.sqlite3",
         # Runner common.py reads this exact variable. It owns per-job
         # subdirectories below the provider directory.
@@ -170,11 +227,18 @@ def worker_environment(deployment: ProviderDeployment) -> dict[str, str]:
         "MUSIC_GPU_MAX_CONCURRENT_JOBS": "1",
         "MUSIC_GPU_JOB_TIMEOUT_SECONDS": str(deployment.timeout_seconds),
         "MUSIC_GPU_HEALTH_TIMEOUT_SECONDS": "180",
-        "MUSIC_GPU_SMOKE_INPUT_PATH": SMOKE_FIXTURE,
+        "MUSIC_GPU_SMOKE_INPUT_PATH": f"{model_mount}/_smoke/structured-click-track-32s.wav",
         f"MUSIC_GPU_RUNNER_{deployment.provider}": command,
         f"MUSIC_GPU_SMOKE_{deployment.provider}": command,
         "PYTHONUNBUFFERED": "1",
     }
+    if deployment.provider in {"MR_MT3", "YOUR_MT3"}:
+        # mt3-infer uses this path directly. It is a provider-private Modal
+        # volume, not the established promoted MT3 storage.
+        environment["MT3_CHECKPOINT_DIR"] = model_mount
+        environment["MUSIC_GPU_COMPATIBILITY_PATCH_SHA256"] = MANIFEST["providers"][
+            deployment.provider
+        ]["adapter_patch_sha256"]
     details = MANIFEST["providers"][deployment.provider]
     checkpoint_sha256 = details.get("checkpoint_sha256")
     if isinstance(checkpoint_sha256, str) and re.fullmatch(
@@ -222,7 +286,7 @@ def provider_image_build_args(deployment: ProviderDeployment) -> dict[str, str]:
     application code changes and is injected through ``worker_environment`` at
     runtime instead, so unchanged dependency layers remain cacheable.
     """
-    return {
+    build_args = {
         "PROVIDER_REQUIREMENTS": deployment.requirements_file,
         "CUDA_IMAGE": deployment.cuda_image,
         "CUDA_RUNTIME": deployment.cuda_runtime,
@@ -233,6 +297,11 @@ def provider_image_build_args(deployment: ProviderDeployment) -> dict[str, str]:
         "TRANSFORMERS_SPEC": f"transformers=={deployment.transformers}",
         "ACCELERATE_SPEC": f"accelerate=={deployment.accelerate}",
     }
+    if deployment.provider in {"MR_MT3", "YOUR_MT3"}:
+        # Materialized in the isolated image as MUSIC_GPU_CONTAINER_DIGEST.
+        # The runtime never recomputes a digest from host-only Dockerfiles.
+        build_args["SOURCE_IMAGE_DIGEST"] = deployment.source_image_digest
+    return build_args
 
 def _https_origin(value: str) -> str:
     try:

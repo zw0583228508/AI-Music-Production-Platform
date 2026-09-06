@@ -1,0 +1,6 @@
+# Worker production dependencies. The pinned HAFM source revision has no
+# requirements.txt, pyproject.toml, setup.py, or other install declaration.
+fastapi==0.115.12
+uvicorn==0.34.2
+huggingface-hub==0.30.2
+soundfile==0.13.1

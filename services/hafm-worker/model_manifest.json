@@ -1,0 +1,12 @@
+{
+  "provider": "HAFM",
+  "asset_root": "/var/lib/hafm/models",
+  "asset_manifest": "model-assets.json",
+  "smoke_proof": "smoke-proof.json",
+  "smoke_fixture": "real-vocal.wav",
+  "source": {"repository": "HackerHyper/HAFM", "revision": "d9aa19a5820a4c1563ab405d437933480f71d5b9"},
+  "model": {"repository": "zhuqijian/HAFM", "revision": "1653c3c7bffdc9b4b2d57d8b6e4f5bb3002a64fe"},
+  "runtime": {"python": "3.10", "cuda": "12.1", "gpu": "L40S"},
+  "inference": {"command": "python infer_simple.py --vocal_path <vocal> --output_path <output> --config configs/ar.yaml"},
+  "role": "V2A_ALTERNATIVE"
+}

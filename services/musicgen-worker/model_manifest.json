@@ -1,0 +1,50 @@
+{
+  "provider": "AUDIOCRAFT_GENERATION",
+  "asset_root": "/var/lib/musicgen/models",
+  "asset_manifest": "model_manifest.json",
+  "smoke_proof": "smoke-proof.json",
+  "source": {
+    "repository": "facebookresearch/audiocraft",
+    "revision": "896ec7c47f5e5d1e5aa1e4b260c4405328bf009d"
+  },
+  "runtime": {
+    "python": "3.9",
+    "pytorch": "2.1.0+cu118",
+    "cuda_image": "nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu20.04",
+    "ffmpeg_major_less_than": 5
+  },
+  "license": {
+    "name": "CC-BY-NC-4.0",
+    "acceptance_environment": "MUSICGEN_ACCEPT_CC_BY_NC_4_0",
+    "required_value": "accepted"
+  },
+  "models": {
+    "text": {
+      "repository": "facebook/musicgen-large",
+      "requested_revision": "15ccdc9",
+      "resolved_revision": null
+    },
+    "melody": {
+      "repository": "facebook/musicgen-melody-large",
+      "requested_revision": "6fdf8d3",
+      "resolved_revision": null
+    },
+    "jasco": {
+      "provider_id": "JASCO_CHORDS_DRUMS_MELODY",
+      "repository": "facebook/jasco",
+      "requested_revision": null,
+      "resolved_revision": null,
+      "status": "BLOCKED_NO_WEIGHTS",
+      "blocker": "No reviewed immutable Hugging Face revision/checkpoint SHA was supplied for facebook/jasco; never resolve or download main."
+    }
+  },
+  "provider_registry": {
+    "MUSICGEN_LARGE": {"model_key": "text", "capabilities": ["TEXT_CONDITIONING"]},
+    "MUSICGEN_MELODY_LARGE": {"model_key": "melody", "capabilities": ["MELODY_CONDITIONING"]},
+    "JASCO_CHORDS_DRUMS_MELODY": {
+      "model_key": "jasco",
+      "capabilities": ["CHROMA_CONDITIONING", "DRUM_CONDITIONING", "MELODY_CONDITIONING"],
+      "role": "FILLS_TRANSITIONS_LOCAL_REPAIR_ONLY"
+    }
+  }
+}

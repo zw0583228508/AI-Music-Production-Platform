@@ -5,9 +5,14 @@ const GPU_ATTESTED_PROVIDER_IDS = new Set([
   "BS_ROFORMER",
   "ALL_IN_ONE",
   "MT3",
+  "MR_MT3",
+  "YOUR_MT3",
   "SYMPHONYGEN",
   "METEOR",
   "ANYACCOMP",
+  "LADA_BAND",
+  "HAFM",
+  "BEAT_THIS",
 ]);
 
 const MODAL_PROMOTED_PROVIDER_IDS = new Set([
@@ -15,6 +20,11 @@ const MODAL_PROMOTED_PROVIDER_IDS = new Set([
   "BS_ROFORMER",
   "ALL_IN_ONE",
   "MT3",
+  "MR_MT3",
+  "YOUR_MT3",
+  "LADA_BAND",
+  "HAFM",
+  "BEAT_THIS",
 ]);
 
 export const GPU_PROMOTION_SCHEMA_VERSION = 1;

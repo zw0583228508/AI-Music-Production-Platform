@@ -14,6 +14,13 @@ class ModalConfigTests(unittest.TestCase):
         self.assertEqual(modal_app.RUNTIME_SECRET_NAME, "music-ai-worker-runtime")
         self.assertEqual(modal_app.ASSET_MOUNT, "/var/lib/music-mir/assets")
 
+    def test_shared_py311_runtime_has_no_beat_this_dependency_or_exposure(self):
+        root = Path(__file__).parents[1]
+        requirements = (root / "requirements-py311.txt").read_text(encoding="utf-8").lower()
+        dockerfile = (root / "Dockerfile").read_text(encoding="utf-8")
+        self.assertNotIn("beat-this", requirements)
+        self.assertNotIn("BEAT_THIS", dockerfile)
+
     def test_fixture_is_bounded_to_volume(self):
         self.assertEqual(modal_app._relative_fixture("_smoke/real.wav").as_posix(), "_smoke/real.wav")
         for unsafe in ("/etc/passwd", "../fixture.wav", ""):

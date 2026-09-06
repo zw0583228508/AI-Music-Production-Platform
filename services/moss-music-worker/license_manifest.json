@@ -1,0 +1,10 @@
+{
+  "provider_family": "MOSS_MUSIC",
+  "source_repository": "OpenMOSS/MOSS-Music",
+  "source_license": "Apache-2.0",
+  "models": {
+    "MOSS_MUSIC_INSTRUCT": {"repository": "OpenMOSS-Team/MOSS-Music-8B-Instruct", "license": "Apache-2.0"},
+    "MOSS_MUSIC_THINKING": {"repository": "OpenMOSS-Team/MOSS-Music-8B-Thinking", "license": "Apache-2.0"}
+  },
+  "commercial_status": "PERMITTED_BY_APACHE_2_0"
+}

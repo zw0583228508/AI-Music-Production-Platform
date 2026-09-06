@@ -1,0 +1,7 @@
+# The AudioCraft source itself is cloned and checked out in Dockerfile; do not
+# replace it with a floating PyPI or Git dependency.
+fastapi==0.115.6
+uvicorn==0.32.1
+pydantic==2.10.3
+huggingface-hub==0.26.5
+soundfile==0.12.1

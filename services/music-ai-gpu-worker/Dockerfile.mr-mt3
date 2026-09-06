@@ -1,0 +1,29 @@
+# Modal image identity: MR_MT3. Isolated from the promoted MT3 image.
+ARG CUDA_IMAGE=nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+FROM ${CUDA_IMAGE}
+ARG CUDA_RUNTIME=12.4.1
+ARG PYTORCH_SPEC=torch==2.5.1+cu124
+ARG TORCHVISION_SPEC=torchvision==0.20.1+cu124
+ARG TORCHAUDIO_SPEC=torchaudio==2.5.1+cu124
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu124
+ARG TRANSFORMERS_SPEC=transformers==4.48.3
+ARG ACCELERATE_SPEC=accelerate==1.3.0
+ARG SOURCE_IMAGE_DIGEST
+ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 MUSIC_GPU_CUDA_VERSION=${CUDA_RUNTIME} MUSIC_GPU_RUNTIME_IDENTITY=1 MUSIC_GPU_CONTAINER_DIGEST=${SOURCE_IMAGE_DIGEST}
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg git git-lfs libsndfile1 && rm -rf /var/lib/apt/lists/*
+COPY --from=ghcr.io/astral-sh/uv:0.6.1 /uv /uvx /bin/
+RUN uv python install 3.11.11 && uv venv --python 3.11.11 /opt/music-ai-venv
+ENV PATH="/opt/music-ai-venv/bin:${PATH}"
+RUN uv pip install --python /opt/music-ai-venv/bin/python "${PYTORCH_SPEC}" "${TORCHVISION_SPEC}" "${TORCHAUDIO_SPEC}" --index-url "${TORCH_INDEX_URL}" && uv pip install --python /opt/music-ai-venv/bin/python fastapi==0.141.1 uvicorn==0.52.4 pydantic==2.13.5 "${TRANSFORMERS_SPEC}" "${ACCELERATE_SPEC}"
+COPY services/music-ai-gpu-worker/runners/requirements-mt3.txt /tmp/provider-requirements.txt
+RUN uv pip install --python /opt/music-ai-venv/bin/python -r /tmp/provider-requirements.txt
+COPY services/music-ai-gpu-worker/mt3_transformers_compat_patch.py /tmp/mt3_transformers_compat_patch.py
+RUN python /tmp/mt3_transformers_compat_patch.py && rm /tmp/mt3_transformers_compat_patch.py
+WORKDIR /app
+COPY services/music-ai-gpu-worker/app.py services/music-ai-gpu-worker/modal_config.py services/music-ai-gpu-worker/model_manifest.json /app/
+COPY services/music-ai-gpu-worker/mt3_family_bootstrap.py /app/
+COPY services/music-ai-gpu-worker/runners/__init__.py services/music-ai-gpu-worker/runners/common.py services/music-ai-gpu-worker/runners/mt3.py services/music-ai-gpu-worker/runners/mr_mt3.py /app/runners/
+RUN groupadd --system music-ai && useradd --system --gid music-ai --home /app music-ai && mkdir -p /var/lib/music-ai/models/mt3 && chown -R music-ai:music-ai /app /var/lib/music-ai
+EXPOSE 8009
+USER music-ai
+CMD ["python", "-m", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8009"]

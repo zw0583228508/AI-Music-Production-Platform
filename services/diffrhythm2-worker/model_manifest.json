@@ -1,0 +1,13 @@
+{
+  "provider": "DIFFRHYTHM_2",
+  "asset_root": "/var/lib/diffrhythm2/models",
+  "asset_manifest": "model-assets.json",
+  "smoke_proof": "smoke-proof.json",
+  "source": {"repository": "xiaomi-research/diffrhythm2", "revision": "13a7b091f45124f611e36ee674973234f38d55b6"},
+  "runtime": {"python": "3.11", "pytorch": "2.7.0", "cuda_image": "nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04"},
+  "license": {"code": "Apache-2.0", "weights": "Apache-2.0"},
+  "models": [
+    {"repository": "ASLP-lab/DiffRhythm2", "requested_revision": "9aa15742e4889c0eb2e198db6fdab1facf1b6761"},
+    {"repository": "OpenMuQ/MuQ-MuLan-large", "requested_revision": "2e01c796b71dca71b45251384c04cd7b237c9020"}
+  ]
+}

@@ -7,7 +7,13 @@ export type VerifiedMirAnalysisProviderId =
   | "ESSENTIA"
   | "CHROMA"
   | "PYLOUDNORM";
-export type VerifiedGpuAnalysisProviderId = "BS_ROFORMER" | "ALL_IN_ONE" | "MT3";
+export type VerifiedGpuAnalysisProviderId =
+  | "BS_ROFORMER"
+  | "ALL_IN_ONE"
+  | "MT3"
+  | "MR_MT3"
+  | "YOUR_MT3"
+  | "BEAT_THIS";
 
 export type AnalysisProviderManifestEntry = {
   version: string;
@@ -39,6 +45,15 @@ export const VERIFIED_GPU_ANALYSIS_PROVIDERS: Readonly<
   },
   MT3: {
     version: "mt3-ismir2021",
+  },
+  MR_MT3: {
+    version: "mr-mt3",
+  },
+  YOUR_MT3: {
+    version: "your-mt3",
+  },
+  BEAT_THIS: {
+    version: "1.1.0",
   },
 };
 

@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from runners import ace_step, bs_roformer
+from runners import ace_step, bs_roformer, mt3
 from runners import common
 from runners.common import RunnerError
 
@@ -28,6 +28,42 @@ def _make_ace_checkpoint(parent: Path) -> Path:
 
 
 class RunnerContractTests(unittest.TestCase):
+    def test_mt3_uses_official_model_rate_audio_resampling(self) -> None:
+        calls = {}
+
+        def load_audio(path, sr):
+            calls["load"] = (path, sr)
+            return [0.0] * sr, sr
+
+        def transcribe(samples, **kwargs):
+            calls["transcribe"] = (len(samples), kwargs)
+            return object()
+
+        fake_mt3 = types.ModuleType("mt3_infer")
+        fake_mt3.__path__ = []
+        fake_mt3.get_model_info = lambda model: {
+            "metadata": {"sample_rate": 16_000},
+        }
+        fake_mt3.transcribe = transcribe
+        fake_utils = types.ModuleType("mt3_infer.utils")
+        fake_utils.__path__ = []
+        fake_audio = types.ModuleType("mt3_infer.utils.audio")
+        fake_audio.load_audio = load_audio
+        with patch.object(mt3, "require_distribution_version"), patch.object(
+            mt3, "_midi_notes", return_value=[]
+        ), patch.dict(sys.modules, {
+            "mt3_infer": fake_mt3,
+            "mt3_infer.utils": fake_utils,
+            "mt3_infer.utils.audio": fake_audio,
+        }), patch.dict(os.environ, {"MT3_INFER_MODEL": "mr_mt3"}):
+            mt3.OfficialMt3Backend().transcribe(
+                Path("/tmp/reviewed-44k-fixture.wav"), Path("/models/mr_mt3/mt3.pth")
+            )
+
+        self.assertEqual(calls["load"], ("/tmp/reviewed-44k-fixture.wav", 16_000))
+        self.assertEqual(calls["transcribe"][1]["sr"], 16_000)
+        self.assertEqual(calls["transcribe"][1]["model"], "mr_mt3")
+
     def test_smoke_fixture_must_be_inside_model_volume(self) -> None:
         with tempfile.TemporaryDirectory() as volume, tempfile.TemporaryDirectory() as other:
             fixture = Path(other) / "smoke.wav"

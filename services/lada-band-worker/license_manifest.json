@@ -1,0 +1,10 @@
+{
+  "provider": "LADA_BAND",
+  "source_repository": "Duoluoluos/TME-LaDA-Band",
+  "model_repository": "sDuoluoluos/LaDA-Band",
+  "license": "NONCOMMERCIAL_RESEARCH_ONLY",
+  "commercial_status": "RESEARCH_ONLY",
+  "acceptance_environment": "LADA_BAND_ACCEPT_NONCOMMERCIAL_RESEARCH",
+  "required_value": "accepted",
+  "access_token_environment": "HF_TOKEN"
+}

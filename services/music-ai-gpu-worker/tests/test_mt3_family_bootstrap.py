@@ -1,0 +1,138 @@
+import importlib.util
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SPEC = importlib.util.spec_from_file_location("mt3_family_bootstrap", ROOT / "mt3_family_bootstrap.py")
+bootstrap = importlib.util.module_from_spec(SPEC)
+assert SPEC and SPEC.loader
+sys.modules[SPEC.name] = bootstrap
+SPEC.loader.exec_module(bootstrap)
+
+
+class Mt3FamilyBootstrapTests(unittest.TestCase):
+    def test_fixture_is_exact_nonempty_32_second_wav(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = bootstrap.write_structured_smoke_fixture(Path(temporary))
+            import wave
+            with wave.open(str(fixture), "rb") as audio:
+                self.assertEqual(audio.getframerate(), 44_100)
+                self.assertEqual(audio.getnframes(), 44_100 * 32)
+                self.assertEqual(audio.getnchannels(), 1)
+
+    def test_bootstrap_records_observed_hash_only_after_smoke(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+
+            def fake_run(command, **_):
+                if command == ["mt3-infer", "download", "mr_mt3"]:
+                    target = root / "mr_mt3"
+                    target.mkdir()
+                    (target / "mt3.pth").write_bytes(b"reviewed bytes")
+                    return SimpleNamespace(returncode=0, stdout="", stderr="")
+                self.assertEqual(command[2], "runners.mr_mt3")
+                digest = bootstrap.tree_sha256(root / "mr_mt3" / "mt3.pth")
+                return SimpleNamespace(
+                    returncode=0,
+                    stdout=json.dumps({
+                        "smokeTested": True, "provider": "MR_MT3",
+                        "checkpointSha256": digest, "output": {"notes": 1},
+                    }),
+                    stderr="",
+                )
+
+            with mock.patch.object(bootstrap.subprocess, "run", side_effect=fake_run):
+                evidence = bootstrap.bootstrap("MR_MT3", root)
+            self.assertEqual(evidence["provider"], "MR_MT3")
+            self.assertEqual(evidence["toolkitModelId"], "mr_mt3")
+            self.assertEqual(evidence["checkpointPath"], "mr_mt3/mt3.pth")
+            self.assertEqual(len(evidence["inventory"]), 1)
+            self.assertEqual(evidence["smoke"]["notes"], 1)
+            persisted = json.loads((root / "_attestations" / "mr-mt3.json").read_text())
+            self.assertEqual(persisted["checkpointSha256"], evidence["checkpointSha256"])
+
+    def test_invalid_smoke_proof_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            checkpoint = root / "mr_mt3"
+            checkpoint.mkdir()
+            checkpoint = checkpoint / "mt3.pth"
+            checkpoint.write_bytes(b"x")
+            with mock.patch.object(
+                bootstrap.subprocess, "run",
+                return_value=SimpleNamespace(returncode=0, stdout="{}", stderr=""),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "evidence failed validation"):
+                    bootstrap.run_smoke("MR_MT3", root, checkpoint, bootstrap.tree_sha256(checkpoint))
+
+    def test_yourmt3_uses_exact_upstream_registry_layout(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / str(bootstrap.PROVIDERS["YOUR_MT3"]["checkpoint"])
+            path.parent.mkdir(parents=True)
+            path.write_bytes(b"yourmt3 checkpoint")
+            inventory = bootstrap.observed_inventory(root)
+            selected = bootstrap.selected_checkpoint("YOUR_MT3", root, inventory)
+            self.assertEqual(selected, path)
+
+    def test_layout_mismatch_has_bounded_observed_diagnostic(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "unrelated").write_bytes(b"x")
+            with self.assertRaisesRegex(RuntimeError, "observed-layout mismatch") as error:
+                bootstrap.selected_checkpoint("MR_MT3", root, bootstrap.observed_inventory(root))
+            self.assertLessEqual(len(str(error.exception)), 2200)
+
+    def test_other_provider_files_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            selected = root / "mr_mt3" / "mt3.pth"
+            selected.parent.mkdir()
+            selected.write_bytes(b"mr")
+            unrelated = root / "yourmt3" / "other.ckpt"
+            unrelated.parent.mkdir()
+            unrelated.write_bytes(b"your")
+            with self.assertRaisesRegex(RuntimeError, "unexpectedOtherProviderFiles"):
+                bootstrap.selected_checkpoint(
+                    "MR_MT3", root, bootstrap.observed_inventory(root)
+                )
+
+    def test_smoke_failure_contains_bounded_sanitized_stderr(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            checkpoint = root / "mr_mt3" / "mt3.pth"
+            checkpoint.parent.mkdir()
+            checkpoint.write_bytes(b"x")
+            terminal = " TERMINAL_EXCEPTION: YourMT3DecoderFailure"
+            stderr = (
+                "CUDA loader failed\x00 authorization: bearer-secret "
+                + ("x" * 5000)
+                + terminal
+                + ("y" * 5000)
+            )
+            with mock.patch.object(
+                bootstrap.subprocess, "run",
+                return_value=SimpleNamespace(returncode=9, stdout="", stderr=stderr),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "CUDA loader failed") as error:
+                    bootstrap.run_smoke(
+                        "MR_MT3", root, checkpoint, bootstrap.tree_sha256(checkpoint)
+                    )
+            message = str(error.exception)
+            self.assertNotIn("bearer-secret", message)
+            self.assertNotIn("\x00", message)
+            self.assertIn("TERMINAL_EXCEPTION: YourMT3DecoderFailure", message)
+            self.assertGreater(len(message), bootstrap.MAX_DIAGNOSTIC_CHARS)
+            self.assertLessEqual(
+                len(message), bootstrap.RUNNER_DIAGNOSTIC_CHARS + 100
+            )
+
+    def test_non_runner_provisioning_diagnostics_keep_the_smaller_bound(self):
+        diagnostic = bootstrap.bounded_diagnostic("x" * 10_000)
+        self.assertEqual(len(diagnostic), bootstrap.MAX_DIAGNOSTIC_CHARS)

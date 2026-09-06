@@ -16,9 +16,12 @@ export type AnalysisProviderId =
   | "ALL_IN_ONE"
   | "BASIC_PITCH"
   | "MT3"
+  | "MR_MT3"
+  | "YOUR_MT3"
   | "SHEETSAGE"
   | "CHROMA"
   | "MADMOM"
+  | "BEAT_THIS"
   | "TORCHCREPE"
   | "ESSENTIA"
   | "PYLOUDNORM"
@@ -54,7 +57,7 @@ export type StructureAnalysisResult = {
 };
 
 export type TranscriptionAnalysisResult = {
-  providerId: "BASIC_PITCH" | "MT3";
+  providerId: "BASIC_PITCH" | "MT3" | "MR_MT3" | "YOUR_MT3";
   version: string;
   notes: MelodyNote[];
   confidence: number;
@@ -101,7 +104,7 @@ export type AnalysisProviderResults = {
   }>;
   harmonyConfidence: number;
   rhythmEvidence: Array<{
-    provider: "MADMOM";
+    provider: "MADMOM" | "BEAT_THIS";
     version: string;
     beats: number[];
     downbeats: number[];
@@ -206,7 +209,7 @@ const providerToken = (providerId: AnalysisProviderId): string | undefined => {
   }
   return process.env[`MUSIC_PROVIDER_${providerId}_TOKEN`] ??
     process.env[`${providerId}_API_TOKEN`] ??
-    (["BASIC_PITCH", "DEMUCS", "MADMOM", "TORCHCREPE", "ESSENTIA", "CHROMA", "PYLOUDNORM"].includes(providerId)
+    (["BASIC_PITCH", "DEMUCS", "MADMOM", "TORCHCREPE", "ESSENTIA", "CHROMA", "PYLOUDNORM", "BEAT_THIS"].includes(providerId)
       ? process.env.MUSIC_AI_WORKER_TOKEN
       : undefined);
 };
@@ -266,7 +269,7 @@ function providerRequestUrl(endpoint: string, action: string): URL {
 
 function adaptProviderPayload(providerId: AnalysisProviderId, payload: unknown): unknown {
   if (
-    ["MADMOM", "TORCHCREPE", "ESSENTIA", "CHROMA", "PYLOUDNORM"].includes(providerId)
+    ["MADMOM", "BEAT_THIS", "TORCHCREPE", "ESSENTIA", "CHROMA", "PYLOUDNORM"].includes(providerId)
   ) {
     if (!isRecord(payload) || payload["provider"] !== providerId ||
       payload["status"] !== "ok" || !isRecord(payload["result"])) {
@@ -283,7 +286,7 @@ function retryableStatus(status: number): boolean {
 
 function providerRequestTimeoutMs(providerId: AnalysisProviderId): number {
   if (providerId === "PYLOUDNORM" || providerId === "ESSENTIA") return 2 * 60_000;
-  if (providerId === "CHROMA" || providerId === "MADMOM") return 5 * 60_000;
+  if (providerId === "CHROMA" || providerId === "MADMOM" || providerId === "BEAT_THIS") return 5 * 60_000;
   if (providerId === "TORCHCREPE") return 8 * 60_000;
   return 10 * 60_000;
 }
@@ -944,11 +947,31 @@ function parseStructure(payload: unknown, durationSeconds: number): StructureAna
 }
 
 function parseTranscription(
-  providerId: "BASIC_PITCH" | "MT3",
+  providerId: TranscriptionAnalysisResult["providerId"],
   payload: unknown,
   durationSeconds: number,
 ): TranscriptionAnalysisResult {
   if (!isRecord(payload)) throw new Error(`${providerId} response must be an object`);
+  if (providerId === "MR_MT3" || providerId === "YOUR_MT3") {
+    // Unlike the pre-existing promoted MT3 endpoint, Wave 2 identities are
+    // never trusted merely because their health endpoint was reachable.  The
+    // executed result must carry the runner identity that the worker fenced to
+    // its checked checkpoint before this parser accepts any events.
+    const provenance = payload["runtimeProvenance"] ?? payload["provenance"];
+    if (
+      !isRecord(provenance) ||
+      provenance["provider"] !== providerId ||
+      provenance["modelVersion"] !== providerVersion(payload, providerId) ||
+      typeof provenance["checkpointSha256"] !== "string" ||
+      !/^[a-f0-9]{64}$/i.test(provenance["checkpointSha256"]) ||
+      typeof provenance["revision"] !== "string" ||
+      !provenance["revision"].trim() ||
+      typeof provenance["sourceRevision"] !== "string" ||
+      !provenance["sourceRevision"].trim()
+    ) {
+      throw new Error(`${providerId} response is missing verified execution provenance`);
+    }
+  }
   const rawNotes = payload["notes"] ?? payload["events"];
   const overallConfidence = confidence(
     payload["confidence"],
@@ -1699,6 +1722,28 @@ function parseMadmom(payload: unknown, durationSeconds: number) {
   };
 }
 
+function parseBeatThis(payload: unknown, durationSeconds: number) {
+  if (!isRecord(payload)) throw new Error("BEAT_THIS response must be an object");
+  const beats = payload["beats"];
+  const downbeats = payload["downbeats"];
+  const itemConfidence = payload["confidence"];
+  if (
+    !Array.isArray(beats) || beats.length < 2 ||
+    !beats.every((item) => finiteNumber(item) && item >= 0 && item <= durationSeconds + 1) ||
+    beats.some((item, index) => index > 0 && item <= beats[index - 1]) ||
+    !Array.isArray(downbeats) ||
+    !downbeats.every((item) => finiteNumber(item) && beats.includes(item)) ||
+    !finiteNumber(itemConfidence) || itemConfidence < 0 || itemConfidence > 1
+  ) throw new Error("BEAT_THIS returned invalid beat/downbeat evidence");
+  const intervals = beats.slice(1).map((beat, index) => beat - (beats[index] as number));
+  const tempoBpm = 60 / (intervals.reduce((sum, value) => sum + value, 0) / intervals.length);
+  if (!Number.isFinite(tempoBpm) || tempoBpm < 20 || tempoBpm > 400) {
+    throw new Error("BEAT_THIS beat intervals do not produce a valid tempo");
+  }
+  return { provider: "BEAT_THIS" as const, version: providerVersion(payload, "BEAT_THIS"),
+    beats: beats as number[], downbeats: downbeats as number[], tempoBpm };
+}
+
 function parseTorchCrepe(payload: unknown, durationSeconds: number, sourceStem: string) {
   if (!isRecord(payload) || payload["model"] !== "full" || !Array.isArray(payload["frames"])) {
     throw new Error("TORCHCREPE response must contain full-model pitch frames");
@@ -1921,6 +1966,9 @@ export async function runAnalysisProviders(
     );
   }
   if (isFullMix) {
+    schedule("BEAT_THIS", "primary_beat_tracking",
+      (payload) => parseBeatThis(payload, input.durationSeconds),
+      (result) => rhythmEvidence.push(result));
     schedule("MADMOM", "rhythm_evidence",
       (payload) => parseMadmom(payload, input.durationSeconds),
       (result) => rhythmEvidence.push(result));
@@ -1940,6 +1988,25 @@ export async function runAnalysisProviders(
       "MT3",
       "transcription",
       (payload) => parseTranscription("MT3", payload, input.durationSeconds),
+      (result) => {
+        transcriptions.push(result);
+      },
+    );
+    // Wave 2 adapters are independent endpoints and promotion records. They
+    // remain unavailable (rather than pretending to be ready) until their
+    // private-volume bootstrap and signed deployment evidence are supplied.
+    schedule(
+      "MR_MT3",
+      "transcription",
+      (payload) => parseTranscription("MR_MT3", payload, input.durationSeconds),
+      (result) => {
+        transcriptions.push(result);
+      },
+    );
+    schedule(
+      "YOUR_MT3",
+      "transcription",
+      (payload) => parseTranscription("YOUR_MT3", payload, input.durationSeconds),
       (result) => {
         transcriptions.push(result);
       },

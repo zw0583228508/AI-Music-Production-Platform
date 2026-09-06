@@ -13,4 +13,10 @@ SheetSage handcrafted weights are CC BY-NC-SA 3.0 and its Madmom downbeat weight
 
 **Why:** The production platform must not silently accept noncommercial/share-alike model terms.
 
-**How to apply:** Keep SheetSage BLOCKED until the owner explicitly confirms eligible use and accepts those terms, or supplies commercially compatible licensed assets.
+**How to apply:** The owner explicitly confirmed this project is non-commercial and accepted those SheetSage terms. Keep it BLOCKED only while the exact licensed assets remain inaccessible or unverified.
+
+The owner also confirmed the project is non-commercial for MusicGen's CC BY-NC 4.0 weights.
+
+**Why:** Weight installation must not infer license eligibility from package installation alone.
+
+**How to apply:** MusicGen provisioning may use its separately recorded acceptance, but exact immutable model revisions and real smoke evidence are still mandatory before READY.

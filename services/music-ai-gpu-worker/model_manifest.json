@@ -71,6 +71,52 @@
       "runner_env": "MUSIC_GPU_RUNNER_MT3",
       "smoke_env": "MUSIC_GPU_SMOKE_MT3"
     },
+    "MR_MT3": {
+      "model_version": "mr-mt3",
+      "revision": "openmirlab/mt3-infer@280a95817a67da0ae46987ddbb18c946963afffe#mr_mt3",
+      "checkpoint_source": "https://huggingface.co/gudgud1014/MR-MT3/resolve/main/mt3.pth via mt3-infer==0.1.3 download mr_mt3 (provisioning only)",
+      "checkpoint_upstream_revision": null,
+      "checkpoint_provenance_status": "mutable upstream main; artifact hash and immutable upstream revision not independently reviewed",
+      "checkpoint_license": "MIT",
+      "adapter_revision": "openmirlab/mt3-infer@280a95817a67da0ae46987ddbb18c946963afffe",
+      "adapter_patch": "hash-guarded T5Block past_key_values to past_key_value compatibility patch",
+      "adapter_source_sha256": "2e453e6750207d86831d5ae9dd604b0968c6e59290ae4b15bbd902f8b7abb4aa",
+      "adapter_patch_sha256": "f0b0344fd90e50d861d47691b5d140eea97d3b73674682b7188677a9c719d9ea",
+      "checkpoint_path": "mr_mt3/mt3.pth",
+      "checkpoint_sha256": null,
+      "checkpoint_evidence_path": "_attestations/mr-mt3.json",
+      "license": "MIT",
+      "smoke_spec": {
+        "input": "_smoke/structured-click-track-32s.wav",
+        "required_output": "at_least_one_terminated_midi_note",
+        "device": "cuda"
+      },
+      "runner_env": "MUSIC_GPU_RUNNER_MR_MT3",
+      "smoke_env": "MUSIC_GPU_SMOKE_MR_MT3"
+    },
+    "YOUR_MT3": {
+      "model_version": "your-mt3",
+      "revision": "openmirlab/mt3-infer@280a95817a67da0ae46987ddbb18c946963afffe#yourmt3",
+      "checkpoint_source": "https://huggingface.co/spaces/mimbres/YourMT3 main:amt/logs/2024/mc13_256_g4_all_v7_mt3f_sqr_rms_moe_wf4_n8k2_silu_rope_rp_b36_nops/checkpoints/last.ckpt via mt3-infer==0.1.3 download yourmt3 (provisioning only)",
+      "checkpoint_upstream_revision": null,
+      "checkpoint_provenance_status": "mutable upstream main; artifact hash and immutable upstream revision not independently reviewed",
+      "checkpoint_license": "Apache-2.0",
+      "adapter_revision": "openmirlab/mt3-infer@280a95817a67da0ae46987ddbb18c946963afffe",
+      "adapter_patch": "hash-guarded YourMT3 T5 cache_position compatibility patch",
+      "adapter_source_sha256": "b2cc683b55f5d3284c0788d59f8f0a7c39b03535731aeb7a62c81c86c351f480",
+      "adapter_patch_sha256": "81363b1b69d01d9ea94ac72201f897fdd2ba011b7d0090219b509fa6909ad3ee",
+      "checkpoint_path": "yourmt3/mc13_256_g4_all_v7_mt3f_sqr_rms_moe_wf4_n8k2_silu_rope_rp_b36_nops/last.ckpt",
+      "checkpoint_sha256": null,
+      "checkpoint_evidence_path": "_attestations/your-mt3.json",
+      "license": "Apache-2.0",
+      "smoke_spec": {
+        "input": "_smoke/structured-click-track-32s.wav",
+        "required_output": "at_least_one_terminated_midi_note",
+        "device": "cuda"
+      },
+      "runner_env": "MUSIC_GPU_RUNNER_YOUR_MT3",
+      "smoke_env": "MUSIC_GPU_SMOKE_YOUR_MT3"
+    },
     "ALL_IN_ONE": {
       "model_version": "all-in-one-infer-3.1.0",
       "model_name": "harmonix-all",

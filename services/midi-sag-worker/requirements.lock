@@ -1,0 +1,10 @@
+fastapi==0.115.6
+uvicorn==0.32.1
+pydantic==2.10.3
+torch==2.5.1
+torchaudio==2.5.1
+transformers==4.47.1
+pytorch-fast-transformers==0.4.0
+huggingface-hub==0.26.5
+openai-whisper==20240930
+torchcodec==0.1.1

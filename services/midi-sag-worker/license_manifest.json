@@ -1,0 +1,10 @@
+{
+  "provider": "MIDI_SAG",
+  "codeLicense": "upstream repository terms",
+  "weightsLicense": "asset-specific upstream terms; recorded per asset during bootstrap",
+  "commercialStatus": "LICENSE_REVIEW_REQUIRED",
+  "separateProviderIdentity": {
+    "MIDI_SAG": "vocal-to-symbolic accompaniment pipeline",
+    "MUSE_CONTROL_LITE": "controlled neural backing-audio renderer"
+  }
+}

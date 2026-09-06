@@ -132,6 +132,11 @@ export class ProviderUnavailableError extends Error {
 }
 
 function assertProviderCommercialUseAuthorized(providerId: string): void {
+  if (providerId === "LADA_BAND") {
+    throw new ProviderUnavailableError(
+      "LADA_BAND (non-commercial research-only provider is excluded from production routing)",
+    );
+  }
   if (providerId === "ANYACCOMP" && !anyAccompCommercialUseAuthorized()) {
     throw new ProviderUnavailableError(
       "ANYACCOMP (commercial-use authorization is required)",
@@ -222,17 +227,89 @@ export const MUSIC_PROVIDERS: MusicProviderDescriptor[] = [
     notes: "Requires MUSICGEN_API_URL and a verified GPU worker checkpoint.",
   },
   {
+    id: "STABLE_AUDIO_3_SMALL_MUSIC",
+    name: "Stable Audio 3 Small Music",
+    provider: "Stability AI",
+    version: "0fef1392cd842149a2b6d445e181c97608faac06",
+    capabilities: ["audio_generation"],
+    inputTypes: ["FULL_SONG", "INSTRUMENTAL"],
+    execution: "remote",
+    // A configured endpoint is deliberately not treated as READY. The worker
+    // independently verifies license acceptance, pinned source/snapshot files,
+    // runtime, and a non-silent artifact smoke proof.
+    status: remoteConfigured("STABLE_AUDIO_3_SMALL_MUSIC") &&
+      process.env.STABILITY_AI_LICENSE_ACCEPTED === "true" ? "configured" : "unavailable",
+    license: "Stability AI Community License (gated weights)",
+    priority: 36,
+    notes: "Isolated Small Music identity. Requires STABLE_AUDIO_3_SMALL_MUSIC_API_URL, bearer authentication, Stability license acceptance, private source/model/artifact volumes, immutable source 779434a908193105335fd8d833418603625b2859 and snapshot 0fef1392cd842149a2b6d445e181c97608faac06. Exposes prompt, duration, initAudio, initNoiseLevel, inpaintStart, inpaintEnd, loraPath, and loraStrength; never READY from catalog configuration alone.",
+  },
+  {
+    id: "STABLE_AUDIO_3_MEDIUM",
+    name: "Stable Audio 3 Medium",
+    provider: "Stability AI",
+    version: "27b5a21b791b1b033d193a9e1e3ce78493f102f9",
+    capabilities: ["audio_generation"],
+    inputTypes: ["FULL_SONG", "INSTRUMENTAL"],
+    execution: "remote",
+    status: remoteConfigured("STABLE_AUDIO_3_MEDIUM") &&
+      process.env.STABILITY_AI_LICENSE_ACCEPTED === "true" ? "configured" : "unavailable",
+    license: "Stability AI Community License (gated weights)",
+    priority: 37,
+    notes: "Isolated Medium identity. Requires STABLE_AUDIO_3_MEDIUM_API_URL, bearer authentication, Stability license acceptance, private source/model/artifact volumes, immutable source 779434a908193105335fd8d833418603625b2859 and snapshot 27b5a21b791b1b033d193a9e1e3ce78493f102f9. Exposes prompt, duration, initAudio, initNoiseLevel, inpaintStart, inpaintEnd, loraPath, and loraStrength; never READY from catalog configuration alone.",
+  },
+  {
+    id: "DIFFRHYTHM_2",
+    name: "DiffRhythm 2",
+    provider: "Xiaomi Research / ASLP Lab",
+    version: "13a7b091f45124f611e36ee674973234f38d55b6",
+    capabilities: ["audio_generation"],
+    inputTypes: ["FULL_SONG", "VOCAL_ONLY", "INSTRUMENTAL"],
+    execution: "remote",
+    status: remoteConfigured("DIFFRHYTHM2") ? "configured" : "unavailable",
+    license: "Apache-2.0 (code and weights)",
+    priority: 36,
+    notes: "Full-song generation only. Requires DIFFRHYTHM2_API_URL, bearer authentication, private immutable model volume, provisioning-only downloads, and persisted real non-silent/non-copy lyric-and-rhythm-conditioned smoke evidence. It is never READY merely because an endpoint is configured.",
+  },
+  {
     id: "ANYACCOMP",
     name: "AnyAccomp",
     provider: "AnyAccomp",
     version: "configured-endpoint",
-    capabilities: ["arrangement"],
-    inputTypes: ["VOCAL_ONLY", "SOLO_INSTRUMENT", "MIDI"],
+    capabilities: ["audio_generation"],
+    inputTypes: ["VOCAL_ONLY"],
     execution: "remote",
     status: remoteConfigured("ANYACCOMP") ? "configured" : "unavailable",
     license: "Provider terms",
     priority: 40,
-    notes: "Requires ANYACCOMP_API_URL.",
+    notes: "Dedicated V2A worker only. Requires ANYACCOMP_API_URL, bearer authentication, exact source/VQ/Flow-Matching/Vocoder inventory, and a real non-copy/non-silence source-conditioned smoke proof. It is not an arrangement-plan provider.",
+  },
+  {
+    id: "LADA_BAND",
+    name: "LaDA-Band",
+    provider: "Duoluoluos / TME",
+    version: "6d444caee85385677b0652ecb0b2b8220436dd37",
+    capabilities: ["arrangement"],
+    inputTypes: ["VOCAL_ONLY"],
+    execution: "remote",
+    status: remoteConfigured("LADA_BAND") &&
+      process.env.LADA_BAND_ACCEPT_NONCOMMERCIAL_RESEARCH === "accepted"
+      ? "configured" : "unavailable",
+    license: "NONCOMMERCIAL_RESEARCH_ONLY",
+    priority: 41,
+    notes: "Research-only direct vocal-to-accompaniment candidate. Explicit non-commercial acceptance, gated weights, private volume, immutable artifact inventory, real-audio smoke, and signed GPU deployment evidence are required; never production-routable.",
+  },
+  {
+    id: "HAFM",
+    name: "HAFM",
+    provider: "HackerHyper",
+    version: "1653c3c7bffdc9b4b2d57d8b6e4f5bb3002a64fe",
+    capabilities: ["arrangement"],
+    inputTypes: ["VOCAL_ONLY"],
+    execution: "remote",
+    status: remoteConfigured("HAFM") ? "configured" : "unavailable",
+    license: "Apache-2.0",
+    priority: 42,
+    notes: "Alternative vocal-to-instrumental accompaniment provider. Requires HAFM_API_URL, bearer authentication, immutable assets, real-audio smoke, and signed GPU deployment evidence.",
   },
   {
     id: "SYMPHONYGEN",
@@ -271,7 +348,20 @@ export const MUSIC_PROVIDERS: MusicProviderDescriptor[] = [
     status: remoteConfigured("MIDI_SAG") ? "configured" : "unavailable",
     license: "Provider terms",
     priority: 65,
-    notes: "Requires MIDI_SAG_API_URL.",
+    notes: "Requires MIDI_SAG_API_URL, bearer authentication, private immutable asset volume, and valid nonempty MIDI smoke evidence.",
+  },
+  {
+    id: "MUSE_CONTROL_LITE",
+    name: "MuseControlLite",
+    provider: "MIDI-SAG packaged MuseControlLite",
+    version: "midi-sag-b79839ed0cdd0b5e5f39d4cc4a80fcc90002d32f",
+    capabilities: ["audio_generation"],
+    inputTypes: ["MIDI", "VOCAL_ONLY", "INSTRUMENTAL"],
+    execution: "remote",
+    status: remoteConfigured("MUSE_CONTROL_LITE") || remoteConfigured("MIDI_SAG") ? "configured" : "unavailable",
+    license: "Asset-specific upstream terms; license review required",
+    priority: 66,
+    notes: "Separate controlled-generation identity although packaged in MIDI-SAG. Requires MUSE_CONTROL_LITE_API_URL (or MIDI_SAG_API_URL), bearer authentication, private immutable asset volume, and real smoke evidence.",
   },
   {
     id: "LOCAL_EXPRESSIVE_SYNTH",
@@ -339,6 +429,32 @@ export const MUSIC_PROVIDERS: MusicProviderDescriptor[] = [
     notes: "Requires MT3_API_URL, a signed promotion record, and the exact verified converted checkpoint; consumes signed private source URLs.",
   },
   {
+    id: "MR_MT3",
+    name: "MR-MT3",
+    provider: "OpenMIRLab / MT3",
+    version: "mr-mt3",
+    capabilities: ["transcription"],
+    inputTypes: ["FULL_SONG", "INSTRUMENTAL", "VIDEO"],
+    execution: "remote",
+    status: "unavailable",
+    license: "MIT",
+    priority: 81,
+    notes: "Speed-optimized transcription adapter. Unavailable until the mutable upstream artifact hash and immutable revision are independently reviewed and signed promotion evidence succeeds.",
+  },
+  {
+    id: "YOUR_MT3",
+    name: "YourMT3",
+    provider: "OpenMIRLab / MT3",
+    version: "your-mt3",
+    capabilities: ["transcription"],
+    inputTypes: ["FULL_SONG", "INSTRUMENTAL", "VIDEO"],
+    execution: "remote",
+    status: "unavailable",
+    license: "Apache-2.0",
+    priority: 82,
+    notes: "Multitask transcription adapter. Unavailable until the mutable upstream artifact hash and immutable revision are independently reviewed and signed promotion evidence succeeds.",
+  },
+  {
     id: "ALL_IN_ONE",
     name: "All-In-One Music Structure Analyzer",
     provider: "Research model",
@@ -395,6 +511,22 @@ export const MUSIC_PROVIDERS: MusicProviderDescriptor[] = [
     priority: 110,
     notes: "BLOCKED unless SHEETSAGE_LICENSE_AUTHORIZED=true and a real licensed endpoint is configured.",
   },
+  ...[
+    ["MOSS_MUSIC_INSTRUCT", "MOSS-Music 8B Instruct", "Direct musical semantic reasoning"],
+    ["MOSS_MUSIC_THINKING", "MOSS-Music 8B Thinking", "Deliberate musical semantic reasoning"],
+  ].map(([id, name, role], index): MusicProviderDescriptor => ({
+    id,
+    name,
+    provider: "OpenMOSS MOSS-Music",
+    version: "ad107c7ddaa06de168a0dfbc18d3e1e6a40c0e5e",
+    capabilities: ["structure", "harmony", "transcription"],
+    inputTypes: ["FULL_SONG", "VOCAL_ONLY", "SOLO_INSTRUMENT", "INSTRUMENTAL", "VIDEO"],
+    execution: "remote",
+    status: remoteConfigured(id) || remoteConfigured("MOSS_MUSIC") ? "configured" : "unavailable",
+    license: "Apache-2.0",
+    priority: 121 + index,
+    notes: `${role}; requires ${id}_API_URL (or MOSS_MUSIC_API_URL). Output is MUSICAL_SEMANTIC_REASONING only and never canonical analysis truth.`,
+  })),
   ...[
     ["MADMOM", "Madmom Rhythm Evidence", "structure", "CC-BY-NC-SA-4.0 weights"],
     ["TORCHCREPE", "TorchCREPE Pitch Evidence", "transcription", "MIT"],
@@ -485,12 +617,14 @@ async function verifyAnalysisProviderHealth(
 ): Promise<ProviderDescriptorCatalogEntry> {
   if (
     !provider.configured ||
-    !["BASIC_PITCH", "DEMUCS", "MADMOM", "TORCHCREPE", "ESSENTIA", "CHROMA", "PYLOUDNORM"].includes(provider.id)
+    !["BASIC_PITCH", "DEMUCS", "MADMOM", "TORCHCREPE", "ESSENTIA", "CHROMA", "PYLOUDNORM",
+      "MOSS_MUSIC_INSTRUCT", "MOSS_MUSIC_THINKING"].includes(provider.id)
   ) {
     return provider;
   }
-  const endpoint = process.env[`MUSIC_PROVIDER_${provider.id}_URL`] ??
+    const endpoint = process.env[`MUSIC_PROVIDER_${provider.id}_URL`] ??
     process.env[`${provider.id}_API_URL`] ??
+      (provider.id.startsWith("MOSS_MUSIC_") ? process.env.MOSS_MUSIC_API_URL : undefined) ??
     process.env[
       ["ESSENTIA", "CHROMA"].includes(provider.id)
         ? "MUSIC_MIR_ESSENTIA_API_URL"
@@ -626,12 +760,12 @@ export class ModelRouter {
     const preferredIds = context?.hasExistingArrangement
       ? ["METEOR", "SYMPHONYGEN"]
       : sourceType === "VOCAL_ONLY"
-        ? ["ACE_STEP_COMPLETE", "ANYACCOMP", "MIDI_SAG"]
+        ? ["ACE_STEP_COMPLETE", "MIDI_SAG"]
         : style.includes("cinematic") || style.includes("orchestra")
           ? ["SYMPHONYGEN", "METEOR"]
           : sourceType === "MIDI"
             ? ["MIDI_SAG", "SYMPHONYGEN", "METEOR"]
-            : ["ACE_STEP_BASE", "SYMPHONYGEN", "ANYACCOMP"];
+            : ["ACE_STEP_BASE", "SYMPHONYGEN"];
     for (const id of preferredIds) {
       const provider = MUSIC_PROVIDERS.find((candidate) =>
         candidate.id === id &&
@@ -801,7 +935,9 @@ export function generateLocalArrangement(
 }
 
 function remoteEnvironmentPrefix(providerId: string): string {
-  return providerId === "ACE_STEP_BASE" ? "ACE_STEP" : providerId;
+  if (providerId === "ACE_STEP_BASE") return "ACE_STEP";
+  if (providerId === "DIFFRHYTHM_2") return "DIFFRHYTHM2";
+  return providerId;
 }
 
 function remoteProviderEndpoint(providerId: string): string | undefined {
@@ -1112,9 +1248,14 @@ export const musicProviderIds = [
   "BASIC_PITCH",
   "ACE_STEP",
   "ANYACCOMP",
+  "LADA_BAND",
+  "HAFM",
   "SYMPHONYGEN",
   "METEOR",
   "MIDI_SAG",
+  "MUSE_CONTROL_LITE",
+  "STABLE_AUDIO_3_SMALL_MUSIC",
+  "STABLE_AUDIO_3_MEDIUM",
 ] as const;
 
 class HttpMusicGenerationProvider implements MusicGenerationProvider {
@@ -1195,8 +1336,8 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
         typeof value === "string" && Boolean(value.trim())
       )?.trim() ?? null;
       const strictGpuAttestation = isGpuAttestedProvider(this.definition.id);
-      const commercialUseAuthorized = this.definition.id !== "ANYACCOMP" ||
-        anyAccompCommercialUseAuthorized();
+      const commercialUseAuthorized = this.definition.id !== "LADA_BAND" &&
+        (this.definition.id !== "ANYACCOMP" || anyAccompCommercialUseAuthorized());
       const expectedVersion = strictGpuAttestation
         ? expectedGpuModelVersion(this.definition.id, this.definition.modelVersion)
         : this.definition.modelVersion;
@@ -1302,12 +1443,13 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
     } catch (error) {
       this.attestedChecksum = null;
       this.readiness = {
-        availability: this.definition.id === "ANYACCOMP" &&
-            !anyAccompCommercialUseAuthorized()
+        availability: (this.definition.id === "LADA_BAND") ||
+            (this.definition.id === "ANYACCOMP" &&
+              !anyAccompCommercialUseAuthorized())
           ? "unavailable"
           : "configured",
-        configurationReady: this.definition.id !== "ANYACCOMP" ||
-          anyAccompCommercialUseAuthorized(),
+        configurationReady: this.definition.id !== "LADA_BAND" &&
+          (this.definition.id !== "ANYACCOMP" || anyAccompCommercialUseAuthorized()),
         checkpointReady: false,
         runtimeReady: false,
         smokeTested: false,
@@ -1402,6 +1544,9 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
     signal?: AbortSignal,
   ): Promise<ProviderGenerationResult> {
     assertProviderCommercialUseAuthorized(this.definition.id);
+    if (this.definition.id === "ANYACCOMP" && !input.sourceAudio?.url) {
+      throw new Error("AnyAccomp requires a private source vocal artifact; it cannot run text-only accompaniment inference");
+    }
     if (!this.endpoint) {
       throw new Error(`${this.definition.displayName} worker is not configured`);
     }
@@ -1423,6 +1568,9 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
         prompt: providerGenerationPrompt(input),
         candidateCount: input.candidates,
         durationSeconds: providerGenerationDuration(input.songModel),
+        ...(this.definition.id === "ANYACCOMP"
+          ? { vocalSource: input.sourceAudio }
+          : {}),
       }),
       signal: signal
         ? AbortSignal.any([signal, AbortSignal.timeout(10 * 60 * 1000)])
@@ -1587,6 +1735,7 @@ export function selectMusicProvider(
       provider.readiness.runtimeReady &&
       provider.readiness.healthStatus === "healthy" &&
       (definition.id !== "ANYACCOMP" || anyAccompCommercialUseAuthorized()) &&
+      definition.id !== "LADA_BAND" &&
       definition.tasks.includes(request.task) &&
       definition.speeds.includes(request.speed) &&
       (request.hardware === "AUTO" ||
@@ -1672,10 +1821,28 @@ export const providerDefinitions: ProviderDefinition[] = [
     id: "ANYACCOMP",
     displayName: "AnyAccomp",
     modelVersion: "anyaccomp",
-    tasks: ["ACCOMPANIMENT", "ARRANGEMENT"],
+    tasks: ["ACCOMPANIMENT"],
     hardware: ["GPU"],
     speeds: ["BALANCED", "QUALITY"],
     styles: ["vocal", "solo", "acoustic"],
+  },
+  {
+    id: "LADA_BAND",
+    displayName: "LaDA-Band (Research Only)",
+    modelVersion: "6d444caee85385677b0652ecb0b2b8220436dd37",
+    tasks: ["ACCOMPANIMENT"],
+    hardware: ["GPU"],
+    speeds: ["QUALITY"],
+    styles: ["vocal", "singing"],
+  },
+  {
+    id: "HAFM",
+    displayName: "HAFM",
+    modelVersion: "1653c3c7bffdc9b4b2d57d8b6e4f5bb3002a64fe",
+    tasks: ["ACCOMPANIMENT"],
+    hardware: ["GPU"],
+    speeds: ["BALANCED", "QUALITY"],
+    styles: ["vocal", "singing", "acoustic"],
   },
   {
     id: "SYMPHONYGEN",
@@ -1703,6 +1870,15 @@ export const providerDefinitions: ProviderDefinition[] = [
     hardware: ["CPU", "GPU"],
     speeds: ["FAST", "BALANCED", "QUALITY"],
     styles: ["pop", "jazz", "classical", "cinematic", "orchestral"],
+  },
+  {
+    id: "MUSE_CONTROL_LITE",
+    displayName: "MuseControlLite",
+    modelVersion: "midi-sag-b79839ed0cdd0b5e5f39d4cc4a80fcc90002d32f",
+    tasks: ["ACCOMPANIMENT"],
+    hardware: ["GPU"],
+    speeds: ["BALANCED", "QUALITY"],
+    styles: ["controlled", "midi-conditioned", "vocal-conditioned"],
   },
 ];
 

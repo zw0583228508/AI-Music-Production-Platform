@@ -316,11 +316,19 @@ def runtime_provenance() -> dict[str, str]:
     modal_image_id = os.getenv("MODAL_IMAGE_ID", "").strip()
     if not __import__("re").fullmatch(r"im-[A-Za-z0-9]+", modal_image_id):
         raise RunnerError("valid MODAL_IMAGE_ID is required for provenance")
-    return {"sourceImageDigest": container, "containerDigest": container,
+    provenance = {"sourceImageDigest": container, "containerDigest": container,
             "modalImageId": modal_image_id, "imageId": modal_image_id,
             "cudaVersion": str(torch.version.cuda or "unknown"),
             "pytorchVersion": str(torch.__version__),
             "gpu": torch.cuda.get_device_name(torch.cuda.current_device())}
+    compatibility_patch = os.getenv(
+        "MUSIC_GPU_COMPATIBILITY_PATCH_SHA256", ""
+    ).strip().lower()
+    if compatibility_patch:
+        if not __import__("re").fullmatch(r"[a-f0-9]{64}", compatibility_patch):
+            raise RunnerError("compatibility patch identity is invalid")
+        provenance["compatibilityPatchSha256"] = compatibility_patch
+    return provenance
 
 
 def file_sha256(path: Path) -> str:

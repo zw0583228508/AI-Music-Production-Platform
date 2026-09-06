@@ -1,0 +1,19 @@
+[project]
+name = "stable-audio3-isolated-worker"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+  "torch==2.7.1",
+  "torchaudio==2.7.1",
+  "transformers>=5.8.0",
+  "numpy>=2.2.6",
+  "safetensors>=0.7",
+  "huggingface-hub>=1.7",
+  "soundfile>=0.13.1",
+  "fastapi",
+  "pydantic"
+]
+
+[tool.uv]
+# The reviewed upstream checkout at the immutable source revision supplies its
+# own uv.lock; provisioning runs uv sync there, never in the API request path.

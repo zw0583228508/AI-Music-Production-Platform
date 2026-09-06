@@ -18,6 +18,7 @@ await build({
   stdin: {
     contents: `
       export {
+         MUSIC_PROVIDERS,
         createProviderRegistry,
         cancelRemoteProviderJob,
         canonicalGpuPromotionJson,
@@ -45,6 +46,7 @@ globalThis.require = __createRequire(import.meta.url);`,
 });
 
 const {
+  MUSIC_PROVIDERS,
   cancelRemoteProviderJob,
   canonicalGpuPromotionJson,
   createProviderRegistry,
@@ -453,6 +455,33 @@ test("authenticated cancellation uses the generation provider configuration", as
   } finally {
     delete process.env.MUSIC_PROVIDER_ACE_STEP_URL;
     delete process.env.MUSIC_PROVIDER_ACE_STEP_TOKEN;
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("DiffRhythm outbound auth prefers its API token over the shared worker token", async () => {
+  let authorization = null;
+  const server = createServer((request, response) => {
+    authorization = request.headers.authorization;
+    response.writeHead(503, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ status: "blocked" }));
+  });
+  await listen(server);
+  const address = server.address();
+  process.env.DIFFRHYTHM2_API_URL = `http://127.0.0.1:${address.port}`;
+  process.env.DIFFRHYTHM2_API_TOKEN = "diffrhythm-provider-token";
+  process.env.MUSIC_AI_WORKER_TOKEN = "shared-worker-token";
+  try {
+    const provider = MUSIC_PROVIDERS.find(
+      (candidate) => candidate.id === "DIFFRHYTHM_2",
+    );
+    assert.ok(provider);
+    await assert.rejects(() => runArrangementProvider(provider, {}));
+    assert.equal(authorization, "Bearer diffrhythm-provider-token");
+  } finally {
+    delete process.env.DIFFRHYTHM2_API_URL;
+    delete process.env.DIFFRHYTHM2_API_TOKEN;
+    delete process.env.MUSIC_AI_WORKER_TOKEN;
     await new Promise((resolve) => server.close(resolve));
   }
 });

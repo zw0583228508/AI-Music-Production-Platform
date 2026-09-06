@@ -1,0 +1,40 @@
+{
+  "provider_family": "MOSS_MUSIC",
+  "asset_root": "/var/lib/moss-music/models",
+  "asset_manifest": "model-assets.json",
+  "smoke_proof": "smoke-proof.json",
+  "source": {
+    "repository": "OpenMOSS/MOSS-Music",
+    "revision": "ad107c7ddaa06de168a0dfbc18d3e1e6a40c0e5e"
+  },
+  "runtime": {
+    "python": "3.12",
+    "cuda": "12.8",
+    "torch": "2.9.1+cu128",
+    "ffmpeg_major": 7,
+    "serving": "SGLang",
+    "cudnn": {
+      "package": "nvidia-cudnn-cu12",
+      "version": "9.10.2.21",
+      "resolution": "torch-wheel-transitive"
+    }
+  },
+  "sglang": {
+    "repository": "OpenMOSS/sglang",
+    "branch": "moss-audio",
+    "revision": "c28a945853c7fee357f55d976b8abce51874bd94"
+  },
+  "license": {"name": "Apache-2.0"},
+  "models": {
+    "MOSS_MUSIC_INSTRUCT": {
+      "repository": "OpenMOSS-Team/MOSS-Music-8B-Instruct",
+      "revision": "fce7f8304e96cc2d3398b8106456cbb2ecec3139",
+      "role": "DIRECT_MUSICAL_SEMANTIC_REASONING"
+    },
+    "MOSS_MUSIC_THINKING": {
+      "repository": "OpenMOSS-Team/MOSS-Music-8B-Thinking",
+      "revision": "2ce899988b94b8ecc5dd0dacbc5ce1874d3500e3",
+      "role": "DELIBERATE_MUSICAL_SEMANTIC_REASONING"
+    }
+  }
+}
