@@ -63,6 +63,7 @@ def promotion_record(evidence):
         endpoint_origin=evidence["endpointOrigin"],
         source_revision=evidence["sourceRevision"],
         source_image_digest=evidence["sourceImageDigest"],
+        release_evidence_sha256=promote_modal.release_evidence_sha256(evidence),
     ))
 
 

@@ -75,6 +75,7 @@ def validate(
         "endpointOrigin": evidence["endpointOrigin"],
         "sourceRevision": evidence["sourceRevision"],
         "sourceImageDigest": evidence["sourceImageDigest"],
+        "releaseEvidenceSha256": promote_modal.release_evidence_sha256(evidence),
     }
     if any(record.get(key) != value for key, value in expected_fields.items()):
         raise ValueError("promotion record does not match captured release evidence")

@@ -48,6 +48,9 @@ HEALTH_PAYLOAD_KEYS = {
 def canonical(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
+def release_evidence_sha256(evidence: object) -> str:
+    return hashlib.sha256((canonical(evidence) + "\n").encode()).hexdigest()
+
 def origin(value: str) -> str:
     parsed = urlsplit(value.strip())
     if (parsed.scheme != "https" or not parsed.hostname or parsed.username or
@@ -72,6 +75,8 @@ def record(args: argparse.Namespace) -> dict:
         raise ValueError("source revision must be a full immutable Git SHA")
     if not re.fullmatch(r"sha256:[a-f0-9]{64}", args.source_image_digest):
         raise ValueError("invalid source-image digest")
+    if not re.fullmatch(r"[a-f0-9]{64}", args.release_evidence_sha256):
+        raise ValueError("invalid release-evidence digest")
     runtime = MANIFEST["runtime"]
     return {
         "schemaVersion": 1, "provider": "BEAT_THIS",
@@ -83,6 +88,7 @@ def record(args: argparse.Namespace) -> dict:
         "checkpointRevision": MANIFEST["sourceCommit"],
         "sourceRevision": args.source_revision,
         "sourceImageDigest": args.source_image_digest,
+        "releaseEvidenceSha256": args.release_evidence_sha256,
         "runtime": {key: runtime[key] for key in RUNTIME_KEYS},
     }
 
@@ -394,11 +400,13 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     for name in ("modal-app-id", "modal-deployment-id", "modal-function-id",
                  "modal-image-id", "endpoint-origin", "source-revision",
-                 "source-image-digest", "health-file", "output"):
+                 "source-image-digest", "release-evidence", "health-file", "output"):
         parser.add_argument(f"--{name}", required=True)
     parser.add_argument("--private-key-file")
     parser.add_argument("--public-key-output", required=True)
     args = parser.parse_args()
+    evidence = json.loads(Path(args.release_evidence).read_text())
+    args.release_evidence_sha256 = release_evidence_sha256(evidence)
     key_path = Path(args.private_key_file) if args.private_key_file else None
     key_format = None
     temporary = None

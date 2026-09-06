@@ -7,6 +7,7 @@ import {
   isAttestedGpuProviderStartup,
   type GpuPromotionRecord,
 } from "./gpuProviderAttestation";
+import { committedBeatThisPromotionBundle } from "./beatThisPromotion.generated";
 
 test("generic promotion environment compatibility remains fail closed", () => {
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
@@ -147,7 +148,7 @@ test("generic promotion environment compatibility remains fail closed", () => {
 
 test("Beat This startup requires the exact promoted health schema", () => {
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
-  const record: GpuPromotionRecord = {
+  const fallbackRecord: GpuPromotionRecord = {
     schemaVersion: 1,
     provider: "BEAT_THIS",
     modalAppId: "ap-BeatThis",
@@ -173,6 +174,11 @@ test("Beat This startup requires the exact promoted health schema", () => {
       accelerate: "1.2.1",
     },
   };
+  const record = committedBeatThisPromotionBundle.trim()
+    ? (JSON.parse(committedBeatThisPromotionBundle) as {
+        record: GpuPromotionRecord;
+      }).record
+    : fallbackRecord;
   const signature = sign(
     null,
     Buffer.from(canonicalGpuPromotionJson(record)),

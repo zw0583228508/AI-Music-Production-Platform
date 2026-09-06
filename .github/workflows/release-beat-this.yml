@@ -160,6 +160,7 @@ jobs:
             --endpoint-origin "${fields[4]}" \
             --source-revision "${fields[5]}" \
             --source-image-digest "${fields[6]}" \
+            --release-evidence promotion/release-evidence.json \
             --health-file promotion/live-health.json \
             --output promotion/bundle.json \
             --public-key-output promotion/public-key.pem \
