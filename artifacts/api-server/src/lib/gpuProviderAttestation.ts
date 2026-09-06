@@ -202,18 +202,31 @@ export function expectedGpuPromotionRecord(providerId: string): GpuPromotionReco
 function promotionPublicKey(providerId: string): string | null {
   const providerKey = promotionEnvKey(providerId);
   let genericPublicKey = "";
+  let hasGenericCommittedBundle = false;
   try {
     const promotions = JSON.parse(committedGpuPromotionsJson) as unknown;
     if (isRecord(promotions) && typeof promotions.publicKey === "string") {
       genericPublicKey = promotions.publicKey;
+      hasGenericCommittedBundle = (
+        isRecord(promotions.bundles)
+        && isRecord(promotions.bundles[providerId])
+      );
     }
   } catch {
     genericPublicKey = "";
   }
+  const providerSpecific = process.env[
+    `MUSIC_PROVIDER_${providerKey}_PROMOTION_PUBLIC_KEY`
+  ]?.trim();
+  const committedPublicKey = providerId === "BEAT_THIS"
+    ? (committedBeatThisPromotionBundle.trim()
+      ? committedBeatThisPromotionPublicKey
+      : "")
+    : hasGenericCommittedBundle ? genericPublicKey : "";
   const publicKey = (
-    ((providerId === "BEAT_THIS" ? committedBeatThisPromotionPublicKey : genericPublicKey) ||
-    process.env[`MUSIC_PROVIDER_${providerKey}_PROMOTION_PUBLIC_KEY`]) ??
-    process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY ??
+    committedPublicKey ||
+    providerSpecific ||
+    process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY ||
     process.env.MUSIC_GPU_PROMOTION_PUBLIC_KEY
   )?.trim();
   return publicKey || null;

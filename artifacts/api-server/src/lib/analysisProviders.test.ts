@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
 import { createServer } from "node:http";
 import test from "node:test";
-import { canonicalGpuPromotionJson, type GpuPromotionRecord } from "./gpuProviderAttestation";
+import {
+  canonicalGpuPromotionJson,
+  expectedGpuPromotionRecord,
+  type GpuPromotionRecord,
+} from "./gpuProviderAttestation";
+import { committedBeatThisPromotionBundle } from "./beatThisPromotion.generated";
 import { attestAnalysisProviderHealth } from "./analysisProviderManifest";
 import {
   parseHarmony,
@@ -542,7 +547,6 @@ test("routes BS-RoFormer separation only after signed deployment attestation", a
 test("retries exact Beat This startup before primary beat analysis", async () => {
   let analyzeRequests = 0;
   let healthRequests = 0;
-  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const server = createServer((request, response) => {
     response.setHeader("Content-Type", "application/json");
     if (request.method === "GET" && request.url === "/health?provider=BEAT_THIS") {
@@ -577,32 +581,24 @@ test("retries exact Beat This startup before primary beat analysis", async () =>
   const address = server.address();
   assert.ok(address && typeof address !== "string");
   const endpoint = `http://127.0.0.1:${address.port}`;
-  const record: GpuPromotionRecord = {
-    schemaVersion: 1,
-    provider: "BEAT_THIS",
-    modalAppId: "ap-BeatThis",
-    modalDeploymentId: "dp-BeatThis",
-    modalFunctionId: "fu-BeatThis",
-    modalImageId: "im-BeatThis",
-    endpointOrigin: endpoint,
-    modelVersion: "1.1.0",
-    checkpointSha256: "8c328b45f59d8dd3dff219253ff6a8d6482be57d0133a29140e2febbf8eb8331",
-    checkpointRevision: "final0@8c328b45",
-    sourceRevision: "b95c8ab0c58c2d9fcfd40508ae8dffbc05ac4f5c",
-    sourceImageDigest: `sha256:${"c".repeat(64)}`,
-    releaseEvidenceSha256: "e".repeat(64),
-    runtime: {
-      python: "3.11.11",
-      cudaImage: "nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04",
-      cuda: "12.4.1",
-      pytorch: "2.5.1+cu124",
-      torchvision: "0.20.1+cu124",
-      torchaudio: "2.5.1+cu124",
-      torchIndexUrl: "https://download.pytorch.org/whl/cu124",
-      transformers: "4.48.3",
-      accelerate: "1.3.0",
-    },
-  };
+  const record = (
+    JSON.parse(committedBeatThisPromotionBundle) as {
+      record: GpuPromotionRecord;
+    }
+  ).record;
+  const nativeFetch = globalThis.fetch;
+  globalThis.fetch = ((
+    input: Parameters<typeof fetch>[0],
+    init?: Parameters<typeof fetch>[1],
+  ) => {
+    const requested = new URL(
+      input instanceof Request ? input.url : input.toString(),
+    );
+    if (requested.origin === record.endpointOrigin) {
+      return nativeFetch(`${endpoint}${requested.pathname}${requested.search}`, init);
+    }
+    return nativeFetch(input, init);
+  }) as typeof fetch;
   const health = {
     provider: record.provider,
     status: "ready",
@@ -695,19 +691,7 @@ test("retries exact Beat This startup before primary beat analysis", async () =>
   ];
   const previous = new Map(keys.map((key) => [key, process.env[key]]));
   for (const key of keys) delete process.env[key];
-  process.env.MUSIC_PROVIDER_BEAT_THIS_URL = endpoint;
-  process.env.MUSIC_PROVIDER_BEAT_THIS_PROMOTION_BUNDLE = JSON.stringify({
-    record,
-    signature: sign(
-      null,
-      Buffer.from(canonicalGpuPromotionJson(record)),
-      privateKey,
-    ).toString("base64"),
-  });
-  process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY = publicKey.export({
-    type: "spki",
-    format: "pem",
-  }).toString();
+  process.env.MUSIC_PROVIDER_BEAT_THIS_URL = record.endpointOrigin;
   try {
     const result = await runAnalysisProviders({
       sourceUrl: "https://storage.invalid/signed-source",
@@ -730,6 +714,7 @@ test("retries exact Beat This startup before primary beat analysis", async () =>
       "primary_beat_tracking",
     );
   } finally {
+    globalThis.fetch = nativeFetch;
     for (const [key, value] of previous) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
@@ -1174,27 +1159,9 @@ test("does not transfer source after Basic Pitch package readiness drift", async
 });
 
 test("requires signed exact Modal provenance before sending audio to ALL_IN_ONE", async () => {
-  const checkpointSha256 =
-    "4b8d00db3903c3b505cc5d2ec1a84787ccc2e1cc446f838118e03e9a356552e5";
-  const checkpointRevision =
-    "taejunkim/allinone@379e5fd010b3fdd0ee8381ff8cbcfa51d70b5c19;" +
-    "facebookresearch/demucs@ef66d254cd6d558e207eeff2c4b8d053db2e77dd";
-  const sourceRevision =
-    "openmirlab/all-in-one-infer@3c93b4ae389328544dd5955af7497030cb1bca3a";
-  const sourceImageDigest = `sha256:${"c".repeat(64)}`;
-  const runtime = {
-    python: "3.11.11",
-    cudaImage: "nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04",
-    cuda: "12.4.1",
-    pytorch: "torch==2.5.1+cu124",
-    torchvision: "torchvision==0.20.1+cu124",
-    torchaudio: "torchaudio==2.5.1+cu124",
-    torchIndexUrl: "https://download.pytorch.org/whl/cu124",
-    transformers: "transformers==4.48.3",
-    accelerate: "accelerate==1.3.0",
-  };
-  let expectedFunctionId = "fu-AllInOneFirst";
-  let reportedImageId = "im-AllInOneDrift";
+  const record = expectedGpuPromotionRecord("ALL_IN_ONE");
+  assert.ok(record);
+  let reportedImageId = record.modalImageId;
   let analysisRequests = 0;
   const server = createServer((request, response) => {
     response.setHeader("Content-Type", "application/json");
@@ -1206,30 +1173,30 @@ test("requires signed exact Modal provenance before sending audio to ALL_IN_ONE"
         runtimeReady: true,
         smokeTested: true,
         gpuReady: true,
-        modelVersion: "all-in-one-infer-3.1.0",
-        checksum: checkpointSha256,
-        checkpointSha256,
-        revision: checkpointRevision,
-        sourceRevision,
-        sourceImageDigest,
-        containerDigest: sourceImageDigest,
-        modalAppId: "ap-AllInOne",
-        modalDeploymentId: "dp-AllInOne",
-        modalFunctionId: expectedFunctionId,
+        modelVersion: record.modelVersion,
+        checksum: record.checkpointSha256,
+        checkpointSha256: record.checkpointSha256,
+        revision: record.checkpointRevision,
+        sourceRevision: record.sourceRevision,
+        sourceImageDigest: record.sourceImageDigest,
+        containerDigest: record.sourceImageDigest,
+        modalAppId: record.modalAppId,
+        modalDeploymentId: record.modalDeploymentId,
+        modalFunctionId: record.modalFunctionId,
         modalImageId: reportedImageId,
-        runtime: { pythonVersion: runtime.python },
+        runtime: { pythonVersion: record.runtime.python },
         framework: {
-          cuda_image: runtime.cudaImage,
-          cuda: runtime.cuda,
-          pytorch: runtime.pytorch,
-          torchvision: runtime.torchvision,
-          torchaudio: runtime.torchaudio,
-          torch_index_url: runtime.torchIndexUrl,
-          transformers: runtime.transformers,
-          accelerate: runtime.accelerate,
+          cuda_image: record.runtime.cudaImage,
+          cuda: record.runtime.cuda,
+          pytorch: record.runtime.pytorch,
+          torchvision: record.runtime.torchvision,
+          torchaudio: record.runtime.torchaudio,
+          torch_index_url: record.runtime.torchIndexUrl,
+          transformers: record.runtime.transformers,
+          accelerate: record.runtime.accelerate,
         },
-        cudaVersion: runtime.cuda,
-        pytorchVersion: runtime.pytorch,
+        cudaVersion: record.runtime.cuda,
+        pytorchVersion: record.runtime.pytorch,
         gpu: "NVIDIA L4",
       }));
       return;
@@ -1262,6 +1229,22 @@ test("requires signed exact Modal provenance before sending audio to ALL_IN_ONE"
   const address = server.address();
   assert.ok(address && typeof address !== "string");
   const endpointOrigin = `http://127.0.0.1:${address.port}`;
+  const nativeFetch = globalThis.fetch;
+  globalThis.fetch = ((
+    input: Parameters<typeof fetch>[0],
+    init?: Parameters<typeof fetch>[1],
+  ) => {
+    const requested = new URL(
+      input instanceof Request ? input.url : input.toString(),
+    );
+    if (requested.origin === record.endpointOrigin) {
+      return nativeFetch(
+        `${endpointOrigin}${requested.pathname}${requested.search}`,
+        init,
+      );
+    }
+    return nativeFetch(input, init);
+  }) as typeof fetch;
   const keys = [
     "ALL_IN_ONE_API_URL",
     "MUSIC_PROVIDER_ALL_IN_ONE_PROMOTION_BUNDLE",
@@ -1276,55 +1259,9 @@ test("requires signed exact Modal provenance before sending audio to ALL_IN_ONE"
     "BASS_API_URL",
   ];
   const previous = new Map(keys.map((key) => [key, process.env[key]]));
-  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
-  const installBundle = (modalFunctionId: string) => {
-    const record = {
-      schemaVersion: 1,
-      provider: "ALL_IN_ONE",
-      modalAppId: "ap-AllInOne",
-      modalDeploymentId: "dp-AllInOne",
-      modalFunctionId,
-      modalImageId: "im-AllInOneVerified",
-      endpointOrigin,
-      modelVersion: "all-in-one-infer-3.1.0",
-      checkpointSha256,
-      checkpointRevision,
-      sourceRevision,
-      sourceImageDigest,
-      runtime,
-    };
-    process.env.MUSIC_PROVIDER_ALL_IN_ONE_PROMOTION_BUNDLE = JSON.stringify({
-      record,
-      signature: sign(
-        null,
-        Buffer.from(canonicalGpuPromotionJson(record)),
-        privateKey,
-      ).toString("base64"),
-    });
-  };
   try {
     for (const key of keys) delete process.env[key];
-    process.env.ALL_IN_ONE_API_URL = endpointOrigin;
-    process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY = publicKey.export({
-      type: "spki",
-      format: "pem",
-    }).toString();
-    installBundle(expectedFunctionId);
-    const rejected = await runAnalysisProviders({
-      sourceUrl: "https://storage.invalid/signed-source",
-      sourceType: "FULL_SONG",
-      durationSeconds: 2,
-    });
-    assert.equal(rejected.structure, null);
-    assert.equal(analysisRequests, 0);
-    assert.match(
-      rejected.provenance.find((item) => item.provider === "ALL_IN_ONE")?.errorMessage ?? "",
-      /runtime identity does not match the promoted deployment record/,
-    );
-
-    expectedFunctionId = "fu-AllInOneSecond";
-    reportedImageId = "im-AllInOneVerified";
-    installBundle(expectedFunctionId);
+    process.env.ALL_IN_ONE_API_URL = record.endpointOrigin;
     const accepted = await runAnalysisProviders({
       sourceUrl: "https://storage.invalid/signed-source",
       sourceType: "FULL_SONG",
@@ -1332,7 +1269,21 @@ test("requires signed exact Modal provenance before sending audio to ALL_IN_ONE"
     });
     assert.equal(accepted.structure?.providerId, "ALL_IN_ONE");
     assert.equal(analysisRequests, 1);
+
+    reportedImageId = "im-AllInOneDrift";
+    const rejected = await runAnalysisProviders({
+      sourceUrl: "https://storage.invalid/signed-source",
+      sourceType: "FULL_SONG",
+      durationSeconds: 2,
+    });
+    assert.equal(rejected.structure, null);
+    assert.equal(analysisRequests, 1);
+    assert.match(
+      rejected.provenance.find((item) => item.provider === "ALL_IN_ONE")?.errorMessage ?? "",
+      /runtime identity does not match the promoted deployment record/,
+    );
   } finally {
+    globalThis.fetch = nativeFetch;
     for (const [key, value] of previous) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
