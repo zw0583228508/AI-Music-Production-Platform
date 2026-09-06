@@ -1,5 +1,5 @@
 # Modal image identity: ACE_STEP. Keep synchronized with Dockerfile.
-ARG CUDA_IMAGE=nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
+ARG CUDA_IMAGE=nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04@sha256:17e2934e1fa96152b14f78078bfbafd0f00f391df995dc6c641a720fce1202bb
 FROM ${CUDA_IMAGE}
 ARG PROVIDER_REQUIREMENTS=requirements-ace-step.txt
 ARG CUDA_RUNTIME=12.8.1
@@ -20,7 +20,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
       ca-certificates ffmpeg git libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=ghcr.io/astral-sh/uv:0.6.1 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.6.1@sha256:90daa0b4d74ea55c7b8e06d25d3826b1eac66e7994387248e6173dd2b66668e2 /uv /uvx /bin/
 RUN uv python install 3.11.11
 RUN uv venv --python 3.11.11 /opt/music-ai-venv
 ENV PATH="/opt/music-ai-venv/bin:${PATH}"
