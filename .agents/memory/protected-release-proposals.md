@@ -7,4 +7,4 @@ Keep GPU activation behind an enforced pull-request review, including for reposi
 
 **Why:** Repository protection and GitHub Actions pull-request permissions live outside the codebase. A real drill found that both must be enabled before a validated release can create and merge its proposal; regenerating a release after rejection would defeat the identity proof.
 
-**How to apply:** Before a release, verify the default branch requires one approval with admin enforcement and that Actions may create pull requests. For recovery, verify the retained evidence hash, signed bundle, source revision, generated API record, and activation branch all agree before reopening the same proposal.
+**How to apply:** Before a release, verify the default branch requires one approval with admin enforcement and that Actions may create pull requests. For recovery, cryptographically verify the retained bundle, bind its public key to the generated API record, and require the complete evidence, attestation, and source revision to reproduce the activation branch exactly before reopening the same proposal.
