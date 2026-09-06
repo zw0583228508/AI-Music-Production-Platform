@@ -13,6 +13,11 @@ from pathlib import Path
 import promote_modal
 import release_modal
 
+ACTIVATION_PATHS = {
+    "artifacts/api-server/src/lib/beatThisPromotion.generated.ts",
+    "services/beat-this-worker/release-attestation.json",
+}
+
 
 def verify_signature(record: dict, signature: str, public_key: str) -> None:
     try:
@@ -108,6 +113,20 @@ def activate(
     api_output: Path,
     release_output: Path,
 ) -> None:
+    _, generated, release_json = canonical_documents(
+        bundle, public_key, evidence, refresh, health
+    )
+    atomic_write(api_output, generated)
+    atomic_write(release_output, release_json)
+
+
+def canonical_documents(
+    bundle: dict,
+    public_key: str,
+    evidence: dict,
+    refresh: dict,
+    health: dict,
+) -> tuple[dict, str, str]:
     record = validate(bundle, public_key, evidence, refresh, health)
     bundle_json = promote_modal.canonical(bundle)
     generated = (
@@ -129,8 +148,99 @@ def activate(
     if not re.fullmatch(r"[a-f0-9]{40}", record["sourceRevision"]):
         raise ValueError("release source revision is not immutable")
     release_json = promote_modal.canonical(release) + "\n"
-    atomic_write(api_output, generated)
-    atomic_write(release_output, release_json)
+    return record, generated, release_json
+
+
+def verify_retained_activation(
+    bundle: dict,
+    public_key: str,
+    evidence: dict,
+    refresh: dict,
+    health: dict,
+    api_output: Path,
+    release_output: Path,
+    expected_source_revision: str,
+) -> None:
+    record, generated, release_json = canonical_documents(
+        bundle, public_key, evidence, refresh, health
+    )
+    if record["sourceRevision"] != expected_source_revision:
+        raise ValueError("retained activation source revision changed")
+    if api_output.read_text() != generated:
+        raise ValueError(
+            "activation branch generated bundle or public key changed"
+        )
+    if release_output.read_text() != release_json:
+        raise ValueError("activation branch release attestation changed")
+
+
+def git_output(repository: Path, *args: str) -> str:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=repository,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode:
+        raise ValueError("activation branch Git lineage is invalid")
+    return result.stdout.strip()
+
+
+def verify_activation_commit(
+    repository: Path, expected_source_revision: str
+) -> None:
+    repository = repository.resolve()
+    head = git_output(repository, "rev-parse", "HEAD")
+    parent = git_output(repository, "rev-parse", "HEAD^")
+    count = git_output(
+        repository,
+        "rev-list",
+        "--count",
+        f"{expected_source_revision}..{head}",
+    )
+    if parent != expected_source_revision or count != "1":
+        raise ValueError(
+            "activation branch is not the original source child commit"
+        )
+    changed = set(
+        filter(
+            None,
+            git_output(
+                repository,
+                "diff",
+                "--name-only",
+                expected_source_revision,
+                head,
+                "--",
+            ).splitlines(),
+        )
+    )
+    if changed != ACTIVATION_PATHS:
+        raise ValueError(
+            "activation branch changed files outside the canonical records"
+        )
+    for relative in ACTIVATION_PATHS:
+        path = repository / relative
+        if not path.is_file() or path.is_symlink():
+            raise ValueError(
+                "activation branch canonical record is not a regular file"
+            )
+
+
+def authenticated_release_branch(
+    evidence: dict, retained_run_branch: str
+) -> str:
+    run_branch = release_modal.validate_release_branch(retained_run_branch)
+    signed_branch = evidence.get("releaseBranch")
+    if signed_branch is None:
+        return run_branch
+    signed_branch = release_modal.validate_release_branch(signed_branch)
+    if signed_branch != run_branch:
+        raise ValueError(
+            "signed release branch differs from retained workflow run"
+        )
+    return signed_branch
 
 
 def main() -> None:
@@ -140,8 +250,13 @@ def main() -> None:
         "release-output",
     ):
         parser.add_argument(f"--{name}", required=True)
+    parser.add_argument("--verify-existing", action="store_true")
+    parser.add_argument("--expected-source-revision")
+    parser.add_argument("--repository")
+    parser.add_argument("--retained-run-branch")
+    parser.add_argument("--github-output")
     args = parser.parse_args()
-    activate(
+    values = (
         json.loads(Path(args.bundle).read_text()),
         Path(args.public_key).read_text(),
         json.loads(Path(args.evidence).read_text()),
@@ -150,6 +265,42 @@ def main() -> None:
         Path(args.api_output),
         Path(args.release_output),
     )
+    if args.verify_existing:
+        if not args.expected_source_revision:
+            parser.error(
+                "--expected-source-revision is required with --verify-existing"
+            )
+        if not all((
+            args.repository,
+            args.retained_run_branch,
+            args.github_output,
+        )):
+            parser.error(
+                "--repository, --retained-run-branch, and --github-output "
+                "are required with --verify-existing"
+            )
+        verify_activation_commit(
+            Path(args.repository), args.expected_source_revision
+        )
+        verify_retained_activation(
+            *values, args.expected_source_revision
+        )
+        release_branch = authenticated_release_branch(
+            values[2], args.retained_run_branch
+        )
+        with Path(args.github_output).open("a") as output:
+            output.write(f"base_branch={release_branch}\n")
+    else:
+        if any((
+            args.expected_source_revision,
+            args.repository,
+            args.retained_run_branch,
+            args.github_output,
+        )):
+            parser.error(
+                "verification-only arguments require --verify-existing"
+            )
+        activate(*values)
 
 
 if __name__ == "__main__":

@@ -69,18 +69,28 @@ jobs:
           test "$(git rev-parse "origin/$RELEASE_BRANCH")" = "$SOURCE_REVISION"
           git diff --quiet
 
-      - name: Install fail-closed identity placeholders
+      - name: Install the candidate-only fail-closed identity placeholder
         run: |
           set -euo pipefail
           mkdir -p promotion
-          cat > promotion/worker-identity.json <<'JSON'
+          cat > promotion/unpromoted-identity.json <<'JSON'
           {"BEAT_THIS_MODAL_APP_ID":"unpromoted","BEAT_THIS_MODAL_DEPLOYMENT_ID":"unpromoted","BEAT_THIS_MODAL_FUNCTION_ID":"unpromoted"}
           JSON
-          uv run modal secret create beat-this-deployment-identity-v1 \
-            --from-json promotion/worker-identity.json --force
-
-      - name: Deploy the exact worker revision
-        run: uv run python services/beat-this-worker/deploy.py
+          uv run modal secret create beat-this-candidate-deployment-identity-v1 \
+            --from-json promotion/unpromoted-identity.json --force
+          candidate_token="$(openssl rand -hex 32)"
+          echo "::add-mask::$candidate_token"
+          echo "BEAT_THIS_CANDIDATE_WORKER_TOKEN=$candidate_token" >> "$GITHUB_ENV"
+          CANDIDATE_TOKEN="$candidate_token" python - <<'PY'
+          import json, os
+          from pathlib import Path
+          Path("promotion/candidate-runtime.json").write_text(json.dumps({
+              "BEAT_THIS_WORKER_TOKEN": os.environ["CANDIDATE_TOKEN"],
+          }))
+          PY
+          uv run modal secret create beat-this-candidate-runtime \
+            --from-json promotion/candidate-runtime.json --force
+          rm -f promotion/candidate-runtime.json
 
       - name: Deploy the exact non-production candidate revision
         run: uv run python services/beat-this-worker/deploy.py --candidate
@@ -89,30 +99,63 @@ jobs:
         run: |
           set -euo pipefail
           uv run python services/beat-this-worker/release_modal.py observe \
+            --app-name beat-this-candidate \
             --output promotion/candidate-metadata.json
 
-      - name: Install final identity and refresh active containers
+      - name: Install the isolated candidate identity
         run: |
           set -euo pipefail
           uv run python services/beat-this-worker/release_modal.py install-identity \
+            --app-name beat-this-candidate \
             --metadata promotion/candidate-metadata.json \
-            --identity-output promotion/worker-identity.json \
-            --refresh-output promotion/container-refresh.json
+            --identity-output promotion/candidate-identity.json \
+            --refresh-output promotion/candidate-container-refresh.json
 
-      - name: Capture final Modal identity and real beat evidence
+      - name: Capture candidate identity and real beat evidence
         run: |
           set -euo pipefail
           uv run python services/beat-this-worker/release_modal.py capture \
-            --expected-identity promotion/worker-identity.json \
-            --output promotion/release-evidence.json
+            --app-name beat-this-candidate \
+            --expected-identity promotion/candidate-identity.json \
+            --output promotion/candidate-release-evidence.json
 
       - name: Recreate and verify the non-production candidate
         run: |
           set -euo pipefail
           uv run python services/beat-this-worker/release_modal.py \
             verify-candidate-refresh \
-            --evidence promotion/release-evidence.json \
+            --evidence promotion/candidate-release-evidence.json \
             --output promotion/candidate-refresh-health.json
+
+      - name: Deploy the exact production worker revision
+        run: uv run python services/beat-this-worker/deploy.py
+
+      - name: Observe the production Modal identity
+        run: |
+          set -euo pipefail
+          uv run python services/beat-this-worker/release_modal.py observe \
+            --app-name beat-this-worker \
+            --output promotion/production-metadata.json
+
+      - name: Install final production identity and refresh active containers
+        run: |
+          set -euo pipefail
+          uv run python services/beat-this-worker/release_modal.py install-identity \
+            --app-name beat-this-worker \
+            --metadata promotion/production-metadata.json \
+            --identity-output promotion/worker-identity.json \
+            --refresh-output promotion/container-refresh.json
+
+      - name: Capture final production identity and real beat evidence
+        env:
+          RELEASE_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          uv run python services/beat-this-worker/release_modal.py capture \
+            --app-name beat-this-worker \
+            --release-branch "$RELEASE_BRANCH" \
+            --expected-identity promotion/worker-identity.json \
+            --output promotion/release-evidence.json
 
       - name: Require final authenticated health
         run: |
@@ -289,46 +332,41 @@ jobs:
           github-token: ${{ github.token }}
           run-id: ${{ inputs.resume_run_id }}
 
-      - name: Verify the retained bundle and branch are identical
+      - name: Authenticate retained evidence and verify the activation branch
+        id: retained
         env:
+          GH_TOKEN: ${{ github.token }}
           SOURCE_REVISION: ${{ inputs.resume_source_revision }}
+          RELEASE_RUN_ID: ${{ inputs.resume_run_id }}
         run: |
           set -euo pipefail
-          python - <<'PY'
-          import hashlib, json, os
-          from pathlib import Path
-
-          source = os.environ["SOURCE_REVISION"]
-          evidence_bytes = Path("promotion/release-evidence.json").read_bytes()
-          evidence = json.loads(evidence_bytes)
-          bundle = json.loads(Path("promotion/bundle.json").read_text())
-          retained = json.loads(
-              Path("services/beat-this-worker/release-attestation.json").read_text()
-          )
-          generated = Path(
-              "artifacts/api-server/src/lib/beatThisPromotion.generated.ts"
-          ).read_text()
-          evidence_hash = hashlib.sha256(evidence_bytes).hexdigest()
-          if evidence.get("sourceRevision") != source:
-              raise SystemExit("retained evidence source revision changed")
-          if bundle.get("record", {}).get("sourceRevision") != source:
-              raise SystemExit("signed bundle source revision changed")
-          if bundle["record"].get("releaseEvidenceSha256") != evidence_hash:
-              raise SystemExit("signed bundle no longer matches retained evidence")
-          if retained.get("record") != bundle["record"]:
-              raise SystemExit("activation branch attestation changed")
-          canonical_bundle = json.dumps(
-              bundle, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-          )
-          if json.dumps(canonical_bundle) not in generated:
-              raise SystemExit("activation branch generated bundle changed")
-          PY
+          readarray -t run_fields < <(gh run view "$RELEASE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json event,headBranch,headSha \
+            --jq '.event,.headBranch,.headSha')
+          test "${run_fields[0]}" = "workflow_dispatch"
+          test "${run_fields[2]}" = "$SOURCE_REVISION"
+          run_branch="${run_fields[1]}"
+          python services/beat-this-worker/activate_promotion.py \
+            --verify-existing \
+            --expected-source-revision "$SOURCE_REVISION" \
+            --repository . \
+            --retained-run-branch "$run_branch" \
+            --github-output "$GITHUB_OUTPUT" \
+            --bundle promotion/bundle.json \
+            --public-key promotion/public-key.pem \
+            --evidence promotion/release-evidence.json \
+            --refresh promotion/container-refresh.json \
+            --health promotion/live-health.json \
+            --api-output artifacts/api-server/src/lib/beatThisPromotion.generated.ts \
+            --release-output services/beat-this-worker/release-attestation.json
 
       - name: Reopen the protected-branch activation proposal
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_REVISION: ${{ inputs.resume_source_revision }}
           RELEASE_RUN_ID: ${{ inputs.resume_run_id }}
+          BASE_BRANCH: ${{ steps.retained.outputs.base_branch }}
         run: |
           set -euo pipefail
           evidence_sha256="$(sha256sum promotion/release-evidence.json | cut -d' ' -f1)"
@@ -346,7 +384,7 @@ jobs:
           - Validation run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$RELEASE_RUN_ID
           EOF
           gh pr create \
-            --base main \
+            --base "$BASE_BRANCH" \
             --head "beat-this-activation/$SOURCE_REVISION" \
             --title "Activate verified Beat This release ${SOURCE_REVISION:0:12}" \
             --body-file "$RUNNER_TEMP/beat-this-activation.md"

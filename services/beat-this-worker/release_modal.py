@@ -18,7 +18,12 @@ import modal
 import promote_modal
 
 APP_NAME = "beat-this-worker"
-IDENTITY_SECRET_NAME = "beat-this-deployment-identity-v1"
+CANDIDATE_APP_NAME = "beat-this-candidate"
+APP_NAMES = (APP_NAME, CANDIDATE_APP_NAME)
+IDENTITY_SECRET_NAMES = {
+    APP_NAME: "beat-this-deployment-identity-v1",
+    CANDIDATE_APP_NAME: "beat-this-candidate-deployment-identity-v1",
+}
 SMOKE_FUNCTION = "smoke_real_audio"
 ENDPOINT_CLASS = "BeatThisWorker"
 ENDPOINT_METHOD = "endpoint"
@@ -55,14 +60,21 @@ def atomic_json(path: Path, value: object) -> None:
     os.replace(temporary_path, path)
 
 
-def deployed_app_id(apps: object) -> str:
+def require_app_name(app_name: str) -> str:
+    if app_name not in APP_NAMES:
+        raise ValueError("invalid Beat This Modal app name")
+    return app_name
+
+
+def deployed_app_id(apps: object, app_name: str = APP_NAME) -> str:
+    app_name = require_app_name(app_name)
     if not isinstance(apps, list):
         raise ValueError("Modal app list must be an array")
     matches = [
         item.get("app_id")
         for item in apps
         if isinstance(item, dict)
-        and item.get("description") == APP_NAME
+        and item.get("description") == app_name
         and item.get("state") == "deployed"
     ]
     if len(matches) != 1 or not re.fullmatch(r"ap-[A-Za-z0-9]+", str(matches[0])):
@@ -79,12 +91,15 @@ def deployed_version(history: object) -> str:
     return version
 
 
-def capture_metadata() -> dict:
-    app_id = deployed_app_id(command_json("app", "list", "--json"))
+def capture_metadata(app_name: str = APP_NAME) -> dict:
+    app_name = require_app_name(app_name)
+    app_id = deployed_app_id(
+        command_json("app", "list", "--json"), app_name
+    )
     deployment_id = deployed_version(
         command_json("app", "history", app_id, "--json")
     )
-    endpoint = modal.Cls.from_name(APP_NAME, ENDPOINT_CLASS)().endpoint
+    endpoint = modal.Cls.from_name(app_name, ENDPOINT_CLASS)().endpoint
     endpoint.hydrate()
     function_id = endpoint.object_id
     endpoint_origin = promote_modal.origin(endpoint.get_web_url())
@@ -121,14 +136,19 @@ def identity(metadata: dict) -> dict:
     }
 
 
-def capture_release(expected_identity: dict) -> dict:
-    metadata = capture_metadata()
+def capture_release(
+    expected_identity: dict,
+    app_name: str = APP_NAME,
+    release_branch: str | None = None,
+) -> dict:
+    app_name = require_app_name(app_name)
+    metadata = capture_metadata(app_name)
     actual_identity = identity(metadata)
     if actual_identity != expected_identity:
         raise ValueError(
             "final Modal deployment identity does not match the prepared identity"
         )
-    smoke = modal.Function.from_name(APP_NAME, SMOKE_FUNCTION)
+    smoke = modal.Function.from_name(app_name, SMOKE_FUNCTION)
     smoke_evidence = smoke.remote()
     evidence = {
         "schemaVersion": 1,
@@ -143,6 +163,9 @@ def capture_release(expected_identity: dict) -> dict:
         "smokeEvidence": smoke_evidence.get("proof")
             if isinstance(smoke_evidence, dict) else None,
     }
+    if release_branch is not None:
+        validate_release_branch(release_branch)
+        evidence["releaseBranch"] = release_branch
     validate_release_evidence(evidence)
     return evidence
 
@@ -162,6 +185,8 @@ def validate_release_evidence(evidence: object) -> None:
         if not re.fullmatch(pattern, str(evidence.get(field, ""))):
             raise ValueError(f"release evidence has invalid {field}")
     promote_modal.origin(str(evidence.get("endpointOrigin", "")))
+    if "releaseBranch" in evidence:
+        validate_release_branch(evidence["releaseBranch"])
     proof = evidence.get("smokeEvidence")
     if not isinstance(proof, dict) or proof.get("provider") != "BEAT_THIS":
         raise ValueError("real smoke evidence is missing")
@@ -220,16 +245,33 @@ def wait_for_stopped_containers(
     raise RuntimeError("old Beat This containers remained after identity rotation")
 
 
+def validate_release_branch(value: object) -> str:
+    if not isinstance(value, str) or not value or value.startswith("-"):
+        raise ValueError("release branch is invalid")
+    result = subprocess.run(
+        ["git", "check-ref-format", "--branch", value],
+        cwd=ROOT.parents[1],
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode:
+        raise ValueError("release branch is invalid")
+    return value
+
+
 def install_identity(
     metadata: dict,
     identity_path: Path,
     refresh_output: Path,
+    app_name: str = APP_NAME,
 ) -> dict:
+    app_name = require_app_name(app_name)
     prepared = identity(metadata)
     atomic_json(identity_path, prepared)
     subprocess.run(
         [
-            "uv", "run", "modal", "secret", "create", IDENTITY_SECRET_NAME,
+            "uv", "run", "modal", "secret", "create",
+            IDENTITY_SECRET_NAMES[app_name],
             "--from-json", str(identity_path), "--force",
         ],
         cwd=ROOT.parents[1],
@@ -324,7 +366,7 @@ def verified_candidate_refresh(
     evidence: dict, token: str, attempts: int = 30
 ) -> dict:
     expected = expected_health(evidence)
-    endpoint = promote_modal.candidate_origin_from_production(
+    endpoint = promote_modal.trusted_candidate_origin(
         evidence["endpointOrigin"]
     )
     return promote_modal.refresh_candidate_and_verify(
@@ -341,13 +383,17 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
     observe = commands.add_parser("observe")
     observe.add_argument("--output", required=True)
+    observe.add_argument("--app-name", choices=APP_NAMES, required=True)
     capture = commands.add_parser("capture")
     capture.add_argument("--output", required=True)
     capture.add_argument("--expected-identity", required=True)
+    capture.add_argument("--app-name", choices=APP_NAMES, required=True)
+    capture.add_argument("--release-branch")
     rotate = commands.add_parser("install-identity")
     rotate.add_argument("--metadata", required=True)
     rotate.add_argument("--identity-output", required=True)
     rotate.add_argument("--refresh-output", required=True)
+    rotate.add_argument("--app-name", choices=APP_NAMES, required=True)
     health = commands.add_parser("verify-health")
     health.add_argument("--evidence", required=True)
     health.add_argument("--output", required=True)
@@ -356,22 +402,32 @@ def main() -> None:
     candidate.add_argument("--output", required=True)
     args = parser.parse_args()
     if args.command == "observe":
-        atomic_json(Path(args.output), capture_metadata())
+        atomic_json(Path(args.output), capture_metadata(args.app_name))
     elif args.command == "capture":
         expected = json.loads(Path(args.expected_identity).read_text())
-        atomic_json(Path(args.output), capture_release(expected))
+        atomic_json(
+            Path(args.output),
+            capture_release(
+                expected, args.app_name, args.release_branch
+            ),
+        )
     elif args.command == "install-identity":
         metadata = json.loads(Path(args.metadata).read_text())
         install_identity(
             metadata,
             Path(args.identity_output),
             Path(args.refresh_output),
+            args.app_name,
         )
     elif args.command in ("verify-health", "verify-candidate-refresh"):
         token = (
-            os.getenv("BEAT_THIS_WORKER_TOKEN")
-            or os.getenv("MUSIC_AI_WORKER_TOKEN")
-            or ""
+            os.getenv("BEAT_THIS_CANDIDATE_WORKER_TOKEN", "")
+            if args.command == "verify-candidate-refresh"
+            else (
+                os.getenv("BEAT_THIS_WORKER_TOKEN")
+                or os.getenv("MUSIC_AI_WORKER_TOKEN")
+                or ""
+            )
         ).strip()
         if not token:
             raise ValueError("Beat This worker token is unavailable")
