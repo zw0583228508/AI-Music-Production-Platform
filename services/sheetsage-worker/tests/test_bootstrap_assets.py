@@ -2,6 +2,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import logging
 import os
 from pathlib import Path
 import tarfile
@@ -116,6 +117,66 @@ class RecoveryTests(unittest.TestCase):
         self.assertNotIn(private_url, str(raised.exception))
         self.assertIsNone(raised.exception.__cause__)
         self.assertFalse(self.asset_root.exists())
+
+    def test_cancelled_drill_discards_private_download_from_disposable_storage(self):
+        private_url = "https://private.example.invalid/archive?secret=restricted"
+        persistent_root = Path(self.temporary.name) / "persistent"
+        disposable_root = Path(self.temporary.name) / "disposable"
+        persistent_root.mkdir()
+        disposable_root.mkdir()
+        existing = self.asset_root / "keep.txt"
+        existing.parent.mkdir(parents=True)
+        existing.write_bytes(b"production")
+        drill_paths = []
+
+        class DrillCancelled(BaseException):
+            pass
+
+        class InterruptedResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                self.close()
+
+            def read(self, size=-1):
+                if self.tell():
+                    raise DrillCancelled(f"cancelled while reading {private_url}")
+                return super().read(4 if size < 0 else min(size, 4))
+
+        real_temporary_directory = tempfile.TemporaryDirectory
+
+        def tracked_temporary_directory(*args, **kwargs):
+            kwargs["dir"] = disposable_root
+            temporary = real_temporary_directory(*args, **kwargs)
+            drill_paths.append(Path(temporary.name))
+            return temporary
+
+        environment = {
+            self.bootstrap.SPEC["license"]["acceptance_environment"]:
+                self.bootstrap.SPEC["license"]["required_value"],
+            self.bootstrap.SPEC["recovery"]["source_environment"]: private_url,
+            self.bootstrap.SPEC["recovery"]["sha256_environment"]: "0" * 64,
+        }
+        with self.assertLogs(level=logging.DEBUG) as captured, patch.dict(
+            os.environ, environment, clear=False
+        ), patch.object(
+            self.bootstrap.tempfile, "TemporaryDirectory", side_effect=tracked_temporary_directory
+        ), patch.object(
+            self.bootstrap, "urlopen", return_value=InterruptedResponse(b"private archive bytes")
+        ), self.assertRaises(DrillCancelled) as raised:
+            logging.debug("starting SheetSage recovery cancellation test")
+            self.bootstrap.drill_recovery_source()
+
+        self.assertEqual(len(drill_paths), 1)
+        self.assertFalse(drill_paths[0].exists())
+        self.assertEqual(list(disposable_root.iterdir()), [])
+        self.assertEqual(list(persistent_root.iterdir()), [])
+        self.assertEqual(existing.read_bytes(), b"production")
+        self.assertEqual([path for path in self.asset_root.rglob("*") if path.is_file()], [existing])
+        failure_output = "\n".join((*captured.output, str(raised.exception)))
+        self.assertNotIn(private_url, failure_output)
+        self.assertIsNone(raised.exception.__cause__)
 
 
 if __name__ == "__main__":

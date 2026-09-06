@@ -96,9 +96,15 @@ def _download_and_verify_recovery_archive(temporary_root: Path) -> tuple[str, li
     try:
         with urlopen(request, timeout=300) as response, archive.open("wb") as output:
             shutil.copyfileobj(response, output)
-    except Exception:
+    except BaseException as error:
         # Do not retain the underlying URL-bearing exception in logs or alerts.
-        raise RuntimeError("owner-controlled SheetSage recovery source is unavailable") from None
+        if isinstance(error, Exception):
+            raise RuntimeError("owner-controlled SheetSage recovery source is unavailable") from None
+        try:
+            sanitized = type(error)("SheetSage recovery drill was interrupted")
+        except Exception:
+            raise
+        raise sanitized from None
     if sha256(archive) != expected_archive_sha256:
         raise RuntimeError("SheetSage recovery archive SHA-256 mismatch")
     _safe_extract(archive, staging)
