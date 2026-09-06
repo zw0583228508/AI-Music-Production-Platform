@@ -58,6 +58,28 @@ class AuditFixtures(unittest.TestCase):
         r.update({"sourcePinned":True,"finalStatus":"BLOCKED_UPSTREAM","assetsDownloaded":True})
         self.assertTrue(any("pinned" in x for x in audit.audit(m)))
 
+    def test_moss_blocked_requires_retained_native_failure_evidence(self):
+        m = self.matrix(self.row())
+        models = {
+            "MOSS_MUSIC_INSTRUCT": (
+                "MOSS-Music-8B-Instruct",
+                "fce7f8304e96cc2d3398b8106456cbb2ecec3139",
+            ),
+            "MOSS_MUSIC_THINKING": (
+                "MOSS-Music-8B-Thinking",
+                "2ce899988b94b8ecc5dd0dacbc5ce1874d3500e3",
+            ),
+        }
+        for name, (repository, revision) in models.items():
+            row = next(item for item in m["providers"] if item["provider"] == name)
+            row.update({
+                "codeRevision": "ad107c7ddaa06de168a0dfbc18d3e1e6a40c0e5e",
+                "modelRepository": f"https://huggingface.co/OpenMOSS-Team/{repository}",
+                "modelRevision": revision,
+            })
+        errors = audit.audit(m, root=Path("/definitely/missing"))
+        self.assertTrue(any("MOSS_MUSIC" in error for error in errors))
+
     def test_demucs_ready_requires_retained_release_attestation(self):
         m=self.matrix(self.row())
         r=next(x for x in m["providers"] if x["provider"]=="DEMUCS")

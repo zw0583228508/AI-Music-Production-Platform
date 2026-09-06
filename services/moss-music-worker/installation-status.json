@@ -1,32 +1,109 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "providerFamily": "MOSS_MUSIC",
+  "classification": "BLOCKED_UPSTREAM",
+  "observedAt": "2026-09-07",
+  "source": {
+    "repository": "OpenMOSS/MOSS-Music",
+    "revision": "ad107c7ddaa06de168a0dfbc18d3e1e6a40c0e5e",
+    "install": "base-package-without-torch-runtime-extra"
+  },
+  "sglang": {
+    "repository": "OpenMOSS/sglang",
+    "revision": "c28a945853c7fee357f55d976b8abce51874bd94",
+    "install": "python[all]"
+  },
+  "runtime": {
+    "python": "3.12.3",
+    "cuda": "12.8",
+    "torch": "2.9.1+cu128",
+    "torchaudio": "2.9.1+cu128",
+    "torchcodec": "0.8.0",
+    "torchcodecWheel": {
+      "variant": "cpu",
+      "filename": "torchcodec-0.8.0-cp312-cp312-manylinux_2_28_x86_64.whl",
+      "sha256": "2ec2e874dfb6fbf9bbeb792bea56317529636e78db175f56aad1e4efd6e12502"
+    },
+    "ffmpeg": "7.1.1",
+    "transformers": "4.57.1",
+    "accelerate": "1.12.0",
+    "huggingfaceHub": "0.36.2",
+    "gradio": "5.44.1",
+    "pydantic": "2.11.10",
+    "fastapi": "0.115.12",
+    "cudnn": "9.10.2.21"
+  },
+  "compatibility": {
+    "imageEvidence": "sha256:a355c0ede904d1db09260d8cdae09ebaece4c5aba3c06260d2bb43b179786f90",
+    "modalRunAppId": "ap-OEaWRl8BSv1Iv2oZMh4ioT",
+    "modalImageBuildId": "im-nCfXWQXmJZ1TjaDNlXeXw9",
+    "modalFunctionImageId": "im-Sw0sTGMuqBXeVlaz5jGbL1",
+    "imageBuilt": true,
+    "verifyFunctionCreated": true,
+    "verifyFunctionExecuted": true,
+    "nativePreflightLocation": "remote-verify-function",
+    "dependencyResolutionPassed": true,
+    "pipCheckPassed": true,
+    "pipCheckOutput": "No broken requirements found.",
+    "mediaPreflightPassed": false,
+    "failureStage": "torchcodec-native-load",
+    "failingLibrary": "libtorchcodec_custom_ops7.so",
+    "evidenceFile": "release-evidence/modal-compatibility-failure.json",
+    "transcriptFile": "release-evidence/modal-compatibility-failure.txt",
+    "transcriptSha256": "ee392504688ce175bf67143d73b785993929632ccf62cea0c4c48984016b9828",
+    "fullModalRunLogSha256": "86a595e68f576110b9d0272acb12983a45d9a70cd7b0d89b616680b598baa097"
+  },
   "providers": {
     "MOSS_MUSIC_INSTRUCT": {
       "classification": "BLOCKED_UPSTREAM",
+      "model": {
+        "repository": "OpenMOSS-Team/MOSS-Music-8B-Instruct",
+        "revision": "fce7f8304e96cc2d3398b8106456cbb2ecec3139",
+        "role": "DIRECT_MUSICAL_SEMANTIC_REASONING"
+      },
       "evidence": {
-        "modelManifest": "model_manifest.json",
-        "licenseManifest": "license_manifest.json",
         "sourceRevisionPinned": true,
         "modelRevisionPinned": true,
+        "licenseVerified": true,
+        "dependencyResolutionPassed": true,
+        "pipCheckPassed": true,
+        "mediaPreflightPassed": false,
+        "assetsDownloaded": false,
+        "realSongSmokeAttempted": false,
         "realSmokeProofPresent": false,
-        "endpointConfigured": false
+        "endpointDeployed": false,
+        "endpointConfigured": false,
+        "promotionSigned": false,
+        "apiConnected": false
       },
       "blockers": [
-        "Pinned MOSS-Music requires the TorchCodec 0.9 line while the pinned moss-audio SGLang integration requires the TorchCodec 0.8 line; overriding either upstream contract is not accepted."
+        "The official TorchCodec 0.8.0 CPU wheel reaches libtorchcodec_custom_ops7.so but cannot load it with the pinned Torch 2.9.1+cu128 and FFmpeg 7.1.1 runtime; required WAV/MP3 media preflight is therefore incomplete."
       ]
     },
     "MOSS_MUSIC_THINKING": {
       "classification": "BLOCKED_UPSTREAM",
+      "model": {
+        "repository": "OpenMOSS-Team/MOSS-Music-8B-Thinking",
+        "revision": "2ce899988b94b8ecc5dd0dacbc5ce1874d3500e3",
+        "role": "DELIBERATE_MUSICAL_SEMANTIC_REASONING"
+      },
       "evidence": {
-        "modelManifest": "model_manifest.json",
-        "licenseManifest": "license_manifest.json",
         "sourceRevisionPinned": true,
         "modelRevisionPinned": true,
+        "licenseVerified": true,
+        "dependencyResolutionPassed": true,
+        "pipCheckPassed": true,
+        "mediaPreflightPassed": false,
+        "assetsDownloaded": false,
+        "realSongSmokeAttempted": false,
         "realSmokeProofPresent": false,
-        "endpointConfigured": false
+        "endpointDeployed": false,
+        "endpointConfigured": false,
+        "promotionSigned": false,
+        "apiConnected": false
       },
       "blockers": [
-        "Pinned MOSS-Music requires the TorchCodec 0.9 line while the pinned moss-audio SGLang integration requires the TorchCodec 0.8 line; overriding either upstream contract is not accepted."
+        "The official TorchCodec 0.8.0 CPU wheel reaches libtorchcodec_custom_ops7.so but cannot load it with the pinned Torch 2.9.1+cu128 and FFmpeg 7.1.1 runtime; required WAV/MP3 media preflight is therefore incomplete."
       ]
     }
   }

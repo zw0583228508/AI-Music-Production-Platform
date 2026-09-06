@@ -20,7 +20,9 @@ REPOSITORY_ROOT = next((p for p in (WORKER_ROOT, *WORKER_ROOT.parents)
 def image_evidence() -> str:
     digest = hashlib.sha256()
     for name in ("Dockerfile", "requirements.txt", "model_manifest.json", "license_manifest.json",
-                 "app.py", "bootstrap_assets.py", "smoke.py"):
+                 "app.py", "bootstrap_assets.py", "compatibility.py", "modal_app.py",
+                 "modal_compatibility.py", "modal_config.py", "modal_provision.py",
+                 "preflight.py", "smoke.py"):
         digest.update(name.encode() + b"\0" + (WORKER_ROOT / name).read_bytes() + b"\0")
     return "sha256:" + digest.hexdigest()
 

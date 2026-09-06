@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "providerFamily": "MOSS_MUSIC",
+  "classification": "BLOCKED_UPSTREAM",
+  "observedAt": "2026-09-07",
+  "source": {
+    "repository": "OpenMOSS/MOSS-Music",
+    "revision": "ad107c7ddaa06de168a0dfbc18d3e1e6a40c0e5e"
+  },
+  "sglang": {
+    "repository": "OpenMOSS/sglang",
+    "revision": "c28a945853c7fee357f55d976b8abce51874bd94"
+  },
+  "runtime": {
+    "python": "3.12.3",
+    "cuda": "12.8",
+    "torch": "2.9.1+cu128",
+    "torchaudio": "2.9.1+cu128",
+    "torchcodec": "0.8.0",
+    "torchcodecWheelVariant": "cpu",
+    "torchcodecWheelSha256": "2ec2e874dfb6fbf9bbeb792bea56317529636e78db175f56aad1e4efd6e12502",
+    "ffmpeg": "7.1.1",
+    "transformers": "4.57.1",
+    "huggingfaceHub": "0.36.2",
+    "gradio": "5.44.1",
+    "pydantic": "2.11.10",
+    "fastapi": "0.115.12"
+  },
+  "modal": {
+    "runAppId": "ap-OEaWRl8BSv1Iv2oZMh4ioT",
+    "imageBuildId": "im-nCfXWQXmJZ1TjaDNlXeXw9",
+    "functionImageId": "im-Sw0sTGMuqBXeVlaz5jGbL1",
+    "expectedImageEvidence": "sha256:a355c0ede904d1db09260d8cdae09ebaece4c5aba3c06260d2bb43b179786f90"
+  },
+  "execution": {
+    "imageBuilt": true,
+    "verifyFunctionCreated": true,
+    "verifyFunctionExecuted": true,
+    "nativePreflightLocation": "remote-verify-function",
+    "nativePreflightDuringImageBuild": false
+  },
+  "resolver": {
+    "pipCheckPassed": true,
+    "output": "No broken requirements found."
+  },
+  "mediaPreflight": {
+    "passed": false,
+    "stage": "torchcodec-native-load",
+    "ffmpegMajorAttempted": 7,
+    "coreLibraryLoadedBeforeFailure": "libtorchcodec_core7.so",
+    "failingLibrary": "libtorchcodec_custom_ops7.so",
+    "requiredChecksNotCompleted": [
+      "wav-decode",
+      "mp3-decode",
+      "resampling",
+      "tensor-creation"
+    ]
+  },
+  "downstream": {
+    "assetsDownloaded": false,
+    "realSongInferenceAttempted": false,
+    "endpointDeployed": false,
+    "promotionCreated": false,
+    "apiConnected": false
+  },
+  "transcript": {
+    "path": "release-evidence/modal-compatibility-failure.txt",
+    "sha256": "ee392504688ce175bf67143d73b785993929632ccf62cea0c4c48984016b9828",
+    "fullModalRunLogSha256": "86a595e68f576110b9d0272acb12983a45d9a70cd7b0d89b616680b598baa097"
+  },
+  "blocker": "The official TorchCodec 0.8.0 CPU wheel reaches libtorchcodec_custom_ops7.so but cannot load it with the pinned Torch 2.9.1+cu128 and FFmpeg 7.1.1 runtime; required WAV/MP3 media preflight is therefore incomplete."
+}
