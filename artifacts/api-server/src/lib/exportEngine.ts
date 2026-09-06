@@ -18,6 +18,10 @@ import {
 } from "./musicEngines";
 import { validateCanonicalTrackModels } from "./musicProviders";
 import type { PedalboardProcessingEvidence } from "./pedalboardBuiltin";
+import {
+  exportAudioRole,
+  type ExportAudioRole,
+} from "./exportAudioRoles";
 
 export type ExportTrack = {
   id: string;
@@ -30,7 +34,7 @@ export type ExportTrack = {
 
 export type GeneratedExportFile = {
   name: string;
-  type: "STEM" | "MIDI" | "MIX" | "PREMASTER" | "MASTER" | "METADATA";
+  type: "STEM" | "MIDI" | ExportAudioRole | "METADATA";
   format: string;
   contentType: string;
   data: Buffer;
@@ -849,7 +853,7 @@ export async function renderArrangementExport(input: {
   files.push(
     {
       name: "mix/full_mix.wav",
-      type: "MIX",
+      type: exportAudioRole("mix"),
       format: "WAV",
       contentType: "audio/wav",
       data: encodeWav(pipeline.mix),
@@ -860,7 +864,7 @@ export async function renderArrangementExport(input: {
     },
     {
       name: "mix/premaster.wav",
-      type: "PREMASTER",
+      type: exportAudioRole("premaster"),
       format: "WAV",
       contentType: "audio/wav",
       data: encodeWav(pipeline.premaster),
@@ -871,7 +875,7 @@ export async function renderArrangementExport(input: {
     },
     {
       name: "mix/master.wav",
-      type: "MASTER",
+      type: exportAudioRole("master"),
       format: "WAV",
       contentType: "audio/wav",
       data: encodeWav(pipeline.master),

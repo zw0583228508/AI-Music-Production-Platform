@@ -4,6 +4,10 @@ import { SFZ_SAMPLE_LIBRARY } from "./sfz-sample-library";
 import type { GeneratedExportFile } from "./exportEngine";
 import type { PedalboardProcessingEvidence } from "./pedalboardBuiltin";
 import {
+  exportAudioRole,
+  type ExportAudioRole,
+} from "./exportAudioRoles";
+import {
   expectedGpuCheckpointSha256,
   isGpuAttestedProvider,
 } from "./gpuProviderAttestation";
@@ -111,7 +115,7 @@ export type ExportInput = {
 
 export type ExportFile = {
   name: string;
-  type: "STEM" | "MIDI" | "MIX" | "PREMASTER" | "MASTER" | "SONG_MODEL" | "ARRANGEMENT_PLAN" | "EXPORT";
+  type: "STEM" | "MIDI" | ExportAudioRole | "SONG_MODEL" | "ARRANGEMENT_PLAN" | "EXPORT";
   format: string;
   size: string;
   url: string;
@@ -874,9 +878,21 @@ export function createExportBundle(
       true,
       input.masterProfile,
     ));
-    fileRecords.push({ name: "mix/premaster.wav", type: "PREMASTER", data: premaster });
-    fileRecords.push({ name: "mix/instrumental.wav", type: "MIX", data: instrumental });
-    fileRecords.push({ name: "mix/mastered.wav", type: "MASTER", data: mastered });
+    fileRecords.push({
+      name: "mix/premaster.wav",
+      type: exportAudioRole("premaster"),
+      data: premaster,
+    });
+    fileRecords.push({
+      name: "mix/instrumental.wav",
+      type: exportAudioRole("mix"),
+      data: instrumental,
+    });
+    fileRecords.push({
+      name: "mix/mastered.wav",
+      type: exportAudioRole("master"),
+      data: mastered,
+    });
   }
 
   if (!renderedFiles && input.includeMidi !== false) {

@@ -24,6 +24,11 @@ import { applyArrangementEditorChanges } from "./musicEngines";
 import { validateCanonicalTrackModels } from "./musicProviders";
 import { logger } from "./logger";
 import {
+  exportAudioRole,
+  isExportAudioRole,
+  isFinalExportAudioRole,
+} from "./exportAudioRoles";
+import {
   deleteExportObject,
   getPrivateObject,
   reclaimIncompleteExportObjects,
@@ -60,7 +65,7 @@ function validateProcessingEvidence(
 ): void {
   const expectedNames = files
     .filter((file) =>
-      ["MIX", "MASTER"].includes(file.type) &&
+      isFinalExportAudioRole(file.type) &&
       file.format === "WAV")
     .map((file) => file.name)
     .sort();
@@ -128,7 +133,7 @@ async function selectedProviderAudioExport(
   }
   return [{
     name: "mix/generated-accompaniment.wav",
-    type: "MIX",
+    type: exportAudioRole("mix"),
     format: "WAV",
     contentType: "audio/wav",
     data: wav,
@@ -280,7 +285,7 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
       );
     }
     let renderedFiles = [...deterministicFiles, ...providerAudioFiles]
-      .filter((file) => (input.includeMix !== false || !["MIX", "PREMASTER", "MASTER"].includes(file.type)) &&
+      .filter((file) => (input.includeMix !== false || !isExportAudioRole(file.type)) &&
       (input.includeMetadata !== false || file.type !== "METADATA"));
     const pedalboardRequested = input.processingProvider === "PEDALBOARD_BUILTIN" ||
       input.pedalboardProcessing === true ||
@@ -290,7 +295,7 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
       // The product contract applies mastering effects to final mixes only, never
       // to stems (which would make stems unsuitable for remixing).
       renderedFiles = await Promise.all(renderedFiles.map(async (file) => {
-        if (!["MIX", "MASTER"].includes(file.type) || file.format !== "WAV") return file;
+        if (!isFinalExportAudioRole(file.type) || file.format !== "WAV") return file;
         const processed = await processPedalboardBuiltinWav(file.data);
         processingEvidence[file.name] = processed.evidence;
         return {
