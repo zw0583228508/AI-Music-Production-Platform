@@ -27,6 +27,7 @@ const MODAL_PROMOTED_PROVIDER_IDS = new Set([
   "MT3",
   "MR_MT3",
   "YOUR_MT3",
+  "ANYACCOMP",
   "LADA_BAND",
   "HAFM",
   "BEAT_THIS",

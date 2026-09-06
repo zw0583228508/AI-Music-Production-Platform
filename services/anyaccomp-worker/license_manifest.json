@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "provider": "ANYACCOMP",
+  "source_license": "MIT",
+  "model_license": "CC-BY-4.0",
+  "commercial_use_permitted": true,
+  "research_use_permitted": true,
+  "redistribution_obligations": [
+    "Retain the MIT copyright and permission notice with source distributions.",
+    "Provide CC-BY-4.0 attribution for the AnyAccomp model and indicate modifications."
+  ],
+  "license_evidence": "release-evidence/license-review.json",
+  "environment_values_are_authorization_evidence": false,
+  "routing_status": "INSTALLATION_CANDIDATE"
+}

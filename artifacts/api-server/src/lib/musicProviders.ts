@@ -287,12 +287,12 @@ export const MUSIC_PROVIDERS: MusicProviderDescriptor[] = [
     id: "ANYACCOMP",
     name: "AnyAccomp",
     provider: "AnyAccomp",
-    version: "configured-endpoint",
+    version: "anyaccomp-2025-12-22",
     capabilities: ["audio_generation"],
     inputTypes: ["VOCAL_ONLY"],
     execution: "remote",
     status: remoteConfigured("ANYACCOMP") ? "configured" : "unavailable",
-    license: "Provider terms",
+    license: "MIT source; CC-BY-4.0 model",
     priority: 40,
     notes: "Dedicated V2A worker only. Requires ANYACCOMP_API_URL, bearer authentication, exact source/VQ/Flow-Matching/Vocoder inventory, and a real non-copy/non-silence source-conditioned smoke proof. It is not an arrangement-plan provider.",
   },
@@ -1578,6 +1578,11 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
     if (this.definition.id === "ANYACCOMP" && !input.sourceAudio?.url) {
       throw new Error("AnyAccomp requires a private source vocal artifact; it cannot run text-only accompaniment inference");
     }
+    if (this.definition.id === "ANYACCOMP" && !this.available) {
+      throw new ProviderUnavailableError(
+        "ANYACCOMP (signed deployment health attestation has not passed)",
+      );
+    }
     if (!this.endpoint) {
       throw new Error(`${this.definition.displayName} worker is not configured`);
     }
@@ -1854,7 +1859,7 @@ export const providerDefinitions: ProviderDefinition[] = [
   {
     id: "ANYACCOMP",
     displayName: "AnyAccomp",
-    modelVersion: "anyaccomp",
+    modelVersion: "anyaccomp-2025-12-22",
     tasks: ["ACCOMPANIMENT"],
     hardware: ["GPU"],
     speeds: ["BALANCED", "QUALITY"],
