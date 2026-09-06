@@ -129,7 +129,7 @@ if "ACE_STEP" in release_providers:
     @provider_apps["ACE_STEP"].cls(**_worker_options("ACE_STEP"))
     @modal.concurrent(max_inputs=1)
     class AceStepWorker:
-        @modal.asgi_app(label="ace-step")
+        @modal.asgi_app(label="ace-step-isolated")
         def endpoint(self):
             from app import app as fastapi_app
             return fastapi_app

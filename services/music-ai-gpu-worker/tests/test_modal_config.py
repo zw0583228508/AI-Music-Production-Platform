@@ -38,6 +38,11 @@ your_compat_spec.loader.exec_module(your_compat_patch)
 
 
 class ModalDeploymentConfigurationTests(unittest.TestCase):
+    def test_ace_step_uses_an_isolated_webhook_label(self):
+        modal_app_source = (ROOT / "modal_app.py").read_text()
+        self.assertIn('@modal.asgi_app(label="ace-step-isolated")', modal_app_source)
+        self.assertNotIn('@modal.asgi_app(label="ace-step")', modal_app_source)
+
     def test_each_manifest_provider_has_a_bounded_deployment(self):
         self.assertEqual(
             set(modal_config.DEPLOYMENTS),
