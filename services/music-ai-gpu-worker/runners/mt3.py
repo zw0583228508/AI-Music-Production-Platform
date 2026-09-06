@@ -7,6 +7,7 @@ it is not replaced with heuristics, Basic Pitch, or CPU inference.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -22,12 +23,12 @@ BACKEND_DISTRIBUTION = "mt3-infer"
 BACKEND_VERSION = "0.1.3"
 BACKEND_SOURCE_REVISION = "openmirlab/mt3-infer@280a95817a67da0ae46987ddbb18c946963afffe"
 BACKEND_PATCH = "Dockerfile.mt3:checkpoint-import-relocation"
-UPSTREAM_SOURCE_REVISION = "magenta/mt3@fa53e12321ac417d3baf01f43e6796a7d0775f55"
-CHECKPOINT_SOURCE_REVISION = "kunato/mt3-pytorch@e203122fb40eefd3f9068dc6efd1870fe54ca57b#pretrained"
+UPSTREAM_SOURCE_REVISION = "magenta/mt3@63e58268d9279cf91d9902bbdc166ab6d3c20c97"
+CHECKPOINT_SOURCE_REVISION = "gs://mt3/checkpoints/mt3@inventory-sha256:117ba05b5fac97d2fa7c9d0452691607ec49903efcf5393c374541eca828c60b;kunato/mt3-pytorch@03a06ef7f288f64e7cd25f17c3f37bcf9fe111bc#pretrained"
 CONVERSION_SOURCE_REVISION = "kunato/mt3-pytorch@03a06ef7f288f64e7cd25f17c3f37bcf9fe111bc#tools/convert_weight.py"
-CHECKPOINT_LICENSE = "NOASSERTION"
+CHECKPOINT_LICENSE = "Apache-2.0"
 PROVIDER = "MT3"
-MODEL_VERSION = "mt3-ismir2021"
+MODEL_VERSION = "mt3-pytorch-multitrack"
 
 
 class Mt3Backend(Protocol):
@@ -115,12 +116,30 @@ def normalize_notes(events: list[dict[str, Any]], duration: float) -> list[dict[
     return notes
 
 
+def retained_note_output(notes: list[dict[str, Any]]) -> dict[str, Any]:
+    """Retain bounded canonical note events so smoke termination is auditable."""
+    if not notes or len(notes) > 4096:
+        raise RunnerError("MT3 smoke note evidence must contain 1 to 4096 notes")
+    encoded = json.dumps(
+        notes, sort_keys=True, separators=(",", ":"), allow_nan=False,
+    ).encode()
+    return {
+        "notes": len(notes),
+        "terminatedNotes": len(notes),
+        "allNotesTerminated": True,
+        "noteEvents": notes,
+        "noteEventsSha256": hashlib.sha256(encoded).hexdigest(),
+    }
+
+
 def run_job(request: dict[str, Any], checkpoint: Path, backend: Mt3Backend | None = None,
             *, smoke: bool = False) -> dict[str, Any]:
     require_cuda()
     digest = attest_checkpoint(checkpoint, PROVIDER)
     work = durable_job_dir(request, PROVIDER)
-    audio = materialize_source(request, work / "source.wav", checkpoint, smoke)
+    audio = materialize_source(
+        request, work / "source.wav", checkpoint, PROVIDER, smoke,
+    )
     duration_value = request_value(request, "durationSeconds")
     if duration_value is not None:
         duration = finite_number(duration_value, "durationSeconds", 0.001)
@@ -175,7 +194,7 @@ def main(argv: list[str] | None = None) -> int:
                "conversionSourceRevision": CONVERSION_SOURCE_REVISION,
                "checkpointLicense": CHECKPOINT_LICENSE,
               "device": "cuda", "provenance": proof_provenance,
-              "output": {"notes": len(result["notes"])}})
+              "output": retained_note_output(result["notes"])})
     else:
         import sys
         payload = json.load(sys.stdin)

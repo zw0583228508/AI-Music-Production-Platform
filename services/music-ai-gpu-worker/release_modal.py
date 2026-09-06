@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -14,7 +16,14 @@ from urllib.parse import urlencode, urlsplit
 
 import modal
 
-from modal_config import DEPLOYMENTS, promotion_secret_name, provider_app_name, canonical_promotion_record
+from modal_config import (
+    DEPLOYMENTS,
+    MANIFEST,
+    canonical_promotion_record,
+    promotion_secret_name,
+    provider_app_name,
+)
+from runners.common import validate_mt3_note_output
 
 ROOT = Path(__file__).resolve().parent
 APP_CLASSES = {
@@ -179,6 +188,73 @@ def read_health(metadata: dict, token: str) -> dict:
         return json.loads(response.read())
 
 
+def retain_smoke_artifact(health: dict, metadata: dict, output: Path) -> None:
+    descriptor = health.get("smokeEvidence", {}).get("output", {}).get("artifact", {})
+    url = str(descriptor.get("url", ""))
+    if not url.startswith(f"{_origin(metadata['endpointOrigin'])}/artifacts/"):
+        raise ValueError("smoke artifact capability is missing or targets another origin")
+    request = urllib.request.Request(url, headers={"Accept": "audio/wav"})
+    with urllib.request.build_opener(NoRedirect).open(request, timeout=300) as response:
+        if response.status != 200 or response.geturl() != url:
+            raise RuntimeError("smoke artifact did not return directly from Modal origin")
+        content = response.read(32 * 1024 * 1024 + 1)
+    expected_bytes = descriptor.get("bytes")
+    expected_sha = str(descriptor.get("sha256", "")).lower()
+    if (
+        not isinstance(expected_bytes, int)
+        or len(content) != expected_bytes
+        or len(content) > 32 * 1024 * 1024
+        or hashlib.sha256(content).hexdigest() != expected_sha
+    ):
+        raise ValueError("retained smoke artifact does not match its live descriptor")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(content)
+    descriptor["retainedEvidenceFile"] = output.name
+    for field in ("url", "capability", "expiresAt"):
+        descriptor.pop(field, None)
+
+
+def _valid_audio_descriptor(value: object) -> bool:
+    return (
+        isinstance(value, dict)
+        and isinstance(value.get("bytes"), int) and value["bytes"] > 44
+        and isinstance(value.get("sampleRate"), int) and value["sampleRate"] > 0
+        and isinstance(value.get("channels"), int) and value["channels"] > 0
+        and isinstance(value.get("durationSeconds"), (int, float))
+        and math.isfinite(value["durationSeconds"]) and value["durationSeconds"] > 0
+        and isinstance(value.get("peakAmplitude"), (int, float))
+        and math.isfinite(value["peakAmplitude"]) and value["peakAmplitude"] >= 1e-5
+        and isinstance(value.get("rmsAmplitude"), (int, float))
+        and math.isfinite(value["rmsAmplitude"]) and value["rmsAmplitude"] >= 1e-7
+        and re.fullmatch(r"[a-f0-9]{64}", str(value.get("sha256", ""))) is not None
+    )
+
+
+def validate_bs_roformer_output(output: object) -> None:
+    if not isinstance(output, dict) or output.get("stemCount") != 2:
+        raise ValueError("BS-RoFormer retained stem evidence count is invalid")
+    source = output.get("input")
+    stems = output.get("stems")
+    if (
+        not _valid_audio_descriptor(source)
+        or not isinstance(stems, list)
+        or len(stems) != 2
+        or not all(_valid_audio_descriptor(stem) for stem in stems)
+        or {stem.get("stem") for stem in stems} != {"vocals", "instrumental"}
+        or output.get("allStemsNonSilent") is not True
+        or output.get("distinctStemSha256") is not True
+    ):
+        raise ValueError("BS-RoFormer retained audio evidence is incomplete")
+    hashes = {stem["sha256"] for stem in stems}
+    if len(hashes) != 2 or source["sha256"] in hashes:
+        raise ValueError("BS-RoFormer retained stems are not distinct")
+    if any(
+        abs(stem["durationSeconds"] - source["durationSeconds"]) > 0.25
+        for stem in stems
+    ):
+        raise ValueError("BS-RoFormer retained stem duration does not match input")
+
+
 def validate_evidence(value: object, provider: str) -> None:
     validate_metadata(value, provider)
     if not isinstance(value, dict) or value.get("schemaVersion") != 1:
@@ -202,6 +278,22 @@ def validate_evidence(value: object, provider: str) -> None:
             or str(proof.get("checkpointSha256", "")).lower()
             != value["checkpointSha256"]):
         raise ValueError("real provider smoke evidence is incomplete")
+    if provider in {"MT3", "YOUR_MT3"}:
+        validate_mt3_note_output(proof["output"])
+    if provider == "BS_ROFORMER":
+        validate_bs_roformer_output(proof["output"])
+        details = MANIFEST["providers"][provider]
+        if (
+            proof.get("configSha256") != details["config_sha256"]
+            or proof.get("backendVersion") != details["backend_package_version"]
+            or proof.get("backendPackageArtifactSha256")
+            != details["backend_package_artifact_sha256"]
+            or not re.fullmatch(
+                r"[a-f0-9]{64}",
+                str(proof.get("backendPackageTreeSha256", "")),
+            )
+        ):
+            raise ValueError("BS-RoFormer config or backend evidence is invalid")
     expected_provenance = {
         "checkpointSha256": value["checkpointSha256"],
         "modalImageId": value["modalImageId"],
@@ -219,7 +311,10 @@ def validate_evidence(value: object, provider: str) -> None:
         raise ValueError("release evidence source revision does not match CI release revision")
 
 
-def capture(provider: str, expected: dict, token: str, attempts: int = 30) -> dict:
+def capture(
+    provider: str, expected: dict, token: str, attempts: int = 30,
+    smoke_artifact_output: Path | None = None,
+) -> dict:
     metadata = capture_metadata(provider)
     if identity(metadata) != expected:
         raise ValueError("final Modal identity does not match refreshed identity")
@@ -236,6 +331,8 @@ def capture(provider: str, expected: dict, token: str, attempts: int = 30) -> di
             time.sleep(10)
     if health is None:
         raise RuntimeError("authenticated provider health never became ready")
+    if smoke_artifact_output is not None:
+        retain_smoke_artifact(health, metadata, smoke_artifact_output)
     final_metadata = capture_metadata(provider)
     if final_metadata != metadata:
         raise ValueError("Modal deployment identity changed during release capture")
@@ -268,6 +365,7 @@ def main() -> None:
     capture_parser.add_argument("--expected-identity", required=True)
     capture_parser.add_argument("--output", required=True)
     capture_parser.add_argument("--health-output")
+    capture_parser.add_argument("--smoke-artifact-output")
     args = parser.parse_args()
     if args.command == "observe":
         atomic_json(Path(args.output), capture_metadata(args.provider))
@@ -281,7 +379,15 @@ def main() -> None:
         if not token:
             raise ValueError("music worker token is unavailable")
         expected = json.loads(Path(args.expected_identity).read_text())
-        evidence = capture(args.provider, expected, token)
+        if args.provider == "ACE_STEP" and not args.smoke_artifact_output:
+            raise ValueError("ACE_STEP capture requires retained smoke artifact output")
+        evidence = capture(
+            args.provider, expected, token,
+            smoke_artifact_output=(
+                Path(args.smoke_artifact_output)
+                if args.smoke_artifact_output else None
+            ),
+        )
         atomic_json(Path(args.output), evidence)
         if args.health_output:
             atomic_json(Path(args.health_output), evidence["liveHealth"])

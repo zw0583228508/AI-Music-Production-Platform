@@ -15,7 +15,7 @@
     "ACE_STEP": {
       "model_version": "ace-step-1.5-base",
       "runtime": {
-        "cuda_image": "nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04",
+        "cuda_image": "nvidia/cuda@sha256:17e2934e1fa96152b14f78078bfbafd0f00f391df995dc6c641a720fce1202bb",
         "cuda": "12.8.1",
         "pytorch": "2.10.0+cu128",
         "torchvision": "0.25.0+cu128",
@@ -48,34 +48,72 @@
     },
     "BS_ROFORMER": {
       "model_version": "bs-roformer-viperx-v1",
+      "routing_status": "BLOCKED_LICENSE",
+      "runtime": {
+        "cuda_image": "nvidia/cuda@sha256:2fcc4280646484290cc50dce5e65f388dd04352b07cbe89a635703bd1f9aedb6"
+      },
       "revision": "puar-playground/bs-roformer@b1361b816daca507f079d85e935c291bcb0a5351",
+      "backend_repository": "https://github.com/openmirlab/bs-roformer-infer",
+      "backend_revision": "b0f1386fcced25f559f3e61c9f08a73cd9bddf80",
+      "backend_package_version": "0.1.5",
+      "backend_package_artifact_sha256": "46f3d5eb4b666a54adcb67524258c3cb6f96e185db97a3e1e1ef7efaea4e1848",
       "checkpoint_path": "bs-roformer-viperx-v1.ckpt",
       "checkpoint_sha256": "5b84f37e8d444c8cb30c79d77f613a41c05868ff9c9ac6c7049c00aefae115aa",
       "config_path": "bs-roformer-viperx-v1.yaml",
       "config_sha256": "9df444dbc1a704e23858e0315a211ec5fa4c69f92ecefb173d05e8f721ed2b1f",
-      "license": "MIT",
-      "license_reference": "https://huggingface.co/puar-playground/bs-roformer/blob/b1361b816daca507f079d85e935c291bcb0a5351/README.md",
+      "license": "UNVERIFIED",
+      "license_status": "UNVERIFIED",
+      "license_reference": "services/music-ai-gpu-worker/release-evidence/bs-roformer/source-license-evidence-v1.json",
+      "checkpoint_license": "UNVERIFIED",
+      "checkpoint_license_reference": "services/music-ai-gpu-worker/release-evidence/bs-roformer/source-license-evidence-v1.json",
+      "wrapper_license": "MIT",
+      "wrapper_license_reference": "https://huggingface.co/puar-playground/bs-roformer/blob/b1361b816daca507f079d85e935c291bcb0a5351/README.md",
+      "backend_license": "MIT",
+      "backend_license_reference": "https://github.com/openmirlab/bs-roformer-infer/blob/b0f1386fcced25f559f3e61c9f08a73cd9bddf80/LICENSE",
+      "commercial_use_permitted": false,
+      "smoke_input_path": "_smoke/bs-roformer-real-song-v1.wav",
+      "smoke_input_sha256": "b2626121f7f2987843d7212c82b8f1222f2f023fc3d4b07c07ede1b24535feb9",
+      "smoke_input_kind": "retained ACE-Step v3 real music excerpt",
       "runner_env": "MUSIC_GPU_RUNNER_BS_ROFORMER",
       "smoke_env": "MUSIC_GPU_SMOKE_BS_ROFORMER"
     },
     "MT3": {
-      "model_version": "mt3-ismir2021",
-      "revision": "kunato/mt3-pytorch@e203122fb40eefd3f9068dc6efd1870fe54ca57b#pretrained",
-      "checkpoint_source": "https://github.com/kunato/mt3-pytorch/tree/e203122fb40eefd3f9068dc6efd1870fe54ca57b/pretrained",
-      "checkpoint_license": "NOASSERTION (the conversion repository declares no license)",
+      "model_version": "mt3-pytorch-multitrack",
+      "revision": "gs://mt3/checkpoints/mt3@inventory-sha256:117ba05b5fac97d2fa7c9d0452691607ec49903efcf5393c374541eca828c60b;kunato/mt3-pytorch@03a06ef7f288f64e7cd25f17c3f37bcf9fe111bc#pretrained",
+      "checkpoint_source": "gs://mt3/checkpoints/mt3 serialized as pretrained/mt3.pth at kunato/mt3-pytorch@03a06ef7f288f64e7cd25f17c3f37bcf9fe111bc",
+      "checkpoint_license": "Apache-2.0",
+      "checkpoint_asset_sha256": "b8a3807ed265059abd25ad7f68142c06c35e8f6144dcaa45bd55946a3745398f",
+      "checkpoint_asset_bytes": 183672643,
+      "checkpoint_config_sha256": "e1584759624ddecfeca7eaaaaf60cea58a5dbd1012957666dc685bf51b93907a",
+      "checkpoint_config_bytes": 466,
+      "official_checkpoint": {
+        "bucket": "mt3",
+        "prefix": "checkpoints/mt3/",
+        "object_count": 296,
+        "object_bytes": 171589452,
+        "object_inventory_sha256": "117ba05b5fac97d2fa7c9d0452691607ec49903efcf5393c374541eca828c60b",
+        "official_tensor_count": 189,
+        "converted_assignment_count": 191,
+        "all_converted_assignments_exact": true,
+        "conversion_max_abs_delta": 0.0,
+        "deterministic_buffer_count": 2
+      },
       "adapter_revision": "openmirlab/mt3-infer@280a95817a67da0ae46987ddbb18c946963afffe",
+      "adapter_license": "MIT; vendored MT3-PyTorch T5 implementation carries an Apache-2.0 source header",
       "adapter_patch": "Dockerfile.mt3 exact transformers-to-torch checkpoint import relocation",
       "adapter_runtime_additions": {
         "absl-py": "2.1.0"
       },
       "runtime": {
-        "transformers": "4.38.2"
+        "cuda_image": "nvidia/cuda@sha256:2fcc4280646484290cc50dce5e65f388dd04352b07cbe89a635703bd1f9aedb6",
+        "transformers": "4.38.2",
+        "uv_image": "ghcr.io/astral-sh/uv@sha256:1ececcacbbde240ffca54d400df86e4fdd38f29c1a2366299279d197e92eaed3"
       },
-      "upstream_revision": "magenta/mt3@fa53e12321ac417d3baf01f43e6796a7d0775f55",
+      "upstream_revision": "magenta/mt3@63e58268d9279cf91d9902bbdc166ab6d3c20c97",
       "upstream_license": "Apache-2.0",
       "conversion_revision": "kunato/mt3-pytorch@03a06ef7f288f64e7cd25f17c3f37bcf9fe111bc#tools/convert_weight.py",
-      "conversion_summary": "T5X arrays were flattened, kernels transposed into PyTorch layout, loaded into the 8-layer MT3 T5 architecture, and serialized as pretrained/mt3.pth.",
-      "checkpoint_path": "mt3-ismir2021",
+      "conversion_summary": "All 191 mapped PyTorch assignments are exactly equal to the official multitrack MT3 T5X checkpoint (149 assignments from 147 external Zarr arrays plus 42 inline MessagePack arrays); the two remaining positional buffers exactly match the pinned constructor.",
+      "checkpoint_path": "mt3-official-multitrack",
       "checkpoint_sha256": "33f6bc4c0410a1c7c1c426c5406566de0b7418af2dc3dfd798496f70cef85622",
       "runner_env": "MUSIC_GPU_RUNNER_MT3",
       "smoke_env": "MUSIC_GPU_SMOKE_MT3"
@@ -105,21 +143,27 @@
     },
     "YOUR_MT3": {
       "model_version": "your-mt3",
-      "revision": "openmirlab/mt3-infer@280a95817a67da0ae46987ddbb18c946963afffe#yourmt3",
-      "checkpoint_source": "https://huggingface.co/spaces/mimbres/YourMT3 main:amt/logs/2024/mc13_256_g4_all_v7_mt3f_sqr_rms_moe_wf4_n8k2_silu_rope_rp_b36_nops/checkpoints/last.ckpt via mt3-infer==0.1.3 download yourmt3 (provisioning only)",
-      "checkpoint_upstream_revision": null,
-      "checkpoint_provenance_status": "mutable upstream main; artifact hash and immutable upstream revision not independently reviewed",
+      "runtime": {
+        "transformers": "4.45.1"
+      },
+      "revision": "mimbres/YourMT3@e45ebd70398682d54b7bb1901a5216e18f3b1824#logs/2024/mc13_256_g4_all_v7_mt3f_sqr_rms_moe_wf4_n8k2_silu_rope_rp_b36_nops/checkpoints/last.ckpt",
+      "checkpoint_source": "https://huggingface.co/mimbres/YourMT3/resolve/e45ebd70398682d54b7bb1901a5216e18f3b1824/logs/2024/mc13_256_g4_all_v7_mt3f_sqr_rms_moe_wf4_n8k2_silu_rope_rp_b36_nops/checkpoints/last.ckpt",
+      "checkpoint_upstream_revision": "mimbres/YourMT3@e45ebd70398682d54b7bb1901a5216e18f3b1824",
+      "checkpoint_provenance_status": "verified against immutable Hugging Face model revision e45ebd70398682d54b7bb1901a5216e18f3b1824: last.ckpt is a 561544628-byte LFS object with oid ae38e415c79efd5592dcb9b658cdb99ddb11d4c4e1eaa364cab04a052473fc25; the same LFS object is referenced by Space revision 5e66c1ea173a8186e0d20432b841d3180cc015b5",
       "checkpoint_license": "Apache-2.0",
       "adapter_revision": "openmirlab/mt3-infer@280a95817a67da0ae46987ddbb18c946963afffe",
-      "adapter_patch": "hash-guarded YourMT3 T5 cache_position compatibility patch",
+      "adapter_patch": "no behavioral patch; exact upstream Transformers 4.45.1 with a hash guard over the vendored YourMT3 T5 source",
       "adapter_source_sha256": "b2cc683b55f5d3284c0788d59f8f0a7c39b03535731aeb7a62c81c86c351f480",
-      "adapter_patch_sha256": "81363b1b69d01d9ea94ac72201f897fdd2ba011b7d0090219b509fa6909ad3ee",
+      "adapter_patch_sha256": "b2cc683b55f5d3284c0788d59f8f0a7c39b03535731aeb7a62c81c86c351f480",
       "checkpoint_path": "yourmt3/mc13_256_g4_all_v7_mt3f_sqr_rms_moe_wf4_n8k2_silu_rope_rp_b36_nops/last.ckpt",
-      "checkpoint_sha256": null,
+      "checkpoint_sha256": "ae38e415c79efd5592dcb9b658cdb99ddb11d4c4e1eaa364cab04a052473fc25",
       "checkpoint_evidence_path": "_attestations/your-mt3.json",
       "license": "Apache-2.0",
+      "smoke_input_path": "_smoke/structured-melodic-phrase-12s.wav",
+      "smoke_input_sha256": "d32d6565800021f93f7904cf576c696c0f5d0f45bb8dc7b1badd0dc53cab69b7",
+      "smoke_input_kind": "deterministic-additive-plucked-melody",
       "smoke_spec": {
-        "input": "_smoke/structured-click-track-32s.wav",
+        "input": "_smoke/structured-melodic-phrase-12s.wav",
         "required_output": "at_least_one_terminated_midi_note",
         "device": "cuda"
       },
@@ -129,6 +173,9 @@
     "ALL_IN_ONE": {
       "model_version": "all-in-one-infer-3.1.0",
       "model_name": "harmonix-all",
+      "runtime": {
+        "cuda_image": "nvidia/cuda@sha256:2fcc4280646484290cc50dce5e65f388dd04352b07cbe89a635703bd1f9aedb6"
+      },
       "revision": "taejunkim/allinone@379e5fd010b3fdd0ee8381ff8cbcfa51d70b5c19;facebookresearch/demucs@ef66d254cd6d558e207eeff2c4b8d053db2e77dd",
       "checkpoint_path": "all-in-one",
       "checkpoint_sha256": "4b8d00db3903c3b505cc5d2ec1a84787ccc2e1cc446f838118e03e9a356552e5",

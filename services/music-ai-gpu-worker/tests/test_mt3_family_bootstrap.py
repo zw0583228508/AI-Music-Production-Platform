@@ -26,6 +26,77 @@ class Mt3FamilyBootstrapTests(unittest.TestCase):
                 self.assertEqual(audio.getnframes(), 44_100 * 32)
                 self.assertEqual(audio.getnchannels(), 1)
 
+    def test_yourmt3_fixture_is_native_rate_note_on_off_phrase(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = bootstrap.write_smoke_fixture("YOUR_MT3", Path(temporary))
+            import wave
+            with wave.open(str(fixture), "rb") as audio:
+                self.assertEqual(audio.getframerate(), 16_000)
+                self.assertEqual(audio.getnframes(), 16_000 * 12)
+                self.assertEqual(audio.getnchannels(), 1)
+            self.assertEqual(
+                bootstrap.tree_sha256(fixture),
+                "d32d6565800021f93f7904cf576c696c0f5d0f45bb8dc7b1badd0dc53cab69b7",
+            )
+
+    def test_yourmt3_smoke_subprocess_receives_exact_fixture_pin(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            checkpoint = root / str(bootstrap.PROVIDERS["YOUR_MT3"]["checkpoint"])
+            checkpoint.parent.mkdir(parents=True)
+            checkpoint.write_bytes(b"reviewed checkpoint")
+            checkpoint_sha256 = bootstrap.tree_sha256(checkpoint)
+            observed_environment = {}
+
+            def fake_run(command, **options):
+                self.assertEqual(command[2], "runners.your_mt3")
+                observed_environment.update(options["env"])
+                return SimpleNamespace(
+                    returncode=0,
+                    stdout=json.dumps({
+                        "smokeTested": True,
+                        "provider": "YOUR_MT3",
+                        "checkpointSha256": checkpoint_sha256,
+                        "output": {"notes": 1},
+                    }),
+                    stderr="",
+                )
+
+            with mock.patch.object(
+                bootstrap.subprocess, "run", side_effect=fake_run
+            ):
+                evidence = bootstrap.run_smoke(
+                    "YOUR_MT3", root, checkpoint, checkpoint_sha256
+                )
+
+            expected = bootstrap.PROVIDERS["YOUR_MT3"]["smoke_input_sha256"]
+            self.assertEqual(
+                observed_environment[
+                    "MUSIC_PROVIDER_YOUR_MT3_SMOKE_INPUT_SHA256"
+                ],
+                expected,
+            )
+            self.assertEqual(evidence["fixtureSha256"], expected)
+
+    def test_yourmt3_generated_fixture_hash_drift_stops_before_runner(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            checkpoint = root / str(bootstrap.PROVIDERS["YOUR_MT3"]["checkpoint"])
+            checkpoint.parent.mkdir(parents=True)
+            checkpoint.write_bytes(b"reviewed checkpoint")
+            checkpoint_sha256 = bootstrap.tree_sha256(checkpoint)
+            with mock.patch.dict(
+                bootstrap.PROVIDERS["YOUR_MT3"],
+                {"smoke_input_sha256": "0" * 64},
+            ), mock.patch.object(bootstrap.subprocess, "run") as run:
+                with self.assertRaisesRegex(
+                    RuntimeError, "generated smoke fixture SHA-256 mismatch"
+                ):
+                    bootstrap.run_smoke(
+                        "YOUR_MT3", root, checkpoint, checkpoint_sha256
+                    )
+            run.assert_not_called()
+
     def test_bootstrap_records_observed_hash_only_after_smoke(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -80,6 +151,24 @@ class Mt3FamilyBootstrapTests(unittest.TestCase):
             inventory = bootstrap.observed_inventory(root)
             selected = bootstrap.selected_checkpoint("YOUR_MT3", root, inventory)
             self.assertEqual(selected, path)
+
+    def test_yourmt3_reuses_only_the_reviewed_immutable_checkpoint(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            details = bootstrap.PROVIDERS["YOUR_MT3"]
+            target = root / str(details["checkpoint"])
+            target.parent.mkdir(parents=True)
+            reviewed = b"reviewed bytes"
+            target.write_bytes(reviewed)
+            with mock.patch.dict(
+                details,
+                {
+                    "checkpoint_bytes": len(reviewed),
+                    "checkpoint_sha256": bootstrap.tree_sha256(target),
+                },
+            ), mock.patch.object(bootstrap.urllib.request, "urlopen") as download:
+                bootstrap.provision_checkpoint("YOUR_MT3", root)
+            download.assert_not_called()
 
     def test_layout_mismatch_has_bounded_observed_diagnostic(self):
         with tempfile.TemporaryDirectory() as temporary:
