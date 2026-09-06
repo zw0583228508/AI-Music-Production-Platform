@@ -1,0 +1,1390 @@
+המטרה של המשימה הזאת היא להביא את כל שכבת ה-AI/MIR/Generation של הפרויקט למצב מלא:
+
+INSTALLED
+→ WEIGHTS DOWNLOADED AND PINNED
+→ CHECKSUM VERIFIED
+→ REAL INFERENCE SMOKE PASSED
+→ DEPLOYED
+→ HEALTH ATTESTED
+→ API CONNECTED
+→ PROVIDER STATUS READY
+
+אין להסתפק ב:
+
+* adapter
+* placeholder
+* endpoint configuration
+* dependency declaration
+* Dockerfile בלבד
+* checkpoint path ללא checkpoint
+* mock inference
+* synthetic response.
+
+Provider לא ייחשב מותקן עד שביצע inference אמיתי.
+
+חשוב מאוד:
+
+אין להתקין את כל המודלים באותה סביבת Python.
+
+כל משפחת מודלים בעלת runtime שונה תקבל Docker image וסביבת Python עצמאית.
+
+שמור על הארכיטקטורה הקיימת של provider isolation.
+
+==================================================
+PHASE 1 — השלם את ארבעת ה-GPU PROVIDERS הקיימים
+===============================================
+
+1. ACE_STEP
+
+המצב הקיים טוב ואין לשנות את runtime שלו.
+
+שמור:
+
+Python 3.11.11
+CUDA 12.8.1
+Torch 2.10.0+cu128
+Torchvision 0.25.0+cu128
+Torchaudio 2.10.0+cu128
+Transformers 4.57.6
+Accelerate 1.12.0
+
+השתמש אך ורק ב-ACE-Step 1.5 הרשמי שכבר pinned בפרויקט.
+
+וודא:
+
+* checkpoint staged
+* composite checkpoint SHA מחושב
+* real L40S GPU smoke
+* ACE FAST
+* COMPLETE
+* LEGO
+* REPAINT
+* EXTRACT אם supported
+* audio artifact download
+* checksum
+* signed promotion
+* API readiness = ready.
+
+אין לבצע downgrade ל-runtime הזה.
+
+2. BS_ROFORMER
+
+שמור את:
+
+bs-roformer-infer==0.1.5
+
+ואת checkpoint/config שכבר pinned.
+
+וודא:
+
+* checkpoint mounted
+* config mounted
+* SHA-256 תואם
+* real NVIDIA L4 separation inference
+* לפחות vocal + instrumental stems
+* downloadable artifacts
+* smoke passed
+* signed promotion
+* API readiness = ready.
+
+3. MT3
+
+הקוד וה-checkpoint כבר קיימים.
+
+השאר:
+
+mt3-infer
+absl-py
+mido
+soundfile
+
+וה-checkpoint הקיים:
+
+mt3-ismir2021
+
+אל תחליף checkpoint אם אין סיבה.
+
+בצע עכשיו את החלק שעדיין חסר:
+
+* deploy final MT3 Modal image
+* run real L4 transcription
+* collect runtime identity
+* collect Modal app/deployment/function/image IDs
+* create signed promotion bundle
+* install worker identity Secret
+* rollover containers
+* publish promotion bundle to API
+* verify GET /health?provider=MT3
+* verify API provider status = ready.
+
+MT3 לא יישאר configured בלבד.
+
+4. ALL_IN_ONE
+
+התקן והפעל במלואו.
+
+שמור:
+
+all-in-one-infer
+demucs-infer
+madmom-infer
+
+והתקן את כל:
+
+Harmonix fold 0
+Harmonix fold 1
+Harmonix fold 2
+Harmonix fold 3
+Harmonix fold 4
+Harmonix fold 5
+Harmonix fold 6
+Harmonix fold 7
+
+וגם HTDemucs checkpoint.
+
+כל asset חייב להיות:
+
+revision pinned
+SHA-256 pinned
+stored in durable model volume.
+
+בצע real L4 GPU inference על שיר אמיתי.
+
+הפלט חייב לכלול:
+
+tempo
+tempo map
+meter
+meter map
+beats
+downbeats
+bars
+sections
+section labels
+confidence.
+
+לאחר smoke מוצלח:
+
+* create signed promotion
+* install worker identity
+* rollover
+* expose ALL_IN_ONE_API_URL
+* health attestation
+* API readiness = ready.
+
+==================================================
+PHASE 2 — MUSICGEN
+==================
+
+5. הוסף MUSICGEN כ-provider אמיתי.
+
+אין להתקין אותו בתוך ACE-Step image.
+
+צור:
+
+services/music-ai-gpu-worker/Dockerfile.musicgen
+services/music-ai-gpu-worker/runners/musicgen.py
+services/music-ai-gpu-worker/runners/requirements-musicgen.txt
+
+צור environment ייעודי התואם AudioCraft.
+
+התקן את AudioCraft הרשמי.
+
+התקן לפחות:
+
+facebook/musicgen-large
+facebook/musicgen-melody-large
+
+אם ניתן מבחינת storage, התקן גם:
+
+musicgen-medium
+musicgen-melody
+stereo-melody-large
+
+אבל large + melody-large הם חובה.
+
+העבר את כל weights ל-MUSIC_GPU_CHECKPOINT_ROOT.
+
+אין להוריד weights בזמן request.
+
+חשב deterministic SHA-256/manifest identity לכל checkpoint snapshot.
+
+ה-runner חייב לתמוך לפחות:
+
+text-conditioned generation
+melody-conditioned generation
+duration
+temperature
+top-k
+top-p
+guidance
+seed.
+
+החזר audio artifact canonical עם:
+
+provider
+modelVersion
+checkpointSha256
+seed
+parameters
+duration
+sampleRate
+artifact SHA-256.
+
+הוסף ל:
+
+model_manifest.json
+modal_config.py
+modal_app.py
+provider registry
+promotion workflow.
+
+פרוס כ-Modal GPU endpoint עצמאי.
+
+השתמש ב-GPU בעל VRAM מתאים; עבור large העדף L40S/A100-class ולא L4 קטן אם הוא גורם OOM.
+
+בצע real inference smoke.
+
+רק לאחר מכן:
+
+MUSICGEN = ready.
+
+==================================================
+PHASE 3 — ANYACCOMP
+===================
+
+6. התקן AnyAccomp במלואו.
+
+צור provider חדש ומבודד:
+
+Dockerfile.anyaccomp
+requirements-anyaccomp.txt
+runners/anyaccomp.py
+
+אל תכניס אותו ל-ACE-Step/MusicGen environment.
+
+Pin immutable revision של:
+
+AmphionTeam/AnyAccomp
+
+התקן environment התואם upstream.
+
+ה-upstream משתמש ב-Python 3.9, ולכן בנה לו Python 3.9 image עצמאי.
+
+הורד מראש את כל snapshot:
+
+amphion/anyaccomp
+
+כולל כל:
+
+VQ model
+Flow Matching model
+Vocoder
+supporting checkpoints/configs.
+
+שמור אותם ב-durable model volume.
+
+חשב SHA-256/manifest identity על כל snapshot.
+
+ה-runner יקבל:
+
+vocal audio
+או
+solo instrument audio
+
+ויחזיר accompaniment audio אמיתי.
+
+חבר אותו ל-provider ANYACCOMP שכבר קיים ב-Node registry.
+
+ה-output יומר ל-canonical ProviderCandidate.
+
+שמור:
+
+audio artifact
+provider
+modelVersion
+checkpoint identity
+seed
+parameters
+parent artifact lineage.
+
+הוסף:
+
+health
+real GPU smoke
+Modal deployment
+promotion/attestation.
+
+ANYACCOMP חייב להופיע ready.
+
+==================================================
+PHASE 4 — SYMPHONYGEN
+=====================
+
+7. התקן SymphonyGen.
+
+צור environment עצמאי.
+
+Pin immutable revision של:
+
+symphonygen/symphonygen
+
+הורד את כל checkpoints הרלוונטיים מתוך:
+
+SymphonyGen/SymphonyGen
+
+כולל לפחות:
+
+stage_one_pretrained.pt
+grpo_clamp+track_epoch_6.pt
+
+וכן כל asset/config/checkpoint נוסף שנדרש בפועל על ידי upstream inference.
+
+אל תשתמש ב-main floating revision.
+
+שמור upstream git SHA ב-model manifest.
+
+הרץ:
+
+harmony skeleton generation
+→ orchestration generation.
+
+ה-output הסופי הוא symbolic orchestral output.
+
+כתוב adapter שממיר את פלט SymphonyGen ל:
+
+ArrangementPlan
+TrackModels
+
+עם:
+
+instrument identity
+notes
+velocity
+timing
+track roles
+articulations כאשר קיימות
+provenance.
+
+בצע real GPU smoke.
+
+הוסף:
+
+Dockerfile.symphonygen
+requirements-symphonygen.txt
+runner
+manifest
+Modal endpoint
+health
+promotion.
+
+חבר ל-SYMPHONYGEN provider הקיים.
+
+==================================================
+PHASE 5 — METEOR
+================
+
+8. התקן METEOR המלא:
+
+dinhviettoanle/meteor
+
+Pin immutable upstream revision.
+
+צור Python 3.9.2 environment עצמאי בהתאם ל-upstream.
+
+התקן requirements שלו בסביבה מבודדת.
+
+הורד checkpoint הרשמי מ-Hugging Face ולא בזמן request.
+
+שמור אותו ב-model volume.
+
+חשב SHA-256.
+
+התקן את כל preprocessing הנדרש:
+
+MIDI
+→ analyzed MIDI
+→ corpus/events
+→ REMI/MuseMorphose representation
+→ attributes
+→ METEOR generation.
+
+כתוב canonical adapter:
+
+MIDI/Song Model
+→ METEOR
+→ generated MIDI
+→ TrackModels.
+
+חשוף controls של METEOR:
+
+instrumentation
+polyphonicity
+rhythmicity
+melody instrument
+texture controls.
+
+פרוס כ-provider נפרד.
+
+בצע real inference על MIDI אמיתי.
+
+חבר אותו ל-METEOR provider שכבר קיים ב-Node API.
+
+==================================================
+PHASE 6 — MIDI-SAG
+==================
+
+9. התקן MIDI-SAG במלואו:
+
+fundwotsai2001/MIDI-SAG
+
+Pin immutable revision.
+
+צור Python 3.9 environment ייעודי.
+
+אל תכניס אותו לסביבה של שום provider אחר.
+
+הרץ את upstream installation logic בצורה reproducible בתוך image build/checkpoint-bootstrap.
+
+התקן את כל תתי-המודלים שבהם משתמש ה-pipeline.
+
+Detected mode חייב לעבוד:
+
+vocal audio
+→ beat tracking
+→ GAME MIDI transcription
+→ AccoMontage2 harmonization
+→ MuseControlLite
+→ backing track.
+
+התקן גם את כל checkpoints הנדרשים למצב הזה.
+
+אם ComposeFlow dependencies זמינים ב-upstream, stage גם אותם:
+
+CSL-L2M
+SoulX-Singer
+MuseControlLite
+וכל checkpoint נלווה.
+
+הוסף Hugging Face authentication דרך secret בלבד.
+
+אין hardcoded token.
+
+Weights לא יורדו במהלך user request.
+
+בצע real GPU smoke על:
+
+Detected mode
+
+ובנפרד, אם checkpoints זמינים:
+
+Ground-truth MIDI mode
+ComposeFlow mode.
+
+חבר אותו ל-MIDI_SAG provider הקיים.
+
+==================================================
+PHASE 7 — BASIC PITCH + DEMUCS
+==============================
+
+10. שמור והשלים את ה-music-ai-worker הקיים.
+
+כבר קיימים:
+
+basic-pitch==0.4.0
+demucs==4.0.1
+pedalboard
+librosa
+mido
+pretty-midi
+onnxruntime
+scipy
+soundfile.
+
+אין למחוק אותם.
+
+ודא שה-Basic Pitch ONNX checkpoint הקיים נמצא בפועל ומאומת באמצעות SHA.
+
+בצע audio→notes real smoke.
+
+ודא שה-HTDemucs checkpoint נמצא בפועל ומאומת.
+
+בצע real source separation smoke.
+
+פרוס את worker כך ש:
+
+BASIC_PITCH_API_URL
+
+ו-
+
+DEMUCS_API_URL
+
+מצביעים על שירות פעיל.
+
+GET /health?provider=BASIC_PITCH
+
+ו-
+
+GET /health?provider=DEMUCS
+
+חייבים להיות healthy.
+
+==================================================
+PHASE 8 — SHEETSAGE
+===================
+
+11. התקן SheetSage.
+
+השתמש ב:
+
+openmirlab/sheetsage-infer
+
+במקום להכריח את ה-SheetSage הישן לתוך סביבת Python המודרנית.
+
+Pin exact package/revision.
+
+התקן:
+
+sheetsage-infer
+madmom-infer
+
+וכל dependency/checkpoint שה-package צריך.
+
+Prewarm/download את כל model assets בבנייה/bootstrap.
+
+אין first-request model download.
+
+שמור snapshot/checkpoint hashes.
+
+צור provider service שמקבל את contract הקיים:
+
+POST /analyze
+
+עם:
+
+provider=SHEETSAGE
+sourceUrl
+sourceType
+durationSeconds
+
+ומחזיר את החוזה שה-Node API כבר מצפה לו:
+
+version
+confidence
+chords/candidates
+ואם קיים — melody evidence.
+
+פרוס אותו ב-endpoint עצמאי.
+
+הגדר:
+
+SHEETSAGE_API_URL
+SHEETSAGE_API_TOKEN.
+
+בצע real song inference.
+
+==================================================
+PHASE 9 — MADMOM
+================
+
+12. התקן madmom inference stack.
+
+לסביבה המודרנית השתמש:
+
+madmom-infer
+
+עם weights המקוריים של madmom.
+
+Preload את ה-model weights הנדרשים ל:
+
+beat detection
+downbeat detection
+tempo estimation
+key recognition
+onset detection.
+
+כל weight חייב להיות cached לפני serving ומאומת checksum.
+
+אין הורדה בזמן user request.
+
+השתמש בו כ-evidence provider נוסף ל:
+
+beats
+downbeats
+tempo
+meter
+key.
+
+הוסף provider identity מפורש:
+
+MADMOM
+
+ל-analysis stack.
+
+אל תציג אותו כ-All-In-One.
+
+ה-provenance חייב להראות MADMOM.
+
+==================================================
+PHASE 10 — TORCHCREPE
+=====================
+
+13. התקן:
+
+torchcrepe==0.0.24
+
+בסביבת analysis מתאימה עם:
+
+torch
+torchaudio
+librosa
+resampy
+scipy
+tqdm.
+
+Preload את CREPE full/tiny weights.
+
+השתמש כברירת מחדל ב-FULL עבור quality analysis.
+
+הוסף provider:
+
+TORCHCREPE
+
+ל-pitch/F0 evidence.
+
+הוא יחזיר:
+
+timestamp
+frequency Hz
+periodicity/confidence
+voiced/unvoiced
+converted MIDI pitch.
+
+השתמש בו עבור:
+
+vocal pitch
+solo instrument pitch
+bass F0 evidence
+melody verification.
+
+==================================================
+PHASE 11 — ESSENTIA
+===================
+
+14. התקן Essentia בסביבת Linux נפרדת/analysis image.
+
+התקן:
+
+essentia
+
+אין צורך לדחוף Essentia-TensorFlow לתוך אותה סביבה אלא אם בפועל משתמשים במודלים מבוססי TensorFlow.
+
+הפעל לפחות:
+
+HPCP/chroma
+key detection
+tonal analysis
+spectral descriptors
+onsets
+rhythm descriptors
+loudness-related descriptors לפי הצורך.
+
+בנה provider:
+
+ESSENTIA
+
+וכן השתמש ב-Essentia כחלק מ-CHROMA evidence.
+
+CHROMA provider חייב להחזיר:
+
+chroma frames
+start
+end
+12 normalized values
+confidence.
+
+אם מופעל chord detector מתאים, החזר גם chord candidates.
+
+==================================================
+PHASE 12 — PYLOUDNORM
+=====================
+
+15. התקן:
+
+pyloudnorm==0.2.0
+
+הוסף אותו ל-quality/master analysis.
+
+חשב לכל:
+
+source
+stem
+candidate
+mix
+master
+
+לפחות:
+
+integrated LUFS
+LRA
+peak
+true-peak כאשר implementation תומך
+normalization delta.
+
+שמור את המדידות בתוך quality report.
+
+אין לבצע normalization אוטומטי בלי לשמור before/after evidence.
+
+==================================================
+PHASE 13 — CHROMA PROVIDER
+==========================
+
+16. הפוך את CHROMA adapter שכבר קיים ל-provider אמיתי.
+
+בנה אותו מעל:
+
+Essentia HPCP/chroma
++
+librosa chroma כ-evidence נוסף אם נדרש.
+
+POST /analyze חייב להחזיר את schema שכבר קיים ב-analysisProviders.ts.
+
+פרוס endpoint עצמאי:
+
+CHROMA_API_URL.
+
+בצע real inference.
+
+==================================================
+PHASE 14 — BASS PROVIDER
+========================
+
+17. הפוך את BASS adapter ל-provider אמיתי.
+
+השתמש ב:
+
+BS-RoFormer/Demucs bass stem אם זמין
++
+torchcrepe F0
++
+Basic Pitch evidence לפי הצורך.
+
+החזר canonical bass notes:
+
+start
+end
+pitch
+confidence.
+
+אל תמציא bass line כאשר אין evidence.
+
+פרוס:
+
+BASS_API_URL.
+
+==================================================
+PHASE 15 — SFIZZ / VSCO
+=======================
+
+18. השלם native SFZ rendering.
+
+התקן native sfizz host אמיתי.
+
+Provision ספריית SFZ אמיתית כגון VSCO 2 CE לתוך:
+
+MUSIC_AI_ASSET_ROOT
+
+מחוץ ל-Git.
+
+חשב deterministic tree SHA-256 על הספרייה.
+
+הוסף:
+
+asset identity
+license/reference
+renderer identity
+renderer SHA-256.
+
+הוסף את host ל:
+
+MUSIC_AI_APPROVED_NATIVE_HOSTS.
+
+Stage דרך admin assets API.
+
+הרץ את שלושת canonical smoke renders הקיימים.
+
+Activate רק אם כולם עוברים.
+
+GET /health?provider=SFIZZ_VSCO2_CE
+
+חייב לחזור ready.
+
+==================================================
+PHASE 16 — VST3 / PEDALBOARD
+============================
+
+19. השלם VST3 native rendering.
+
+Pedalboard Python כבר מותקן.
+
+כעת צריך native MIDI render host אמיתי.
+
+בנה/התקן host שמסוגל:
+
+load VST3
+receive canonical TrackModel
+send notes
+CC
+articulations
+automation
+render offline WAV.
+
+Provision לפחות instrument VST3 אחד אמיתי לצורך proof.
+
+אל תכניס plugin binaries ל-Git.
+
+שמור אותם ב-MUSIC_AI_ASSET_ROOT.
+
+רשום:
+
+assetId
+exact identity
+checksum
+renderer checksum.
+
+הוסף ל:
+
+MUSIC_AI_APPROVED_VST3_ASSETS.
+
+Stage
+→ smoke
+→ activate.
+
+GET /health?provider=VST3
+
+חייב לחזור ready.
+
+==================================================
+PHASE 17 — MODEL MANIFEST
+=========================
+
+20. הרחב את:
+
+services/music-ai-gpu-worker/model_manifest.json
+
+כך שכל provider מכיל:
+
+provider id
+model version
+upstream repository
+immutable revision
+checkpoint path
+checkpoint SHA-256
+config SHA-256 אם קיים
+runtime Python
+CUDA
+Torch
+Transformers
+Accelerate
+license
+runner
+smoke runner
+required GPU.
+
+אל תשאיר:
+
+checkpoint_sha256: null
+
+ל-provider שאמור להיות usable.
+
+כל provider עם null ייחשב unavailable.
+
+==================================================
+PHASE 18 — MODAL DEPLOYMENT
+===========================
+
+21. הרחב את:
+
+modal_config.py
+
+ו-
+
+modal_app.py
+
+להכיל לפחות:
+
+ACE_STEP
+BS_ROFORMER
+MT3
+ALL_IN_ONE
+MUSICGEN
+ANYACCOMP
+SYMPHONYGEN
+METEOR
+MIDI_SAG
+
+לכל provider:
+
+Dockerfile ייחודי
+image ייחודי
+GPU מתאים
+timeout מתאים
+max_containers
+idle timeout
+model volume
+jobs volume
+outputs volume
+runtime secret
+promotion secret.
+
+אין לשתף Dockerfile path בין providers.
+
+==================================================
+PHASE 19 — DURABLE VOLUMES
+==========================
+
+22. השתמש ב-durable Modal volumes:
+
+music-ai-models-v1
+music-ai-jobs-v1
+music-ai-outputs-v1
+
+אין לאפשר create_if_missing=True בזמן production deployment.
+
+Checkpoint bootstrap חייב להסתיים לפני provider deployment.
+
+כל model download יתבצע ב-bootstrap/provisioning, לא ב-user request.
+
+==================================================
+PHASE 20 — CHECKPOINT BOOTSTRAP
+===============================
+
+23. הרחב:
+
+checkpoint_bootstrap.py
+
+לתמוך בכל providers החדשים.
+
+לכל provider:
+
+download immutable revision
+download all required files
+verify file sizes
+calculate hashes
+verify expected hash
+atomic install into model volume
+write readiness marker.
+
+Partial download לא ייחשב checkpoint ready.
+
+==================================================
+PHASE 21 — REAL SMOKE
+=====================
+
+24. לכל model/provider צור smoke אמיתי.
+
+Smoke חייב להפעיל inference אמיתי.
+
+אסור:
+
+import-only smoke
+CUDA-only smoke
+model-load-only smoke.
+
+ACE_STEP:
+generate audible audio.
+
+BS_ROFORMER:
+produce real stems.
+
+MT3:
+produce real notes.
+
+ALL_IN_ONE:
+produce beats + sections.
+
+MUSICGEN:
+produce audible generated audio.
+
+ANYACCOMP:
+produce accompaniment.
+
+SYMPHONYGEN:
+produce valid orchestral MIDI.
+
+METEOR:
+produce valid re-orchestrated MIDI.
+
+MIDI_SAG:
+produce backing track.
+
+BASIC_PITCH:
+produce notes.
+
+DEMUCS:
+produce stems.
+
+SHEETSAGE:
+produce chords/melody.
+
+MADMOM:
+produce beats/downbeats.
+
+TORCHCREPE:
+produce F0 contour.
+
+ESSENTIA:
+produce valid tonal/chroma analysis.
+
+CHROMA:
+produce 12-bin chroma frames.
+
+BASS:
+produce timed pitch events.
+
+PYLOUDNORM:
+produce finite loudness values.
+
+SFIZZ:
+render audible WAV.
+
+VST3:
+render audible WAV.
+
+==================================================
+PHASE 22 — SIGNED PROMOTION
+===========================
+
+25. הרחב:
+
+.github/workflows/sign-modal-promotion.yml
+
+ו-
+
+promote_modal.py
+
+לתמוך בכל GPU provider deployed ב-Modal.
+
+כל promotion חייב לקשור:
+
+provider
+model version
+checkpoint SHA
+source revision
+source image digest
+Modal app ID
+deployment ID
+function ID
+image ID
+endpoint origin
+runtime pins.
+
+אין provider GPU ready בלי promotion תואם.
+
+==================================================
+PHASE 23 — NODE API INTEGRATION
+===============================
+
+26. חבר את כל endpoints ב-API.
+
+הגדר באמצעות secrets/env בלבד:
+
+ACE_STEP_API_URL
+BS_ROFORMER_API_URL
+MT3_API_URL
+ALL_IN_ONE_API_URL
+MUSICGEN_API_URL
+ANYACCOMP_API_URL
+SYMPHONYGEN_API_URL
+METEOR_API_URL
+MIDI_SAG_API_URL
+
+BASIC_PITCH_API_URL
+DEMUCS_API_URL
+SHEETSAGE_API_URL
+CHROMA_API_URL
+BASS_API_URL.
+
+בנוסף הוסף providers חדשים ל-analysis contract עבור:
+
+MADMOM
+TORCHCREPE
+ESSENTIA
+LOUDNESS
+
+אם הם עדיין אינם קיימים.
+
+אל תעקוף:
+
+configuredAnalysisProviderEndpoint
+health attestation
+provider provenance.
+
+==================================================
+PHASE 24 — ANALYSIS FUSION
+==========================
+
+27. הרחב את Song Model fusion כדי להשתמש בכל evidence הקיים:
+
+Tempo:
+ALL_IN_ONE + MADMOM + local signal.
+
+Meter/downbeats:
+ALL_IN_ONE + MADMOM.
+
+Key:
+ESSENTIA + MADMOM + local spectral evidence.
+
+Melody:
+MT3 + BASIC_PITCH + TORCHCREPE verification.
+
+Harmony:
+SHEETSAGE + CHROMA + BASS.
+
+Structure:
+ALL_IN_ONE.
+
+Separation:
+BS_ROFORMER primary
+DEMUCS secondary.
+
+Energy/dynamics:
+full-duration signal analysis.
+
+Loudness:
+PYLOUDNORM.
+
+אל תמזג עיוור.
+
+שמור לכל field:
+
+providers
+confidence
+agreement/disagreement
+selected evidence
+provenance.
+
+==================================================
+PHASE 25 — GENERATION ROUTING
+=============================
+
+28. הפוך את כל generators לניתנים לבחירה אמיתית:
+
+ACE_STEP
+MUSICGEN
+ANYACCOMP
+SYMPHONYGEN
+METEOR
+MIDI_SAG.
+
+כל אחד חייב להיות selectable רק אם:
+
+health ready
+checkpoint ready
+smoke passed
+runtime ready.
+
+Audio providers יחזירו:
+
+ProviderAudioArtifact.
+
+Symbolic providers יחזירו:
+
+ArrangementPlan
++
+TrackModels.
+
+==================================================
+PHASE 26 — PROVIDER-SPECIFIC PURPOSE
+====================================
+
+29. שמור routing לפי חוזקות:
+
+ACE_STEP:
+primary full audio arrangement/generation/editing.
+
+ANYACCOMP:
+vocal/solo-instrument accompaniment specialist.
+
+MUSICGEN:
+alternate audio generation and melody/text-conditioned generation.
+
+MIDI_SAG:
+vocal-conditioned backing-track generation.
+
+SYMPHONYGEN:
+orchestral symbolic generation.
+
+METEOR:
+symbolic re-orchestration and controllable texture.
+
+BS_ROFORMER:
+primary separation.
+
+DEMUCS:
+secondary separation.
+
+MT3:
+primary polyphonic transcription.
+
+BASIC_PITCH:
+monophonic/solo transcription.
+
+ALL_IN_ONE:
+structure.
+
+SHEETSAGE:
+lead-sheet/harmony.
+
+MADMOM:
+beat/downbeat/tempo evidence.
+
+ESSENTIA:
+tonal/chroma/MIR evidence.
+
+TORCHCREPE:
+high-resolution pitch/F0 evidence.
+
+CHROMA:
+harmonic chroma evidence.
+
+BASS:
+bass-root evidence.
+
+PYLOUDNORM:
+loudness/master evidence.
+
+==================================================
+PHASE 27 — HEALTH MATRIX
+========================
+
+30. צור endpoint/admin view אחד שמציג live readiness matrix.
+
+עבור כל provider הצג:
+
+configured
+image built
+runtime ready
+checkpoint ready
+checkpoint SHA
+smoke tested
+smoke timestamp
+GPU
+model version
+health
+last latency
+promotion valid
+endpoint
+status.
+
+אסור להסתמך על documentation ידני.
+
+ה-matrix חייב להיווצר מהמצב האמיתי.
+
+==================================================
+PHASE 28 — AUTOMATIC CAPABILITY MATRIX
+======================================
+
+31. החלף את capability matrix הישן במסמך/generated JSON שנוצר אוטומטית מה:
+
+model manifest
+smoke proof
+promotion bundle
+live health.
+
+אין יותר status ידני שיכול להתיישן.
+
+==================================================
+PHASE 29 — FINAL FULL-STACK TEST
+================================
+
+32. לאחר שכל ההתקנות מסתיימות, הרץ full provider certification.
+
+השתמש fixtures אמיתיים:
+
+full song
+vocal-only
+solo instrument
+instrumental
+MIDI.
+
+הרץ כל provider לפחות פעם אחת בפועל.
+
+צור:
+
+provider-certification.json
+
+שיכלול לכל provider:
+
+provider
+version
+git revision
+checkpoint SHA
+runtime
+GPU
+input fixture SHA
+output SHA
+output summary
+smoke status
+latency
+timestamp.
+
+==================================================
+PHASE 30 — DEFINITION OF DONE
+=============================
+
+המשימה אינה מסתיימת כאשר dependencies נוספו.
+
+היא מסתיימת רק כאשר ה-provider matrix מציג:
+
+ACE_STEP              READY
+BS_ROFORMER            READY
+MT3                    READY
+ALL_IN_ONE             READY
+MUSICGEN               READY
+ANYACCOMP              READY
+SYMPHONYGEN            READY
+METEOR                 READY
+MIDI_SAG               READY
+BASIC_PITCH            READY
+DEMUCS                 READY
+SHEETSAGE              READY
+MADMOM                 READY
+TORCHCREPE             READY
+ESSENTIA               READY
+CHROMA                  READY
+BASS                    READY
+PYLOUDNORM              READY
+SFIZZ_VSCO2_CE         READY
+VST3                    READY
+
+וכן:
+
+all required weights actually exist
+all checkpoints are pinned
+all checksums exist
+all smoke tests use real inference
+all endpoints deployed
+all API integrations active
+all health checks pass
+all provenance recorded
+no fake provider
+no mock
+no placeholder
+no `checkpoint_sha256: null` for an enabled provider
+no first-request weight download.
+
+אל תסמן את המשימה COMPLETED אם אפילו provider אחד ברשימה למעלה נשאר adapter-only/configured בלבד.
+
+בסיום החזר דוח מפורט:
+
+1. מה הותקן.
+2. איפה הוא פרוס.
+3. runtime של כל provider.
+4. checkpoint של כל provider.
+5. SHA-256.
+6. GPU.
+7. endpoint.
+8. smoke result.
+9. promotion status.
+10. final readiness table.
