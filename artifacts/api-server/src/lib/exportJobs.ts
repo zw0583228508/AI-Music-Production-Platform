@@ -593,21 +593,32 @@ export async function reclaimTerminalExportJobObjects(
   });
 }
 
-async function recordExportCleanupRate(
+type ExportCleanupRateLogger = Pick<typeof logger, "error" | "info">;
+
+export async function recordExportCleanupRate(
   report: ExportObjectReclamationReport,
   scope: "job_start" | "recovery_sweep",
+  options: {
+    database?: typeof db;
+    now?: Date;
+    cleanupLogger?: ExportCleanupRateLogger;
+    service?: string;
+  } = {},
 ): Promise<void> {
-  const now = new Date();
+  const database = options.database ?? db;
+  const now = options.now ?? new Date();
+  const cleanupLogger = options.cleanupLogger ?? logger;
+  const service = options.service ?? EXPORT_CLEANUP_SERVICE;
   const windowStartedAt = new Date(now.getTime() - EXPORT_CLEANUP_WINDOW_MS);
-  const transition = await db.transaction(async (transaction) => {
+  const transition = await database.transaction(async (transaction) => {
     await transaction.execute(
-      sql`select pg_advisory_xact_lock(hashtext(${EXPORT_CLEANUP_SERVICE}))`,
+      sql`select pg_advisory_xact_lock(hashtext(${service}))`,
     );
     if (report.reclaimed > 0 || report.failedDeletions > 0) {
       await transaction.insert(musicAuditEventsTable).values({
         id: randomUUID(),
         action: EXPORT_CLEANUP_EVENT,
-        resourceType: EXPORT_CLEANUP_SERVICE,
+        resourceType: service,
         outcome: "observed",
         metadata: {
           scope,
@@ -622,7 +633,7 @@ async function recordExportCleanupRate(
       metadata: musicAuditEventsTable.metadata,
       createdAt: musicAuditEventsTable.createdAt,
     }).from(musicAuditEventsTable).where(and(
-      eq(musicAuditEventsTable.resourceType, EXPORT_CLEANUP_SERVICE),
+      eq(musicAuditEventsTable.resourceType, service),
       gte(musicAuditEventsTable.createdAt, windowStartedAt),
     )).orderBy(desc(musicAuditEventsTable.createdAt));
     const rate = recentEvents
@@ -635,7 +646,7 @@ async function recordExportCleanupRate(
     const latestTransition = await transaction.select({
       action: musicAuditEventsTable.action,
     }).from(musicAuditEventsTable).where(and(
-      eq(musicAuditEventsTable.resourceType, EXPORT_CLEANUP_SERVICE),
+      eq(musicAuditEventsTable.resourceType, service),
       sql`${musicAuditEventsTable.action} in (${EXPORT_CLEANUP_ALERT}, ${EXPORT_CLEANUP_RECOVERED})`,
     )).orderBy(desc(musicAuditEventsTable.createdAt)).limit(1);
     const alerting = exportCleanupRateIsAlerting(rate);
@@ -644,7 +655,7 @@ async function recordExportCleanupRate(
 
     const action = alerting ? EXPORT_CLEANUP_ALERT : EXPORT_CLEANUP_RECOVERED;
     const context = {
-      service: EXPORT_CLEANUP_SERVICE,
+      service,
       windowMinutes: EXPORT_CLEANUP_WINDOW_MS / 60_000,
       windowStartedAt: windowStartedAt.toISOString(),
       windowEndedAt: now.toISOString(),
@@ -656,7 +667,7 @@ async function recordExportCleanupRate(
     await transaction.insert(musicAuditEventsTable).values({
       id: randomUUID(),
       action,
-      resourceType: EXPORT_CLEANUP_SERVICE,
+      resourceType: service,
       outcome: alerting ? "alerting" : "recovered",
       metadata: context,
       createdAt: now,
@@ -665,9 +676,9 @@ async function recordExportCleanupRate(
   });
   if (!transition) return;
   if (transition.alerting) {
-    logger.error(transition.context, EXPORT_CLEANUP_ALERT);
+    cleanupLogger.error(transition.context, EXPORT_CLEANUP_ALERT);
   } else {
-    logger.info(transition.context, EXPORT_CLEANUP_RECOVERED);
+    cleanupLogger.info(transition.context, EXPORT_CLEANUP_RECOVERED);
   }
 }
 

@@ -8,6 +8,10 @@ const bundlePath = new URL(
   `./export-object-recovery.test-${process.pid}.tmp.mjs`,
   import.meta.url,
 ).pathname;
+const rateBundlePath = new URL(
+  `./export-cleanup-rate-integration.test-${process.pid}.tmp.mjs`,
+  import.meta.url,
+).pathname;
 await build({
   stdin: {
     contents: `
@@ -33,7 +37,194 @@ const {
   reclaimIncompleteExportObjects,
   reportUnreferencedExportObjects,
 } = await import(pathToFileURL(bundlePath).href);
-after(() => unlink(bundlePath).catch(() => undefined));
+await build({
+  stdin: {
+    contents: `
+      export {
+        createIsolatedDatabase,
+        musicAuditEventsTable,
+      } from "@workspace/db";
+      export { and, eq, sql } from "drizzle-orm";
+      export {
+        recordExportCleanupRate,
+      } from "./src/lib/exportJobs";
+      export {
+        EXPORT_CLEANUP_WINDOW_MS,
+      } from "./src/lib/exportCleanupRate";
+    `,
+    resolveDir: new URL("..", import.meta.url).pathname,
+    sourcefile: "export-cleanup-rate-integration-harness.ts",
+  },
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  outfile: rateBundlePath,
+  external: [
+    "@google-cloud/*",
+    "@google/*",
+    "pg-native",
+    "pino",
+    "pino-pretty",
+    "thread-stream",
+  ],
+  banner: {
+    js: `import { createRequire as __createRequire } from "node:module";
+globalThis.require = __createRequire(import.meta.url);`,
+  },
+});
+const {
+  EXPORT_CLEANUP_WINDOW_MS,
+  and,
+  createIsolatedDatabase,
+  eq,
+  musicAuditEventsTable,
+  recordExportCleanupRate,
+  sql,
+} = await import(pathToFileURL(rateBundlePath).href);
+after(() => Promise.all([
+  unlink(bundlePath).catch(() => undefined),
+  unlink(rateBundlePath).catch(() => undefined),
+]));
+
+const cleanupService = `test.api-server.export-recovery.${process.pid}`;
+const cleanupObserved = "export_cleanup_observed";
+const cleanupAlert = "export_cleanup_rate_alert";
+const cleanupRecovered = "export_cleanup_rate_recovered";
+
+test("cleanup rate transitions stay single across concurrent database clients", async () => {
+  const first = createIsolatedDatabase();
+  const second = createIsolatedDatabase();
+  const restarted = createIsolatedDatabase();
+  const clients = [first, second, restarted];
+  const logs = [];
+  const cleanupLogger = {
+    error(context, message) {
+      logs.push({ level: "error", context, message });
+    },
+    info(context, message) {
+      logs.push({ level: "info", context, message });
+    },
+  };
+  const emptyReport = {
+    discovered: 0,
+    reclaimed: 0,
+    preservedReady: 0,
+    failedDeletions: 0,
+    reclaimedStorageUris: [],
+  };
+  const startedAt = new Date("2026-09-06T12:00:00.000Z");
+
+  try {
+    await first.db.delete(musicAuditEventsTable)
+      .where(eq(musicAuditEventsTable.resourceType, cleanupService));
+    await first.db.insert(musicAuditEventsTable).values({
+      id: `cleanup-seed-${process.pid}`,
+      action: cleanupObserved,
+      resourceType: cleanupService,
+      outcome: "observed",
+      metadata: {
+        scope: "recovery_sweep",
+        reclaimed: 2,
+        failedDeletions: 0,
+      },
+      createdAt: startedAt,
+    });
+
+    await Promise.all([
+      recordExportCleanupRate(
+        { ...emptyReport, discovered: 1, reclaimed: 1 },
+        "recovery_sweep",
+        {
+          database: first.db,
+          now: startedAt,
+          cleanupLogger,
+          service: cleanupService,
+        },
+      ),
+      recordExportCleanupRate(
+        { ...emptyReport, discovered: 1, reclaimed: 1 },
+        "recovery_sweep",
+        {
+          database: second.db,
+          now: startedAt,
+          cleanupLogger,
+          service: cleanupService,
+        },
+      ),
+    ]);
+
+    const activeTransitions = await restarted.db.select()
+      .from(musicAuditEventsTable)
+      .where(and(
+        eq(musicAuditEventsTable.resourceType, cleanupService),
+        eq(musicAuditEventsTable.action, cleanupAlert),
+      ));
+    assert.equal(activeTransitions.length, 1);
+    assert.equal(logs.filter(({ message }) => message === cleanupAlert).length, 1);
+
+    const alertContextKeys = [
+      "failedDeletionThreshold",
+      "failedDeletions",
+      "reclaimed",
+      "reclaimedThreshold",
+      "service",
+      "windowEndedAt",
+      "windowMinutes",
+      "windowStartedAt",
+    ];
+    assert.deepEqual(
+      Object.keys(activeTransitions[0].metadata).sort(),
+      alertContextKeys,
+    );
+    assert.deepEqual(
+      Object.keys(logs.find(({ message }) => message === cleanupAlert).context).sort(),
+      alertContextKeys,
+    );
+
+    const recoveredAt = new Date(
+      startedAt.getTime() + EXPORT_CLEANUP_WINDOW_MS + 1,
+    );
+    await Promise.all([
+      recordExportCleanupRate(emptyReport, "recovery_sweep", {
+        database: first.db,
+        now: recoveredAt,
+        cleanupLogger,
+        service: cleanupService,
+      }),
+      recordExportCleanupRate(emptyReport, "recovery_sweep", {
+        database: second.db,
+        now: recoveredAt,
+        cleanupLogger,
+        service: cleanupService,
+      }),
+    ]);
+
+    const recoveryTransitions = await restarted.db.select()
+      .from(musicAuditEventsTable)
+      .where(and(
+        eq(musicAuditEventsTable.resourceType, cleanupService),
+        eq(musicAuditEventsTable.action, cleanupRecovered),
+      ));
+    assert.equal(recoveryTransitions.length, 1);
+    assert.equal(
+      logs.filter(({ message }) => message === cleanupRecovered).length,
+      1,
+    );
+    assert.deepEqual(
+      Object.keys(recoveryTransitions[0].metadata).sort(),
+      alertContextKeys,
+    );
+    assert.deepEqual(
+      Object.keys(logs.find(({ message }) => message === cleanupRecovered).context).sort(),
+      alertContextKeys,
+    );
+  } finally {
+    await first.db.delete(musicAuditEventsTable)
+      .where(eq(musicAuditEventsTable.resourceType, cleanupService))
+      .catch(() => undefined);
+    await Promise.all(clients.map(({ pool }) => pool.end()));
+  }
+});
 
 test("crash recovery deletes only unreferenced incomplete export packages", async () => {
   const previousPrivateDir = process.env.PRIVATE_OBJECT_DIR;
