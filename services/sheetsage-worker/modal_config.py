@@ -10,6 +10,7 @@ RUNTIME_SECRET_NAME = "music-ai-worker-runtime"
 LICENSE_SECRET_NAME = "sheetsage-noncommercial-license-v1"
 MODEL_VOLUME_NAME = "sheetsage-models-v1"
 SMOKE_VOLUME_NAME = "sheetsage-smoke-v1"
+RECOVERY_DRILL_STATE_NAME = "sheetsage-recovery-drill-state-v1"
 MODEL_MOUNT = "/var/lib/sheetsage/assets"
 SMOKE_MOUNT = "/var/lib/sheetsage/smoke"
 MIB = 1024 * 1024

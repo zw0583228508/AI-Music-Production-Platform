@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 import sys
 import importlib
+import json
+from datetime import datetime, timezone
 
 _PACKAGE_ROOT = Path("/app") if Path("/app/modal_config.py").is_file() else Path(__file__).resolve().parent
 sys.path.insert(0, str(_PACKAGE_ROOT))
@@ -12,8 +14,9 @@ sys.path.insert(0, str(_PACKAGE_ROOT))
 import modal
 
 from modal_config import (
-    APP_NAME, LICENSE_SECRET_NAME, MODEL_MOUNT, MODEL_VOLUME_NAME, REPOSITORY_ROOT, RUNTIME_SECRET_NAME,
-    SMOKE_MOUNT, SMOKE_VOLUME_NAME, WORKER_ROOT, image_build_args, worker_environment,
+    APP_NAME, LICENSE_SECRET_NAME, MODEL_MOUNT, MODEL_VOLUME_NAME, RECOVERY_DRILL_STATE_NAME,
+    REPOSITORY_ROOT, RUNTIME_SECRET_NAME, SMOKE_MOUNT, SMOKE_VOLUME_NAME, WORKER_ROOT,
+    image_build_args, worker_environment,
 )
 
 app = modal.App(f"{APP_NAME}-provision")
@@ -24,6 +27,15 @@ model_volume = modal.Volume.from_name(MODEL_VOLUME_NAME, create_if_missing=False
 smoke_volume = modal.Volume.from_name(SMOKE_VOLUME_NAME, create_if_missing=False)
 runtime_secret = modal.Secret.from_name(RUNTIME_SECRET_NAME)
 license_secret = modal.Secret.from_name(LICENSE_SECRET_NAME)
+recovery_drill_state = modal.Dict.from_name(
+    RECOVERY_DRILL_STATE_NAME, create_if_missing=True
+)
+with (WORKER_ROOT / "model_manifest.json").open() as manifest_file:
+    RECOVERY_SPEC = json.load(manifest_file)["recovery"]
+RECOVERY_SUCCESS_MAX_AGE_SECONDS = (
+    int(RECOVERY_SPEC["drill_success_max_age_hours"]) * 60 * 60
+)
+RECOVERY_SUCCESS_KEY = "last_success"
 
 
 @app.function(
@@ -129,9 +141,71 @@ def drill_recovery_assets() -> dict:
             "SheetSage recovery drill failed; verify the private archive, its access, "
             "the configured archive checksum, and the committed asset manifest"
         ) from None
+    completed_at = datetime.now(timezone.utc)
+    verification = {
+        "verified": result["verified"],
+        "assetCount": result["assets"],
+        "productionVolumeMounted": False,
+    }
+    recovery_drill_state[RECOVERY_SUCCESS_KEY] = {
+        "completedAt": completed_at.isoformat(),
+        "verification": verification,
+    }
     return {
         "verified": result["verified"],
         "assets": result["assets"],
         "archiveSha256": result["archiveSha256"],
         "productionVolumeMounted": False,
+        "completedAt": completed_at.isoformat(),
     }
+
+
+def require_fresh_recovery_drill(
+    record: object, now: datetime | None = None
+) -> dict:
+    """Reject missing, malformed, or stale success records without exposing secrets."""
+    checked_at = now or datetime.now(timezone.utc)
+    try:
+        if not isinstance(record, dict):
+            raise ValueError
+        completed_at = datetime.fromisoformat(str(record["completedAt"]))
+        if completed_at.tzinfo is None:
+            raise ValueError
+        age_seconds = (checked_at - completed_at).total_seconds()
+        verification = record["verification"]
+        if (
+            not isinstance(verification, dict)
+            or verification.get("verified") is not True
+            or not isinstance(verification.get("assetCount"), int)
+            or verification.get("productionVolumeMounted") is not False
+        ):
+            raise ValueError
+    except (KeyError, TypeError, ValueError):
+        raise RuntimeError(
+            "SheetSage recovery drill has no valid successful heartbeat; "
+            "verify the scheduled drill and Modal deployment"
+        ) from None
+    if age_seconds < 0 or age_seconds > RECOVERY_SUCCESS_MAX_AGE_SECONDS:
+        raise RuntimeError(
+            "SheetSage recovery drill success heartbeat is stale; "
+            f"last success was {completed_at.isoformat()}; "
+            "verify the scheduled drill and Modal deployment"
+        )
+    return {
+        "healthy": True,
+        "lastSuccessAt": completed_at.isoformat(),
+        "assetCount": verification["assetCount"],
+    }
+
+
+@app.function(
+    image=image,
+    schedule=modal.Cron("0 12 * * *"),
+    timeout=5 * 60,
+    max_containers=1,
+)
+def monitor_recovery_drill_freshness() -> dict:
+    """Alert through Modal when the durable recovery success heartbeat is stale."""
+    return require_fresh_recovery_drill(
+        recovery_drill_state.get(RECOVERY_SUCCESS_KEY)
+    )

@@ -445,6 +445,13 @@ else:
             proof["runtimeSha256"] = "c" * 64
             (Path(self.tmp.name) / "smoke-proof.json").write_text(json.dumps(proof))
             self.assertFalse(self.app.smoke_state()[0])
+            }
+            proof["signature"] = self.app.sign_smoke_proof(proof)
+            (Path(self.tmp.name) / "smoke-proof.json").write_text(json.dumps(proof))
+            self.assertTrue(self.app.smoke_state()[0])
+            proof["runtimeSha256"] = "c" * 64
+            (Path(self.tmp.name) / "smoke-proof.json").write_text(json.dumps(proof))
+            self.assertFalse(self.app.smoke_state()[0])
 
     def test_runtime_identity_changes_when_same_version_package_content_changes(self):
         with patch.object(self.app, "version", return_value="same-version"), \
