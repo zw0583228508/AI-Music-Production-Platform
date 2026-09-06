@@ -197,7 +197,7 @@ const songModel = {
   provenance: [],
 };
 
-async function allocateExport(suffix) {
+async function allocateExport(suffix, options = {}) {
   const exportId = `pedalboard-export-${suffix}-${process.pid}`;
   await db.insert(musicArtifactsTable).values({
     id: exportId,
@@ -229,6 +229,7 @@ async function allocateExport(suffix) {
       includeMix: true,
       includeMetadata: true,
       processingProvider: "PEDALBOARD_BUILTIN",
+      ...options,
     },
     requiredCapabilities: ["export"],
     resourcePool: "STUDIO_RENDER",
@@ -498,6 +499,98 @@ test("queued export publishes processed WAV bytes with matching Pedalboard evide
     assert.equal(wavArtifact.technicalMetadata.processingInputSha256, fileEvidence.inputSha256);
     assert.equal(wavArtifact.technicalMetadata.processingOutputSha256, fileEvidence.outputSha256);
   }
+});
+
+test("all master profiles and export options preserve evidence only on shipped final WAVs", async () => {
+  workerMode = "valid";
+  const profiles = ["STREAMING", "DYNAMIC", "CLASSICAL", "POP", "LOUD", "FILM"];
+  for (const [index, masterProfile] of profiles.entries()) {
+    processedPairs.length = 0;
+    const includeMetadata = index % 2 === 0;
+    const includeStems = index % 3 !== 0;
+    const includeMidi = index % 2 !== 0;
+    const { exportId, jobId } = await allocateExport(`matrix-${masterProfile.toLowerCase()}`, {
+      masterProfile,
+      includeMetadata,
+      includeStems,
+      includeMidi,
+    });
+    await runExportProductionJob(jobId);
+
+    const readyExport = await artifact(exportId);
+    assert.equal(readyExport.state, "ready", `${masterProfile} export must succeed`);
+    const object = await getPrivateObject(
+      readyExport.storageUri.slice("/api/storage/objects/".length),
+    );
+    assert.ok(object);
+    const [zip] = await object.download();
+    const entries = openStoredZip(zip);
+    const manifest = JSON.parse(entries.get("metadata/export-manifest.json").toString());
+    const evidenceNames = Object.keys(manifest.processingEvidence).sort();
+    const shippedFinalWavs = manifest.files
+      .filter((file) => ["MIX", "MASTER"].includes(file.type) && file.format === "WAV")
+      .map((file) => file.name)
+      .sort();
+    assert.deepEqual(evidenceNames, shippedFinalWavs);
+    assert.equal(
+      entries.has("project/manifest.json"),
+      includeMetadata,
+      "metadata option must only control the optional project manifest",
+    );
+
+    const rows = await db.select().from(musicArtifactsTable)
+      .where(eq(musicArtifactsTable.projectId, ids.project));
+    for (const fileName of evidenceNames) {
+      const shipped = entries.get(fileName);
+      const evidence = manifest.processingEvidence[fileName];
+      const pair = processedPairs.find(({ output }) => output.equals(shipped));
+      assert.ok(pair, `${masterProfile} ${fileName} must ship authenticated processed bytes`);
+      assert.equal(evidence.inputSha256, sha256(pair.input));
+      assert.equal(evidence.outputSha256, sha256(shipped));
+      const row = rows.find((candidate) =>
+        candidate.parameters.exportId === exportId && candidate.label === fileName);
+      assert.ok(row);
+      assert.equal(row.hash, evidence.outputSha256);
+      assert.equal(row.checksum, evidence.outputSha256);
+      assert.equal(row.technicalMetadata.processingOutputSha256, evidence.outputSha256);
+    }
+    for (const stem of manifest.files.filter((file) => file.type === "STEM")) {
+      assert.equal(manifest.processingEvidence[stem.name], undefined);
+      const row = rows.find((candidate) =>
+        candidate.parameters.exportId === exportId && candidate.label === stem.name);
+      assert.ok(row);
+      assert.equal(row.technicalMetadata.processingProvider, undefined);
+      assert.equal(
+        processedPairs.some(({ output }) => output.equals(entries.get(stem.name))),
+        false,
+        `${stem.name} must remain remixable and unprocessed`,
+      );
+    }
+    assert.deepEqual(
+      JSON.parse(readyExport.technicalMetadata.processingEvidence),
+      manifest.processingEvidence,
+    );
+  }
+});
+
+test("processing cannot publish contradictory evidence when final mixes are excluded", async () => {
+  workerMode = "valid";
+  const { exportId, jobId } = await allocateExport("no-final-mix", {
+    includeMix: false,
+    includeStems: true,
+    includeMidi: true,
+    includeMetadata: false,
+  });
+  await runExportProductionJob(jobId);
+  const [failedExport, failedJob] = await Promise.all([
+    artifact(exportId),
+    productionJob(jobId),
+  ]);
+  assert.equal(failedJob.status, "failed");
+  assert.equal(failedExport.state, "failed");
+  const children = await db.select().from(musicArtifactsTable)
+    .where(eq(musicArtifactsTable.projectId, ids.project));
+  assert.equal(children.some((row) => row.parameters.exportId === exportId), false);
 });
 
 test("invalid worker evidence leaves no ready export or published output", async () => {

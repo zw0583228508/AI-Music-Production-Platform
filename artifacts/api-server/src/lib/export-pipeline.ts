@@ -111,7 +111,7 @@ export type ExportInput = {
 
 export type ExportFile = {
   name: string;
-  type: "STEM" | "MIDI" | "MIX" | "MASTER" | "SONG_MODEL" | "ARRANGEMENT_PLAN" | "EXPORT";
+  type: "STEM" | "MIDI" | "MIX" | "PREMASTER" | "MASTER" | "SONG_MODEL" | "ARRANGEMENT_PLAN" | "EXPORT";
   format: string;
   size: string;
   url: string;
@@ -853,9 +853,7 @@ export function createExportBundle(
     for (const file of renderedFiles) {
       fileRecords.push({
         name: file.name,
-        type: file.type === "PREMASTER"
-          ? "MIX"
-          : file.type === "METADATA"
+        type: file.type === "METADATA"
             ? "ARRANGEMENT_PLAN"
             : file.type,
         data: file.data,

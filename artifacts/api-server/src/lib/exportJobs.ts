@@ -49,6 +49,41 @@ type ExportInputSnapshot = {
 
 const sha256 = (value: Buffer | string) => createHash("sha256").update(value).digest("hex");
 
+function validateProcessingEvidence(
+  files: GeneratedExportFile[],
+  evidenceByFile: Record<string, PedalboardProcessingEvidence>,
+): void {
+  const expectedNames = files
+    .filter((file) =>
+      ["MIX", "MASTER"].includes(file.type) &&
+      file.format === "WAV")
+    .map((file) => file.name)
+    .sort();
+  const evidenceNames = Object.keys(evidenceByFile).sort();
+  if (
+    expectedNames.length !== evidenceNames.length ||
+    expectedNames.some((name, index) => name !== evidenceNames[index])
+  ) {
+    throw new Error("Pedalboard processing evidence does not match the shipped final WAVs");
+  }
+  for (const file of files) {
+    const evidence = evidenceByFile[file.name];
+    if (!expectedNames.includes(file.name)) {
+      if (file.processingEvidence || evidence) {
+        throw new Error("Pedalboard processing evidence cannot be attached to remixable or non-audio files");
+      }
+      continue;
+    }
+    if (
+      !file.processingEvidence ||
+      file.processingEvidence !== evidence ||
+      evidence.outputSha256 !== sha256(file.data)
+    ) {
+      throw new Error(`Pedalboard processing evidence does not match shipped bytes for ${file.name}`);
+    }
+  }
+}
+
 async function selectedProviderAudioExport(
   arrangement: typeof arrangementsTable.$inferSelect,
   artifacts: Array<typeof musicArtifactsTable.$inferSelect>,
@@ -267,6 +302,7 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
       if (!Object.keys(processingEvidence).length) {
         throw new Error("Pedalboard processing was requested but no final WAV was available");
       }
+      validateProcessingEvidence(renderedFiles, processingEvidence);
       renderedFiles = renderedFiles.map((file) => {
         if (file.name !== "project/manifest.json") return file;
         const metadata = JSON.parse(file.data.toString()) as Record<string, unknown>;
