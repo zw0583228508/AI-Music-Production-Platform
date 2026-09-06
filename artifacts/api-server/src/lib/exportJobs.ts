@@ -1,9 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, desc, eq, gt, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, sql } from "drizzle-orm";
 import {
   arrangementsTable,
   db,
   musicArtifactsTable,
+  musicAuditEventsTable,
   musicUsageLedgerTable,
   musicProjectsTable,
   productionJobsTable,
@@ -34,6 +35,12 @@ import {
   getPrivateObject,
   reclaimIncompleteExportObjects,
 } from "./objectStorage";
+import {
+  EXPORT_CLEANUP_FAILURE_THRESHOLD,
+  EXPORT_CLEANUP_RECLAIMED_THRESHOLD,
+  EXPORT_CLEANUP_WINDOW_MS,
+  exportCleanupRateIsAlerting,
+} from "./exportCleanupRate";
 import {
   claimProductionJob,
   completeProductionJob,
@@ -223,7 +230,7 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
         .filter((artifact) => artifact.state === "ready" && artifact.storageUri)
         .map((artifact) => artifact.storageUri as string),
     );
-    logExportObjectReclamation(reclamation, "job_start");
+    await logExportObjectReclamation(reclamation, "job_start");
     const { songModel, bpm, key, meter } = resolveExportSongModel(
       songModels,
       arrangement.songModelVersion,
@@ -507,7 +514,7 @@ export async function recoverExportProductionJobs(): Promise<void> {
     }),
     emptyExportObjectReclamationReport(),
   );
-  logExportObjectReclamation(recoveryReport, "recovery_sweep");
+  await logExportObjectReclamation(recoveryReport, "recovery_sweep");
   await Promise.all(jobs.map(({ id }) => runExportProductionJob(id)));
 }
 
@@ -521,25 +528,32 @@ function emptyExportObjectReclamationReport(): ExportObjectReclamationReport {
   };
 }
 
-function logExportObjectReclamation(
+const EXPORT_CLEANUP_SERVICE = "api-server.export-recovery";
+async function logExportObjectReclamation(
   report: ExportObjectReclamationReport,
   scope: "job_start" | "recovery_sweep",
-): void {
+): Promise<void> {
   const fields = {
     scope,
     discovered: report.discovered,
     reclaimed: report.reclaimed,
     preservedReady: report.preservedReady,
     failedDeletions: report.failedDeletions,
-    operationalAlert: report.reclaimed > 0 || report.failedDeletions > 0,
   };
   if (report.failedDeletions > 0) {
-    logger.error(fields, "export_object_reclamation_deletion_failures");
+    logger.warn(fields, "export_object_reclamation_deletion_failures");
   } else if (report.reclaimed > 0) {
-    logger.warn(fields, "export_object_reclamation_detected");
+    logger.info(fields, "export_object_reclamation_detected");
   } else {
     logger.info(fields, "export_object_reclamation_summary");
   }
+  await recordExportCleanupRate(report, scope).catch((error) => {
+    logger.error({
+      err: error,
+      service: EXPORT_CLEANUP_SERVICE,
+      windowMinutes: EXPORT_CLEANUP_WINDOW_MS / 60_000,
+    }, "export_cleanup_rate_recording_failed");
+  });
 }
 
 export async function reclaimTerminalExportJobObjects(
@@ -578,3 +592,87 @@ export async function reclaimTerminalExportJobObjects(
     );
   });
 }
+
+async function recordExportCleanupRate(
+  report: ExportObjectReclamationReport,
+  scope: "job_start" | "recovery_sweep",
+): Promise<void> {
+  const now = new Date();
+  const windowStartedAt = new Date(now.getTime() - EXPORT_CLEANUP_WINDOW_MS);
+  const transition = await db.transaction(async (transaction) => {
+    await transaction.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${EXPORT_CLEANUP_SERVICE}))`,
+    );
+    if (report.reclaimed > 0 || report.failedDeletions > 0) {
+      await transaction.insert(musicAuditEventsTable).values({
+        id: randomUUID(),
+        action: EXPORT_CLEANUP_EVENT,
+        resourceType: EXPORT_CLEANUP_SERVICE,
+        outcome: "observed",
+        metadata: {
+          scope,
+          reclaimed: report.reclaimed,
+          failedDeletions: report.failedDeletions,
+        },
+        createdAt: now,
+      });
+    }
+    const recentEvents = await transaction.select({
+      action: musicAuditEventsTable.action,
+      metadata: musicAuditEventsTable.metadata,
+      createdAt: musicAuditEventsTable.createdAt,
+    }).from(musicAuditEventsTable).where(and(
+      eq(musicAuditEventsTable.resourceType, EXPORT_CLEANUP_SERVICE),
+      gte(musicAuditEventsTable.createdAt, windowStartedAt),
+    )).orderBy(desc(musicAuditEventsTable.createdAt));
+    const rate = recentEvents
+      .filter(({ action }) => action === EXPORT_CLEANUP_EVENT)
+      .reduce((total, event) => ({
+        reclaimed: total.reclaimed + Number(event.metadata.reclaimed ?? 0),
+        failedDeletions:
+          total.failedDeletions + Number(event.metadata.failedDeletions ?? 0),
+      }), { reclaimed: 0, failedDeletions: 0 });
+    const latestTransition = await transaction.select({
+      action: musicAuditEventsTable.action,
+    }).from(musicAuditEventsTable).where(and(
+      eq(musicAuditEventsTable.resourceType, EXPORT_CLEANUP_SERVICE),
+      sql`${musicAuditEventsTable.action} in (${EXPORT_CLEANUP_ALERT}, ${EXPORT_CLEANUP_RECOVERED})`,
+    )).orderBy(desc(musicAuditEventsTable.createdAt)).limit(1);
+    const alerting = exportCleanupRateIsAlerting(rate);
+    const wasAlerting = latestTransition[0]?.action === EXPORT_CLEANUP_ALERT;
+    if (alerting === wasAlerting) return null;
+
+    const action = alerting ? EXPORT_CLEANUP_ALERT : EXPORT_CLEANUP_RECOVERED;
+    const context = {
+      service: EXPORT_CLEANUP_SERVICE,
+      windowMinutes: EXPORT_CLEANUP_WINDOW_MS / 60_000,
+      windowStartedAt: windowStartedAt.toISOString(),
+      windowEndedAt: now.toISOString(),
+      reclaimed: rate.reclaimed,
+      failedDeletions: rate.failedDeletions,
+      reclaimedThreshold: EXPORT_CLEANUP_RECLAIMED_THRESHOLD,
+      failedDeletionThreshold: EXPORT_CLEANUP_FAILURE_THRESHOLD,
+    };
+    await transaction.insert(musicAuditEventsTable).values({
+      id: randomUUID(),
+      action,
+      resourceType: EXPORT_CLEANUP_SERVICE,
+      outcome: alerting ? "alerting" : "recovered",
+      metadata: context,
+      createdAt: now,
+    });
+    return { alerting, context };
+  });
+  if (!transition) return;
+  if (transition.alerting) {
+    logger.error(transition.context, EXPORT_CLEANUP_ALERT);
+  } else {
+    logger.info(transition.context, EXPORT_CLEANUP_RECOVERED);
+  }
+}
+
+const EXPORT_CLEANUP_RECOVERED = "export_cleanup_rate_recovered";
+
+const EXPORT_CLEANUP_EVENT = "export_cleanup_observed";
+
+const EXPORT_CLEANUP_ALERT = "export_cleanup_rate_alert";
