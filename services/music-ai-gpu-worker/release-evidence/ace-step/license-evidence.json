@@ -1,0 +1,30 @@
+{
+  "capturedDate": "2026-09-06",
+  "models": [
+    {
+      "commercialUsePermitted": true,
+      "evidenceFile": "model-card-base.md",
+      "evidenceSha256": "ed42093e8f7903f23bd45ea56bea8f484c8aee47820ae8880d6da752681a1da7",
+      "repository": "ACE-Step/acestep-v15-base",
+      "revision": "e432212fec32b8965a14ffa57ae653438d6abd14",
+      "spdx": "MIT"
+    },
+    {
+      "commercialUsePermitted": true,
+      "evidenceFile": "model-card-shared.md",
+      "evidenceSha256": "69d69b89e313706b93b420b13aa6232259b207a1cd19b0b70358d166e8e451a0",
+      "repository": "ACE-Step/Ace-Step1.5",
+      "revision": "19671f406d603126926c1b7e2adc169acbcade22",
+      "spdx": "MIT"
+    }
+  ],
+  "provider": "ACE_STEP",
+  "schemaVersion": 1,
+  "source": {
+    "evidenceFile": "source-LICENSE.txt",
+    "evidenceSha256": "05a6bce42a62636d2cfb24139cc008b6b899754e244175814bb5dd2f4a485357",
+    "repository": "https://github.com/ace-step/ACE-Step-1.5",
+    "revision": "ca1e85fe9430179831e6bc6be790c332190a3866",
+    "spdx": "MIT"
+  }
+}
