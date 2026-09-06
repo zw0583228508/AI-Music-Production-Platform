@@ -17,3 +17,4 @@
 - [BS-RoFormer adapter contract](bs-roformer-adapter-contract.md) — v0.1.5 exposes a folder API, not a session wrapper; explicit paths are required to prevent downloads.
 - [Provider-audio arrangement semantics](provider-audio-arrangement-semantics.md) — audio-only candidates stay selectable/exportable without fake MIDI; chained provider audio remains private with explicit parent lineage.
 - [Observable musical controls](observable-musical-controls.md) — producer controls and readiness claims must survive typed evidence flow and change shipped musical output, not just metadata.
+- [Pino regression harnesses](pino-regression-harnesses.md) — standalone logger tests should externalize Pino and emit inside the package tree rather than rebundling its workers.
