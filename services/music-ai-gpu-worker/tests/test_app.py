@@ -11,7 +11,6 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-
 ROOT = Path(__file__).parents[1]
 RUNTIME = tempfile.TemporaryDirectory()
 os.environ["MUSIC_GPU_CHECKPOINT_ROOT"] = RUNTIME.name
@@ -162,6 +161,9 @@ class GpuWorkerContractTests(unittest.TestCase):
             "checkpoint_sha256": checkpoint_hash,
             "config_path": config.name,
             "config_sha256": config_hash,
+            "routing_status": "READY",
+            "license_status": "VERIFIED",
+            "commercial_use_permitted": True,
         }
         smoke_identity = f"{checkpoint_hash}:{config_hash}"
         worker.SMOKE_ATTESTATIONS["BS_ROFORMER"] = smoke_identity
@@ -180,6 +182,106 @@ class GpuWorkerContractTests(unittest.TestCase):
         self.assertFalse(second["checkpointReady"])
         self.assertFalse(second["smokeTested"])
         self.assertNotEqual(second["configSha256"], config_hash)
+
+    def test_bs_roformer_license_block_short_circuits_health_and_worker_route(self):
+        os.environ["MUSIC_AI_WORKER_TOKEN"] = "license-block-test-token"
+
+        async def request(method, path, query_string=b"", body=b""):
+            sent = []
+            requests = iter([
+                {"type": "http.request", "body": body, "more_body": False},
+                {"type": "http.disconnect"},
+            ])
+
+            async def receive():
+                return next(requests)
+
+            async def send(message):
+                sent.append(message)
+
+            headers = [
+                (b"authorization", b"Bearer license-block-test-token"),
+            ]
+            if body:
+                headers.extend([
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(body)).encode()),
+                ])
+            await worker.app(
+                {
+                    "type": "http",
+                    "asgi": {"version": "3.0"},
+                    "http_version": "1.1",
+                    "method": method,
+                    "scheme": "https",
+                    "path": path,
+                    "raw_path": path.encode(),
+                    "query_string": query_string,
+                    "headers": headers,
+                    "client": ("127.0.0.1", 1),
+                    "server": (
+                        "workspace--music-ai-gpu-worker-bs-roformer.modal.run",
+                        443,
+                    ),
+                    "root_path": "",
+                },
+                receive,
+                send,
+            )
+            status = next(
+                item["status"]
+                for item in sent
+                if item["type"] == "http.response.start"
+            )
+            response_body = b"".join(
+                item.get("body", b"")
+                for item in sent
+                if item["type"] == "http.response.body"
+            )
+            return status, worker.json.loads(response_body)
+
+        try:
+            with mock.patch.object(
+                worker, "ENABLED", {"BS_ROFORMER"}
+            ), mock.patch.object(
+                worker, "_checkpoint_digest"
+            ) as checkpoint_digest, mock.patch.object(
+                worker, "_gpu_runtime"
+            ) as gpu_runtime, mock.patch.object(
+                worker, "_run_command"
+            ) as run_command, mock.patch.object(
+                worker, "_queue"
+            ) as queue_job, mock.patch.object(
+                worker.asyncio, "create_subprocess_exec"
+            ) as create_subprocess:
+                health = worker._provider_health("BS_ROFORMER")
+                self.assertEqual(health["status"], "blocked")
+                self.assertEqual(health["licenseStatus"], "UNVERIFIED")
+                self.assertFalse(health["commercialUsePermitted"])
+                self.assertFalse(health["checkpointReady"])
+                self.assertFalse(health["smokeTested"])
+
+                status, payload = asyncio.run(request(
+                    "GET", "/health", b"provider=BS_ROFORMER"
+                ))
+                self.assertEqual(status, 200)
+                self.assertEqual(payload["status"], "blocked")
+                status, payload = asyncio.run(request(
+                    "POST",
+                    "/separate",
+                    body=b'{"provider":"BS_ROFORMER"}',
+                ))
+                self.assertEqual(status, 503)
+                self.assertIn("checkpoint-owner", payload["detail"])
+
+                checkpoint_digest.assert_not_called()
+                gpu_runtime.assert_not_called()
+                run_command.assert_not_called()
+                queue_job.assert_not_called()
+                create_subprocess.assert_not_called()
+                self.assertEqual(worker.TASKS, {})
+        finally:
+            del os.environ["MUSIC_AI_WORKER_TOKEN"]
 
     def test_provider_qualified_health_returns_the_direct_contract(self):
         os.environ["MUSIC_AI_WORKER_TOKEN"] = "health-test-token"

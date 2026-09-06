@@ -82,7 +82,12 @@ MT3_FILES = {
         "max_bytes": 192 * 1024 * 1024,
     },
 }
-UNVERIFIED_SOURCES: dict[str, str] = {}
+UNVERIFIED_SOURCES: dict[str, str] = {
+    "BS_ROFORMER": (
+        "checkpoint-owner license, redistribution rights, and commercial-use "
+        "authorization are not verified"
+    ),
+}
 BS_CHECKPOINT_FILENAME = "bs_roformer.ckpt"
 BS_CHECKPOINT_SHA256 = "5b84f37e8d444c8cb30c79d77f613a41c05868ff9c9ac6c7049c00aefae115aa"
 BS_CHECKPOINT_SIZE = 639_331_213

@@ -181,6 +181,86 @@ def _expected_runtime(details: dict[str, Any]) -> dict[str, str]:
     return {**MANIFEST["runtime"], **details.get("runtime", {})}
 
 
+def _provider_license_block_reason(
+    provider: str, details: dict[str, Any] | None = None
+) -> str | None:
+    provider_details = details or PROVIDERS.get(provider)
+    if not provider_details:
+        return None
+    if (
+        provider_details.get("routing_status") == "BLOCKED_LICENSE"
+        or provider_details.get("commercial_use_permitted") is False
+    ):
+        return (
+            "provider is blocked: checkpoint-owner redistribution and "
+            "commercial-use rights are not verified"
+        )
+    return None
+
+
+def _assert_provider_license_allows_execution(provider: str) -> None:
+    reason = _provider_license_block_reason(provider)
+    if reason:
+        raise HTTPException(503, reason)
+
+
+def _blocked_provider_health(
+    provider: str, details: dict[str, Any], reason: str
+) -> dict[str, Any]:
+    version = str(details["model_version"])
+    expected_runtime = _expected_runtime(details)
+    revision = str(details.get("revision", ""))
+    license_status = str(details.get("license_status", "UNVERIFIED"))
+    config_required = bool(str(details.get("config_path", "")).strip())
+    return {
+        "status": "blocked",
+        "ready": False,
+        "retryable": False,
+        "retryAfterSeconds": None,
+        "healthy": False,
+        "provider": provider,
+        "runtimeReady": False,
+        "gpuReady": False,
+        "checkpointReady": False,
+        "modelVersion": version,
+        "version": version,
+        "checksum": "",
+        "checkpointSha256": "",
+        "configReady": not config_required,
+        "configSha256": "",
+        "smokeTested": False,
+        "smokeEvidence": None,
+        "framework": expected_runtime,
+        "expectedRuntime": expected_runtime,
+        "revision": revision,
+        "sourceImageDigest": "",
+        "containerDigest": "",
+        "modalImageId": "",
+        "imageId": "",
+        "modalAppId": "",
+        "modalDeploymentId": "",
+        "modalFunctionId": "",
+        "cudaVersion": "",
+        "pytorchVersion": "",
+        "gpu": "",
+        "sourceRevision": "",
+        "licenseStatus": license_status,
+        "commercialUsePermitted": False,
+        "runtime": {
+            "revision": revision,
+            "sourceImageDigest": "",
+            "containerDigest": "",
+            "modalImageId": "",
+            "imageId": "",
+            "cudaVersion": "",
+            "pytorchVersion": "",
+            "gpu": "",
+            "pythonVersion": ".".join(str(part) for part in sys.version_info[:3]),
+        },
+        "message": reason,
+    }
+
+
 def _gpu_runtime(details: dict[str, Any]) -> tuple[bool, str]:
     expected_runtime = _expected_runtime(details)
     expected_python = expected_runtime["python"]
@@ -264,6 +344,9 @@ def _provider_health(
     details = PROVIDERS.get(provider)
     if not details:
         raise HTTPException(404, "unknown provider")
+    license_block_reason = _provider_license_block_reason(provider, details)
+    if license_block_reason:
+        return _blocked_provider_health(provider, details, license_block_reason)
     version = details["model_version"]
     checkpoint = CHECKPOINT_ROOT / details["checkpoint_path"]
     configured = provider in ENABLED if ENABLED else False
@@ -521,6 +604,7 @@ def _validate_provider(
 ) -> dict[str, Any]:
     if provider not in PROVIDERS:
         raise HTTPException(404, "unknown provider")
+    _assert_provider_license_allows_execution(provider)
     health = _provider_health(
         provider, run_smoke=True, artifact_base_url=artifact_base_url
     )
@@ -930,6 +1014,7 @@ def health(
 
 
 async def submit(request: JobRequest, raw_request: Request):
+    _assert_provider_license_allows_execution(request.provider)
     key = raw_request.headers.get("Idempotency-Key", "")
     base = _trusted_artifact_base(raw_request)
     job = _queue(request, key, f"{base}/artifacts")

@@ -364,6 +364,9 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
     def test_modal_images_use_distinct_provider_dockerfiles(self):
         source = (ROOT / "modal_app.py").read_text()
         self.assertIn("MUSIC_GPU_MODAL_DEPLOY_PROVIDERS", source)
+        self.assertIn('"ACE_STEP,MT3,ALL_IN_ONE"', source)
+        self.assertIn('LICENSE_BLOCKED_PROVIDERS = {"BS_ROFORMER"}', source)
+        self.assertIn("release_providers & LICENSE_BLOCKED_PROVIDERS", source)
         self.assertEqual(source.count("modal.Image.from_dockerfile("), 4)
         dockerfiles = {
             provider: ROOT / f"Dockerfile.{provider.lower().replace('_', '-')}"
@@ -671,6 +674,8 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
                 __import__("hashlib").sha256(config).hexdigest(),
             ), mock.patch.object(
                 checkpoint_bootstrap, "BS_CONFIG_SIZE", len(config)
+            ), mock.patch.dict(
+                checkpoint_bootstrap.UNVERIFIED_SOURCES, {}, clear=True
             ), mock.patch.dict(sys.modules, {"huggingface_hub": fake_hub}):
                 result = checkpoint_bootstrap.bootstrap_provider("BS_ROFORMER")
 
@@ -685,6 +690,21 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
                 "b1361b816daca507f079d85e935c291bcb0a5351",
             )
             self.assertEqual(list(root.glob(".bootstrap-bs_roformer-*")), [])
+
+    def test_bs_roformer_bootstrap_is_blocked_before_checkpoint_download(self):
+        fake_hub = types.SimpleNamespace(
+            hf_hub_download=mock.Mock(
+                side_effect=AssertionError("blocked bootstrap reached Hugging Face")
+            )
+        )
+        with mock.patch.object(
+            checkpoint_bootstrap, "_write_smoke_fixture"
+        ), mock.patch.dict(sys.modules, {"huggingface_hub": fake_hub}):
+            with self.assertRaisesRegex(
+                RuntimeError, "checkpoint-owner license"
+            ):
+                checkpoint_bootstrap.bootstrap_provider("BS_ROFORMER")
+        fake_hub.hf_hub_download.assert_not_called()
 
     def test_ace_bootstrap_builds_atomic_minimal_composite_and_keeps_old_base(self):
         with tempfile.TemporaryDirectory() as directory:

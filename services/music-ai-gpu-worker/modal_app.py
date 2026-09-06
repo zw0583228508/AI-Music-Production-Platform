@@ -46,16 +46,23 @@ PROVIDER_DOCKERFILES = {
     "MT3": MODULE_ROOT / "Dockerfile.mt3",
     "ALL_IN_ONE": MODULE_ROOT / "Dockerfile.all-in-one",
 }
+LICENSE_BLOCKED_PROVIDERS = {"BS_ROFORMER"}
 # Each production provider is a distinct app.  This avoids a deployment of one
 # function replacing sibling functions or stopping their containers.  Keeping
 # all definitions importable preserves the existing local Modal developer flow.
 release_providers = {
     value.strip().upper() for value in os.getenv(
-        "MUSIC_GPU_MODAL_DEPLOY_PROVIDERS", "BS_ROFORMER,ACE_STEP,MT3,ALL_IN_ONE"
+        "MUSIC_GPU_MODAL_DEPLOY_PROVIDERS", "ACE_STEP,MT3,ALL_IN_ONE"
     ).split(",") if value.strip()
 }
 if not release_providers or release_providers - {"BS_ROFORMER", "ACE_STEP", "MT3", "ALL_IN_ONE"}:
     raise ValueError("MUSIC_GPU_MODAL_DEPLOY_PROVIDERS selects an unsupported provider")
+blocked_release_providers = release_providers & LICENSE_BLOCKED_PROVIDERS
+if blocked_release_providers:
+    raise ValueError(
+        "MUSIC_GPU_MODAL_DEPLOY_PROVIDERS selects license-blocked provider(s): "
+        + ",".join(sorted(blocked_release_providers))
+    )
 if len(release_providers) == 1:
     app = modal.App(provider_app_name(next(iter(release_providers))))
 else:

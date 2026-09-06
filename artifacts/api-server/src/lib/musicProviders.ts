@@ -471,16 +471,14 @@ export const MUSIC_PROVIDERS: MusicProviderDescriptor[] = [
     id: "BS_ROFORMER",
     name: "BS-RoFormer",
     provider: "Research model",
-    version: "configured-endpoint",
+    version: "bs-roformer-viperx-v1",
     capabilities: ["separation"],
     inputTypes: ["FULL_SONG", "VOCAL_ONLY", "INSTRUMENTAL", "VIDEO"],
     execution: "remote",
-    status: remoteConfigured("BS_ROFORMER") || remoteConfigured("BS_ROFORMER_SW")
-      ? "configured"
-      : "unavailable",
-    license: "Model-specific",
+    status: "unavailable",
+    license: "UNVERIFIED checkpoint rights",
     priority: 100,
-    notes: "Requires BS_ROFORMER_API_URL; returns stems that are copied into private analysis storage.",
+    notes: "BLOCKED_LICENSE: the MIT label belongs to an unofficial wrapper, not a retained checkpoint-owner redistribution or commercial-use grant. Endpoint aliases cannot configure or route this provider.",
   },
   {
     id: "DEMUCS",

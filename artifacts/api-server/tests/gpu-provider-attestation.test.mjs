@@ -924,6 +924,13 @@ test("BS-RoFormer retains signed candidate validation but is unroutable while li
     process.env.MUSIC_PROVIDER_BS_ROFORMER_PROMOTION_BUNDLE =
       JSON.stringify(signedBundle());
     health = exactHealth();
+    const blockedDescriptor = MUSIC_PROVIDERS.find(
+      (provider) => provider.id === "BS_ROFORMER",
+    );
+    assert.ok(blockedDescriptor);
+    assert.equal(blockedDescriptor.status, "unavailable");
+    assert.equal(blockedDescriptor.license, "UNVERIFIED checkpoint rights");
+    assert.match(blockedDescriptor.notes, /BLOCKED_LICENSE/);
     assert.equal(
       gpuPromotionAttestationFailure("BS_ROFORMER", endpointOrigin, health),
       null,
