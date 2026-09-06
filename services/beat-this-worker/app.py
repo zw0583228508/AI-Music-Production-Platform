@@ -20,6 +20,9 @@ TRACKER = None
 TRACKER_LOCK = threading.Lock()
 app = FastAPI(title="Beat This Worker", version="1.1.0")
 
+class RuntimeInitializing(RuntimeError):
+    pass
+
 def auth(request: Request) -> None:
     token = (
         os.getenv("BEAT_THIS_WORKER_TOKEN")
@@ -41,16 +44,21 @@ def asset_ready() -> bool:
 def runtime_ready() -> bool:
     try:
         import torch
-        return (version("beat-this") == MANIFEST["version"] and
+        versions_ready = (version("beat-this") == MANIFEST["version"] and
                 platform.python_version() == MANIFEST["runtime"]["python"] and
                 torch.__version__ == MANIFEST["runtime"]["pytorch"] and
                 all(version(name) == MANIFEST["runtime"][name] for name in (
                     "torchvision", "torchaudio", "transformers", "accelerate"
                 )) and
                 ".".join(str(torch.version.cuda or "").split(".")[:2]) ==
-                    ".".join(MANIFEST["runtime"]["cuda"].split(".")[:2]) and
-                torch.cuda.is_available())
+                    ".".join(MANIFEST["runtime"]["cuda"].split(".")[:2]))
     except (ImportError, PackageNotFoundError): return False
+    if not versions_ready:
+        return False
+    try:
+        return torch.cuda.is_available()
+    except RuntimeError as exc:
+        raise RuntimeInitializing("CUDA runtime initialization is incomplete") from exc
 
 def smoke_ready() -> bool:
     try: proof = json.loads(READINESS.read_text())
@@ -59,6 +67,18 @@ def smoke_ready() -> bool:
             proof.get("checkpoint", {}).get("sha256") == MANIFEST["checkpointSha256"] and
             proof.get("torch") == MANIFEST["runtime"]["pytorch"] and
             proof.get("torchaudio") == MANIFEST["runtime"]["torchaudio"])
+
+def readiness_checks() -> tuple[bool, bool, bool, bool, bool]:
+    """Return fail-closed readiness without leaking initialization failures."""
+    try:
+        package_ready = runtime_ready()
+        assets = asset_ready()
+        smoke = smoke_ready()
+        return package_ready, assets, smoke, False, False
+    except RuntimeInitializing:
+        return False, False, False, True, False
+    except Exception:
+        return False, False, False, False, True
 
 def tracker():
     global TRACKER
@@ -114,7 +134,7 @@ class AnalyzeRequest(BaseModel):
 @app.get("/health", dependencies=[Depends(auth)])
 def health(provider: str = "BEAT_THIS") -> dict:
     if provider != "BEAT_THIS": raise HTTPException(404, "provider is not exposed")
-    package_ready, assets, smoke = runtime_ready(), asset_ready(), smoke_ready()
+    package_ready, assets, smoke, initializing, check_failed = readiness_checks()
     ready = package_ready and assets and smoke
     modal_image_id = os.getenv("MODAL_IMAGE_ID", "").strip()
     modal_app_id = os.getenv("BEAT_THIS_MODAL_APP_ID", "").strip()
@@ -130,7 +150,9 @@ def health(provider: str = "BEAT_THIS") -> dict:
     )
     ready = package_ready and assets and smoke and identity_ready
     runtime = MANIFEST["runtime"]
-    return {"provider": "BEAT_THIS", "status": "ready" if ready else "not_ready", "ready": ready,
+    status = "ready" if ready else ("starting" if initializing else "not_ready")
+    return {"provider": "BEAT_THIS", "status": status, "ready": ready,
+            "retryable": initializing, "retryAfterSeconds": 5 if initializing else None,
             "modelVersion": MANIFEST["version"], "checksum": MANIFEST["checkpointSha256"],
             "checkpointSha256": MANIFEST["checkpointSha256"],
             "revision": MANIFEST["sourceCommit"],
@@ -150,7 +172,10 @@ def health(provider: str = "BEAT_THIS") -> dict:
             "packageReady": package_ready, "assetReady": assets, "featureExecutionReady": smoke,
             "runtimeReady": package_ready, "checkpointReady": assets, "smokeTested": smoke,
             "gpuReady": package_ready, "identityReady": identity_ready,
-            "reason": None if ready else "reviewed runtime, final0, real-audio smoke proof, and complete deployment identity are required"}
+            "reason": (None if ready else
+                       "runtime initialization is still in progress" if initializing else
+                       "runtime readiness check failed" if check_failed else
+                       "reviewed runtime, final0, real-audio smoke proof, and complete deployment identity are required")}
 
 @app.post("/analyze", dependencies=[Depends(auth)])
 def analyze(request: AnalyzeRequest) -> dict:

@@ -14,3 +14,9 @@ Treat the installation matrix as the sole final-status authority, but require it
 **Why:** Healthy legacy deployments can outlive signing-key rotation or report a source identity that no longer matches their promotion bundle; self-consistent matrix booleans can otherwise hide contradictions elsewhere.
 
 **How to apply:** Audit local statuses and report rows against the matrix, validate configured endpoint keys without exposing values, and verify each READY provider’s signed promotion against fresh live health and exact immutable identities.
+
+Treat authenticated GPU cold starts as an explicit, fail-closed startup state. Release validation may retry that state for a fixed number of attempts, but must reject ordinary not-ready responses, malformed payloads, identity mismatches, and runtime exceptions immediately.
+
+**Why:** A container refresh can make the first CUDA-sensitive health probe raise before a warmed retry succeeds; exposing that as a generic server error is ambiguous, while retrying arbitrary errors can hide real release failures.
+
+**How to apply:** Pre-warm runtime checks before serving where possible, sanitize probe exceptions into a stable startup contract, and bound retries to the exact authenticated provider/status/retryable tuple.

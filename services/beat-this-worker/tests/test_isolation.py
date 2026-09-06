@@ -4,6 +4,7 @@ import sys
 import unittest
 import base64
 import hashlib
+import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -72,6 +73,87 @@ class BeatThisIsolationTests(unittest.TestCase):
             with self.assertRaises(Exception) as raised:
                 worker_app.auth(type("Request", (), {"headers": {}})())
         self.assertEqual(getattr(raised.exception, "status_code", None), 401)
+
+    def test_first_health_after_container_refresh_is_retryable_not_server_error(self):
+        with patch.object(
+            worker_app, "runtime_ready",
+            side_effect=worker_app.RuntimeInitializing("sensitive CUDA failure"),
+        ):
+            health = worker_app.health()
+        self.assertEqual(health["status"], "starting")
+        self.assertFalse(health["ready"])
+        self.assertTrue(health["retryable"])
+        self.assertEqual(health["retryAfterSeconds"], 5)
+        self.assertNotIn("CUDA", health["reason"])
+
+        with patch.object(worker_app, "runtime_ready", return_value=True), \
+             patch.object(worker_app, "asset_ready", side_effect=OSError("private path")):
+            failed = worker_app.health()
+        self.assertEqual(failed["status"], "not_ready")
+        self.assertFalse(failed["retryable"])
+        self.assertEqual(failed["reason"], "runtime readiness check failed")
+
+    def test_release_health_retry_is_bounded_and_only_accepts_starting(self):
+        expected = {
+            "provider": "BEAT_THIS", "modalAppId": "ap-x",
+            "modalDeploymentId": "v1", "modalFunctionId": "fu-x",
+            "modalImageId": "im-x", "modelVersion": "1.1.0",
+            "checkpointSha256": "a" * 64, "checkpointRevision": "model-rev",
+            "sourceRevision": "b" * 40, "sourceImageDigest": "sha256:" + "c" * 64,
+            "runtime": {
+                "python": "3.11", "cudaImage": "cuda", "cuda": "12",
+                "pytorch": "torch", "torchvision": "vision", "torchaudio": "audio",
+                "torchIndexUrl": "index", "transformers": "transformers",
+                "accelerate": "accelerate",
+            },
+        }
+        starting = {"provider": "BEAT_THIS", "status": "starting", "ready": False,
+                    "retryable": True}
+        with patch.object(promote_modal.time, "sleep"), self.assertRaises(TimeoutError):
+            promote_modal.verify_live_health_with_retries(
+                lambda: starting, expected, attempts=2, delay_seconds=0
+            )
+        with self.assertRaises(ValueError):
+            promote_modal.verify_live_health_with_retries(
+                lambda: {"provider": "BEAT_THIS", "status": "not_ready",
+                         "ready": False, "retryable": False},
+                expected, attempts=2, delay_seconds=0,
+            )
+
+        ready = {
+            **{key: value for key, value in expected.items() if key != "runtime"},
+            "status": "ready", "ready": True,
+            "revision": expected["checkpointRevision"],
+            "runtime": {"pythonVersion": "3.11"},
+            "framework": {
+                "cuda_image": "cuda", "cuda": "12", "pytorch": "torch",
+                "torchvision": "vision", "torchaudio": "audio",
+                "torch_index_url": "index", "transformers": "transformers",
+                "accelerate": "accelerate",
+            },
+        }
+        trusted_origin = promote_modal.INSTALLATION_STATUS["providers"]["BEAT_THIS"][
+            "evidence"
+        ]["liveHealthEndpointOrigin"]
+        with patch.object(promote_modal.time, "sleep"), \
+             patch.object(promote_modal, "fetch_authenticated_health",
+                          return_value=ready) as refresh:
+            with tempfile.TemporaryDirectory() as directory:
+                health_file = Path(directory) / "cold-health.json"
+                health_file.write_text(json.dumps(starting))
+                promote_modal.verify_health_file_with_retries(
+                    health_file, trusted_origin, expected,
+                    "secret", attempts=2, delay_seconds=0,
+                )
+        refresh.assert_called_once_with(trusted_origin, "secret")
+
+    def test_authenticated_retry_rejects_untrusted_origin_before_building_request(self):
+        with patch.object(promote_modal, "Request") as request:
+            with self.assertRaisesRegex(ValueError, "trusted Beat This"):
+                promote_modal.fetch_authenticated_health(
+                    "https://attacker.example.test", "secret"
+                )
+        request.assert_not_called()
 
     def test_bearer_prefers_provider_token_and_accepts_shared_fallback(self):
         request = type("Request", (), {"headers": {"authorization": "Bearer shared"}})()

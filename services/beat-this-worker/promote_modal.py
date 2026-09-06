@@ -9,11 +9,15 @@ import os
 import re
 import subprocess
 import tempfile
+import time
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.parse import urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 ROOT = Path(__file__).resolve().parent
 MANIFEST = json.loads((ROOT / "model_manifest.json").read_text())
+INSTALLATION_STATUS = json.loads((ROOT / "installation-status.json").read_text())
 KEY_DERIVATION_DOMAIN = b"BEAT_THIS Ed25519 promotion v1\0"
 ED25519_PKCS8_PREFIX = bytes.fromhex("302e020100300506032b657004220420")
 
@@ -94,6 +98,78 @@ def verify_live_health(payload: object, expected: dict) -> None:
     if runtime_pairs != expected["runtime"]:
         raise ValueError("authenticated live health runtime does not match promotion identity")
 
+def verify_live_health_with_retries(
+    fetch_health,
+    expected: dict,
+    attempts: int = 6,
+    delay_seconds: float = 5,
+) -> None:
+    """Retry only the worker's explicit, authenticated cold-start state."""
+    if attempts < 1:
+        raise ValueError("health verification attempts must be positive")
+    for attempt in range(attempts):
+        payload = fetch_health()
+        if (isinstance(payload, dict) and payload.get("provider") == "BEAT_THIS"
+                and payload.get("status") == "starting"
+                and payload.get("ready") is False
+                and payload.get("retryable") is True):
+            if attempt + 1 == attempts:
+                raise TimeoutError("authenticated health remained in startup state")
+            time.sleep(delay_seconds)
+            continue
+        verify_live_health(payload, expected)
+        return
+
+class NoRedirects(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+def trusted_endpoint_origin(endpoint_origin: str) -> str:
+    expected = INSTALLATION_STATUS["providers"]["BEAT_THIS"]["evidence"][
+        "liveHealthEndpointOrigin"
+    ]
+    candidate = origin(endpoint_origin)
+    if candidate != origin(expected):
+        raise ValueError("endpoint does not match the trusted Beat This deployment origin")
+    return candidate
+
+def fetch_authenticated_health(endpoint_origin: str, token: str) -> object:
+    endpoint = trusted_endpoint_origin(endpoint_origin)
+    if not token:
+        raise ValueError("Beat This worker token is unavailable")
+    request = Request(
+        endpoint + "/health?provider=BEAT_THIS",
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+    )
+    try:
+        with build_opener(NoRedirects).open(request, timeout=30) as response:
+            return json.loads(response.read())
+    except HTTPError as exc:
+        raise RuntimeError("authenticated health request failed") from exc
+
+def verify_health_file_with_retries(
+    health_file: Path,
+    endpoint_origin: str,
+    expected: dict,
+    token: str,
+    attempts: int = 6,
+    delay_seconds: float = 5,
+) -> None:
+    endpoint = trusted_endpoint_origin(endpoint_origin)
+    first = json.loads(health_file.read_text())
+    used_first = False
+
+    def fetch_health():
+        nonlocal used_first
+        if not used_first:
+            used_first = True
+            return first
+        return fetch_authenticated_health(endpoint, token)
+
+    verify_live_health_with_retries(
+        fetch_health, expected, attempts=attempts, delay_seconds=delay_seconds
+    )
+
 def private_key_bytes(material: str) -> tuple[bytes, str | None]:
     """Normalize the configured signing material without persisting its source."""
     encoded = material.strip()
@@ -145,9 +221,13 @@ def main() -> None:
         key_path = Path(temporary.name)
     try:
         payload = record(args)
-        verify_live_health(
-            json.loads(Path(args.health_file).read_text()),
-            payload,
+        token = (
+            os.getenv("BEAT_THIS_WORKER_TOKEN")
+            or os.getenv("MUSIC_AI_WORKER_TOKEN")
+            or ""
+        ).strip()
+        verify_health_file_with_retries(
+            Path(args.health_file), args.endpoint_origin, payload, token,
         )
         bundle = {
             "record": payload,

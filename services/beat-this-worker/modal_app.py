@@ -57,6 +57,13 @@ def tail(value: str, limit: int = 2048) -> str:
 @app.cls(**common)
 @modal.concurrent(max_inputs=1)
 class BeatThisWorker:
+    @modal.enter()
+    def initialize(self):
+        # Exercise cold CUDA/package/storage initialization before ASGI traffic.
+        # Health still fails closed if a later probe raises.
+        from app import readiness_checks
+        readiness_checks()
+
     @modal.asgi_app(label="beat-this")
     def endpoint(self):
         from app import app as fastapi_app
