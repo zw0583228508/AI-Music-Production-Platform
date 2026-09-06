@@ -1,0 +1,47 @@
+MOSS-Music native compatibility validation
+Observed: 2026-09-07
+Modal run app: ap-OEaWRl8BSv1Iv2oZMh4ioT
+Image evidence: sha256:a355c0ede904d1db09260d8cdae09ebaece4c5aba3c06260d2bb43b179786f90
+Docker image build: im-nCfXWQXmJZ1TjaDNlXeXw9
+Function image: im-Sw0sTGMuqBXeVlaz5jGbL1
+Full Modal run log SHA-256: 86a595e68f576110b9d0272acb12983a45d9a70cd7b0d89b616680b598baa097
+
+Pinned source identities:
+- OpenMOSS/MOSS-Music@ad107c7ddaa06de168a0dfbc18d3e1e6a40c0e5e
+- OpenMOSS/sglang@c28a945853c7fee357f55d976b8abce51874bd94
+
+Final attempted runtime:
+- Python 3.12.3
+- CUDA 12.8
+- Torch 2.9.1+cu128
+- Torchaudio 2.9.1+cu128
+- TorchCodec 0.8.0 CPU wheel
+- TorchCodec wheel SHA-256: 2ec2e874dfb6fbf9bbeb792bea56317529636e78db175f56aad1e4efd6e12502
+- FFmpeg 7.1.1
+- Transformers 4.57.1
+- Gradio 5.44.1
+- Hugging Face Hub 0.36.2
+- Pydantic 2.11.10
+- FastAPI 0.115.12
+
+Resolver result:
+No broken requirements found.
+
+Execution boundary:
+- Docker image built: true
+- Verify function created: true
+- Verify function executed: true
+- Native preflight ran inside the verify function, not during image construction.
+- Bootstrap, model download, inference, endpoint deployment, and promotion did not run.
+
+Native preflight result:
+TorchCodec's FFmpeg 7 core library loaded far enough for the next failing path to
+be libtorchcodec_custom_ops7.so. Importing torchcodec then raised:
+
+RuntimeError: Could not load libtorchcodec.
+FFmpeg version 7: Could not load this library:
+/opt/moss-venv/lib/python3.12/site-packages/torchcodec/libtorchcodec_custom_ops7.so
+
+The required WAV and MP3 decode, resampling, and tensor-creation preflight did
+not pass. Model assets were not provisioned, real-song inference was not run,
+and no endpoint or promotion was created. Final classification: BLOCKED_UPSTREAM.

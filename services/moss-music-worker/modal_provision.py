@@ -16,6 +16,7 @@ image = modal.Image.from_dockerfile(WORKER_ROOT / "Dockerfile", context_dir=REPO
 def provision() -> None:
     # Smoke runs only after immutable snapshots have been written and committed.
     environment = {**os.environ, **workload_environment(online=True)}
+    subprocess.run(["/opt/moss-venv/bin/python","/app/compatibility.py"], env=environment, check=True)
     subprocess.run(["/opt/moss-venv/bin/python","/app/bootstrap_assets.py"], env=environment, check=True)
     subprocess.run(["/opt/moss-venv/bin/python","/app/preflight.py"], env=environment, check=True)
     subprocess.run(["/opt/moss-venv/bin/python","/app/smoke.py"], env=environment, check=True)

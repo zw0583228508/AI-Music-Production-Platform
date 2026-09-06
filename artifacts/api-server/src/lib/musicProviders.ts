@@ -536,7 +536,7 @@ export const MUSIC_PROVIDERS: MusicProviderDescriptor[] = [
     status: remoteConfigured(id) || remoteConfigured("MOSS_MUSIC") ? "configured" : "unavailable",
     license: "Apache-2.0",
     priority: 121 + index,
-    notes: `${role}; requires ${id}_API_URL (or MOSS_MUSIC_API_URL). Output is MUSICAL_SEMANTIC_REASONING only and never canonical analysis truth.`,
+    notes: `${role}; currently BLOCKED_UPSTREAM because the exact clean dependency graph fails native TorchCodec 0.8.0 WAV/MP3 preflight at libtorchcodec_custom_ops7.so. Any future endpoint must still pass exact health attestation. Output is MUSICAL_SEMANTIC_REASONING only and never canonical analysis truth.`,
   })),
   ...[
     ["MADMOM", "Madmom Rhythm Evidence", "structure", "CC-BY-NC-SA-4.0 weights"],

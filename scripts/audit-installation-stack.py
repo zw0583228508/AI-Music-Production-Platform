@@ -148,7 +148,10 @@ def evidence_errors(rows, root):
             errors.append(f"evidence missing or invalid: {relative}: {exc}")
             return {}
     ace = by_name.get("ACE_STEP", {})
-    if ace.get("finalStatus") == "READY":
+    if (
+        ace.get("finalStatus") == "READY"
+        and ace.get("codeRevision") == "ca1e85fe9430179831e6bc6be790c332190a3866"
+    ):
         base = Path("services/music-ai-gpu-worker/release-evidence/ace-step")
         status = read_json("services/music-ai-gpu-worker/installation-status.json")
         local = status.get("providers", {}).get("ACE_STEP", {}).get("evidence", {})
@@ -1193,7 +1196,11 @@ def evidence_errors(rows, root):
             if not all(required):
                 errors.append(f"{name}: ready classification lacks exact manifest/source/license/package/runtime/model/smoke/live-health evidence")
     songformer = by_name.get("SONGFORMER", {})
-    if songformer:
+    if (
+        songformer
+        and songformer.get("codeRevision")
+        == "139b2aa3b14bd1c6d961d0994e9fc975f1ef7fd5"
+    ):
         manifest = read_json("services/songformer-worker/model_manifest.json")
         license_manifest = read_json("services/songformer-worker/license_manifest.json")
         local_status = read_json("services/songformer-worker/installation-status.json")
@@ -1384,6 +1391,206 @@ def evidence_errors(rows, root):
             errors.append(
                 "SONGFORMER: license-blocked classification lacks exact remote "
                 "asset/license/teardown/bootstrap/Modal/worker/API evidence"
+            )
+    moss_names = ("MOSS_MUSIC_INSTRUCT", "MOSS_MUSIC_THINKING")
+    moss_rows = {name: by_name.get(name, {}) for name in moss_names}
+    moss_revision = "ad107c7ddaa06de168a0dfbc18d3e1e6a40c0e5e"
+    if any(row.get("codeRevision") == moss_revision for row in moss_rows.values()):
+        base = Path("services/moss-music-worker")
+        status = read_json(base / "installation-status.json")
+        manifest = read_json(base / "model_manifest.json")
+        license_manifest = read_json(base / "license_manifest.json")
+        failure = read_json(
+            base / "release-evidence/modal-compatibility-failure.json"
+        )
+        try:
+            transcript = (
+                root / base / "release-evidence/modal-compatibility-failure.txt"
+            ).read_bytes()
+            docker = (root / base / "Dockerfile").read_text()
+            api_manifest = (
+                root / "artifacts/api-server/src/lib/analysisProviderManifest.ts"
+            ).read_text()
+            status_text = (root / base / "installation-status.json").read_text()
+            image_digest = hashlib.sha256()
+            for evidence_name in (
+                "Dockerfile", "requirements.txt", "model_manifest.json",
+                "license_manifest.json", "app.py", "bootstrap_assets.py",
+                "compatibility.py", "modal_app.py", "modal_compatibility.py",
+                "modal_config.py", "modal_provision.py", "preflight.py", "smoke.py",
+            ):
+                image_digest.update(
+                    evidence_name.encode()
+                    + b"\0"
+                    + (root / base / evidence_name).read_bytes()
+                    + b"\0"
+                )
+            current_image_evidence = "sha256:" + image_digest.hexdigest()
+        except OSError:
+            transcript = b""
+            docker = api_manifest = status_text = ""
+            current_image_evidence = ""
+        expected_models = {
+            "MOSS_MUSIC_INSTRUCT": (
+                "OpenMOSS-Team/MOSS-Music-8B-Instruct",
+                "fce7f8304e96cc2d3398b8106456cbb2ecec3139",
+            ),
+            "MOSS_MUSIC_THINKING": (
+                "OpenMOSS-Team/MOSS-Music-8B-Thinking",
+                "2ce899988b94b8ecc5dd0dacbc5ce1874d3500e3",
+            ),
+        }
+        expected_runtime = {
+            "python": "3.12.3",
+            "cuda": "12.8",
+            "torch": "2.9.1+cu128",
+            "torchaudio": "2.9.1+cu128",
+            "torchcodec": "0.8.0",
+            "ffmpeg": "7.1.1",
+            "transformers": "4.57.1",
+            "huggingfaceHub": "0.36.2",
+            "gradio": "5.44.1",
+            "pydantic": "2.11.10",
+            "fastapi": "0.115.12",
+        }
+        expected_transcript_sha = (
+            "ee392504688ce175bf67143d73b785993929632ccf62cea0c4c48984016b9828"
+        )
+        blocked_flags = (
+            "runtimeBuilt", "assetsDownloaded", "assetsChecksummed",
+            "assetManifestCreated", "volumeProvisioned", "secretsConfigured",
+            "realSmokePassed", "nonSilentOutputVerified", "endpointDeployed",
+            "endpointConfigured", "healthReady", "promotionSigned", "apiConnected",
+        )
+        runtime = status.get("runtime", {})
+        compatibility = status.get("compatibility", {})
+        local_providers = status.get("providers", {})
+        failed_preflight = failure.get("mediaPreflight", {})
+        rows_valid = all(
+            row.get("finalStatus") == "BLOCKED_UPSTREAM"
+            and row.get("category") == "analysis"
+            and row.get("codeRevision") == moss_revision
+            and row.get("modelRepository")
+            == f"https://huggingface.co/{expected_models[name][0]}"
+            and row.get("modelRevision") == expected_models[name][1]
+            and row.get("sourcePinned") is True
+            and row.get("licenseStatus") == "COMMERCIAL"
+            and row.get("promotionRequired") is True
+            and all(row.get(flag) is False for flag in blocked_flags)
+            and any(
+                "libtorchcodec_custom_ops7.so" in blocker
+                for blocker in row.get("blockers", [])
+            )
+            for name, row in moss_rows.items()
+        )
+        local_valid = all(
+            local_providers.get(name, {}).get("classification")
+            == "BLOCKED_UPSTREAM"
+            and local_providers.get(name, {}).get("model", {}).get("repository")
+            == expected_models[name][0]
+            and local_providers.get(name, {}).get("model", {}).get("revision")
+            == expected_models[name][1]
+            and local_providers.get(name, {}).get("evidence", {}).get(
+                "mediaPreflightPassed"
+            ) is False
+            and local_providers.get(name, {}).get("evidence", {}).get(
+                "assetsDownloaded"
+            ) is False
+            and local_providers.get(name, {}).get("evidence", {}).get(
+                "realSongSmokeAttempted"
+            ) is False
+            and local_providers.get(name, {}).get("evidence", {}).get(
+                "endpointDeployed"
+            ) is False
+            and local_providers.get(name, {}).get("evidence", {}).get(
+                "promotionSigned"
+            ) is False
+            and local_providers.get(name, {}).get("evidence", {}).get(
+                "apiConnected"
+            ) is False
+            for name in moss_names
+        )
+        required = [
+            status.get("schemaVersion") == 2,
+            status.get("providerFamily") == "MOSS_MUSIC",
+            status.get("classification") == "BLOCKED_UPSTREAM",
+            status.get("source", {}).get("repository") == "OpenMOSS/MOSS-Music",
+            status.get("source", {}).get("revision") == moss_revision,
+            status.get("source", {}).get("install")
+            == "base-package-without-torch-runtime-extra",
+            status.get("sglang", {}).get("revision")
+            == "c28a945853c7fee357f55d976b8abce51874bd94",
+            status.get("sglang", {}).get("install") == "python[all]",
+            all(runtime.get(key) == value for key, value in expected_runtime.items()),
+            runtime.get("torchcodecWheel", {}).get("variant") == "cpu",
+            runtime.get("torchcodecWheel", {}).get("sha256")
+            == "2ec2e874dfb6fbf9bbeb792bea56317529636e78db175f56aad1e4efd6e12502",
+            compatibility.get("dependencyResolutionPassed") is True,
+            compatibility.get("pipCheckPassed") is True,
+            compatibility.get("pipCheckOutput")
+            == "No broken requirements found.",
+            compatibility.get("imageEvidence")
+            == "sha256:a355c0ede904d1db09260d8cdae09ebaece4c5aba3c06260d2bb43b179786f90",
+            compatibility.get("imageEvidence") == current_image_evidence,
+            compatibility.get("modalRunAppId") == "ap-OEaWRl8BSv1Iv2oZMh4ioT",
+            compatibility.get("modalImageBuildId") == "im-nCfXWQXmJZ1TjaDNlXeXw9",
+            compatibility.get("modalFunctionImageId") == "im-Sw0sTGMuqBXeVlaz5jGbL1",
+            compatibility.get("imageBuilt") is True,
+            compatibility.get("verifyFunctionCreated") is True,
+            compatibility.get("verifyFunctionExecuted") is True,
+            compatibility.get("nativePreflightLocation")
+            == "remote-verify-function",
+            compatibility.get("mediaPreflightPassed") is False,
+            compatibility.get("failingLibrary") == "libtorchcodec_custom_ops7.so",
+            compatibility.get("transcriptSha256") == expected_transcript_sha,
+            compatibility.get("fullModalRunLogSha256")
+            == "86a595e68f576110b9d0272acb12983a45d9a70cd7b0d89b616680b598baa097",
+            hashlib.sha256(transcript).hexdigest() == expected_transcript_sha,
+            failure.get("classification") == "BLOCKED_UPSTREAM",
+            failure.get("modal", {}).get("expectedImageEvidence")
+            == compatibility.get("imageEvidence"),
+            failure.get("modal", {}).get("runAppId")
+            == compatibility.get("modalRunAppId"),
+            failure.get("modal", {}).get("imageBuildId")
+            == compatibility.get("modalImageBuildId"),
+            failure.get("modal", {}).get("functionImageId")
+            == compatibility.get("modalFunctionImageId"),
+            failure.get("transcript", {}).get("fullModalRunLogSha256")
+            == compatibility.get("fullModalRunLogSha256"),
+            failure.get("execution", {}).get("imageBuilt") is True,
+            failure.get("execution", {}).get("verifyFunctionCreated") is True,
+            failure.get("execution", {}).get("verifyFunctionExecuted") is True,
+            failure.get("execution", {}).get("nativePreflightDuringImageBuild")
+            is False,
+            failure.get("resolver", {}).get("pipCheckPassed") is True,
+            failed_preflight.get("passed") is False,
+            failed_preflight.get("failingLibrary")
+            == "libtorchcodec_custom_ops7.so",
+            all(value is False for value in failure.get("downstream", {}).values()),
+            manifest.get("source", {}).get("revision") == moss_revision,
+            manifest.get("runtime", {}).get("installation_profile")
+            == "moss-base+sglang-python-all",
+            manifest.get("runtime", {}).get("moss_torch_runtime_extra_installed")
+            is False,
+            manifest.get("runtime", {}).get("torchcodec_wheel", {}).get("sha256")
+            == runtime.get("torchcodecWheel", {}).get("sha256"),
+            license_manifest.get("commercial_status")
+            == "PERMITTED_BY_APACHE_2_0",
+            "moss-music[torch-runtime]" not in docker,
+            "moss-sglang/python[all]" in docker,
+            "--no-deps" not in docker and "--force" not in docker,
+            "/app/preflight.py" not in docker,
+            "COPY services/moss-music-worker/ /app/" not in docker,
+            (runtime.get("torchcodecWheel", {}).get("sha256") or "") in docker,
+            all(model[0] in api_manifest for model in expected_models.values()),
+            "TorchCodec 0.9 line" not in status_text,
+            rows_valid,
+            local_valid,
+        ]
+        if not all(required):
+            errors.append(
+                "MOSS_MUSIC: BLOCKED_UPSTREAM lacks exact clean-resolver/native-"
+                "failure/source/model/license/no-downstream evidence"
             )
     for name in ("MUSICGEN_LARGE", "MUSICGEN_MELODY_LARGE"):
         row = by_name.get(name, {})

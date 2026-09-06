@@ -1,19 +1,27 @@
 ---
 name: MOSS media-runtime conflict
-description: Why the pinned MOSS-Music and moss-audio SGLang revisions cannot currently share one truthful TorchCodec runtime.
+description: The resolver and native-library gates for a truthful MOSS-Music plus moss-audio SGLang runtime.
 ---
 
-Keep MOSS-Music unavailable when its pinned model revision requires the
-TorchCodec 0.9 line while its pinned moss-audio SGLang revision requires
-TorchCodec 0.8. Do not let installation order choose one silently, and do not
-override either pin without a reviewed upstream-compatible revision.
+Install the MOSS-Music base package without its Torch runtime extra, then install
+the pinned moss-audio SGLang `python[all]` extra. Keep Gradio below version 6
+when the Transformers stack still requires Hugging Face Hub below version 1.
+A successful resolver and `pip check` are not native media proof: the CUDA
+TorchCodec 0.8 wheel links NVDEC, while the official CPU wheel avoids NVDEC but
+can still fail at `libtorchcodec_custom_ops7.so` against a CUDA Torch runtime.
+Keep the native preflight out of Docker build layers so the immutable image can
+be built and the compatibility function can retain a truthful failure. Keep
+MOSS unavailable until one reviewed wheel/runtime pair passes that remote media
+preflight without dependency suppression or overrides.
 
-**Why:** Real provisioning downloaded both model snapshots, but native media
-preflight failed. Inspection showed mutually incompatible upstream TorchCodec
-requirements; FFmpeg path propagation alone could not make that environment
-coherent.
+**Why:** Clean official-package builds passed `pip check`, but the CUDA wheel
+required `libnvcuvid.so.1` and the CPU wheel then failed at its Torch custom-ops
+library. Package metadata alone therefore overstated readiness. Provisioning
+was correctly stopped before model downloads.
 
-**How to apply:** Require dependency resolution, `pip check`, native
-TorchCodec loading, and a real tiny-WAV decode before model smoke. Resume only
-with a reviewed compatible SGLang/MOSS revision pair or an upstream-approved
-constraint change.
+**How to apply:** Before any MOSS model provisioning, require exact source and
+wheel provenance, dependency resolution, `pip check`, native WAV and MP3
+decode, resampling, and tensor construction in a fail-closed compatibility
+function. A failed probe must stop before assets, smoke, deployment, or
+promotion. Resume only after an upstream-supported TorchCodec/Torch/FFmpeg
+combination passes all gates.

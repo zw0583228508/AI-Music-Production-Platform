@@ -3,16 +3,39 @@
   "asset_root": "/var/lib/moss-music/models",
   "asset_manifest": "model-assets.json",
   "smoke_proof": "smoke-proof.json",
+  "compatibility_evidence": "runtime-compatibility.json",
   "source": {
     "repository": "OpenMOSS/MOSS-Music",
     "revision": "ad107c7ddaa06de168a0dfbc18d3e1e6a40c0e5e"
   },
   "runtime": {
-    "python": "3.12",
+    "python": "3.12.3",
     "cuda": "12.8",
     "torch": "2.9.1+cu128",
+    "torchaudio": "2.9.1+cu128",
+    "torchcodec": "0.8.0",
+    "torchcodec_wheel": {
+      "variant": "cpu",
+      "filename": "torchcodec-0.8.0-cp312-cp312-manylinux_2_28_x86_64.whl",
+      "sha256": "2ec2e874dfb6fbf9bbeb792bea56317529636e78db175f56aad1e4efd6e12502"
+    },
+    "transformers": "4.57.1",
+    "accelerate": "1.12.0",
+    "huggingfaceHub": "0.36.2",
+    "gradio": "5.44.1",
+    "pydantic": "2.11.10",
+    "fastapi": "0.115.12",
+    "ffmpeg": "7.1.1",
     "ffmpeg_major": 7,
-    "serving": "SGLang",
+    "serving": "Transformers",
+    "installation_profile": "moss-base+sglang-python-all",
+    "moss_torch_runtime_extra_installed": false,
+    "cuda_base": {
+      "repository": "docker.io/nvidia/cuda",
+      "tag": "12.8.0-cudnn-devel-ubuntu24.04",
+      "platform": "linux/amd64",
+      "digest": "sha256:ea73ae92d1ab9453de0910d342b005aaec8fa2388d3f8913694a6de69392c6ab"
+    },
     "cudnn": {
       "package": "nvidia-cudnn-cu12",
       "version": "9.10.2.21",
@@ -23,6 +46,14 @@
     "repository": "OpenMOSS/sglang",
     "branch": "moss-audio",
     "revision": "c28a945853c7fee357f55d976b8abce51874bd94"
+  },
+  "smoke_input": {
+    "repository": "OpenMOSS/MOSS-Music",
+    "revision": "ad107c7ddaa06de168a0dfbc18d3e1e6a40c0e5e",
+    "path": "test/tonghua.mp3",
+    "git_blob_oid": "cb886c933968ed9dde9d8d74bc7bbcb845dd76a6",
+    "bytes": 4027752,
+    "sha256": "460f18e2333b27d6aff92cf2dc8181232a34ef5d08212ae74240f1ca93561540"
   },
   "license": {"name": "Apache-2.0"},
   "models": {

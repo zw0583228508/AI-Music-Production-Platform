@@ -21,7 +21,7 @@
 - [Historical export reconciliation](historical-export-reconciliation.md) — cleanup requires an aged current-package dry run and exact reviewed candidates; ambiguous export objects stay preserved.
 - [MIR runtime isolation](mir-runtime-isolation.md) — exact MIR pins require separate Python 3.11 and 3.14 images; SheetSage weights are noncommercial/share-alike licensed.
 - [MusicGen native runtime](musicgen-native-runtime.md) — exact AudioCraft builds native PyAV/PESQ; FFmpeg 4.4 satisfies PyAV 11 while remaining below version 5.
-- [MOSS media-runtime conflict](moss-media-runtime-conflict.md) — pinned MOSS and moss-audio revisions require incompatible TorchCodec lines; block rather than silently overriding either upstream.
+- [MOSS media-runtime conflict](moss-media-runtime-conflict.md) — the resolver can be clean while TorchCodec wheel variants still fail native loading; require media preflight before provisioning.
 - [Modal container path portability](modal-container-path-portability.md) — Dockerfile-backed modules must resolve paths under both the repo tree and Modal’s flat `/app` layout.
 - [Deployment attestation gates](deployment-attestation-gates.md) — couple deploy and live validation; never send credentials to caller-selected endpoints or redirects.
 - [Private recovery drills](private-recovery-drills.md) — verify owner archives in disposable storage with no production volume mount, and suppress URL-bearing exception chains.

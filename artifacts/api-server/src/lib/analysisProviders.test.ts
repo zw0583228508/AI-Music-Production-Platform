@@ -163,6 +163,93 @@ test("pins SheetSage health to its exact source and signed smoke identity", () =
   );
 });
 
+test("pins both MOSS semantic providers to exact runtime and retained evidence", () => {
+  const imageEvidence = `sha256:${"d".repeat(64)}`;
+  const baseHealth = {
+    status: "ready",
+    healthy: true,
+    version: "ad107c7ddaa06de168a0dfbc18d3e1e6a40c0e5e",
+    modelVersion: "ad107c7ddaa06de168a0dfbc18d3e1e6a40c0e5e",
+    sourceRevision: "OpenMOSS/MOSS-Music@ad107c7ddaa06de168a0dfbc18d3e1e6a40c0e5e",
+    sglangRevision: "c28a945853c7fee357f55d976b8abce51874bd94",
+    runtimePackages: {
+      python: "3.12.3",
+      cuda: "12.8",
+      torch: "2.9.1+cu128",
+      torchaudio: "2.9.1+cu128",
+      torchcodec: "0.8.0",
+      transformers: "4.57.1",
+      accelerate: "1.12.0",
+      huggingfaceHub: "0.36.2",
+      gradio: "5.44.1",
+      pydantic: "2.11.10",
+      fastapi: "0.115.12",
+      cudnn: "9.10.2.21",
+      ffmpeg: "7.1.1",
+    },
+    modelIdentities: {
+      MOSS_MUSIC_INSTRUCT: {
+        repository: "OpenMOSS-Team/MOSS-Music-8B-Instruct",
+        revision: "fce7f8304e96cc2d3398b8106456cbb2ecec3139",
+        role: "DIRECT_MUSICAL_SEMANTIC_REASONING",
+      },
+      MOSS_MUSIC_THINKING: {
+        repository: "OpenMOSS-Team/MOSS-Music-8B-Thinking",
+        revision: "2ce899988b94b8ecc5dd0dacbc5ce1874d3500e3",
+        role: "DELIBERATE_MUSICAL_SEMANTIC_REASONING",
+      },
+    },
+    fixture: {
+      repository: "OpenMOSS/MOSS-Music",
+      revision: "ad107c7ddaa06de168a0dfbc18d3e1e6a40c0e5e",
+      path: "test/tonghua.mp3",
+      git_blob_oid: "cb886c933968ed9dde9d8d74bc7bbcb845dd76a6",
+      bytes: 4_027_752,
+      sha256: "460f18e2333b27d6aff92cf2dc8181232a34ef5d08212ae74240f1ca93561540",
+    },
+    runtimeReady: true,
+    packageReady: true,
+    compatibilityReady: true,
+    pipCheckPassed: true,
+    mediaPreflightPassed: true,
+    checkpointReady: true,
+    smokeTested: true,
+    semanticOnly: true,
+    canonicalTruth: false,
+    compatibilityEvidenceSha256: "a".repeat(64),
+    assetManifestSha256: "b".repeat(64),
+    smokeEvidenceSha256: "c".repeat(64),
+    imageEvidence,
+    checksum: "d".repeat(64),
+  };
+  for (const provider of ["MOSS_MUSIC_INSTRUCT", "MOSS_MUSIC_THINKING"]) {
+    const health = { ...baseHealth, provider };
+    assert.equal(
+      attestAnalysisProviderHealth(provider, health).version,
+      baseHealth.version,
+    );
+    for (const drift of [
+      { sglangRevision: "main" },
+      {
+        runtimePackages: {
+          ...baseHealth.runtimePackages,
+          torchcodec: "0.9.1+cu128",
+        },
+      },
+      { compatibilityReady: false },
+      { pipCheckPassed: false },
+      { semanticOnly: false },
+      { canonicalTruth: true },
+      { imageEvidence: `sha256:${"e".repeat(64)}` },
+    ]) {
+      assert.throws(
+        () => attestAnalysisProviderHealth(provider, { ...health, ...drift }),
+        /verified MOSS-Music/,
+      );
+    }
+  }
+});
+
 test("verified bass phase fails closed when either real pitch provider is unavailable", async () => {
   const previousTorch = process.env.TORCHCREPE_API_URL;
   const previousBasic = process.env.BASIC_PITCH_API_URL;

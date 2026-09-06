@@ -14,6 +14,9 @@ export type VerifiedGpuAnalysisProviderId =
   | "MR_MT3"
   | "YOUR_MT3"
   | "BEAT_THIS";
+export type VerifiedMossAnalysisProviderId =
+  | "MOSS_MUSIC_INSTRUCT"
+  | "MOSS_MUSIC_THINKING";
 
 export type AnalysisProviderManifestEntry = {
   version: string;
@@ -59,6 +62,48 @@ const VERIFIED_DEMUCS_SOURCE = {
   licenseSha256: "cf9b17822d1fcd4ff32ccbe14183386fb3adf6f2ff92dc184130823f7fc28173",
   packageArtifactSha256: "e45a5a788bae79767c37bbf6e69aae03862ddcca05550fb79b926346a177d713",
   packageTreeSha256: "75d9c33232395acb77124da9d163084db4c10f08f0475160a36dece847fcc4cd",
+} as const;
+
+const VERIFIED_MOSS_MUSIC_IDENTITY = {
+  sourceRepository: "OpenMOSS/MOSS-Music",
+  sourceRevision: "ad107c7ddaa06de168a0dfbc18d3e1e6a40c0e5e",
+  sglangRepository: "OpenMOSS/sglang",
+  sglangRevision: "c28a945853c7fee357f55d976b8abce51874bd94",
+  runtimePackages: {
+    python: "3.12.3",
+    cuda: "12.8",
+    torch: "2.9.1+cu128",
+    torchaudio: "2.9.1+cu128",
+    torchcodec: "0.8.0",
+    transformers: "4.57.1",
+    accelerate: "1.12.0",
+    huggingfaceHub: "0.36.2",
+    gradio: "5.44.1",
+    pydantic: "2.11.10",
+    fastapi: "0.115.12",
+    cudnn: "9.10.2.21",
+    ffmpeg: "7.1.1",
+  },
+  modelIdentities: {
+    MOSS_MUSIC_INSTRUCT: {
+      repository: "OpenMOSS-Team/MOSS-Music-8B-Instruct",
+      revision: "fce7f8304e96cc2d3398b8106456cbb2ecec3139",
+      role: "DIRECT_MUSICAL_SEMANTIC_REASONING",
+    },
+    MOSS_MUSIC_THINKING: {
+      repository: "OpenMOSS-Team/MOSS-Music-8B-Thinking",
+      revision: "2ce899988b94b8ecc5dd0dacbc5ce1874d3500e3",
+      role: "DELIBERATE_MUSICAL_SEMANTIC_REASONING",
+    },
+  },
+  fixture: {
+    repository: "OpenMOSS/MOSS-Music",
+    revision: "ad107c7ddaa06de168a0dfbc18d3e1e6a40c0e5e",
+    path: "test/tonghua.mp3",
+    git_blob_oid: "cb886c933968ed9dde9d8d74bc7bbcb845dd76a6",
+    bytes: 4_027_752,
+    sha256: "460f18e2333b27d6aff92cf2dc8181232a34ef5d08212ae74240f1ca93561540",
+  },
 } as const;
 
 export const VERIFIED_GPU_ANALYSIS_PROVIDERS: Readonly<
@@ -285,6 +330,16 @@ function exactStringRecord(
   );
 }
 
+function canonicalValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalValue);
+  if (!record(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => [key, canonicalValue(nested)]),
+  );
+}
+
 /**
  * Validates the health contract needed before an analysis worker may receive
  * source data. A manifest entry additionally pins the worker identity.
@@ -305,6 +360,49 @@ export function attestAnalysisProviderHealth(
   }
   if (!["healthy", "ready", "ok"].includes(status)) {
     throw new Error("health response status is not healthy");
+  }
+  if (
+    requestedProvider === "MOSS_MUSIC_INSTRUCT" ||
+    requestedProvider === "MOSS_MUSIC_THINKING"
+  ) {
+    const expected = VERIFIED_MOSS_MUSIC_IDENTITY;
+    const sourceRevision = `${expected.sourceRepository}@${expected.sourceRevision}`;
+    const sha256 = /^[a-f0-9]{64}$/i;
+    if (
+      payload.healthy !== true ||
+      payload.version !== expected.sourceRevision ||
+      payload.modelVersion !== expected.sourceRevision ||
+      payload.sourceRevision !== sourceRevision ||
+      payload.sglangRevision !== expected.sglangRevision ||
+      !exactStringRecord(payload.runtimePackages, expected.runtimePackages) ||
+      JSON.stringify(canonicalValue(payload.modelIdentities)) !==
+        JSON.stringify(canonicalValue(expected.modelIdentities)) ||
+      JSON.stringify(canonicalValue(payload.fixture)) !==
+        JSON.stringify(canonicalValue(expected.fixture)) ||
+      payload.runtimeReady !== true ||
+      payload.packageReady !== true ||
+      payload.compatibilityReady !== true ||
+      payload.pipCheckPassed !== true ||
+      payload.mediaPreflightPassed !== true ||
+      payload.checkpointReady !== true ||
+      payload.smokeTested !== true ||
+      payload.semanticOnly !== true ||
+      payload.canonicalTruth !== false ||
+      !sha256.test(checksum) ||
+      !sha256.test(String(payload.compatibilityEvidenceSha256 ?? "")) ||
+      !sha256.test(String(payload.assetManifestSha256 ?? "")) ||
+      !sha256.test(String(payload.smokeEvidenceSha256 ?? "")) ||
+      payload.imageEvidence !== `sha256:${checksum}`
+    ) {
+      throw new Error(
+        `health response does not match the verified MOSS-Music source, SGLang, runtime, model, asset, compatibility, and real-song smoke identity for ${requestedProvider}`,
+      );
+    }
+    return {
+      provider,
+      version: expected.sourceRevision,
+      checksum,
+    };
   }
   const mirExpected = VERIFIED_MIR_IDENTITIES[
     requestedProvider as VerifiedMirAnalysisProviderId
