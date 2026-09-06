@@ -26,6 +26,74 @@ test("accepts a provider response that satisfies the canonical core contract", (
   assert.deepEqual(result.issues, []);
 });
 
+test("preserves observed bass evidence and its active-path metadata through fusion serialization", () => {
+  const bass = [{ start: 0.25, end: 0.75, pitch: 38, confidence: 0.91, provider: "BASS" }];
+  const candidate = {
+    ...validSongModel,
+    bass,
+    confidenceByField: { bass: 0.91 },
+    fieldStatus: {
+      bass: {
+        status: "detected",
+        confidence: 0.91,
+        providers: ["BASS"],
+        message: null,
+        edited: false,
+      },
+    },
+    provenance: { bass: ["BASS"] },
+    providerProvenance: [{
+      capability: "bass_evidence",
+      provider: "BASS",
+      version: "1.0.0",
+      status: "ready" as const,
+    }],
+  };
+  const fused = fuseProviderSongModels([
+    { provider: "BASS", output: candidate, confidence: 0.91 },
+  ]);
+  assert.equal(fused.accepted, true);
+  if (!fused.accepted) return;
+  const persisted = JSON.parse(JSON.stringify(fused.model));
+  assert.deepEqual(persisted.bass, bass);
+  assert.equal(persisted.confidenceByField.bass, 0.91);
+  assert.deepEqual(persisted.fieldStatus.bass.providers, ["BASS"]);
+  assert.deepEqual(persisted.provenance.bass, ["BASS"]);
+  assert.equal(persisted.providerProvenance[0].provider, "BASS");
+  assert.equal(persisted.fusion.selectedProvider, "BASS");
+  assert.equal(validateCanonicalSongModel(persisted).success, true);
+  assert.deepEqual(refreshSongModelValidation(persisted).bass, bass);
+});
+
+test("keeps absent bass evidence unavailable rather than inferring a fallback", () => {
+  const candidate = {
+    ...validSongModel,
+    bass: [],
+    confidenceByField: { bass: 0 },
+    fieldStatus: {
+      bass: {
+        status: "not_available",
+        confidence: null,
+        providers: [],
+        message: "No bass provider returned observed bass evidence.",
+        edited: false,
+      },
+    },
+    provenance: { bass: [] },
+  };
+  const fused = fuseProviderSongModels([
+    { provider: "analysis", output: candidate, confidence: 0.9 },
+  ]);
+  assert.equal(fused.accepted, true);
+  if (!fused.accepted) return;
+  const persisted = JSON.parse(JSON.stringify(fused.model));
+  assert.deepEqual(persisted.bass, []);
+  assert.equal(persisted.fieldStatus.bass.status, "not_available");
+  assert.equal(persisted.fieldStatus.bass.confidence, null);
+  assert.deepEqual(persisted.fieldStatus.bass.providers, []);
+  assert.deepEqual(persisted.provenance.bass, []);
+});
+
 test("flags tempo drift without silently discarding the candidate", () => {
   const result = validateSongModelCore(tempoDriftSongModel);
   assert.equal(result.success, true);

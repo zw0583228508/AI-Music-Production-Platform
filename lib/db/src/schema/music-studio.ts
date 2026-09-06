@@ -141,6 +141,7 @@ export type SongModelField =
   | "meter"
   | "key"
   | "melody"
+  | "bass"
   | "harmony"
   | "sections"
   | "energy";

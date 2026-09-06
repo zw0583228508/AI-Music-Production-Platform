@@ -1197,7 +1197,7 @@ components:
         createdAt: { type: string }
     SongModel:
       type: object
-      required: [id, projectId, sourceId, version, status, contractVersion, validation, fusion, audio, analysisStartSeconds, analysisDurationSeconds, analysisCoverage, tempoMap, meterMap, keyMap, beats, bars, melody, chords, sections, energy, waveform, stems, dynamics, sourceStems, lyrics, confidenceByField, providerProvenance, fieldStatus, provenance, providers, confidence, createdAt]
+      required: [id, projectId, sourceId, version, status, contractVersion, validation, fusion, audio, analysisStartSeconds, analysisDurationSeconds, analysisCoverage, tempoMap, meterMap, keyMap, beats, bars, melody, bass, chords, sections, energy, waveform, stems, dynamics, sourceStems, lyrics, confidenceByField, providerProvenance, fieldStatus, provenance, providers, confidence, createdAt]
       properties:
         id: { type: string }
         projectId: { type: string }
@@ -1243,7 +1243,7 @@ components:
             $ref: "#/components/schemas/NoteEvent"
         bass:
           type: array
-          description: Optional observed bass evidence. An omitted or empty array means no provider bass evidence was available.
+          description: Observed bass evidence. An empty array means no provider bass evidence was available.
           items:
             $ref: "#/components/schemas/BassEvidenceEvent"
         chords:
@@ -1491,23 +1491,25 @@ components:
           type: boolean
     SongModelFieldStatus:
       type: object
-      required: [tempo, meter, key, melody, harmony, sections, energy]
+      required: [tempo, meter, key, melody, bass, harmony, sections, energy]
       properties:
         tempo: { $ref: "#/components/schemas/SongModelFieldStatusProperty" }
         meter: { $ref: "#/components/schemas/SongModelFieldStatusProperty" }
         key: { $ref: "#/components/schemas/SongModelFieldStatusProperty" }
         melody: { $ref: "#/components/schemas/SongModelFieldStatusProperty" }
+        bass: { $ref: "#/components/schemas/SongModelFieldStatusProperty" }
         harmony: { $ref: "#/components/schemas/SongModelFieldStatusProperty" }
         sections: { $ref: "#/components/schemas/SongModelFieldStatusProperty" }
         energy: { $ref: "#/components/schemas/SongModelFieldStatusProperty" }
     SongModelProvenance:
       type: object
-      required: [tempo, meter, key, melody, harmony, sections, energy]
+      required: [tempo, meter, key, melody, bass, harmony, sections, energy]
       properties:
         tempo: { type: array, items: { type: string } }
         meter: { type: array, items: { type: string } }
         key: { type: array, items: { type: string } }
         melody: { type: array, items: { type: string } }
+        bass: { type: array, items: { type: string } }
         harmony: { type: array, items: { type: string } }
         sections: { type: array, items: { type: string } }
         energy: { type: array, items: { type: string } }

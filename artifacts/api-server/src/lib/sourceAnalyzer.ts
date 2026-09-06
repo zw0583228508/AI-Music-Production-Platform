@@ -289,48 +289,6 @@ function estimateBpm(samples: Float32Array, sampleRate: number): number {
   return bestBpm;
 }
 
-function estimateKey(samples: Float32Array, sampleRate: number, fingerprint: string): string {
-  const noteNames = ["C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"];
-  const maxSamples = Math.min(samples.length, sampleRate * 60);
-  const pitchEnergy = Array.from({ length: 12 }, () => 0);
-  for (let midi = 48; midi <= 71; midi += 1) {
-    const frequency = 440 * 2 ** ((midi - 69) / 12);
-    const omega = (2 * Math.PI * frequency) / sampleRate;
-    let real = 0;
-    let imaginary = 0;
-    for (let i = 0; i < maxSamples; i += 8) {
-      real += samples[i] * Math.cos(omega * i);
-      imaginary -= samples[i] * Math.sin(omega * i);
-    }
-    pitchEnergy[midi % 12] += Math.hypot(real, imaginary);
-  }
-  const root = pitchEnergy.some(Boolean)
-    ? pitchEnergy.indexOf(Math.max(...pitchEnergy))
-    : Number.parseInt(fingerprint.slice(0, 2), 16) % 12;
-  const minor = Number.parseInt(fingerprint.slice(2, 4), 16) % 2 === 0;
-  return `${noteNames[root]} ${minor ? "minor" : "major"}`;
-}
-
-function makeSections(
-  durationSeconds: number,
-  bpm: number,
-  energy: number[],
-): AnalysisSection[] {
-  const bars = Math.max(8, Math.round((durationSeconds * bpm) / 240));
-  const count = Math.max(1, Math.ceil(bars / 16));
-  return Array.from({ length: count }, (_, index) => {
-    const startBar = Math.floor((index / count) * bars) + 1;
-    const endBar = index === count - 1
-      ? bars
-      : Math.max(startBar, Math.floor(((index + 1) / count) * bars));
-    const energyIndex = Math.min(
-      energy.length - 1,
-      Math.floor(((index + 0.5) / count) * energy.length),
-    );
-    return { name: `Section ${index + 1}`, startBar, endBar, energy: energy[energyIndex] ?? 0.5 };
-  });
-}
-
 function detectEnergyEvidence(
   samples: Float32Array,
 ): { values: number[]; confidence: number } | null {
@@ -484,7 +442,8 @@ type MidiEvent = {
   channel?: number;
   track?: number;
 };
-async function analyzeProjectSourceBeforeTask1(sourceId: string): Promise<void> {
+/*
+async function retiredAnalysisPath(sourceId: string): Promise<void> {
   if (activeSourceJobs.has(sourceId)) return;
   activeSourceJobs.add(sourceId);
   const [source] = await db
@@ -918,6 +877,7 @@ async function analyzeProjectSourceBeforeTask1(sourceId: string): Promise<void> 
     activeSourceJobs.delete(sourceId);
   }
 }
+*/
 export async function analyzeProjectSource(
   sourceId: string,
   attemptId?: string,
@@ -1239,6 +1199,13 @@ export async function analyzeProjectSource(
     }
     const melody = midi?.melody ??
       fuseCanonicalNotes(providerResults.transcriptions);
+    const bass = midi ? [] : providerResults.bassEvidence;
+    const bassProviders = [...new Set(bass.flatMap((note) =>
+      note.provider ? [note.provider] : []
+    ))];
+    const bassConfidence = bass.length
+      ? Math.max(...bass.map((note) => note.confidence))
+      : 0;
     const confidenceByField = {
       tempo: midi ? 1 : providerResults.structure?.confidence ?? localTempo?.confidence ?? 0,
       meter: midi?.meterMap.length ? 1 : providerResults.structure?.confidence ?? 0,
@@ -1249,6 +1216,7 @@ export async function analyzeProjectSource(
         : providerResults.transcriptions.length
           ? Math.max(...providerResults.transcriptions.map((item) => item.confidence))
           : 0,
+      bass: bassConfidence,
       harmony: midi ? 0 : providerResults.harmonyConfidence,
       separation: midi ? 1 : providerResults.separation?.confidence ?? 0,
       energy: midi ? 1 : energyDetection?.confidence ?? 0,
@@ -1293,6 +1261,13 @@ export async function analyzeProjectSource(
         confidence: confidenceByField.melody || null,
         providers: melody.length ? melodyProviders : [],
         message: melody.length ? null : "No transcription provider returned a melodic line.",
+        edited: false,
+      },
+      bass: {
+        status: bass.length ? "detected" : "not_available",
+        confidence: bassConfidence || null,
+        providers: bassProviders,
+        message: bass.length ? null : "No bass provider returned observed bass evidence.",
         edited: false,
       },
       harmony: {
@@ -1371,7 +1346,7 @@ export async function analyzeProjectSource(
       beats,
       bars,
       melody,
-      bass: midi ? [] : providerResults.bassEvidence,
+      bass,
       chords: midi ? [] : providerResults.chords,
       sections,
       energy,
@@ -1423,6 +1398,7 @@ export async function analyzeProjectSource(
         meter: fieldStatus.meter.providers,
         key: fieldStatus.key.providers,
         melody: fieldStatus.melody.providers,
+        bass: fieldStatus.bass.providers,
         harmony: fieldStatus.harmony.providers,
         sections: fieldStatus.sections.providers,
         energy: fieldStatus.energy.providers,

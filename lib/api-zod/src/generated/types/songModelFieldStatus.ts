@@ -12,6 +12,7 @@ export interface SongModelFieldStatus {
   meter: SongModelFieldStatusProperty;
   key: SongModelFieldStatusProperty;
   melody: SongModelFieldStatusProperty;
+  bass: SongModelFieldStatusProperty;
   harmony: SongModelFieldStatusProperty;
   sections: SongModelFieldStatusProperty;
   energy: SongModelFieldStatusProperty;

@@ -1194,7 +1194,7 @@ export const GetProjectSongModelResponse = zod.object({
   "pitch": zod.number().min(getProjectSongModelResponseBassItemPitchMin).max(getProjectSongModelResponseBassItemPitchMax),
   "confidence": zod.number().min(getProjectSongModelResponseBassItemConfidenceMin).max(getProjectSongModelResponseBassItemConfidenceMax),
   "provider": zod.string().optional()
-})).optional().describe('Optional observed bass evidence. An omitted or empty array means no provider bass evidence was available.'),
+})).describe('Observed bass evidence. An empty array means no provider bass evidence was available.'),
   "chords": zod.array(zod.object({
   "start": zod.number(),
   "end": zod.number(),
@@ -1306,6 +1306,13 @@ export const GetProjectSongModelResponse = zod.object({
   "message": zod.string().nullable(),
   "edited": zod.boolean()
 }),
+  "bass": zod.object({
+  "status": zod.enum(['detected', 'low_confidence', 'failed', 'not_available']),
+  "confidence": zod.number().nullable(),
+  "providers": zod.array(zod.string()),
+  "message": zod.string().nullable(),
+  "edited": zod.boolean()
+}),
   "harmony": zod.object({
   "status": zod.enum(['detected', 'low_confidence', 'failed', 'not_available']),
   "confidence": zod.number().nullable(),
@@ -1333,6 +1340,7 @@ export const GetProjectSongModelResponse = zod.object({
   "meter": zod.array(zod.string()),
   "key": zod.array(zod.string()),
   "melody": zod.array(zod.string()),
+  "bass": zod.array(zod.string()),
   "harmony": zod.array(zod.string()),
   "sections": zod.array(zod.string()),
   "energy": zod.array(zod.string())
@@ -1562,7 +1570,7 @@ export const CorrectProjectSongModelResponse = zod.object({
   "pitch": zod.number().min(correctProjectSongModelResponseBassItemPitchMin).max(correctProjectSongModelResponseBassItemPitchMax),
   "confidence": zod.number().min(correctProjectSongModelResponseBassItemConfidenceMin).max(correctProjectSongModelResponseBassItemConfidenceMax),
   "provider": zod.string().optional()
-})).optional().describe('Optional observed bass evidence. An omitted or empty array means no provider bass evidence was available.'),
+})).describe('Observed bass evidence. An empty array means no provider bass evidence was available.'),
   "chords": zod.array(zod.object({
   "start": zod.number(),
   "end": zod.number(),
@@ -1674,6 +1682,13 @@ export const CorrectProjectSongModelResponse = zod.object({
   "message": zod.string().nullable(),
   "edited": zod.boolean()
 }),
+  "bass": zod.object({
+  "status": zod.enum(['detected', 'low_confidence', 'failed', 'not_available']),
+  "confidence": zod.number().nullable(),
+  "providers": zod.array(zod.string()),
+  "message": zod.string().nullable(),
+  "edited": zod.boolean()
+}),
   "harmony": zod.object({
   "status": zod.enum(['detected', 'low_confidence', 'failed', 'not_available']),
   "confidence": zod.number().nullable(),
@@ -1701,6 +1716,7 @@ export const CorrectProjectSongModelResponse = zod.object({
   "meter": zod.array(zod.string()),
   "key": zod.array(zod.string()),
   "melody": zod.array(zod.string()),
+  "bass": zod.array(zod.string()),
   "harmony": zod.array(zod.string()),
   "sections": zod.array(zod.string()),
   "energy": zod.array(zod.string())

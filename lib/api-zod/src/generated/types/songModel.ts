@@ -56,8 +56,8 @@ export interface SongModel {
   beats: BeatEvent[];
   bars: BarEvent[];
   melody: NoteEvent[];
-  /** Optional observed bass evidence. An omitted or empty array means no provider bass evidence was available. */
-  bass?: BassEvidenceEvent[];
+  /** Observed bass evidence. An empty array means no provider bass evidence was available. */
+  bass: BassEvidenceEvent[];
   chords: ChordEvent[];
   sections: Section[];
   energy: number[];

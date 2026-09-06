@@ -615,6 +615,7 @@ export interface SongModelFieldStatus {
   meter: SongModelFieldStatusProperty;
   key: SongModelFieldStatusProperty;
   melody: SongModelFieldStatusProperty;
+  bass: SongModelFieldStatusProperty;
   harmony: SongModelFieldStatusProperty;
   sections: SongModelFieldStatusProperty;
   energy: SongModelFieldStatusProperty;
@@ -625,6 +626,7 @@ export interface SongModelProvenance {
   meter: string[];
   key: string[];
   melody: string[];
+  bass: string[];
   harmony: string[];
   sections: string[];
   energy: string[];
@@ -674,8 +676,8 @@ export interface SongModel {
   beats: BeatEvent[];
   bars: BarEvent[];
   melody: NoteEvent[];
-  /** Optional observed bass evidence. An omitted or empty array means no provider bass evidence was available. */
-  bass?: BassEvidenceEvent[];
+  /** Observed bass evidence. An empty array means no provider bass evidence was available. */
+  bass: BassEvidenceEvent[];
   chords: ChordEvent[];
   sections: Section[];
   energy: number[];

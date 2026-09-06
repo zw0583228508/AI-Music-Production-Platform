@@ -11,6 +11,7 @@ export interface SongModelProvenance {
   meter: string[];
   key: string[];
   melody: string[];
+  bass: string[];
   harmony: string[];
   sections: string[];
   energy: string[];
