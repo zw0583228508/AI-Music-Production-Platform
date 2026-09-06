@@ -35,15 +35,30 @@ def provision_assets() -> dict:
     os.environ["HF_HUB_OFFLINE"] = "0"
     os.environ["TRANSFORMERS_OFFLINE"] = "0"
     from bootstrap_assets import main
-    try:
-        main()
-        from app import asset_state
-        verified, message, inventory = asset_state()
-        if not verified or not inventory:
-            raise RuntimeError(f"asset verification failed: {message}")
-        return {"assets": len(inventory["assets"]), "verified": True}
-    finally:
-        model_volume.commit()
+    main()
+    from app import asset_state
+    verified, message, inventory = asset_state()
+    if not verified or not inventory:
+        raise RuntimeError(f"asset verification failed: {message}")
+    model_volume.commit()
+    return {"assets": len(inventory["assets"]), "verified": True}
+
+
+@app.function(
+    image=image, secrets=[runtime_secret, license_secret],
+    volumes={MODEL_MOUNT: model_volume},
+    timeout=24 * 60 * 60, max_containers=1, env=worker_environment(),
+)
+def restore_assets() -> dict:
+    """Restore all licensed assets from the owner's private recovery archive."""
+    from bootstrap_assets import restore_from_recovery_source
+    restore_from_recovery_source()
+    from app import asset_state
+    verified, message, inventory = asset_state()
+    if not verified or not inventory:
+        raise RuntimeError(f"restored asset verification failed: {message}")
+    model_volume.commit()
+    return {"assets": len(inventory["assets"]), "verified": True, "restored": True}
 
 
 @app.function(
@@ -71,9 +86,11 @@ def smoke_remote(fixture_name: str) -> dict:
 def main(action: str = "provision", fixture: str = "") -> None:
     if action == "provision":
         print(provision_assets.remote())
+    elif action == "restore":
+        print(restore_assets.remote())
     elif action == "smoke":
         if not fixture:
             raise ValueError("fixture must name a previously uploaded volume file")
         print(smoke_remote.remote(fixture))
     else:
-        raise ValueError("action must be provision or smoke")
+        raise ValueError("action must be provision, restore, or smoke")

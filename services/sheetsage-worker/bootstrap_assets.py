@@ -5,6 +5,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
+import tarfile
+import tempfile
+from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).parent
 SPEC = json.loads((ROOT / "model_manifest.json").read_text())
@@ -19,9 +23,103 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def main() -> None:
+def _require_license() -> None:
     if os.environ.get(SPEC["license"]["acceptance_environment"]) != SPEC["license"]["required_value"]:
-        raise SystemExit("SheetSage model license has not been explicitly accepted")
+        raise RuntimeError("SheetSage model license has not been explicitly accepted")
+
+
+def _asset_inventory(root: Path, source: str, archive_sha256: str) -> list[dict]:
+    expected = SPEC["required_asset_sha256"]
+    if len(expected) != SPEC["recovery"]["required_asset_count"]:
+        raise RuntimeError("recovery manifest asset count is invalid")
+    assets = []
+    for relative_path, expected_sha256 in expected.items():
+        path = root / relative_path
+        if not path.is_file() or sha256(path) != expected_sha256:
+            raise RuntimeError(f"recovery asset SHA-256 mismatch: {relative_path}")
+        assets.append({
+            "path": relative_path,
+            "tag": "RECOVERED_VERIFIED_ASSET",
+            "bytes": path.stat().st_size,
+            "sha256": expected_sha256,
+            "upstreamChecksum": expected_sha256,
+            "source": source,
+            "revision": f"owner archive sha256:{archive_sha256}",
+            "license": (
+                SPEC["license"]["downbeat_weights"]
+                if relative_path.startswith("madmom_infer/")
+                else SPEC["license"]["weights"]
+            ),
+        })
+    return assets
+
+
+def _safe_extract(archive: Path, destination: Path) -> None:
+    with tarfile.open(archive, mode="r:*") as bundle:
+        members = [member for member in bundle.getmembers() if member.isfile()]
+        names = {member.name.lstrip("./") for member in members}
+        expected = set(SPEC["required_asset_sha256"])
+        if names != expected:
+            raise RuntimeError("recovery archive contents do not exactly match the model manifest")
+        for member in members:
+            relative = Path(member.name)
+            if relative.is_absolute() or ".." in relative.parts or member.issym() or member.islnk():
+                raise RuntimeError("recovery archive contains an unsafe path")
+            target = destination / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            source = bundle.extractfile(member)
+            if source is None:
+                raise RuntimeError("recovery archive member is unreadable")
+            with source, target.open("wb") as output:
+                shutil.copyfileobj(source, output)
+
+
+def restore_from_recovery_source() -> None:
+    """Restore the complete licensed model set from an owner-controlled archive."""
+    _require_license()
+    recovery = SPEC["recovery"]
+    source = os.environ.get(recovery["source_environment"], "")
+    expected_archive_sha256 = os.environ.get(recovery["sha256_environment"], "").lower()
+    if not source:
+        raise RuntimeError("owner-controlled SheetSage recovery source is not configured")
+    if len(expected_archive_sha256) != 64 or any(
+        character not in "0123456789abcdef" for character in expected_archive_sha256
+    ):
+        raise RuntimeError("SheetSage recovery archive SHA-256 is not configured")
+
+    ASSET_ROOT.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".sheetsage-restore-", dir=ASSET_ROOT.parent) as temporary:
+        temporary_root = Path(temporary)
+        archive = temporary_root / "recovery.tar"
+        staging = temporary_root / "verified"
+        staging.mkdir()
+        request = Request(source, headers={"User-Agent": "SheetSage-owner-recovery/1"})
+        try:
+            with urlopen(request, timeout=300) as response, archive.open("wb") as output:
+                shutil.copyfileobj(response, output)
+        except Exception as error:
+            raise RuntimeError("owner-controlled SheetSage recovery source is unavailable") from error
+        if sha256(archive) != expected_archive_sha256:
+            raise RuntimeError("SheetSage recovery archive SHA-256 mismatch")
+        _safe_extract(archive, staging)
+        assets = _asset_inventory(staging, "owner-controlled-private-recovery", expected_archive_sha256)
+        (staging / SPEC["asset_manifest"]).write_text(json.dumps({
+            "package": SPEC["package"],
+            "assets": assets,
+            "licenseAccepted": True,
+            "recoveryArchiveSha256": expected_archive_sha256,
+        }, indent=2, sort_keys=True))
+
+        ASSET_ROOT.mkdir(parents=True, exist_ok=True)
+        for relative_path in (*SPEC["required_asset_sha256"], SPEC["asset_manifest"]):
+            source_path = staging / relative_path
+            destination = ASSET_ROOT / relative_path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(source_path, destination)
+
+
+def main() -> None:
+    _require_license()
     ASSET_ROOT.mkdir(parents=True, exist_ok=True)
     os.environ["SHEETSAGE_CACHE_DIR"] = str(ASSET_ROOT)
     os.environ["XDG_CACHE_HOME"] = str(ASSET_ROOT)

@@ -23,6 +23,13 @@
   "profile": "HANDCRAFTED",
   "asset_root": "/var/lib/sheetsage/assets",
   "asset_manifest": "assets.manifest.json",
+  "recovery": {
+    "source_environment": "SHEETSAGE_RECOVERY_ARCHIVE_URL",
+    "sha256_environment": "SHEETSAGE_RECOVERY_ARCHIVE_SHA256",
+    "format": "tar",
+    "ownership": "private owner-controlled archive; never publish or commit restricted weights",
+    "required_asset_count": 15
+  },
   "handcrafted_asset_source": {
     "url": "https://mega.nz/file/j9YyWbAK#LjROFI9qxGq6Om9dx9HaORd5NaiYOcV8ULVUBKB0bcg",
     "declared_by": "openmirlab/sheetsage-infer@ee7c2aeeb8084840a4f938ae6913f566afdaebdc",
