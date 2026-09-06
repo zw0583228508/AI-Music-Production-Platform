@@ -16,9 +16,10 @@ class ModalConfigTests(unittest.TestCase):
         self.assertEqual(config.APP_NAME, "sheetsage-worker")
         self.assertEqual(config.ENDPOINT_LABEL, "sheetsage")
         self.assertEqual(config.RUNTIME_SECRET_NAME, "music-ai-worker-runtime")
+        self.assertEqual(config.LICENSE_SECRET_NAME, "sheetsage-noncommercial-license-v1")
         self.assertEqual(config.MODEL_VOLUME_NAME, "sheetsage-models-v1")
         self.assertEqual(config.SMOKE_VOLUME_NAME, "sheetsage-smoke-v1")
-        self.assertEqual(config.image_build_args(), {})
+        self.assertEqual(config.image_build_args(), {"SHEETSAGE_ACCEPT_MODEL_LICENSE": "1"})
         self.assertEqual(config.worker_environment()["HF_HUB_OFFLINE"], "1")
 
 

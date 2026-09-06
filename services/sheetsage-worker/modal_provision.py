@@ -3,11 +3,15 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import sys
+
+_PACKAGE_ROOT = Path("/app") if Path("/app/modal_config.py").is_file() else Path(__file__).resolve().parent
+sys.path.insert(0, str(_PACKAGE_ROOT))
 
 import modal
 
 from modal_config import (
-    APP_NAME, MODEL_MOUNT, MODEL_VOLUME_NAME, REPOSITORY_ROOT, RUNTIME_SECRET_NAME,
+    APP_NAME, LICENSE_SECRET_NAME, MODEL_MOUNT, MODEL_VOLUME_NAME, REPOSITORY_ROOT, RUNTIME_SECRET_NAME,
     SMOKE_MOUNT, SMOKE_VOLUME_NAME, WORKER_ROOT, image_build_args, worker_environment,
 )
 
@@ -18,10 +22,11 @@ image = modal.Image.from_dockerfile(
 model_volume = modal.Volume.from_name(MODEL_VOLUME_NAME, create_if_missing=False)
 smoke_volume = modal.Volume.from_name(SMOKE_VOLUME_NAME, create_if_missing=False)
 runtime_secret = modal.Secret.from_name(RUNTIME_SECRET_NAME)
+license_secret = modal.Secret.from_name(LICENSE_SECRET_NAME)
 
 
 @app.function(
-    image=image, secrets=[runtime_secret],
+    image=image, secrets=[runtime_secret, license_secret],
     volumes={MODEL_MOUNT: model_volume, SMOKE_MOUNT: smoke_volume},
     timeout=24 * 60 * 60, max_containers=1, env=worker_environment(),
 )
@@ -42,7 +47,7 @@ def provision_assets() -> dict:
 
 
 @app.function(
-    image=image, secrets=[runtime_secret],
+    image=image, secrets=[runtime_secret, license_secret],
     volumes={MODEL_MOUNT: model_volume, SMOKE_MOUNT: smoke_volume},
     timeout=600, max_containers=1, env=worker_environment(),
 )

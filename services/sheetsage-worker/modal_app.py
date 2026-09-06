@@ -4,7 +4,7 @@ from __future__ import annotations
 import modal
 
 from modal_config import (
-    APP_NAME, ENDPOINT_LABEL, MODEL_MOUNT, MODEL_VOLUME_NAME, REPOSITORY_ROOT,
+    APP_NAME, ENDPOINT_LABEL, LICENSE_SECRET_NAME, MODEL_MOUNT, MODEL_VOLUME_NAME, REPOSITORY_ROOT,
     RUNTIME_SECRET_NAME, SMOKE_MOUNT, SMOKE_VOLUME_NAME, WORKER_ROOT,
     image_build_args, worker_environment,
 )
@@ -16,11 +16,12 @@ image = modal.Image.from_dockerfile(
 model_volume = modal.Volume.from_name(MODEL_VOLUME_NAME, create_if_missing=False)
 smoke_volume = modal.Volume.from_name(SMOKE_VOLUME_NAME, create_if_missing=False)
 runtime_secret = modal.Secret.from_name(RUNTIME_SECRET_NAME)
+license_secret = modal.Secret.from_name(LICENSE_SECRET_NAME)
 
 
 @app.cls(
     image=image,
-    secrets=[runtime_secret],
+    secrets=[runtime_secret, license_secret],
     volumes={MODEL_MOUNT: model_volume, SMOKE_MOUNT: smoke_volume},
     timeout=600,
     scaledown_window=300,
