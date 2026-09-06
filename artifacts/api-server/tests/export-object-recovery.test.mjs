@@ -11,7 +11,12 @@ const bundlePath = new URL(
 await build({
   stdin: {
     contents: `
-      export { reclaimIncompleteExportObjects } from "./src/lib/objectStorage";
+      export {
+        canonicalExportStorageUri,
+        cleanupReviewedExportObjects,
+        reclaimIncompleteExportObjects,
+        reportUnreferencedExportObjects,
+      } from "./src/lib/objectStorage";
     `,
     resolveDir: new URL("..", import.meta.url).pathname,
     sourcefile: "export-object-recovery-harness.ts",
@@ -22,7 +27,12 @@ await build({
   outfile: bundlePath,
   external: ["@google-cloud/*", "@google/*"],
 });
-const { reclaimIncompleteExportObjects } = await import(pathToFileURL(bundlePath).href);
+const {
+  canonicalExportStorageUri,
+  cleanupReviewedExportObjects,
+  reclaimIncompleteExportObjects,
+  reportUnreferencedExportObjects,
+} = await import(pathToFileURL(bundlePath).href);
 after(() => unlink(bundlePath).catch(() => undefined));
 
 test("crash recovery deletes only unreferenced incomplete export packages", async () => {
@@ -107,4 +117,144 @@ test("crash recovery reports deletion failures and continues reclaiming", async 
       `/api/storage/objects/exports/${exportId}-${"e".repeat(64)}.zip`,
     ],
   });
+});
+
+function reconciliationStorage(names, createdAt) {
+  const deleted = [];
+  const files = names.map((name) => ({
+    name,
+    async getMetadata() {
+      return [{ timeCreated: createdAt, size: "123" }];
+    },
+    async delete() {
+      deleted.push(name);
+    },
+  }));
+  return {
+    deleted,
+    client: {
+      bucket(name) {
+        assert.equal(name, "test-bucket");
+        return {
+          async getFiles({ prefix }) {
+            return [files.filter((file) => file.name.startsWith(prefix))];
+          },
+          file(name) {
+            return files.find((file) => file.name === name);
+          },
+        };
+      },
+    },
+  };
+}
+
+test("ready export references normalize from current URLs and legacy object ids", () => {
+  const hash = "2".repeat(64);
+  const path = `/api/storage/objects/exports/export-ready-${hash}.zip`;
+  assert.equal(canonicalExportStorageUri(path), path);
+  assert.equal(canonicalExportStorageUri(`https://example.test${path}`), path);
+  assert.equal(
+    canonicalExportStorageUri("export-object://legacy-export"),
+    "/api/storage/objects/exports/legacy-export.zip",
+  );
+  assert.equal(canonicalExportStorageUri("/api/exports/export-ready/download"), null);
+});
+
+test("historical reconciliation reports leftovers but protects non-package exports", async () => {
+  process.env.PRIVATE_OBJECT_DIR = "/test-bucket/private";
+  const hash = "d".repeat(64);
+  const current = `private/exports/export-old-${hash}.zip`;
+  const ready = `private/exports/export-ready-${"e".repeat(64)}.zip`;
+  const legacy = "private/exports/export-legacy.zip";
+  const provider = "private/exports/generation/job/candidate/render.wav";
+  const unknown = "private/exports/manual/render.wav";
+  const storage = reconciliationStorage(
+    [current, ready, legacy, provider, unknown],
+    "2026-01-01T00:00:00.000Z",
+  );
+  const report = await reportUnreferencedExportObjects(
+    [`/api/storage/objects/exports/export-ready-${"e".repeat(64)}.zip`],
+    30 * 24 * 60 * 60 * 1000,
+    new Date("2026-09-01T00:00:00.000Z"),
+    storage.client,
+  );
+
+  assert.deepEqual(report.cleanupCandidates, [
+    `/api/storage/objects/exports/export-old-${hash}.zip`,
+  ]);
+  assert.equal(report.entries.find((entry) => entry.objectName === ready).classification, "ready-reference");
+  assert.equal(report.entries.find((entry) => entry.objectName === legacy).classification, "historical-download");
+  assert.equal(report.entries.find((entry) => entry.objectName === provider).classification, "provider-generated");
+  assert.equal(report.entries.find((entry) => entry.objectName === unknown).classification, "unknown-export-object");
+  assert.deepEqual(storage.deleted, []);
+});
+
+test("cleanup requires reviewed dry run and rechecks the exact aged candidate set", async () => {
+  process.env.PRIVATE_OBJECT_DIR = "/test-bucket/private";
+  const hash = "f".repeat(64);
+  const name = `private/exports/export-orphan-${hash}.zip`;
+  const uri = `/api/storage/objects/exports/export-orphan-${hash}.zip`;
+  const storage = reconciliationStorage([name], "2026-01-01T00:00:00.000Z");
+  const options = {
+    readyStorageUris: [],
+    minimumAgeMs: 30 * 24 * 60 * 60 * 1000,
+    reviewedCandidates: [uri],
+    now: new Date("2026-09-01T00:00:00.000Z"),
+    storage: storage.client,
+  };
+
+  await assert.rejects(
+    cleanupReviewedExportObjects({ ...options, dryRunReviewed: false }),
+    /reviewed dry-run/,
+  );
+  assert.deepEqual(storage.deleted, []);
+  assert.deepEqual(
+    await cleanupReviewedExportObjects({ ...options, dryRunReviewed: true }),
+    [uri],
+  );
+  assert.deepEqual(storage.deleted, [name]);
+});
+
+test("cleanup aborts if ready references changed after review", async () => {
+  process.env.PRIVATE_OBJECT_DIR = "/test-bucket/private";
+  const hash = "1".repeat(64);
+  const name = `private/exports/export-preserved-${hash}.zip`;
+  const uri = `/api/storage/objects/exports/export-preserved-${hash}.zip`;
+  const storage = reconciliationStorage([name], "2026-01-01T00:00:00.000Z");
+
+  await assert.rejects(
+    cleanupReviewedExportObjects({
+      readyStorageUris: [uri],
+      minimumAgeMs: 1,
+      reviewedCandidates: [uri],
+      dryRunReviewed: true,
+      now: new Date("2026-09-01T00:00:00.000Z"),
+      storage: storage.client,
+    }),
+    /no longer match/,
+  );
+  assert.deepEqual(storage.deleted, []);
+});
+
+test("objects without creation timestamps remain preservation-only", async () => {
+  process.env.PRIVATE_OBJECT_DIR = "/test-bucket/private";
+  const hash = "3".repeat(64);
+  const name = `private/exports/export-unknown-age-${hash}.zip`;
+  const storage = reconciliationStorage([name], undefined);
+  const file = storage.client.bucket("test-bucket").file(name);
+  file.getMetadata = async () => [{
+    updated: "2020-01-01T00:00:00.000Z",
+    size: "123",
+  }];
+
+  const report = await reportUnreferencedExportObjects(
+    [],
+    1,
+    new Date("2026-09-01T00:00:00.000Z"),
+    storage.client,
+  );
+
+  assert.equal(report.entries[0].createdAt, null);
+  assert.equal(report.entries[0].cleanupEligible, false);
+  assert.deepEqual(report.cleanupCandidates, []);
 });

@@ -248,6 +248,13 @@ export async function deleteExportObject(downloadUrl: string): Promise<void> {
 
 type ExportObjectStore = Pick<Storage, "bucket">;
 
+export type ExportReconciliationClassification =
+  | "ready-reference"
+  | "current-unreferenced-package"
+  | "historical-download"
+  | "provider-generated"
+  | "unknown-export-object";
+
 export type ExportObjectReclamationReport = {
   discovered: number;
   reclaimed: number;
@@ -368,4 +375,215 @@ export async function deleteAnalysisObjects(
     prefix: objectName,
     force: true,
   });
+}
+
+export type ExportReconciliationEntry = {
+  storageUri: string;
+  objectName: string;
+  createdAt: string | null;
+  ageMs: number | null;
+  sizeBytes: number | null;
+  classification: ExportReconciliationClassification;
+  cleanupEligible: boolean;
+  reason: string;
+};
+
+type ExportReconciliationStore = Pick<Storage, "bucket">;
+
+export function canonicalExportStorageUri(reference: string): string | null {
+  if (reference.startsWith("export-object://")) {
+    const objectId = reference.slice("export-object://".length);
+    return /^[a-zA-Z0-9._-]+$/.test(objectId)
+      ? `/api/storage/objects/exports/${objectId}.zip`
+      : null;
+  }
+  let pathname = reference;
+  if (/^https?:\/\//.test(reference)) {
+    try {
+      pathname = new URL(reference).pathname;
+    } catch {
+      return null;
+    }
+  }
+  return isPrivateExportObjectPath(pathname) ? pathname : null;
+}
+
+function exportStorageUri(objectName: string, exportPrefix: string): string | null {
+  if (!objectName.startsWith(exportPrefix)) return null;
+  const relativeName = objectName.slice(exportPrefix.length);
+  return relativeName
+    ? `/api/storage/objects/exports/${relativeName}`
+    : null;
+}
+
+/**
+ * Inventory every private export object and classify it without deleting bytes.
+ * Only old, current content-addressed packages can enter the cleanup candidate
+ * set. Historical downloads, provider outputs, ready references, and unknown
+ * formats are preservation-only.
+ */
+export async function reportUnreferencedExportObjects(
+  readyStorageUris: readonly string[],
+  minimumAgeMs: number,
+  now = new Date(),
+  storage: ExportReconciliationStore = objectStorageClient,
+): Promise<ExportReconciliationReport> {
+  if (!Number.isFinite(minimumAgeMs) || minimumAgeMs <= 0) {
+    throw new Error("A positive export reconciliation minimum age is required");
+  }
+  const { bucketName, objectName } = parseObjectPath(
+    `${privateObjectDir()}/exports/`,
+  );
+  const exportPrefix = `${objectName}/`;
+  const [files] = await storage.bucket(bucketName).getFiles({
+    prefix: exportPrefix,
+  });
+  const readyPaths = new Set(
+    readyStorageUris.flatMap((reference) => {
+      const canonical = canonicalExportStorageUri(reference);
+      return canonical ? [canonical] : [];
+    }),
+  );
+  const entries: ExportReconciliationEntry[] = [];
+  for (const file of files) {
+    const storageUri = exportStorageUri(file.name, exportPrefix);
+    if (!storageUri) continue;
+    const [metadata] = await file.getMetadata();
+    const createdAtValue = metadata.timeCreated;
+    const createdAt = typeof createdAtValue === "string" &&
+        Number.isFinite(Date.parse(createdAtValue))
+      ? new Date(createdAtValue)
+      : null;
+    const ageMs = createdAt ? Math.max(0, now.getTime() - createdAt.getTime()) : null;
+    const sizeValue = typeof metadata.size === "string"
+      ? Number(metadata.size)
+      : metadata.size;
+    const sizeBytes = typeof sizeValue === "number" && Number.isFinite(sizeValue)
+      ? sizeValue
+      : null;
+    const classified = classifyExportObject(storageUri, readyPaths);
+    const cleanupEligible = classified.classification ===
+        "current-unreferenced-package" &&
+      ageMs !== null &&
+      ageMs >= minimumAgeMs;
+    entries.push({
+      storageUri,
+      objectName: file.name,
+      createdAt: createdAt?.toISOString() ?? null,
+      ageMs,
+      sizeBytes,
+      ...classified,
+      cleanupEligible,
+      reason: cleanupEligible
+        ? `${classified.reason}; older than the explicit cleanup threshold`
+        : classified.classification === "current-unreferenced-package"
+          ? `${classified.reason}; too new or missing a trustworthy creation time`
+          : classified.reason,
+    });
+  }
+  entries.sort((left, right) => left.storageUri.localeCompare(right.storageUri));
+  return {
+    generatedAt: now.toISOString(),
+    minimumAgeMs,
+    dryRun: true,
+    entries,
+    cleanupCandidates: entries
+      .filter((entry) => entry.cleanupEligible)
+      .map((entry) => entry.storageUri),
+  };
+}
+
+function classifyExportObject(
+  storageUri: string,
+  readyStorageUris: ReadonlySet<string>,
+): Pick<ExportReconciliationEntry, "classification" | "reason"> {
+  if (readyStorageUris.has(storageUri)) {
+    return {
+      classification: "ready-reference",
+      reason: "Referenced by a ready artifact and must be preserved",
+    };
+  }
+  const relativeName = storageUri.slice("/api/storage/objects/exports/".length);
+  if (relativeName.startsWith("generation/")) {
+    return {
+      classification: "provider-generated",
+      reason: "Generation audio, MIDI, and quality evidence are never reconciled as export packages",
+    };
+  }
+  if (/^[a-zA-Z0-9._-]+-[a-f0-9]{64}\.zip$/.test(relativeName)) {
+    return {
+      classification: "current-unreferenced-package",
+      reason: "Current content-addressed export package without a ready artifact reference",
+    };
+  }
+  if (
+    /^[a-zA-Z0-9._-]+\.zip$/.test(relativeName) ||
+    relativeName.startsWith("export-object://")
+  ) {
+    return {
+      classification: "historical-download",
+      reason: "Supported historical export package naming is preserved for existing downloads",
+    };
+  }
+  return {
+    classification: "unknown-export-object",
+    reason: "Unrecognized or manually produced export object requires manual investigation",
+  };
+}
+
+export type ExportReconciliationReport = {
+  generatedAt: string;
+  minimumAgeMs: number;
+  dryRun: true;
+  entries: ExportReconciliationEntry[];
+  cleanupCandidates: string[];
+};
+
+/**
+ * Delete only the exact candidate set approved from a prior dry-run report.
+ * A fresh inventory rechecks references, classification, and age before delete.
+ */
+export async function cleanupReviewedExportObjects(options: {
+  readyStorageUris: readonly string[];
+  minimumAgeMs: number;
+  reviewedCandidates: readonly string[];
+  dryRunReviewed: boolean;
+  now?: Date;
+  storage?: ExportReconciliationStore;
+}): Promise<string[]> {
+  if (!options.dryRunReviewed) {
+    throw new Error("Export cleanup requires an explicitly reviewed dry-run report");
+  }
+  const reviewed = new Set(options.reviewedCandidates);
+  if (reviewed.size === 0 || reviewed.size !== options.reviewedCandidates.length) {
+    throw new Error("Export cleanup requires a non-empty, unique reviewed candidate list");
+  }
+  const storage = options.storage ?? objectStorageClient;
+  const report = await reportUnreferencedExportObjects(
+    options.readyStorageUris,
+    options.minimumAgeMs,
+    options.now,
+    storage,
+  );
+  const eligible = new Map(
+    report.entries
+      .filter((entry) => entry.cleanupEligible)
+      .map((entry) => [entry.storageUri, entry]),
+  );
+  if (
+    reviewed.size !== eligible.size ||
+    [...reviewed].some((storageUri) => !eligible.has(storageUri))
+  ) {
+    throw new Error("Reviewed export candidates no longer match the fresh dry-run report");
+  }
+  const deleted: string[] = [];
+  for (const storageUri of options.reviewedCandidates) {
+    const entry = eligible.get(storageUri);
+    if (!entry) continue;
+    await storage.bucket(parseObjectPath(privateObjectDir()).bucketName)
+      .file(entry.objectName)
+      .delete({ ignoreNotFound: true });
+    deleted.push(storageUri);
+  }
+  return deleted;
 }

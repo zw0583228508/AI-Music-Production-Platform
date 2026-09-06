@@ -1,6 +1,13 @@
 import { and, eq, isNotNull, lte } from "drizzle-orm";
 import { db, musicArtifactsTable } from "@workspace/db";
-import { deleteExportObject, getPrivateObject } from "./objectStorage";
+import {
+  cleanupReviewedExportObjects,
+  canonicalExportStorageUri,
+  deleteExportObject,
+  getPrivateObject,
+  reportUnreferencedExportObjects,
+  type ExportReconciliationReport,
+} from "./objectStorage";
 import { logger } from "./logger";
 
 async function deleteArtifactBytes(storageUri: string | null, url: string | null): Promise<void> {
@@ -65,6 +72,41 @@ export async function cleanupExpiredArtifacts(now = new Date()): Promise<number>
     }
   }
   return cleaned;
+}
+
+async function readyArtifactStorageUris(): Promise<string[]> {
+  return (await db.select({
+    storageUri: musicArtifactsTable.storageUri,
+    url: musicArtifactsTable.url,
+  }).from(musicArtifactsTable).where(eq(musicArtifactsTable.state, "ready")))
+    .flatMap(({ storageUri, url }) => [storageUri, url])
+    .flatMap((reference) => {
+      const canonical = reference ? canonicalExportStorageUri(reference) : null;
+      return canonical ? [canonical] : [];
+    });
+}
+
+export async function reportHistoricalExportLeftovers(
+  minimumAgeMs: number,
+  now = new Date(),
+): Promise<ExportReconciliationReport> {
+  return reportUnreferencedExportObjects(
+    await readyArtifactStorageUris(),
+    minimumAgeMs,
+    now,
+  );
+}
+
+export async function cleanupHistoricalExportLeftovers(options: {
+  minimumAgeMs: number;
+  reviewedCandidates: readonly string[];
+  dryRunReviewed: boolean;
+  now?: Date;
+}): Promise<string[]> {
+  return cleanupReviewedExportObjects({
+    ...options,
+    readyStorageUris: await readyArtifactStorageUris(),
+  });
 }
 
 export function startArtifactRetentionScheduler(

@@ -18,3 +18,4 @@
 - [Provider-audio arrangement semantics](provider-audio-arrangement-semantics.md) — audio-only candidates stay selectable/exportable without fake MIDI; chained provider audio remains private with explicit parent lineage.
 - [Observable musical controls](observable-musical-controls.md) — producer controls and readiness claims must survive typed evidence flow and change shipped musical output, not just metadata.
 - [Pino regression harnesses](pino-regression-harnesses.md) — standalone logger tests should externalize Pino and emit inside the package tree rather than rebundling its workers.
+- [Historical export reconciliation](historical-export-reconciliation.md) — cleanup requires an aged current-package dry run and exact reviewed candidates; ambiguous export objects stay preserved.
