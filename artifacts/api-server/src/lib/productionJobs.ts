@@ -9,7 +9,7 @@ import {
   type ProductionJobKind,
   type ProductionJobStatus,
 } from "@workspace/db";
-import { logger } from "./logger";
+export { logProductionJobEvent } from "./productionJobLogger";
 
 export const PRODUCTION_JOB_KINDS: ProductionJobKind[] = [
   "analysis",
@@ -592,8 +592,4 @@ export async function productionQueueMetrics() {
     .from(productionJobsTable)
     .groupBy(productionJobsTable.status);
   return Object.fromEntries(rows.map((row) => [row.status, row.count]));
-}
-
-export function logProductionJobEvent(jobId: string, event: string, metadata: Record<string, unknown> = {}) {
-  logger.info({ jobId, ...metadata }, event);
 }

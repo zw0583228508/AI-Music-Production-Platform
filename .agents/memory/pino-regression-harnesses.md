@@ -20,3 +20,15 @@ Pino's `formatters.bindings` does not sanitize application context supplied late
 **Why:** Payload formatting and initial binding formatting can appear to provide a complete privacy boundary while provider metadata persisted on child loggers bypasses both paths.
 
 **How to apply:** Treat `child()` as its own serialization boundary. Sanitize a cycle-safe copy of bindings before delegating to Pino, and apply the same protected child factory to every returned logger.
+
+Pino redaction wildcards such as `*.accessToken` do not cover an `accessToken` property at the root of a log record.
+
+**Why:** Structured logging helpers may spread arbitrary metadata directly into the root record, so wildcard-only policies can leave the same sensitive alias exposed in a common alternate shape.
+
+**How to apply:** When using Pino path redaction, register both the bare field name and its wildcard path. With recursive formatter redaction, exercise both root and nested serialized shapes. Keep logging-only helpers free of database imports so focused harnesses can test their real behavior.
+
+Recursive Pino formatters must serialize `Error` instances explicitly and prevent the default `err` serializer from reprocessing the sanitized plain object.
+
+**Why:** Error diagnostics are non-enumerable and disappear during ordinary object traversal; a later default serializer can also relabel an already serialized error as `Object`.
+
+**How to apply:** Use Pino's standard Error serializer inside the recursive sanitizer, configure the root `err` serializer as an identity pass, and assert type, message, stack, and redacted enumerable metadata in serialized output.

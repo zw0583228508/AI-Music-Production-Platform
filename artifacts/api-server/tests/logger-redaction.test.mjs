@@ -14,6 +14,7 @@ await build({
   stdin: {
     contents: `
       import { logger } from "./src/lib/logger";
+      import { logProductionJobEvent } from "./src/lib/productionJobLogger";
 
       class IntegrationWrapper {
         constructor() {
@@ -30,6 +31,11 @@ await build({
       }
 
       const payload = {
+        presignedUrl: "https://storage.example/root-private.wav?signature=root-presigned-secret",
+        signedURL: "https://storage.example/root-signed.wav?signature=root-signed-url-secret",
+        presignedURL: "https://storage.example/root-presigned.wav?signature=root-presigned-url-secret",
+        preSignedURL: "https://storage.example/root-pre-signed.wav?signature=root-pre-signed-url-secret",
+        accessToken: "root-access-token-secret",
         operation: "export_recovery",
         exportId: "export-safe-123",
         reclamation: {
@@ -40,9 +46,17 @@ await build({
         },
         download: {
           signedUrl: "https://storage.example/private.wav?X-Goog-Signature=download-secret",
+          signedURL: "https://storage.example/nested-signed.wav?signature=nested-signed-url-secret",
+          presignedUrl: "https://storage.example/private.flac?signature=presigned-secret",
+          presignedURL: "https://storage.example/nested-presigned.wav?signature=nested-presigned-url-secret",
+          preSignedURL: "https://storage.example/nested-pre-signed.wav?signature=nested-pre-signed-url-secret",
+          downloadUrl: "https://storage.example/private.mp3?token=download-url-secret",
+          downloadStatus: "ready",
         },
         upload: {
           uploadURL: "https://storage.example/upload?X-Goog-Credential=upload-secret",
+          uploadUrl: "https://storage.example/upload-next?token=upload-url-secret",
+          uploadBytes: 4096,
         },
         provider: {
           credentials: {
@@ -50,6 +64,10 @@ await build({
             clientSecret: "credential-secret",
           },
           authorization: "Bearer provider-secret",
+          accessToken: "access-token-secret",
+          refresh_token: "refresh-token-secret",
+          tokenCount: 2,
+          credentialSource: "managed",
         },
         integrations: {
           wrapper: new IntegrationWrapper(),
@@ -138,6 +156,19 @@ await build({
       ) {
         throw new Error("logger mutated caller-owned data");
       }
+
+      logProductionJobEvent("job-safe-789", "production_job_private_metadata", {
+        downloadUrl: "https://storage.example/job-private.wav?token=job-download-secret",
+        refreshToken: "job-refresh-token-secret",
+        attempt: 2,
+      });
+
+      const providerError = new Error("provider request failed safely");
+      providerError.accessToken = "error-access-token-secret";
+      logger.error({
+        err: providerError,
+        recoveryStatus: "retrying",
+      }, "provider_request_failure");
     `,
     resolveDir: apiDirectory,
     sourcefile: "logger-redaction-harness.ts",
@@ -169,14 +200,25 @@ test("serialized logs redact private URLs and credentials while preserving opera
     .split("\n")
     .filter(Boolean)
     .map((line) => JSON.parse(line));
-  assert.equal(entries.length, 1);
+  assert.equal(entries.length, 3);
 
-  const [entry] = entries;
-  const serialized = JSON.stringify(entry);
+  const [entry, jobEntry, errorEntry] = entries;
+  const serialized = JSON.stringify(entries);
 
   for (const secret of [
+    "root-presigned-secret",
+    "root-signed-url-secret",
+    "root-presigned-url-secret",
+    "root-pre-signed-url-secret",
+    "root-access-token-secret",
     "download-secret",
+    "nested-signed-url-secret",
     "upload-secret",
+    "presigned-secret",
+    "nested-presigned-url-secret",
+    "nested-pre-signed-url-secret",
+    "download-url-secret",
+    "upload-url-secret",
     "private-client",
     "credential-secret",
     "provider-secret",
@@ -184,6 +226,11 @@ test("serialized logs redact private URLs and credentials while preserving opera
     "array-credential-secret",
     "wrapper-secret",
     "wrapper-credential-secret",
+    "access-token-secret",
+    "refresh-token-secret",
+    "job-download-secret",
+    "job-refresh-token-secret",
+    "error-access-token-secret",
     "request-secret",
     "request-cookie-secret",
     "response-cookie-secret",
@@ -202,6 +249,11 @@ test("serialized logs redact private URLs and credentials while preserving opera
   }
 
   assert.equal(entry.msg, "export_object_reclamation_summary");
+  assert.equal(entry.presignedUrl, "[Redacted]");
+  assert.equal(entry.signedURL, "[Redacted]");
+  assert.equal(entry.presignedURL, "[Redacted]");
+  assert.equal(entry.preSignedURL, "[Redacted]");
+  assert.equal(entry.accessToken, "[Redacted]");
   assert.equal(entry.operation, "export_recovery");
   assert.equal(entry.exportId, "export-safe-123");
   assert.equal(entry.req.headers["x-request-id"], "request-safe-456");
@@ -212,9 +264,21 @@ test("serialized logs redact private URLs and credentials while preserving opera
     failedDeletions: 0,
   });
   assert.equal(entry.download.signedUrl, "[Redacted]");
+  assert.equal(entry.download.signedURL, "[Redacted]");
+  assert.equal(entry.download.presignedUrl, "[Redacted]");
+  assert.equal(entry.download.presignedURL, "[Redacted]");
+  assert.equal(entry.download.preSignedURL, "[Redacted]");
+  assert.equal(entry.download.downloadUrl, "[Redacted]");
+  assert.equal(entry.download.downloadStatus, "ready");
   assert.equal(entry.upload.uploadURL, "[Redacted]");
+  assert.equal(entry.upload.uploadUrl, "[Redacted]");
+  assert.equal(entry.upload.uploadBytes, 4096);
   assert.equal(entry.provider.credentials, "[Redacted]");
   assert.equal(entry.provider.authorization, "[Redacted]");
+  assert.equal(entry.provider.accessToken, "[Redacted]");
+  assert.equal(entry.provider.refresh_token, "[Redacted]");
+  assert.equal(entry.provider.tokenCount, 2);
+  assert.equal(entry.provider.credentialSource, "managed");
   assert.equal(
     entry.integrations.attempts[0].response.links.signed_url,
     "[Redacted]",
@@ -243,4 +307,15 @@ test("serialized logs redact private URLs and credentials while preserving opera
   assert.equal(entry.req.headers.authorization, "[Redacted]");
   assert.equal(entry.req.headers.cookie, "[Redacted]");
   assert.equal(entry.res.headers["set-cookie"], "[Redacted]");
+  assert.equal(jobEntry.msg, "production_job_private_metadata");
+  assert.equal(jobEntry.jobId, "job-safe-789");
+  assert.equal(jobEntry.downloadUrl, "[Redacted]");
+  assert.equal(jobEntry.refreshToken, "[Redacted]");
+  assert.equal(jobEntry.attempt, 2);
+  assert.equal(errorEntry.msg, "provider_request_failure");
+  assert.equal(errorEntry.recoveryStatus, "retrying");
+  assert.equal(errorEntry.err.type, "Error");
+  assert.equal(errorEntry.err.message, "provider request failed safely");
+  assert.match(errorEntry.err.stack, /provider request failed safely/);
+  assert.equal(errorEntry.err.accessToken, "[Redacted]");
 });

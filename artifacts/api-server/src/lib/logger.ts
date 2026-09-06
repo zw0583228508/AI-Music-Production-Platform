@@ -2,10 +2,32 @@ import pino from "pino";
 
 const isProduction = process.env.NODE_ENV === "production";
 const sensitiveFieldNames = new Set([
+  // Private or signed object links.
   "signed_url",
   "signedUrl",
+  "signedURL",
+  "presigned_url",
+  "presignedUrl",
+  "presignedURL",
+  "preSignedUrl",
+  "preSignedURL",
+  "download_url",
+  "downloadUrl",
+  "downloadURL",
+  "upload_url",
+  "uploadUrl",
   "uploadURL",
+  // Provider tokens and credential containers.
+  "access_token",
+  "accessToken",
+  "refresh_token",
+  "refreshToken",
+  "id_token",
+  "idToken",
+  "api_key",
+  "apiKey",
   "credentials",
+  "credential",
   "authorization",
 ]);
 
@@ -20,6 +42,15 @@ function redactSensitiveFields(
   const existingCopy = seen.get(value);
   if (existingCopy !== undefined) {
     return existingCopy;
+  }
+
+  if (value instanceof Error) {
+    const redactedError = redactSensitiveFields(
+      pino.stdSerializers.err(value),
+      seen,
+    );
+    seen.set(value, redactedError);
+    return redactedError;
   }
 
   if (
@@ -67,6 +98,11 @@ function protectChildBindings(
 
 export const logger = protectChildBindings(pino({
   level: process.env.LOG_LEVEL ?? "info",
+  serializers: {
+    err(value) {
+      return value;
+    },
+  },
   formatters: {
     bindings(bindings) {
       return redactSensitiveFields(bindings) as Record<string, unknown>;
