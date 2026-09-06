@@ -123,7 +123,7 @@ if "BS_ROFORMER" in release_providers:
     @provider_apps["BS_ROFORMER"].cls(**_worker_options("BS_ROFORMER"))
     @modal.concurrent(max_inputs=1)
     class BSRoFormerWorker:
-        @modal.asgi_app(label="bs-roformer")
+        @modal.asgi_app(label="bs-roformer-isolated")
         def endpoint(self):
             from app import app as fastapi_app
             return fastapi_app
