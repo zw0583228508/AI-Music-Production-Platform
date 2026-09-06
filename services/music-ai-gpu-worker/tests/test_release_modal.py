@@ -40,6 +40,24 @@ def mt3_output():
     }
 
 
+def bs_output():
+    descriptor = {
+        "format": "wav", "sampleRate": 48_000, "channels": 2,
+        "durationSeconds": 5.12, "bytes": 1000,
+        "peakAmplitude": 0.5, "rmsAmplitude": 0.1,
+    }
+    return {
+        "input": {**descriptor, "sha256": "a" * 64},
+        "stems": [
+            {**descriptor, "stem": "vocals", "sha256": "b" * 64},
+            {**descriptor, "stem": "instrumental", "sha256": "c" * 64},
+        ],
+        "stemCount": 2,
+        "allStemsNonSilent": True,
+        "distinctStemSha256": True,
+    }
+
+
 class GenericModalReleaseTests(unittest.TestCase):
     def test_every_configured_provider_has_authoritative_modal_lookup(self):
         self.assertEqual(set(release_modal.APP_CLASSES), set(release_modal.DEPLOYMENTS))
@@ -129,6 +147,17 @@ class GenericModalReleaseTests(unittest.TestCase):
         output["noteEvents"][0]["end"] = 0.75
         with self.assertRaisesRegex(ValueError, "note evidence hash"):
             release_modal.validate_mt3_note_output(output)
+
+    def test_bs_evidence_rejects_identical_or_silent_stems(self):
+        output = bs_output()
+        release_modal.validate_bs_roformer_output(output)
+        output["stems"][1]["sha256"] = output["stems"][0]["sha256"]
+        with self.assertRaisesRegex(ValueError, "distinct"):
+            release_modal.validate_bs_roformer_output(output)
+        output = bs_output()
+        output["stems"][0]["rmsAmplitude"] = 0
+        with self.assertRaisesRegex(ValueError, "incomplete"):
+            release_modal.validate_bs_roformer_output(output)
 
     def test_failed_activation_keeps_existing_canonical_file(self):
         with __import__("tempfile").TemporaryDirectory() as directory:

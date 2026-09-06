@@ -1,4 +1,4 @@
 # Image-build dependencies. Checkpoint weights are mounted; never fetched by a request.
-bs-roformer-infer==0.1.5
+bs-roformer-infer @ https://files.pythonhosted.org/packages/26/54/d4875883ce1a2b488aea4785e7182d2ba695bde7511ad85bfd05eab21337/bs_roformer_infer-0.1.5-py3-none-any.whl#sha256=46f3d5eb4b666a54adcb67524258c3cb6f96e185db97a3e1e1ef7efaea4e1848
 numpy==2.1.3
 soundfile==0.12.1
