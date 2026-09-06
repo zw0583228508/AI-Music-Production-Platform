@@ -89,6 +89,34 @@ class RecoveryTests(unittest.TestCase):
             self.bootstrap.restore_from_recovery_source()
         self.assertFalse(self.asset_root.exists())
 
+    def test_drill_verifies_archive_without_touching_live_asset_root(self):
+        existing = self.asset_root / "keep.txt"
+        existing.parent.mkdir(parents=True)
+        existing.write_bytes(b"production")
+        archive = self.archive()
+        with patch.dict(os.environ, self.environment(archive), clear=False):
+            result = self.bootstrap.drill_recovery_source()
+        self.assertEqual(result["assets"], len(self.files))
+        self.assertTrue(result["verified"])
+        self.assertEqual(existing.read_bytes(), b"production")
+        self.assertEqual([path for path in self.asset_root.rglob("*") if path.is_file()], [existing])
+
+    def test_download_failure_does_not_expose_private_source(self):
+        private_url = "https://private.example.invalid/archive?secret=restricted"
+        environment = {
+            self.bootstrap.SPEC["license"]["acceptance_environment"]:
+                self.bootstrap.SPEC["license"]["required_value"],
+            self.bootstrap.SPEC["recovery"]["source_environment"]: private_url,
+            self.bootstrap.SPEC["recovery"]["sha256_environment"]: "0" * 64,
+        }
+        with patch.dict(os.environ, environment, clear=False), patch.object(
+            self.bootstrap, "urlopen", side_effect=OSError(f"failed: {private_url}")
+        ), self.assertRaises(RuntimeError) as raised:
+            self.bootstrap.drill_recovery_source()
+        self.assertNotIn(private_url, str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertFalse(self.asset_root.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

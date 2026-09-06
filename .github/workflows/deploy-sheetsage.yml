@@ -31,6 +31,13 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v6
 
+      - name: Persist weekly recovery drill
+        run: |
+          set -euo pipefail
+          uv run modal deploy services/sheetsage-worker/modal_provision.py \
+            --name sheetsage-worker-provision \
+            --strategy rolling
+
       - name: Deploy candidate and require authenticated attestation
         env:
           SMOKE_FIXTURE: ${{ inputs.smoke_fixture }}

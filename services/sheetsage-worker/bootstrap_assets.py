@@ -74,9 +74,7 @@ def _safe_extract(archive: Path, destination: Path) -> None:
                 shutil.copyfileobj(source, output)
 
 
-def restore_from_recovery_source() -> None:
-    """Restore the complete licensed model set from an owner-controlled archive."""
-    _require_license()
+def _recovery_configuration() -> tuple[str, str]:
     recovery = SPEC["recovery"]
     source = os.environ.get(recovery["source_environment"], "")
     expected_archive_sha256 = os.environ.get(recovery["sha256_environment"], "").lower()
@@ -86,23 +84,46 @@ def restore_from_recovery_source() -> None:
         character not in "0123456789abcdef" for character in expected_archive_sha256
     ):
         raise RuntimeError("SheetSage recovery archive SHA-256 is not configured")
+    return source, expected_archive_sha256
 
+
+def _download_and_verify_recovery_archive(temporary_root: Path) -> tuple[str, list[dict], Path]:
+    source, expected_archive_sha256 = _recovery_configuration()
+    archive = temporary_root / "recovery.tar"
+    staging = temporary_root / "verified"
+    staging.mkdir()
+    request = Request(source, headers={"User-Agent": "SheetSage-owner-recovery/1"})
+    try:
+        with urlopen(request, timeout=300) as response, archive.open("wb") as output:
+            shutil.copyfileobj(response, output)
+    except Exception:
+        # Do not retain the underlying URL-bearing exception in logs or alerts.
+        raise RuntimeError("owner-controlled SheetSage recovery source is unavailable") from None
+    if sha256(archive) != expected_archive_sha256:
+        raise RuntimeError("SheetSage recovery archive SHA-256 mismatch")
+    _safe_extract(archive, staging)
+    assets = _asset_inventory(staging, "owner-controlled-private-recovery", expected_archive_sha256)
+    return expected_archive_sha256, assets, staging
+
+
+def drill_recovery_source() -> dict:
+    """Verify the private recovery archive entirely in disposable storage."""
+    _require_license()
+    with tempfile.TemporaryDirectory(prefix="sheetsage-recovery-drill-") as temporary:
+        archive_sha256, assets, _ = _download_and_verify_recovery_archive(Path(temporary))
+        return {
+            "verified": True,
+            "assets": len(assets),
+            "archiveSha256": archive_sha256,
+        }
+
+
+def restore_from_recovery_source() -> None:
+    """Restore the complete licensed model set from an owner-controlled archive."""
+    _require_license()
     ASSET_ROOT.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".sheetsage-restore-", dir=ASSET_ROOT.parent) as temporary:
-        temporary_root = Path(temporary)
-        archive = temporary_root / "recovery.tar"
-        staging = temporary_root / "verified"
-        staging.mkdir()
-        request = Request(source, headers={"User-Agent": "SheetSage-owner-recovery/1"})
-        try:
-            with urlopen(request, timeout=300) as response, archive.open("wb") as output:
-                shutil.copyfileobj(response, output)
-        except Exception as error:
-            raise RuntimeError("owner-controlled SheetSage recovery source is unavailable") from error
-        if sha256(archive) != expected_archive_sha256:
-            raise RuntimeError("SheetSage recovery archive SHA-256 mismatch")
-        _safe_extract(archive, staging)
-        assets = _asset_inventory(staging, "owner-controlled-private-recovery", expected_archive_sha256)
+        expected_archive_sha256, assets, staging = _download_and_verify_recovery_archive(Path(temporary))
         (staging / SPEC["asset_manifest"]).write_text(json.dumps({
             "package": SPEC["package"],
             "assets": assets,

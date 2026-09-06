@@ -45,9 +45,15 @@ class ModalReleaseTests(unittest.TestCase):
                 "deployment_validation": validation_module,
             },
         ), patch.object(
-            modal_app.app,
-            "deploy",
-            side_effect=lambda **kwargs: events.append(("deploy", kwargs["strategy"])),
+            modal_app,
+            "deploy_app",
+            side_effect=lambda deployed_app, **kwargs: events.append(
+                (
+                    "deploy",
+                    kwargs["name"],
+                    kwargs["deployment_strategy"],
+                )
+            ),
         ), patch.object(
             modal_app,
             "deployed_candidate_endpoint_url",
@@ -59,13 +65,21 @@ class ModalReleaseTests(unittest.TestCase):
             events,
             [
                 ("smoke", "licensed.wav"),
-                ("deploy", "recreate"),
+                (
+                    "deploy",
+                    modal_app.CANDIDATE_APP_NAME,
+                    "recreate",
+                ),
                 (
                     "validate",
                     "https://workspace--sheetsage-worker-candidate-sheetsage.modal.run",
                     "a" * 64,
                 ),
-                ("deploy", "rolling"),
+                (
+                    "deploy",
+                    modal_app.APP_NAME,
+                    "rolling",
+                ),
             ],
         )
 
@@ -87,8 +101,10 @@ class ModalReleaseTests(unittest.TestCase):
             validate_deployment=reject_candidate
         )
 
-        def record_deploy(**kwargs):
-            events.append(("deploy", kwargs["name"], kwargs["strategy"]))
+        def record_deploy(deployed_app, **kwargs):
+            events.append(
+                ("deploy", kwargs["name"], kwargs["deployment_strategy"])
+            )
 
         with patch.dict(
             sys.modules,
@@ -97,7 +113,7 @@ class ModalReleaseTests(unittest.TestCase):
                 "deployment_validation": validation_module,
             },
         ), patch.object(
-            modal_app.app, "deploy", side_effect=record_deploy
+            modal_app, "deploy_app", side_effect=record_deploy
         ), patch.object(
             modal_app,
             "deployed_candidate_endpoint_url",
@@ -120,6 +136,16 @@ class ModalReleaseTests(unittest.TestCase):
                 ),
             ],
         )
+
+    def test_release_workflow_persists_scheduled_recovery_drill(self):
+        workflow = (
+            ROOT.parents[1] / ".github" / "workflows" / "deploy-sheetsage.yml"
+        ).read_text()
+        self.assertIn(
+            "modal deploy services/sheetsage-worker/modal_provision.py",
+            workflow,
+        )
+        self.assertIn("--name sheetsage-worker-provision", workflow)
 
 
 if __name__ == "__main__":

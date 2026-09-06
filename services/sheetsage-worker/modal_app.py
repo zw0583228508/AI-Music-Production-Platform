@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import modal
+from modal.runner import deploy_app
 
 from modal_config import (
     APP_NAME, ENDPOINT_LABEL, LICENSE_SECRET_NAME, MODEL_MOUNT, MODEL_VOLUME_NAME, REPOSITORY_ROOT,
@@ -66,12 +67,12 @@ def deploy_and_validate(fixture_name: str) -> dict:
         raise RuntimeError(
             "deployment validation failed: provisioning_manifest_checksum"
         )
-    app.deploy(name=CANDIDATE_APP_NAME, strategy="recreate")
+    deploy_app(app, name=CANDIDATE_APP_NAME, deployment_strategy="recreate")
     endpoint_url = deployed_candidate_endpoint_url()
     if not endpoint_url:
         raise RuntimeError("deployment validation failed: modal_endpoint")
     result = validate_deployment(endpoint_url, expected_checksum)
-    app.deploy(name=APP_NAME, strategy="rolling")
+    deploy_app(app, name=APP_NAME, deployment_strategy="rolling")
     return {
         "validated": True,
         "provider": result["provider"],

@@ -28,7 +28,8 @@
     "sha256_environment": "SHEETSAGE_RECOVERY_ARCHIVE_SHA256",
     "format": "tar",
     "ownership": "private owner-controlled archive; never publish or commit restricted weights",
-    "required_asset_count": 15
+    "required_asset_count": 15,
+    "drill_schedule": "weekly Monday 09:00 UTC"
   },
   "handcrafted_asset_source": {
     "url": "https://mega.nz/file/j9YyWbAK#LjROFI9qxGq6Om9dx9HaORd5NaiYOcV8ULVUBKB0bcg",

@@ -97,12 +97,14 @@ def main(
         print(provision_assets.remote())
     elif action == "restore":
         print(restore_assets.remote())
+    elif action == "drill":
+        print(drill_recovery_assets.remote())
     elif action == "smoke":
         if not fixture:
             raise ValueError("fixture must name a previously uploaded volume file")
         print(smoke_remote.remote(fixture))
     else:
-        raise ValueError("action must be provision, restore, or smoke")
+        raise ValueError("action must be provision, restore, drill, or smoke")
 
 def run_real_smoke() -> None:
     """Execute inference on every release, including in a reused container."""
@@ -111,3 +113,25 @@ def run_real_smoke() -> None:
         importlib.import_module("smoke")
     else:
         importlib.reload(loaded)
+
+@app.function(
+    image=image, secrets=[runtime_secret, license_secret],
+    schedule=modal.Cron("0 9 * * 1"),
+    timeout=60 * 60, max_containers=1, env=worker_environment(),
+)
+def drill_recovery_assets() -> dict:
+    """Verify recovery readiness without mounting or committing the model volume."""
+    try:
+        from bootstrap_assets import drill_recovery_source
+        result = drill_recovery_source()
+    except Exception:
+        raise RuntimeError(
+            "SheetSage recovery drill failed; verify the private archive, its access, "
+            "the configured archive checksum, and the committed asset manifest"
+        ) from None
+    return {
+        "verified": result["verified"],
+        "assets": result["assets"],
+        "archiveSha256": result["archiveSha256"],
+        "productionVolumeMounted": False,
+    }

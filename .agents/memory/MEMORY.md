@@ -24,3 +24,4 @@
 - [MOSS media-runtime conflict](moss-media-runtime-conflict.md) — pinned MOSS and moss-audio revisions require incompatible TorchCodec lines; block rather than silently overriding either upstream.
 - [Modal container path portability](modal-container-path-portability.md) — Dockerfile-backed modules must resolve paths under both the repo tree and Modal’s flat `/app` layout.
 - [Deployment attestation gates](deployment-attestation-gates.md) — couple deploy and live validation; never send credentials to caller-selected endpoints or redirects.
+- [Private recovery drills](private-recovery-drills.md) — verify owner archives in disposable storage with no production volume mount, and suppress URL-bearing exception chains.
