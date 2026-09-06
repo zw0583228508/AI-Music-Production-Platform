@@ -6,7 +6,7 @@ import modal
 
 APP_NAME = os.environ.get("BEAT_THIS_MODAL_APP_NAME", "beat-this-worker").strip()
 ENDPOINT_LABEL = os.environ.get("BEAT_THIS_MODAL_ENDPOINT_LABEL", "beat-this").strip()
-if not re.fullmatch(r"beat-this(?:-candidate)?", APP_NAME):
+if APP_NAME not in {"beat-this-worker", "beat-this-candidate"}:
     raise RuntimeError("invalid Beat This Modal app name")
 if not re.fullmatch(r"beat-this(?:-candidate)?", ENDPOINT_LABEL):
     raise RuntimeError("invalid Beat This Modal endpoint label")

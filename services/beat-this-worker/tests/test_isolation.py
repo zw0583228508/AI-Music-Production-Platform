@@ -79,6 +79,10 @@ class BeatThisIsolationTests(unittest.TestCase):
 
     def test_modal_boundary_reuses_shared_secret_and_has_private_l4_volume(self):
         source = (ROOT / "modal_app.py").read_text()
+        self.assertIn(
+            '{"beat-this-worker", "beat-this-candidate"}',
+            source,
+        )
         self.assertIn('VOLUME_NAME = "beat-this-models-smoke-v1"', source)
         self.assertIn('SECRET_NAME = "music-ai-worker-runtime"', source)
         self.assertIn('IDENTITY_SECRET_NAME = "beat-this-deployment-identity-v1"', source)
