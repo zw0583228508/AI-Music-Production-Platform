@@ -1592,6 +1592,268 @@ def evidence_errors(rows, root):
                 "MOSS_MUSIC: BLOCKED_UPSTREAM lacks exact clean-resolver/native-"
                 "failure/source/model/license/no-downstream evidence"
             )
+    hafm_row = by_name.get("HAFM", {})
+    hafm_revision = "d9aa19a5820a4c1563ab405d437933480f71d5b9"
+    if hafm_row.get("codeRevision") == hafm_revision:
+        base = Path("services/hafm-worker")
+        status = read_json(base / "installation-status.json")
+        manifest = read_json(base / "model_manifest.json")
+        license_manifest = read_json(base / "license_manifest.json")
+        authorization = read_json(base / "fixture-authorization.json")
+        failure = read_json(
+            base / "release-evidence/compatibility-failure.json"
+        )
+        retained_compatibility = read_json(
+            base / "release-evidence/compatibility-evidence.json"
+        )
+        retained_assets = read_json(
+            base / "release-evidence/model-assets.json"
+        )
+        try:
+            transcript = (
+                root / base / "release-evidence/compatibility-failure.txt"
+            ).read_bytes()
+            compatibility_source = (
+                root / base / "compatibility.py"
+            ).read_text()
+            smoke_source = (root / base / "smoke.py").read_text()
+            app_source = (root / base / "app.py").read_text()
+            docker = (root / base / "Dockerfile").read_text()
+            compatibility_preimage = (
+                root / base / "release-evidence/compatibility-evidence.json"
+            ).read_bytes()
+            assets_preimage = (
+                root / base / "release-evidence/model-assets.json"
+            ).read_bytes()
+            probe_excerpt = (
+                root / base / "release-evidence/modal-probe.txt"
+            ).read_bytes()
+            image_digest = hashlib.sha256()
+            for evidence_name in (
+                "Dockerfile",
+                "requirements.txt",
+                "model_manifest.json",
+                "license_manifest.json",
+                "fixture-authorization.json",
+                "app.py",
+                "bootstrap_assets.py",
+                "compatibility.py",
+                "inference.py",
+                "modal_app.py",
+                "modal_compatibility.py",
+                "modal_config.py",
+                "modal_provision.py",
+                "smoke.py",
+            ):
+                image_digest.update(
+                    evidence_name.encode()
+                    + b"\0"
+                    + (root / base / evidence_name).read_bytes()
+                    + b"\0"
+                )
+            current_image_evidence = "sha256:" + image_digest.hexdigest()
+            private_audio_in_git = any(
+                path.is_file()
+                for pattern in ("*.wav", "*.mp3", "*.flac", "*.m4a")
+                for path in (root / base).rglob(pattern)
+            )
+        except OSError:
+            transcript = b""
+            compatibility_source = smoke_source = app_source = docker = ""
+            current_image_evidence = ""
+            compatibility_preimage = assets_preimage = probe_excerpt = b""
+            private_audio_in_git = True
+        evidence = status.get("evidence", {})
+        compatibility = status.get("compatibility", {})
+        fixture = status.get("fixture", {})
+        model = status.get("model", {})
+        local = status.get("providers", {}).get("HAFM", {})
+        blocked_flags = (
+            "runtimeBuilt",
+            "secretsConfigured",
+            "realSmokePassed",
+            "nonSilentOutputVerified",
+            "endpointDeployed",
+            "endpointConfigured",
+            "healthReady",
+            "promotionSigned",
+            "apiConnected",
+        )
+        required = [
+            hafm_row.get("finalStatus") == "BLOCKED_UPSTREAM",
+            hafm_row.get("category") == "generation",
+            hafm_row.get("codeRepository")
+            == "https://github.com/HackerHyper/HAFM",
+            hafm_row.get("modelRepository")
+            == "https://huggingface.co/zhuqijian/HAFM",
+            hafm_row.get("modelRevision")
+            == "1653c3c7bffdc9b4b2d57d8b6e4f5bb3002a64fe",
+            hafm_row.get("sourcePinned") is True,
+            hafm_row.get("assetsDownloaded") is True,
+            hafm_row.get("assetsChecksummed") is True,
+            hafm_row.get("assetManifestCreated") is True,
+            hafm_row.get("volumeProvisioned") is True,
+            hafm_row.get("licenseStatus") == "COMMERCIAL",
+            hafm_row.get("promotionRequired") is True,
+            all(hafm_row.get(flag) is False for flag in blocked_flags),
+            any(
+                "configs/ar.yaml" in blocker
+                for blocker in hafm_row.get("blockers", [])
+            ),
+            status.get("schemaVersion") == 2,
+            status.get("provider") == "HAFM",
+            status.get("classification") == "BLOCKED_UPSTREAM",
+            status.get("source", {}).get("revision") == hafm_revision,
+            status.get("source", {}).get("revisionMatched") is True,
+            status.get("source", {}).get("publishedFileHashesMatched") is True,
+            status.get("source", {}).get("runtimeContractComplete") is False,
+            status.get("source", {}).get("missingRuntimeFiles")
+            == [
+                "configs/ar.yaml",
+                "models/ar_singsong.py",
+                "data/retokenize.py",
+                "utils/audio_utils.py",
+            ],
+            model.get("revision")
+            == "1653c3c7bffdc9b4b2d57d8b6e4f5bb3002a64fe",
+            model.get("treeSha256")
+            == "79d4812169b7e71196f0d03babcffcf956a628b9cbde02eb75ec9bfc2074b6c8",
+            model.get("assetManifestSha256")
+            == "999b7dd6990ec71cb24764c95279dc2d3efef7fa86aad6c584f75d93e873e8d5",
+            model.get("requiredAssetCount") == 7,
+            model.get("assetsReady") is True,
+            fixture.get("authorizationConfirmed") is True,
+            fixture.get("authorizationEvidenceSha256")
+            == "385d975b945886f1ad2e6661a0588213b3ecf84165f40fda6932a995ce6ae197",
+            fixture.get("sourceUploadSha256")
+            == "f2d5520e2a608fbc73f51077c9714de69f01cccf0c780056e460ec15e04b16ef",
+            fixture.get("fixtureSha256")
+            == "3358e43121bf2c22ebd9dc0c424f2a4e071df932ed90d405f9095cac68232265",
+            fixture.get("durationSeconds") == 15.0,
+            fixture.get("sampleRate") == 16000,
+            fixture.get("channels") == 1,
+            fixture.get("sampleWidthBits") == 16,
+            fixture.get("bytes") == 480078,
+            fixture.get("finite") is True,
+            fixture.get("nonSilent") is True,
+            fixture.get("identityMatched") is True,
+            fixture.get("audioCommittedToGit") is False,
+            authorization.get("authorization", {}).get("confirmed") is True,
+            authorization.get("authorization", {}).get(
+                "confirmedDuringSessionLocalDate"
+            ) == "2026-09-07",
+            authorization.get("authorization", {}).get("sessionTimezone")
+            == "Asia/Jerusalem",
+            authorization.get("authorization", {}).get(
+                "utcCalendarDateAtRetention"
+            ) == "2026-09-06",
+            authorization.get("derivedFixture", {}).get("sha256")
+            == fixture.get("fixtureSha256"),
+            authorization.get("audioCommittedToGit") is False,
+            not private_audio_in_git,
+            compatibility.get("imageEvidence")
+            == "sha256:bb3ea7679fab888113d42c252fe9497960961214dd176bde4848efb3fa34e23e",
+            compatibility.get("imageEvidence") == current_image_evidence,
+            compatibility.get("modalRunAppId")
+            == "ap-UTS20Z77lonwYTc1Lfm2m4",
+            compatibility.get("modalImageBuildId")
+            == "im-v4jr4FcbxxsmVoKCoIUGyn",
+            compatibility.get("modalFunctionImageId")
+            == "im-Nzb0k10OAWvlHqEqCysx6x",
+            compatibility.get("imageBuilt") is True,
+            compatibility.get("verifyFunctionCreated") is True,
+            compatibility.get("verifyFunctionExecuted") is True,
+            compatibility.get("pipCheckPassed") is True,
+            compatibility.get("pipCheckOutput")
+            == "No broken requirements found.",
+            compatibility.get("passed") is False,
+            compatibility.get("compatibilityEvidenceSha256")
+            == "219eaf085989b6241b4e63eed65271f4cc88074c8484382835175b1e968c33f1",
+            compatibility.get("modelAssetsSha256")
+            == "999b7dd6990ec71cb24764c95279dc2d3efef7fa86aad6c584f75d93e873e8d5",
+            compatibility.get("normalizedProbeSha256")
+            == "240b96052368f3adad57f04ac458c074fe6d6512f3349d708c6b8204e7167e8d",
+            compatibility.get("transcriptSha256")
+            == "3c098e18ac2d9d03edc16c879019fa19aeb3d5c1bd77bcebad03209e29972f75",
+            compatibility.get("fullModalRunLogSha256")
+            == "f8f43d2478fe3ea6a4d5192e374c5fc44a9dfed02465e1a34e4ef37715d8ff39",
+            hashlib.sha256(transcript).hexdigest()
+            == compatibility.get("transcriptSha256"),
+            hashlib.sha256(compatibility_preimage).hexdigest()
+            == compatibility.get("compatibilityEvidenceSha256"),
+            hashlib.sha256(assets_preimage).hexdigest()
+            == compatibility.get("modelAssetsSha256"),
+            hashlib.sha256(probe_excerpt).hexdigest()
+            == compatibility.get("normalizedProbeSha256"),
+            retained_compatibility.get("classification")
+            == "BLOCKED_UPSTREAM",
+            retained_compatibility.get("compatible") is False,
+            retained_compatibility.get("imageEvidence")
+            == compatibility.get("imageEvidence"),
+            retained_compatibility.get("inferenceAttempted") is False,
+            retained_compatibility.get("model", {}).get("assetsReady") is True,
+            retained_compatibility.get("fixture", {}).get("identityMatches")
+            is True,
+            retained_assets.get("model", {}).get("revision")
+            == model.get("revision"),
+            retained_assets.get("treeSha256") == model.get("treeSha256"),
+            len(retained_assets.get("files", [])) == 22,
+            failure.get("classification") == "BLOCKED_UPSTREAM",
+            failure.get("modal", {}).get("expectedImageEvidence")
+            == compatibility.get("imageEvidence"),
+            failure.get("modal", {}).get("runAppId")
+            == compatibility.get("modalRunAppId"),
+            failure.get("modal", {}).get("imageBuildId")
+            == compatibility.get("modalImageBuildId"),
+            failure.get("modal", {}).get("functionImageId")
+            == compatibility.get("modalFunctionImageId"),
+            failure.get("execution", {}).get("imageBuilt") is True,
+            failure.get("execution", {}).get("verifyFunctionCreated") is True,
+            failure.get("execution", {}).get("verifyFunctionExecuted") is True,
+            failure.get("execution", {}).get("pipCheckPassed") is True,
+            failure.get("execution", {}).get("compatibilityPassed") is False,
+            failure.get("execution", {}).get("inferenceAttempted") is False,
+            failure.get("source", {}).get("missingRuntimeFiles")
+            == status.get("source", {}).get("missingRuntimeFiles"),
+            failure.get("model", {}).get("assetsReady") is True,
+            failure.get("fixture", {}).get("identityMatched") is True,
+            all(
+                value is False
+                for value in failure.get("downstream", {}).values()
+            ),
+            manifest.get("source", {}).get("revision") == hafm_revision,
+            manifest.get("source", {}).get("documentedEntrypoint")
+            == "infer_simple.py",
+            manifest.get("source", {}).get("publishedEntrypoint")
+            == "infer.py",
+            len(manifest.get("model", {}).get("requiredAssets", {})) == 7,
+            manifest.get("runtime", {}).get("inferenceDependencyStatus")
+            == "UNPUBLISHED_UPSTREAM",
+            license_manifest.get("license") == "Apache-2.0",
+            license_manifest.get("fixtureAudioCommittedToGit") is False,
+            evidence.get("licensedFixtureVerified") is True,
+            evidence.get("compatibilityImageBuilt") is True,
+            evidence.get("runtimeBuilt") is False,
+            evidence.get("modelInferenceAttempted") is False,
+            evidence.get("realSmokePassed") is False,
+            evidence.get("promotionSigned") is False,
+            evidence.get("endpointDeployed") is False,
+            evidence.get("healthReady") is False,
+            evidence.get("apiConnected") is False,
+            local.get("classification") == "BLOCKED_UPSTREAM",
+            local.get("evidence", {}).get("licensedFixtureVerified") is True,
+            local.get("evidence", {}).get("modelInferenceAttempted") is False,
+            "inferenceAttempted" in compatibility_source,
+            'compatibility.get("compatible") is not True' in smoke_source,
+            "if not assets_ok or not compatible or not smoke_ok" in app_source,
+            "COPY services/hafm-worker/ /app/" not in docker,
+            "/app/compatibility.py" not in docker,
+        ]
+        if not all(required):
+            errors.append(
+                "HAFM: BLOCKED_UPSTREAM lacks exact licensed-fixture/model/"
+                "source-gap/remote-probe/no-downstream evidence"
+            )
     for name in ("MUSICGEN_LARGE", "MUSICGEN_MELODY_LARGE"):
         row = by_name.get(name, {})
         if row.get("sourcePinned") and row.get("finalStatus") != "BLOCKED_NO_WEIGHTS":

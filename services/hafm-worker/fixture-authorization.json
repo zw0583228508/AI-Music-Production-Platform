@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "provider": "HAFM",
+  "authorization": {
+    "attestation": "user-confirmed-owner-or-authorized",
+    "authorizedUse": "private HAFM validation only",
+    "confirmed": true,
+    "confirmedDuringSessionLocalDate": "2026-09-07",
+    "sessionTimezone": "Asia/Jerusalem",
+    "utcCalendarDateAtRetention": "2026-09-06"
+  },
+  "sourceUpload": {
+    "format": "mp3",
+    "bytes": 2047470,
+    "sha256": "f2d5520e2a608fbc73f51077c9714de69f01cccf0c780056e460ec15e04b16ef",
+    "durationSeconds": 127.966875,
+    "sampleRate": 44100,
+    "channels": 2
+  },
+  "derivedFixture": {
+    "path": "/var/lib/hafm/smoke/real-vocal.wav",
+    "format": "wav",
+    "codec": "pcm_s16le",
+    "bytes": 480078,
+    "sha256": "3358e43121bf2c22ebd9dc0c424f2a4e071df932ed90d405f9095cac68232265",
+    "durationSeconds": 15.0,
+    "sampleRate": 16000,
+    "channels": 1,
+    "sampleWidthBits": 16,
+    "peakAmplitude": 0.196075439453125,
+    "rmsAmplitude": 0.028137863840669245,
+    "finite": true,
+    "nonSilent": true
+  },
+  "audioCommittedToGit": false
+}

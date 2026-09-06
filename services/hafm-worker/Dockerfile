@@ -22,7 +22,9 @@ RUN git clone https://github.com/HackerHyper/HAFM.git /opt/hafm \
  && test ! -e /opt/hafm/requirements.txt \
  && grep -F "python infer_simple.py" /opt/hafm/README.md
 WORKDIR /app
-COPY services/hafm-worker/ /app/
+COPY services/hafm-worker/*.py /app/
+COPY services/hafm-worker/model_manifest.json services/hafm-worker/license_manifest.json services/hafm-worker/fixture-authorization.json /app/
+COPY services/hafm-worker/Dockerfile services/hafm-worker/requirements.txt /app/
 RUN useradd --system hafm && mkdir -p /var/lib/hafm/{models,smoke,artifacts} && chown -R hafm:hafm /app /var/lib/hafm
 USER hafm
 CMD ["/opt/hafm-venv/bin/python","-m","uvicorn","app:app","--host","0.0.0.0","--port","8018"]

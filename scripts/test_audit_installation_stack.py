@@ -80,6 +80,41 @@ class AuditFixtures(unittest.TestCase):
         errors = audit.audit(m, root=Path("/definitely/missing"))
         self.assertTrue(any("MOSS_MUSIC" in error for error in errors))
 
+    def test_hafm_blocked_requires_retained_licensed_fixture_probe(self):
+        m = self.matrix(self.row())
+        row = next(
+            item for item in m["providers"]
+            if item["provider"] == "HAFM"
+        )
+        row.update({
+            "category": "generation",
+            "codeRepository": "https://github.com/HackerHyper/HAFM",
+            "codeRevision": (
+                "d9aa19a5820a4c1563ab405d437933480f71d5b9"
+            ),
+            "modelRepository": "https://huggingface.co/zhuqijian/HAFM",
+            "modelRevision": (
+                "1653c3c7bffdc9b4b2d57d8b6e4f5bb3002a64fe"
+            ),
+            "sourcePinned": True,
+            "assetsDownloaded": True,
+            "assetsChecksummed": True,
+            "assetManifestCreated": True,
+            "volumeProvisioned": True,
+            "licenseStatus": "COMMERCIAL",
+            "promotionRequired": True,
+            "finalStatus": "BLOCKED_UPSTREAM",
+        })
+        errors = audit.audit(m, root=Path("/definitely/missing"))
+        self.assertTrue(any("HAFM" in error for error in errors))
+
+    def test_hafm_retained_probe_extension_is_not_git_ignored(self):
+        probe = Path(
+            "services/hafm-worker/release-evidence/modal-probe.txt"
+        )
+        self.assertTrue(probe.is_file())
+        self.assertNotEqual(probe.suffix, ".log")
+
     def test_demucs_ready_requires_retained_release_attestation(self):
         m=self.matrix(self.row())
         r=next(x for x in m["providers"] if x["provider"]=="DEMUCS")
