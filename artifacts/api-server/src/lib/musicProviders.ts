@@ -127,11 +127,24 @@ export type ArrangementProviderOutput = {
 
 export class ProviderUnavailableError extends Error {
   constructor(public readonly providerId: string) {
-    super(`Provider ${providerId} is not configured or available`);
+    super(`Provider ${providerId} is unavailable (not configured or available)`);
   }
 }
 
+const LICENSE_BLOCKED_PROVIDER_IDS = new Set<string>(["BS_ROFORMER"]);
+
+function providerRoutingAuthorized(providerId: string): boolean {
+  return !LICENSE_BLOCKED_PROVIDER_IDS.has(providerId) &&
+    providerId !== "LADA_BAND" &&
+    (providerId !== "ANYACCOMP" || anyAccompCommercialUseAuthorized());
+}
+
 function assertProviderCommercialUseAuthorized(providerId: string): void {
+  if (LICENSE_BLOCKED_PROVIDER_IDS.has(providerId)) {
+    throw new ProviderUnavailableError(
+      `${providerId} (BLOCKED_LICENSE until checkpoint-owner rights are verified)`,
+    );
+  }
   if (providerId === "LADA_BAND") {
     throw new ProviderUnavailableError(
       "LADA_BAND (non-commercial research-only provider is excluded from production routing)",
@@ -954,6 +967,7 @@ function remoteEnvironmentPrefix(providerId: string): string {
 }
 
 function remoteProviderEndpoint(providerId: string): string | undefined {
+  if (!providerRoutingAuthorized(providerId)) return undefined;
   const prefix = remoteEnvironmentPrefix(providerId);
   const key = providerId.replace(/[^A-Z0-9]/g, "_");
   return process.env[`MUSIC_PROVIDER_${key}_URL`] ??
@@ -962,6 +976,7 @@ function remoteProviderEndpoint(providerId: string): string | undefined {
 }
 
 function remoteProviderToken(providerId: string): string | undefined {
+  if (!providerRoutingAuthorized(providerId)) return undefined;
   const prefix = remoteEnvironmentPrefix(providerId);
   const key = providerId.replace(/[^A-Z0-9]/g, "_");
   return process.env[`MUSIC_PROVIDER_${key}_TOKEN`] ??
@@ -974,6 +989,7 @@ export async function cancelRemoteProviderJob(
   providerId: string,
   cancelUrlValue: string,
 ): Promise<void> {
+  assertProviderCommercialUseAuthorized(providerId);
   const endpoint = remoteProviderEndpoint(providerId);
   if (!endpoint) throw new Error(`${providerId} worker is not configured`);
   const endpointUrl = new URL(endpoint);
@@ -1280,12 +1296,13 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
     private readonly endpoint: string | undefined,
     private readonly token: string | undefined,
   ) {
-    const cached = endpoint
+    const routingAuthorized = providerRoutingAuthorized(definition.id);
+    const cached = routingAuthorized && endpoint
       ? providerHealthCache.get(`${definition.id}:${endpoint}`)
       : undefined;
-    this.readiness = cached?.snapshot ?? initialProviderReadiness(
-      Boolean(endpoint),
-    );
+    this.readiness = routingAuthorized
+      ? cached?.snapshot ?? initialProviderReadiness(Boolean(endpoint))
+      : blockedProviderReadiness(definition.id);
   }
 
   get available(): boolean {
@@ -1300,6 +1317,11 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
   }
 
   async checkHealth(force = false): Promise<ProviderRuntimeSnapshot> {
+    if (!providerRoutingAuthorized(this.definition.id)) {
+      this.attestedChecksum = null;
+      this.readiness = blockedProviderReadiness(this.definition.id);
+      return this.readiness;
+    }
     if (!this.endpoint) {
       this.readiness = initialProviderReadiness(false);
       return this.readiness;
@@ -1349,8 +1371,9 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
         typeof value === "string" && Boolean(value.trim())
       )?.trim() ?? null;
       const strictGpuAttestation = isGpuAttestedProvider(this.definition.id);
-      const commercialUseAuthorized = this.definition.id !== "LADA_BAND" &&
-        (this.definition.id !== "ANYACCOMP" || anyAccompCommercialUseAuthorized());
+      const commercialUseAuthorized = providerRoutingAuthorized(
+        this.definition.id,
+      );
       const expectedVersion = strictGpuAttestation
         ? expectedGpuModelVersion(this.definition.id, this.definition.modelVersion)
         : this.definition.modelVersion;
@@ -1405,7 +1428,7 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
             : strictGpuAttestation && !exactModel
               ? `GPU worker model version does not match its immutable deployment pin.`
               : strictGpuAttestation && !commercialUseAuthorized
-                ? "AnyAccomp is blocked until explicit commercial-use authorization is configured."
+                ? "Provider routing is blocked until its commercial-use license is verified."
               : strictGpuAttestation && (
                   !expectedChecksum ||
                   !isSha256(reportedChecksum) ||
@@ -1456,13 +1479,10 @@ class HttpMusicGenerationProvider implements MusicGenerationProvider {
     } catch (error) {
       this.attestedChecksum = null;
       this.readiness = {
-        availability: (this.definition.id === "LADA_BAND") ||
-            (this.definition.id === "ANYACCOMP" &&
-              !anyAccompCommercialUseAuthorized())
-          ? "unavailable"
-          : "configured",
-        configurationReady: this.definition.id !== "LADA_BAND" &&
-          (this.definition.id !== "ANYACCOMP" || anyAccompCommercialUseAuthorized()),
+        availability: providerRoutingAuthorized(this.definition.id)
+          ? "configured"
+          : "unavailable",
+        configurationReady: providerRoutingAuthorized(this.definition.id),
         checkpointReady: false,
         runtimeReady: false,
         smokeTested: false,
@@ -1740,6 +1760,9 @@ export function selectMusicProvider(
   registry: MusicGenerationProvider[],
   request: RoutingRequest,
 ): MusicGenerationProvider {
+  if (request.requestedProvider) {
+    assertProviderCommercialUseAuthorized(request.requestedProvider);
+  }
   const compatible = registry.filter((provider) => {
     const definition = provider.definition;
     return (
@@ -1747,8 +1770,7 @@ export function selectMusicProvider(
       provider.readiness.checkpointReady &&
       provider.readiness.runtimeReady &&
       provider.readiness.healthStatus === "healthy" &&
-      (definition.id !== "ANYACCOMP" || anyAccompCommercialUseAuthorized()) &&
-      definition.id !== "LADA_BAND" &&
+      providerRoutingAuthorized(definition.id) &&
       definition.tasks.includes(request.task) &&
       definition.speeds.includes(request.speed) &&
       (request.hardware === "AUTO" ||
@@ -1784,6 +1806,7 @@ export const providerDefinitions: ProviderDefinition[] = [
     hardware: ["GPU"],
     speeds: ["BALANCED", "QUALITY"],
     styles: [],
+    routingStatus: "BLOCKED_LICENSE",
   },
   {
     id: "ALL_IN_ONE",
@@ -1897,8 +1920,13 @@ export const providerDefinitions: ProviderDefinition[] = [
 
 export function createProviderRegistry(): MusicGenerationProvider[] {
   return providerDefinitions.map((definition) => {
-    const endpoint = remoteProviderEndpoint(definition.id);
-    const token = remoteProviderToken(definition.id);
+    const routingAuthorized = providerRoutingAuthorized(definition.id);
+    const endpoint = routingAuthorized
+      ? remoteProviderEndpoint(definition.id)
+      : undefined;
+    const token = routingAuthorized
+      ? remoteProviderToken(definition.id)
+      : undefined;
     return new HttpMusicGenerationProvider(definition, endpoint, token);
   });
 }
@@ -1940,6 +1968,14 @@ function initialProviderReadiness(configured: boolean): ProviderRuntimeSnapshot 
   };
 }
 
+function blockedProviderReadiness(providerId: string): ProviderRuntimeSnapshot {
+  return {
+    ...initialProviderReadiness(false),
+    healthStatus: "unhealthy",
+    message: `${providerId} is BLOCKED_LICENSE until checkpoint-owner rights are verified.`,
+  };
+}
+
 function providerHealthUrl(
   providerId: MusicProviderId,
   endpoint: string,
@@ -1959,7 +1995,11 @@ export async function verifyProviderRegistry(
   registry = createProviderRegistry(),
   force = false,
 ): Promise<MusicGenerationProvider[]> {
-  await Promise.all(registry.map((provider) => provider.checkHealth(force)));
+  await Promise.all(registry.map((provider) =>
+    providerRoutingAuthorized(provider.definition.id)
+      ? provider.checkHealth(force)
+      : Promise.resolve(provider.readiness)
+  ));
   return registry;
 }
 
@@ -1973,6 +2013,7 @@ type ProviderDefinition = {
   hardware: Exclude<GenerationHardware, "AUTO">[];
   speeds: GenerationSpeed[];
   styles: string[];
+  routingStatus?: "ACTIVE" | "BLOCKED_LICENSE";
 };
 
 export type ProviderGenerationInput = {
@@ -2154,29 +2195,35 @@ function isSha256(value: unknown): value is string {
 }
 
 export function providerCatalog(registry: MusicGenerationProvider[]) {
-  return registry.map((provider) => ({
-    id: provider.definition.id,
-    name: provider.definition.displayName,
-    modelVersion: provider.definition.modelVersion,
-    tasks: provider.definition.tasks,
-    hardware: provider.definition.hardware,
-    speeds: provider.definition.speeds,
-    available: provider.available,
-    status: provider.readiness.availability,
-    configured: provider.readiness.configurationReady,
-    checkpointReady: provider.readiness.checkpointReady,
-    runtimeReady: provider.readiness.runtimeReady,
-    smokeTested: provider.readiness.smokeTested,
-    reportedVersion: provider.readiness.reportedVersion,
-    reportedChecksum: provider.readiness.reportedChecksum ?? null,
-    runtimeProvenance: provider.readiness.runtimeProvenance ?? null,
-    lastHealth: {
-      status: provider.readiness.healthStatus,
-      checkedAt: provider.readiness.checkedAt,
-      latencyMs: provider.readiness.latencyMs,
-      message: provider.readiness.message,
-    },
-  }));
+  return registry.map((provider) => {
+    const routingAuthorized = providerRoutingAuthorized(provider.definition.id);
+    const blocked = blockedProviderReadiness(provider.definition.id);
+    const readiness = routingAuthorized ? provider.readiness : blocked;
+    return {
+      id: provider.definition.id,
+      name: provider.definition.displayName,
+      modelVersion: provider.definition.modelVersion,
+      tasks: provider.definition.tasks,
+      hardware: provider.definition.hardware,
+      speeds: provider.definition.speeds,
+      routingStatus: provider.definition.routingStatus ?? "ACTIVE",
+      available: routingAuthorized && provider.available,
+      status: readiness.availability,
+      configured: readiness.configurationReady,
+      checkpointReady: readiness.checkpointReady,
+      runtimeReady: readiness.runtimeReady,
+      smokeTested: readiness.smokeTested,
+      reportedVersion: readiness.reportedVersion,
+      reportedChecksum: readiness.reportedChecksum ?? null,
+      runtimeProvenance: readiness.runtimeProvenance ?? null,
+      lastHealth: {
+        status: readiness.healthStatus,
+        checkedAt: readiness.checkedAt,
+        latencyMs: readiness.latencyMs,
+        message: readiness.message,
+      },
+    };
+  });
 }
 
 function normalizeSections(value: unknown): ArrangementSection[] {

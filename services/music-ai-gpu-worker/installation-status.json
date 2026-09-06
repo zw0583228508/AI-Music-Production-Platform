@@ -136,6 +136,7 @@
         "checkpointBootstrapBlocked": true,
         "modalDeploymentBlocked": true,
         "workerLicenseGateEnforced": true,
+        "apiRegistryLicenseGateEnforced": true,
         "deploymentStopEvidenceSource": "services/music-ai-gpu-worker/release-evidence/bs-roformer/deployment-stopped-v1.json",
         "deploymentStoppedAt": "2026-09-06T18:49:44Z",
         "endpointDeployed": false,

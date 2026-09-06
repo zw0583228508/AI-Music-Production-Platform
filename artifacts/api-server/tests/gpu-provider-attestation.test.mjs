@@ -104,6 +104,10 @@ after(async () => {
   delete process.env.MUSIC_PROVIDER_BS_ROFORMER_PROMOTION_PUBLIC_KEY;
   delete process.env.BS_ROFORMER_API_URL;
   delete process.env.MUSIC_PROVIDER_BS_ROFORMER_URL;
+  delete process.env.MUSIC_PROVIDER_BS_ROFORMER_TOKEN;
+  delete process.env.MUSIC_PROVIDER_BS_ROFORMER_HEALTH_URL;
+  delete process.env.MUSIC_PROVIDER_GATEWAY_URL;
+  delete process.env.MUSIC_PROVIDER_GATEWAY_TOKEN;
   delete process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY;
   delete process.env.MUSIC_PROVIDER_ACE_STEP_TOKEN;
   delete process.env.MUSIC_AI_WORKER_TOKEN;
@@ -664,8 +668,12 @@ test("MT3 requires exact signed deployment identity before every analysis POST",
     "DEMUCS_API_URL",
     "MUSIC_PROVIDER_BS_ROFORMER_ENDPOINT",
     "MUSIC_PROVIDER_BS_ROFORMER_URL",
+    "MUSIC_PROVIDER_BS_ROFORMER_TOKEN",
+    "MUSIC_PROVIDER_BS_ROFORMER_HEALTH_URL",
     "BS_ROFORMER_API_URL",
     "BS_ROFORMER_SW_API_URL",
+    "MUSIC_PROVIDER_GATEWAY_URL",
+    "MUSIC_PROVIDER_GATEWAY_TOKEN",
     "MUSIC_PROVIDER_MR_MT3_URL",
     "MR_MT3_API_URL",
     "MUSIC_PROVIDER_YOUR_MT3_URL",
@@ -915,12 +923,19 @@ test("BS-RoFormer retains signed candidate validation but is unroutable while li
     for (const key of endpointKeys) delete process.env[key];
     process.env.MUSIC_PROVIDER_BS_ROFORMER_ENDPOINT = endpointOrigin;
     process.env.MUSIC_PROVIDER_BS_ROFORMER_URL = endpointOrigin;
+    process.env.MUSIC_PROVIDER_BS_ROFORMER_TOKEN = "blocked-provider-token";
+    process.env.MUSIC_PROVIDER_BS_ROFORMER_HEALTH_URL =
+      `${endpointOrigin}/health?provider=BS_ROFORMER`;
     process.env.BS_ROFORMER_API_URL = endpointOrigin;
     process.env.BS_ROFORMER_SW_API_URL = endpointOrigin;
+    process.env.MUSIC_PROVIDER_GATEWAY_URL = endpointOrigin;
+    process.env.MUSIC_PROVIDER_GATEWAY_TOKEN = "blocked-gateway-token";
     process.env.BS_ROFORMER_API_TOKEN = "blocked-api-token";
     process.env.BS_ROFORMER_SW_API_TOKEN = "blocked-sw-token";
     process.env.MUSIC_AI_WORKER_TOKEN = "blocked-shared-token";
     process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY = promotionPublicKey;
+    process.env.MUSIC_PROVIDER_BS_ROFORMER_PROMOTION_PUBLIC_KEY =
+      promotionPublicKey;
     process.env.MUSIC_PROVIDER_BS_ROFORMER_PROMOTION_BUNDLE =
       JSON.stringify(signedBundle());
     health = exactHealth();
@@ -931,6 +946,61 @@ test("BS-RoFormer retains signed candidate validation but is unroutable while li
     assert.equal(blockedDescriptor.status, "unavailable");
     assert.equal(blockedDescriptor.license, "UNVERIFIED checkpoint rights");
     assert.match(blockedDescriptor.notes, /BLOCKED_LICENSE/);
+    const registry = createProviderRegistry();
+    const blockedProvider = registry.find(
+      (provider) => provider.definition.id === "BS_ROFORMER",
+    );
+    // Registry construction above observes every exact, legacy, shared-token,
+    // and gateway alias. Remove process-global fallbacks before the first await
+    // so concurrently running provider tests cannot inherit the BS fixture.
+    for (const key of [
+      "MUSIC_PROVIDER_BS_ROFORMER_URL",
+      "MUSIC_PROVIDER_BS_ROFORMER_TOKEN",
+      "MUSIC_PROVIDER_BS_ROFORMER_HEALTH_URL",
+      "BS_ROFORMER_API_URL",
+      "MUSIC_PROVIDER_GATEWAY_URL",
+      "MUSIC_PROVIDER_GATEWAY_TOKEN",
+      "MUSIC_AI_WORKER_TOKEN",
+      "MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY",
+    ]) {
+      delete process.env[key];
+    }
+    assert.ok(blockedProvider);
+    assert.equal(blockedProvider.available, false);
+    assert.equal(blockedProvider.readiness.availability, "unavailable");
+    assert.equal(blockedProvider.readiness.configurationReady, false);
+    assert.equal(blockedProvider.readiness.healthStatus, "unhealthy");
+    assert.match(blockedProvider.readiness.message, /BLOCKED_LICENSE/);
+    await verifyProviderRegistry([blockedProvider], true);
+    const blockedCatalogEntry = providerCatalog([blockedProvider])[0];
+    assert.equal(blockedCatalogEntry.routingStatus, "BLOCKED_LICENSE");
+    assert.equal(blockedCatalogEntry.available, false);
+    assert.equal(blockedCatalogEntry.status, "unavailable");
+    assert.equal(blockedCatalogEntry.configured, false);
+    assert.equal(blockedCatalogEntry.checkpointReady, false);
+    assert.equal(blockedCatalogEntry.runtimeReady, false);
+    assert.equal(blockedCatalogEntry.lastHealth.status, "unhealthy");
+    assert.throws(() => selectMusicProvider([blockedProvider], {
+      task: "SEPARATION",
+      requestedProvider: "BS_ROFORMER",
+      hardware: "GPU",
+      speed: "BALANCED",
+    }), /BLOCKED_LICENSE|checkpoint-owner rights/);
+    await assert.rejects(
+      () => blockedProvider.generate({}),
+      /BLOCKED_LICENSE|checkpoint-owner rights/,
+    );
+    await assert.rejects(
+      () => cancelRemoteProviderJob(
+        "BS_ROFORMER",
+        `${endpointOrigin}/jobs/blocked`,
+      ),
+      /BLOCKED_LICENSE|checkpoint-owner rights/,
+    );
+    await assert.rejects(
+      () => runArrangementProvider(blockedDescriptor, {}),
+      /BLOCKED_LICENSE|checkpoint-owner rights/,
+    );
     assert.equal(
       gpuPromotionAttestationFailure("BS_ROFORMER", endpointOrigin, health),
       null,
