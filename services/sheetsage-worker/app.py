@@ -7,7 +7,10 @@ import json
 import math
 import os
 import platform
+import shutil
 import tempfile
+import threading
+import uuid
 from pathlib import Path
 from typing import Any
 from importlib.metadata import distribution, version
@@ -180,8 +183,27 @@ def validate_evidence(value: dict[str, Any]) -> dict[str, Any]:
             "melody": melody, "chords": chords, "timing": timing, "confidence": confidence}
 
 
+def _environment_integer(name: str, default: int, minimum: int) -> int:
+    raw = os.getenv(name, str(default))
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be an integer") from exc
+    if value < minimum:
+        raise RuntimeError(f"{name} must be at least {minimum}")
+    return value
+
+
 app = FastAPI(title="SheetSage 0.2.1")
 MAX_AUDIO_BYTES = 512 * 1024 * 1024
+TEMP_DIRECTORY = Path(os.getenv("SHEETSAGE_TEMP_DIR", tempfile.gettempdir()))
+TEMP_DISK_HEADROOM_BYTES = _environment_integer(
+    "SHEETSAGE_TEMP_DISK_HEADROOM_BYTES", 256 * 1024 * 1024, 0
+)
+MAX_SPOOLED_ANALYSES = _environment_integer(
+    "SHEETSAGE_MAX_SPOOLED_ANALYSES", 1, 1
+)
+TEMP_DIRECTORY.mkdir(parents=True, exist_ok=True)
 SUPPORTED_AUDIO_SUFFIXES = {
     "audio/aac": ".aac",
     "audio/flac": ".flac",
@@ -192,6 +214,55 @@ SUPPORTED_AUDIO_SUFFIXES = {
     "audio/x-m4a": ".m4a",
     "audio/x-wav": ".wav",
 }
+
+
+class SpoolReservations:
+    """Reserve worst-case temporary storage before consuming request bodies."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._uploads: dict[str, int] = {}
+
+    def state(self) -> dict[str, int]:
+        with self._lock:
+            disk = shutil.disk_usage(TEMP_DIRECTORY)
+            outstanding = sum(MAX_AUDIO_BYTES - written for written in self._uploads.values())
+            reservable = max(0, disk.free - TEMP_DISK_HEADROOM_BYTES - outstanding)
+            return {
+                "temporaryDiskTotalBytes": disk.total,
+                "temporaryDiskFreeBytes": disk.free,
+                "temporaryDiskHeadroomBytes": TEMP_DISK_HEADROOM_BYTES,
+                "temporaryDiskReservableBytes": reservable,
+                "activeSpooledAnalyses": len(self._uploads),
+                "maxSpooledAnalyses": MAX_SPOOLED_ANALYSES,
+                "reservedUploadBytes": outstanding,
+                "maxAudioBytes": MAX_AUDIO_BYTES,
+            }
+
+    def acquire(self) -> str | None:
+        with self._lock:
+            disk = shutil.disk_usage(TEMP_DIRECTORY)
+            outstanding = sum(MAX_AUDIO_BYTES - written for written in self._uploads.values())
+            if (
+                len(self._uploads) >= MAX_SPOOLED_ANALYSES
+                or disk.free - TEMP_DISK_HEADROOM_BYTES - outstanding < MAX_AUDIO_BYTES
+            ):
+                return None
+            reservation = uuid.uuid4().hex
+            self._uploads[reservation] = 0
+            return reservation
+
+    def record(self, reservation: str, written: int) -> None:
+        with self._lock:
+            if reservation in self._uploads:
+                self._uploads[reservation] = min(written, MAX_AUDIO_BYTES)
+
+    def release(self, reservation: str) -> None:
+        with self._lock:
+            self._uploads.pop(reservation, None)
+
+
+SPOOL_RESERVATIONS = SpoolReservations()
 
 
 @app.get("/health")
@@ -212,7 +283,8 @@ def health(request: Request) -> dict[str, Any]:
             "status": "ready" if assets and smoke else (
                 "blocked" if not license_accepted else "unavailable"
             ),
-            "message": "ready" if assets and smoke else (message if not assets else smoke_message)}
+            "message": "ready" if assets and smoke else (message if not assets else smoke_message),
+            **SPOOL_RESERVATIONS.state()}
 
 
 @app.post("/analyze")
@@ -229,11 +301,20 @@ async def analyze(request: Request) -> dict[str, Any]:
                 raise HTTPException(413, "audio payload exceeds 512 MiB")
         except ValueError as exc:
             raise HTTPException(400, "invalid content length") from exc
+    reservation = SPOOL_RESERVATIONS.acquire()
+    if reservation is None:
+        raise HTTPException(
+            503,
+            "SheetSage temporary upload capacity is busy; retry later",
+            headers={"Retry-After": "30"},
+        )
     path: Path | None = None
     try:
         content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
         suffix = SUPPORTED_AUDIO_SUFFIXES.get(content_type, ".audio")
-        with tempfile.NamedTemporaryFile(prefix="sheetsage-", suffix=suffix, delete=False) as target:
+        with tempfile.NamedTemporaryFile(
+            prefix="sheetsage-", suffix=suffix, delete=False, dir=TEMP_DIRECTORY
+        ) as target:
             path = Path(target.name)
             size = 0
             async for chunk in request.stream():
@@ -241,6 +322,7 @@ async def analyze(request: Request) -> dict[str, Any]:
                 if size > MAX_AUDIO_BYTES:
                     raise HTTPException(413, "audio payload exceeds 512 MiB")
                 target.write(chunk)
+                SPOOL_RESERVATIONS.record(reservation, size)
         if size == 0:
             raise HTTPException(400, "audio payload is empty")
         evidence = await run_in_threadpool(run, path, ASSET_ROOT, 300)
@@ -250,3 +332,4 @@ async def analyze(request: Request) -> dict[str, Any]:
     finally:
         if path is not None:
             path.unlink(missing_ok=True)
+        SPOOL_RESERVATIONS.release(reservation)

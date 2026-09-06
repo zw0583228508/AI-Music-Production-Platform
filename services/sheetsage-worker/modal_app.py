@@ -37,10 +37,11 @@ license_secret = modal.Secret.from_name(LICENSE_SECRET_NAME)
     timeout=600,
     scaledown_window=300,
     max_containers=1,
+    ephemeral_disk=2048,
     # Intentionally no min_containers / scale floor.
     env=worker_environment(),
 )
-@modal.concurrent(max_inputs=1)
+@modal.concurrent(max_inputs=2)
 class SheetSageWorker:
     @modal.asgi_app(label=ENDPOINT_LABEL)
     def endpoint(self):

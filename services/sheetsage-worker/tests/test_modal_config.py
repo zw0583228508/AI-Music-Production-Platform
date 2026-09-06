@@ -21,6 +21,7 @@ class ModalConfigTests(unittest.TestCase):
         self.assertEqual(config.SMOKE_VOLUME_NAME, "sheetsage-smoke-v1")
         self.assertEqual(config.image_build_args(), {"SHEETSAGE_ACCEPT_MODEL_LICENSE": "1"})
         self.assertEqual(config.worker_environment()["HF_HUB_OFFLINE"], "1")
+        self.assertEqual(config.worker_environment()["SHEETSAGE_MAX_SPOOLED_ANALYSES"], "1")
 
 
 if __name__ == "__main__":

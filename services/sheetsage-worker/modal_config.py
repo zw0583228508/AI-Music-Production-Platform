@@ -27,6 +27,8 @@ def worker_environment() -> dict[str, str]:
     return {
         "SHEETSAGE_ASSET_ROOT": MODEL_MOUNT,
         "SHEETSAGE_CACHE_DIR": MODEL_MOUNT,
+        "SHEETSAGE_MAX_SPOOLED_ANALYSES": "1",
+        "SHEETSAGE_TEMP_DISK_HEADROOM_BYTES": str(256 * 1024 * 1024),
         "XDG_CACHE_HOME": MODEL_MOUNT,
         "HF_HUB_OFFLINE": "1",
         "TRANSFORMERS_OFFLINE": "1",
