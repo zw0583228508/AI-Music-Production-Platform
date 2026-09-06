@@ -3,6 +3,7 @@ import { generateKeyPairSync, sign } from "node:crypto";
 import test from "node:test";
 import {
   canonicalGpuPromotionJson,
+  expectedGpuPromotionRecord,
   gpuPromotionAttestationFailure,
   isAttestedGpuProviderStartup,
   type GpuPromotionRecord,
@@ -144,6 +145,43 @@ test("generic promotion environment compatibility remains fail closed", () => {
       process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY = previousPublicKey;
     }
   }
+});
+
+test("the committed MT3 promotion attests its exact captured runtime identity", () => {
+  const record = expectedGpuPromotionRecord("MT3");
+  assert.ok(record);
+  assert.equal(record.modelVersion, "mt3-pytorch-multitrack");
+  const health = {
+    provider: record.provider,
+    modalAppId: record.modalAppId,
+    modalDeploymentId: record.modalDeploymentId,
+    modalFunctionId: record.modalFunctionId,
+    modalImageId: record.modalImageId,
+    modelVersion: record.modelVersion,
+    checkpointSha256: record.checkpointSha256,
+    revision: record.checkpointRevision,
+    sourceRevision: record.sourceRevision,
+    sourceImageDigest: record.sourceImageDigest,
+    runtime: { pythonVersion: record.runtime.python },
+    framework: {
+      cuda_image: record.runtime.cudaImage,
+      cuda: record.runtime.cuda,
+      pytorch: record.runtime.pytorch,
+      torchvision: record.runtime.torchvision,
+      torchaudio: record.runtime.torchaudio,
+      torch_index_url: record.runtime.torchIndexUrl,
+      transformers: record.runtime.transformers,
+      accelerate: record.runtime.accelerate,
+    },
+  };
+  assert.equal(
+    gpuPromotionAttestationFailure(
+      "MT3",
+      `${record.endpointOrigin}/health`,
+      health,
+    ),
+    null,
+  );
 });
 
 test("Beat This startup requires the exact promoted health schema", () => {
