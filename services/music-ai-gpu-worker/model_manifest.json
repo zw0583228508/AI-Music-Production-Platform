@@ -146,7 +146,7 @@
       "runtime": {
         "transformers": "4.45.1"
       },
-      "revision": "openmirlab/mt3-infer@280a95817a67da0ae46987ddbb18c946963afffe#yourmt3;mimbres/YourMT3@e45ebd70398682d54b7bb1901a5216e18f3b1824",
+      "revision": "mimbres/YourMT3@e45ebd70398682d54b7bb1901a5216e18f3b1824#logs/2024/mc13_256_g4_all_v7_mt3f_sqr_rms_moe_wf4_n8k2_silu_rope_rp_b36_nops/checkpoints/last.ckpt",
       "checkpoint_source": "https://huggingface.co/mimbres/YourMT3/resolve/e45ebd70398682d54b7bb1901a5216e18f3b1824/logs/2024/mc13_256_g4_all_v7_mt3f_sqr_rms_moe_wf4_n8k2_silu_rope_rp_b36_nops/checkpoints/last.ckpt",
       "checkpoint_upstream_revision": "mimbres/YourMT3@e45ebd70398682d54b7bb1901a5216e18f3b1824",
       "checkpoint_provenance_status": "verified against immutable Hugging Face model revision e45ebd70398682d54b7bb1901a5216e18f3b1824: last.ckpt is a 561544628-byte LFS object with oid ae38e415c79efd5592dcb9b658cdb99ddb11d4c4e1eaa364cab04a052473fc25; the same LFS object is referenced by Space revision 5e66c1ea173a8186e0d20432b841d3180cc015b5",
