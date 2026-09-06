@@ -201,7 +201,7 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
         mr = (ROOT / "Dockerfile.mr-mt3").read_text()
         your = (ROOT / "Dockerfile.your-mt3").read_text()
         self.assertIn("ARG TRANSFORMERS_SPEC=transformers==4.48.3", mr)
-        self.assertIn("ARG TRANSFORMERS_SPEC=transformers==4.48.3", your)
+        self.assertIn("ARG TRANSFORMERS_SPEC=transformers==4.45.1", your)
         self.assertIn("git-lfs", mr)
         self.assertIn("git-lfs", your)
         self.assertIn("git lfs install --system", your)
@@ -214,6 +214,7 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             (ROOT / "runners" / "requirements-mt3.txt").read_text(),
         )
         self.assertEqual(modal_config.DEPLOYMENTS["MT3"].transformers, "4.38.2")
+        self.assertEqual(modal_config.DEPLOYMENTS["YOUR_MT3"].transformers, "4.45.1")
 
     def test_wave_two_patch_is_hash_guarded_and_provider_isolated(self):
         expected = {
@@ -227,33 +228,18 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
                 your_compat_patch,
                 "your_mt3_transformers_compat_patch.py",
                 "b2cc683b55f5d3284c0788d59f8f0a7c39b03535731aeb7a62c81c86c351f480",
-                "81363b1b69d01d9ea94ac72201f897fdd2ba011b7d0090219b509fa6909ad3ee",
+                "b2cc683b55f5d3284c0788d59f8f0a7c39b03535731aeb7a62c81c86c351f480",
             ),
         }
         with self.assertRaisesRegex(RuntimeError, "source hash mismatch"):
             compat_patch.patch_content(compat_patch.ORIGINAL_FRAGMENT)
         with self.assertRaisesRegex(RuntimeError, "source hash mismatch"):
             your_compat_patch.patch_content(b"unreviewed")
-        your_replacements = b"".join(
-            replacement for _, replacement in your_compat_patch.REPLACEMENTS
+        self.assertEqual(
+            your_compat_patch.PATCHED_SHA256,
+            your_compat_patch.ORIGINAL_SHA256,
         )
-        self.assertIn(
-            b"past_key_values_length + seq_length", your_replacements
-        )
-        self.assertIn(
-            b"bool(past_key_values) and past_key_values[0] is not None",
-            your_replacements,
-        )
-        self.assertIn(
-            b"if has_first_layer_cache else seq_length", your_replacements
-        )
-        self.assertIn(
-            b"if has_first_layer_cache else 0", your_replacements
-        )
-        self.assertIn(b"device=inputs_embeds.device", your_replacements)
-        self.assertGreaterEqual(
-            your_replacements.count(b"cache_position=cache_position"), 3
-        )
+        self.assertEqual(your_compat_patch.EXPECTED_TRANSFORMERS_VERSION, "4.45.1")
         for provider, (module, script, source_sha, patch_sha) in expected.items():
             details = modal_config.MANIFEST["providers"][provider]
             docker = (
