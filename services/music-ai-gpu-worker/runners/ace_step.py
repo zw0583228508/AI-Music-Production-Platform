@@ -184,6 +184,7 @@ class OfficialAceStepBackend:
 
     def generate(self, *, prompt: str, seed: int, duration_seconds: float,
                  candidates: int, output_dir: Path,
+                  output_format: str = "flac",
                  operation: dict[str, Any] | None = None,
                  source_path: Path | None = None) -> list[dict[str, Any]]:
         try:
@@ -214,7 +215,8 @@ class OfficialAceStepBackend:
                     })
                 params = self.GenerationParams(**params_kwargs)
                 config = self.GenerationConfig(
-                    batch_size=candidates, audio_format="flac", use_random_seed=False,
+                    batch_size=candidates, audio_format=output_format,
+                    use_random_seed=False,
                     seeds=[seed + index for index in range(candidates)],
                 )
                 result = self.generate_music(
@@ -413,7 +415,8 @@ def provenance(digest: str) -> dict[str, str]:
 
 
 def run_job(request: dict[str, Any], checkpoint: Path,
-            backend_cls=OfficialAceStepBackend) -> dict[str, Any]:
+            backend_cls=OfficialAceStepBackend, *,
+            output_format: str = "flac") -> dict[str, Any]:
     prompt, seed, duration, count = _parameters(request)
     operation = _operation_parameters(request)
     digest = attest_checkpoint(checkpoint, PROVIDER)
@@ -445,6 +448,7 @@ def run_job(request: dict[str, Any], checkpoint: Path,
         "duration_seconds": duration,
         "candidates": count,
         "output_dir": work,
+        "output_format": output_format,
     }
     if operation["operation"]:
         generate_kwargs.update({
@@ -542,9 +546,20 @@ def main(argv: list[str] | None = None) -> int:
         checkpoint = Path(args.checkpoint)
         if args.smoke:
             result = run_job({"requestId": f"smoke-{os.urandom(8).hex()}", "prompt": SMOKE_PROMPT,
-                              "seed": 0, "durationSeconds": 2, "candidateCount": 1}, checkpoint)
+                              "seed": 0, "durationSeconds": 2, "candidateCount": 1},
+                             checkpoint, output_format="wav")
+            artifact = result["candidates"][0]["artifact"]
             emit({"smokeTested": True, **result["provenance"],
-                  "output": {"samples": len(result["candidates"])}})
+                  "output": {
+                      "samples": len(result["candidates"]),
+                      "artifact": {
+                          key: artifact[key]
+                          for key in (
+                              "name", "format", "sampleRate", "channels",
+                              "durationSeconds", "bytes", "sha256",
+                          )
+                      },
+                  }})
         else:
             emit(run_job(json.load(sys.stdin), checkpoint))
         return 0

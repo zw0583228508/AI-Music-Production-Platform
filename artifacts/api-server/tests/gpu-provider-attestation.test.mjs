@@ -89,14 +89,16 @@ function listen(server) {
   });
 }
 
-async function withWorker(health, run) {
+async function withWorker(health, run, options = {}) {
   let servedHealth = health;
+  let generationPosts = 0;
   const server = createServer((request, response) => {
     response.writeHead(200, { "Content-Type": "application/json" });
     if (request.url === "/health?provider=ACE_STEP") {
       response.end(JSON.stringify(servedHealth));
       return;
     }
+    if (request.method === "POST") generationPosts += 1;
     response.end(JSON.stringify({
       provider: "WRONG_PROVIDER",
       modelVersion: "ace-step-1.5-base",
@@ -116,8 +118,16 @@ async function withWorker(health, run) {
   const origin = `http://127.0.0.1:${address.port}`;
   const promotion = configureAcePromotion(origin);
   servedHealth = withAcePromotion(health, promotion);
+  if (options.mutateHealth) servedHealth = options.mutateHealth(servedHealth);
+  if (options.mutateBundle) {
+    const bundle = JSON.parse(
+      process.env.MUSIC_PROVIDER_ACE_STEP_PROMOTION_BUNDLE,
+    );
+    process.env.MUSIC_PROVIDER_ACE_STEP_PROMOTION_BUNDLE =
+      JSON.stringify(options.mutateBundle(bundle));
+  }
   try {
-    await run();
+    await run({ generationPosts: () => generationPosts });
   } finally {
     delete process.env.MUSIC_PROVIDER_ACE_STEP_URL;
     delete process.env.MUSIC_PROVIDER_ACE_STEP_CHECKPOINT_SHA256;
@@ -433,6 +443,83 @@ test("GPU providers require exact checksum, model, GPU, and smoke attestation", 
       },
     }), /GPU provenance attestation/i);
   });
+});
+
+test("ACE-Step identity and signature drift block every generation POST", async () => {
+  const wrongKeys = generateKeyPairSync("ed25519");
+  const cases = [
+    {
+      name: "source revision",
+      options: {
+        mutateHealth: (health) => ({
+          ...health,
+          sourceRevision: "different-source-revision",
+        }),
+      },
+    },
+    {
+      name: "checkpoint",
+      options: {
+        mutateHealth: (health) => ({
+          ...health,
+          checkpointSha256: "b".repeat(64),
+        }),
+      },
+    },
+    {
+      name: "Modal image",
+      options: {
+        mutateHealth: (health) => ({
+          ...health,
+          modalImageId: "im-DifferentPromotedImage",
+        }),
+      },
+    },
+    {
+      name: "source image digest",
+      options: {
+        mutateHealth: (health) => ({
+          ...health,
+          sourceImageDigest: `sha256:${"f".repeat(64)}`,
+          containerDigest: `sha256:${"f".repeat(64)}`,
+        }),
+      },
+    },
+    {
+      name: "signature",
+      options: {
+        mutateBundle: (bundle) => ({
+          ...bundle,
+          signature: signBytes(
+            null,
+            Buffer.from(canonicalGpuPromotionJson(bundle.record)),
+            wrongKeys.privateKey,
+          ).toString("base64"),
+        }),
+      },
+    },
+  ];
+  for (const mismatch of cases) {
+    await withWorker(
+      attestedHealth,
+      async ({ generationPosts }) => {
+        const [provider] = await verifyProviderRegistry([aceStepProvider()], true);
+        assert.notEqual(
+          providerCatalog([provider])[0].status,
+          "ready",
+          mismatch.name,
+        );
+        assert.throws(() => selectMusicProvider([provider], {
+          task: "ARRANGEMENT",
+          requestedProvider: "ACE_STEP",
+          hardware: "GPU",
+          speed: "BALANCED",
+        }), /unavailable/i, mismatch.name);
+        assert.equal(generationPosts(), 0, mismatch.name);
+      },
+      mismatch.options,
+    );
+  }
 });
 
 test("authenticated cancellation uses the generation provider configuration", async () => {

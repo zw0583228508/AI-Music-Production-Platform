@@ -25,8 +25,17 @@
         "accelerate": "1.12.0"
       },
       "revision": "ace-step/ACE-Step-1.5@ca1e85fe9430179831e6bc6be790c332190a3866",
+      "source_license": "MIT",
+      "source_license_reference": "https://github.com/ace-step/ACE-Step-1.5/blob/ca1e85fe9430179831e6bc6be790c332190a3866/LICENSE",
+      "model_repository": "ACE-Step/acestep-v15-base",
+      "model_revision": "e432212fec32b8965a14ffa57ae653438d6abd14",
+      "shared_model_repository": "ACE-Step/Ace-Step1.5",
+      "shared_model_revision": "19671f406d603126926c1b7e2adc169acbcade22",
+      "model_license": "MIT",
+      "model_license_reference": "https://huggingface.co/ACE-Step/acestep-v15-base/blob/e432212fec32b8965a14ffa57ae653438d6abd14/README.md",
+      "commercial_use_permitted": true,
       "checkpoint_path": "ace-step-1.5-runtime",
-      "checkpoint_sha256": null,
+      "checkpoint_sha256": "d3f38c0fb68bd980d4f49c469f68bce9a94216cef614a85f7cea34fc98bd8b4e",
       "runner_env": "MUSIC_GPU_RUNNER_ACE_STEP",
       "smoke_env": "MUSIC_GPU_SMOKE_ACE_STEP"
     },
