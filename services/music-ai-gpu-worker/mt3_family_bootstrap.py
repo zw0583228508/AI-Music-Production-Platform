@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -50,6 +51,7 @@ PROVIDERS = {
         ),
         "checkpoint_bytes": 561_544_628,
         "checkpoint_sha256": "ae38e415c79efd5592dcb9b658cdb99ddb11d4c4e1eaa364cab04a052473fc25",
+        "smoke_input_sha256": "d32d6565800021f93f7904cf576c696c0f5d0f45bb8dc7b1badd0dc53cab69b7",
     },
 }
 MAX_INVENTORY_FILES = 512
@@ -175,6 +177,20 @@ def write_smoke_fixture(provider: str, checkpoint_root: Path) -> Path:
 def run_smoke(provider: str, checkpoint_root: Path, checkpoint: Path, digest: str) -> dict[str, object]:
     model_version = str(PROVIDERS[provider]["model_version"])
     fixture = write_smoke_fixture(provider, checkpoint_root)
+    fixture_sha256 = tree_sha256(fixture)
+    fixture_pin = PROVIDERS[provider].get("smoke_input_sha256")
+    pinned_environment = {}
+    if fixture_pin is not None:
+        if (
+            not isinstance(fixture_pin, str)
+            or not re.fullmatch(r"[a-f0-9]{64}", fixture_pin)
+        ):
+            raise RuntimeError(f"{provider} smoke fixture pin is not an exact SHA-256")
+        if not hmac.compare_digest(fixture_sha256, fixture_pin):
+            raise RuntimeError(f"{provider} generated smoke fixture SHA-256 mismatch")
+        pinned_environment[
+            f"MUSIC_PROVIDER_{provider}_SMOKE_INPUT_SHA256"
+        ] = fixture_pin
     environment = {
         **os.environ,
         "MUSIC_GPU_CHECKPOINT_ROOT": str(checkpoint_root),
@@ -182,6 +198,7 @@ def run_smoke(provider: str, checkpoint_root: Path, checkpoint: Path, digest: st
         "MUSIC_GPU_SMOKE_INPUT_PATH": str(fixture),
         "MUSIC_GPU_JOB_OUTPUT_ROOT": str(checkpoint_root / "_provision-jobs"),
         f"MUSIC_PROVIDER_{provider}_CHECKPOINT_SHA256": digest,
+        **pinned_environment,
     }
     process = subprocess.run(
         ["python", "-m", f"runners.{provider.lower()}", "--smoke", "--provider",
@@ -212,7 +229,7 @@ def run_smoke(provider: str, checkpoint_root: Path, checkpoint: Path, digest: st
         raise RuntimeError(f"{provider} CUDA smoke evidence failed validation")
     return {
         "fixture": fixture.relative_to(checkpoint_root).as_posix(),
-        "fixtureSha256": tree_sha256(fixture),
+        "fixtureSha256": fixture_sha256,
         "notes": proof["output"]["notes"],
         "device": "cuda",
     }
