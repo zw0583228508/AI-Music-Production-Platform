@@ -129,6 +129,9 @@
     "ALL_IN_ONE": {
       "model_version": "all-in-one-infer-3.1.0",
       "model_name": "harmonix-all",
+      "runtime": {
+        "cuda_image": "nvidia/cuda@sha256:2fcc4280646484290cc50dce5e65f388dd04352b07cbe89a635703bd1f9aedb6"
+      },
       "revision": "taejunkim/allinone@379e5fd010b3fdd0ee8381ff8cbcfa51d70b5c19;facebookresearch/demucs@ef66d254cd6d558e207eeff2c4b8d053db2e77dd",
       "checkpoint_path": "all-in-one",
       "checkpoint_sha256": "4b8d00db3903c3b505cc5d2ec1a84787ccc2e1cc446f838118e03e9a356552e5",
