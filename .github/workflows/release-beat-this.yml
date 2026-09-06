@@ -289,40 +289,21 @@ jobs:
           github-token: ${{ github.token }}
           run-id: ${{ inputs.resume_run_id }}
 
-      - name: Verify the retained bundle and branch are identical
+      - name: Authenticate retained evidence and verify the activation branch
         env:
           SOURCE_REVISION: ${{ inputs.resume_source_revision }}
         run: |
           set -euo pipefail
-          python - <<'PY'
-          import hashlib, json, os
-          from pathlib import Path
-
-          source = os.environ["SOURCE_REVISION"]
-          evidence_bytes = Path("promotion/release-evidence.json").read_bytes()
-          evidence = json.loads(evidence_bytes)
-          bundle = json.loads(Path("promotion/bundle.json").read_text())
-          retained = json.loads(
-              Path("services/beat-this-worker/release-attestation.json").read_text()
-          )
-          generated = Path(
-              "artifacts/api-server/src/lib/beatThisPromotion.generated.ts"
-          ).read_text()
-          evidence_hash = hashlib.sha256(evidence_bytes).hexdigest()
-          if evidence.get("sourceRevision") != source:
-              raise SystemExit("retained evidence source revision changed")
-          if bundle.get("record", {}).get("sourceRevision") != source:
-              raise SystemExit("signed bundle source revision changed")
-          if bundle["record"].get("releaseEvidenceSha256") != evidence_hash:
-              raise SystemExit("signed bundle no longer matches retained evidence")
-          if retained.get("record") != bundle["record"]:
-              raise SystemExit("activation branch attestation changed")
-          canonical_bundle = json.dumps(
-              bundle, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-          )
-          if json.dumps(canonical_bundle) not in generated:
-              raise SystemExit("activation branch generated bundle changed")
-          PY
+          python services/beat-this-worker/activate_promotion.py \
+            --verify-existing \
+            --expected-source-revision "$SOURCE_REVISION" \
+            --bundle promotion/bundle.json \
+            --public-key promotion/public-key.pem \
+            --evidence promotion/release-evidence.json \
+            --refresh promotion/container-refresh.json \
+            --health promotion/live-health.json \
+            --api-output artifacts/api-server/src/lib/beatThisPromotion.generated.ts \
+            --release-output services/beat-this-worker/release-attestation.json
 
       - name: Reopen the protected-branch activation proposal
         env:

@@ -1,5 +1,6 @@
 import argparse
 import base64
+import copy
 import json
 import subprocess
 import sys
@@ -149,6 +150,11 @@ class BeatThisReleaseTests(unittest.TestCase):
         self.assertIn("deploy.py --candidate", workflow)
         self.assertIn("verify-candidate-refresh", workflow)
         self.assertIn("promotion/candidate-refresh-health.json", workflow)
+        self.assertIn("--verify-existing", workflow)
+        self.assertIn("--public-key promotion/public-key.pem", workflow)
+        self.assertIn(
+            '--expected-source-revision "$SOURCE_REVISION"', workflow
+        )
 
     def test_modal_metadata_requires_one_deployed_app_and_latest_version(self):
         self.assertEqual(
@@ -350,6 +356,113 @@ class BeatThisReleaseTests(unittest.TestCase):
                 )
             self.assertEqual(api_output.read_text(), original_api)
             self.assertEqual(release_output.read_text(), original_release)
+
+    def test_resume_authenticates_every_retained_release_input(self):
+        evidence = release_evidence()
+        record = promotion_record(evidence)
+        health = matching_health(record)
+        refresh = container_refresh(evidence)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            private_key = root / "private.pem"
+            other_private_key = root / "other-private.pem"
+            api_output = root / "promotion.generated.ts"
+            release_output = root / "release.json"
+            for key in (private_key, other_private_key):
+                subprocess.run(
+                    [
+                        "openssl", "genpkey", "-algorithm", "Ed25519",
+                        "-out", str(key),
+                    ],
+                    check=True,
+                )
+            public_key = promote_modal.public_key(private_key)
+            bundle = {
+                "record": record,
+                "signature": promote_modal.sign(record, private_key),
+            }
+            activate_promotion.activate(
+                bundle,
+                public_key,
+                evidence,
+                refresh,
+                health,
+                api_output,
+                release_output,
+            )
+
+            def verify(**changes):
+                activate_promotion.verify_retained_activation(
+                    changes.get("bundle", bundle),
+                    changes.get("public_key", public_key),
+                    changes.get("evidence", evidence),
+                    refresh,
+                    health,
+                    changes.get("api_output", api_output),
+                    changes.get("release_output", release_output),
+                    changes.get("source_revision", record["sourceRevision"]),
+                )
+
+            verify()
+
+            altered_signature = copy.deepcopy(bundle)
+            altered_signature["signature"] = (
+                "A" + altered_signature["signature"][1:]
+            )
+            with self.assertRaisesRegex(ValueError, "signature"):
+                verify(bundle=altered_signature)
+
+            with self.assertRaisesRegex(ValueError, "signature"):
+                verify(
+                    public_key=promote_modal.public_key(other_private_key)
+                )
+
+            altered_evidence = copy.deepcopy(evidence)
+            altered_evidence["smokeEvidence"]["fixture"]["sha256"] = "f" * 64
+            with self.assertRaisesRegex(ValueError, "release evidence"):
+                verify(evidence=altered_evidence)
+
+            original_generated = api_output.read_text()
+            api_output.write_text(
+                original_generated.replace(
+                    record["modalAppId"], "ap-Altered", 1
+                )
+            )
+            with self.assertRaisesRegex(ValueError, "generated bundle"):
+                verify()
+            api_output.write_text(original_generated)
+
+            other_public_key = promote_modal.public_key(other_private_key)
+            api_output.write_text(
+                original_generated.replace(
+                    json.dumps(public_key),
+                    json.dumps(other_public_key),
+                    1,
+                )
+            )
+            with self.assertRaisesRegex(ValueError, "public key"):
+                verify()
+            api_output.write_text(original_generated)
+
+            release_output.write_text(
+                release_output.read_text().replace(
+                    '"beatCount":4', '"beatCount":5'
+                )
+            )
+            with self.assertRaisesRegex(ValueError, "release attestation"):
+                verify()
+            activate_promotion.activate(
+                bundle,
+                public_key,
+                evidence,
+                refresh,
+                health,
+                api_output,
+                release_output,
+            )
+
+            with self.assertRaisesRegex(ValueError, "source revision"):
+                verify(source_revision="a" * 40)
 
     def test_legacy_key_material_produces_verifiable_ed25519_signature(self):
         normalized, key_format = promote_modal.private_key_bytes(

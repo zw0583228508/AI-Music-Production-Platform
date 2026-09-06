@@ -108,6 +108,20 @@ def activate(
     api_output: Path,
     release_output: Path,
 ) -> None:
+    _, generated, release_json = canonical_documents(
+        bundle, public_key, evidence, refresh, health
+    )
+    atomic_write(api_output, generated)
+    atomic_write(release_output, release_json)
+
+
+def canonical_documents(
+    bundle: dict,
+    public_key: str,
+    evidence: dict,
+    refresh: dict,
+    health: dict,
+) -> tuple[dict, str, str]:
     record = validate(bundle, public_key, evidence, refresh, health)
     bundle_json = promote_modal.canonical(bundle)
     generated = (
@@ -129,8 +143,30 @@ def activate(
     if not re.fullmatch(r"[a-f0-9]{40}", record["sourceRevision"]):
         raise ValueError("release source revision is not immutable")
     release_json = promote_modal.canonical(release) + "\n"
-    atomic_write(api_output, generated)
-    atomic_write(release_output, release_json)
+    return record, generated, release_json
+
+
+def verify_retained_activation(
+    bundle: dict,
+    public_key: str,
+    evidence: dict,
+    refresh: dict,
+    health: dict,
+    api_output: Path,
+    release_output: Path,
+    expected_source_revision: str,
+) -> None:
+    record, generated, release_json = canonical_documents(
+        bundle, public_key, evidence, refresh, health
+    )
+    if record["sourceRevision"] != expected_source_revision:
+        raise ValueError("retained activation source revision changed")
+    if api_output.read_text() != generated:
+        raise ValueError(
+            "activation branch generated bundle or public key changed"
+        )
+    if release_output.read_text() != release_json:
+        raise ValueError("activation branch release attestation changed")
 
 
 def main() -> None:
@@ -140,8 +176,10 @@ def main() -> None:
         "release-output",
     ):
         parser.add_argument(f"--{name}", required=True)
+    parser.add_argument("--verify-existing", action="store_true")
+    parser.add_argument("--expected-source-revision")
     args = parser.parse_args()
-    activate(
+    values = (
         json.loads(Path(args.bundle).read_text()),
         Path(args.public_key).read_text(),
         json.loads(Path(args.evidence).read_text()),
@@ -150,6 +188,20 @@ def main() -> None:
         Path(args.api_output),
         Path(args.release_output),
     )
+    if args.verify_existing:
+        if not args.expected_source_revision:
+            parser.error(
+                "--expected-source-revision is required with --verify-existing"
+            )
+        verify_retained_activation(
+            *values, args.expected_source_revision
+        )
+    else:
+        if args.expected_source_revision:
+            parser.error(
+                "--expected-source-revision requires --verify-existing"
+            )
+        activate(*values)
 
 
 if __name__ == "__main__":
