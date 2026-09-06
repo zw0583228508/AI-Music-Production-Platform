@@ -137,7 +137,9 @@ def run_job(request: dict[str, Any], checkpoint: Path, backend: Mt3Backend | Non
     require_cuda()
     digest = attest_checkpoint(checkpoint, PROVIDER)
     work = durable_job_dir(request, PROVIDER)
-    audio = materialize_source(request, work / "source.wav", checkpoint, smoke)
+    audio = materialize_source(
+        request, work / "source.wav", checkpoint, PROVIDER, smoke,
+    )
     duration_value = request_value(request, "durationSeconds")
     if duration_value is not None:
         duration = finite_number(duration_value, "durationSeconds", 0.001)

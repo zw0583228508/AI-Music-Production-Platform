@@ -155,6 +155,63 @@ class GenericModalReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "note evidence hash"):
             release_modal.validate_mt3_note_output(output)
 
+    def test_yourmt3_release_rejects_incomplete_terminated_note_evidence(self):
+        deployment = release_modal.DEPLOYMENTS["YOUR_MT3"]
+        base_event = mt3_output()["noteEvents"][0]
+        valid_hash = hashlib.sha256(json.dumps(
+            [base_event], sort_keys=True, separators=(",", ":"),
+        ).encode()).hexdigest()
+        invalid_outputs = {
+            "zero notes": {
+                "notes": 0,
+                "terminatedNotes": 0,
+                "allNotesTerminated": True,
+                "noteEvents": [],
+                "noteEventsSha256": hashlib.sha256(b"[]").hexdigest(),
+            },
+            "unterminated notes": {
+                "notes": 1,
+                "terminatedNotes": 0,
+                "allNotesTerminated": False,
+                "noteEvents": [base_event],
+                "noteEventsSha256": valid_hash,
+            },
+            "event hash drift": {
+                "notes": 1,
+                "terminatedNotes": 1,
+                "allNotesTerminated": True,
+                "noteEvents": [base_event],
+                "noteEventsSha256": "0" * 64,
+            },
+        }
+        for label, output in invalid_outputs.items():
+            with self.subTest(label=label), self.assertRaisesRegex(
+                ValueError, "note evidence",
+            ):
+                release_modal.validate_evidence({
+                    "schemaVersion": 1,
+                    "provider": "YOUR_MT3",
+                    "modalAppId": "ap-Test",
+                    "modalDeploymentId": "v3",
+                    "modalFunctionId": "fu-Test",
+                    "endpointOrigin": "https://worker.example.test",
+                    "modalImageId": "im-Current",
+                    "checkpointSha256": "a" * 64,
+                    "sourceImageDigest": deployment.source_image_digest,
+                    "sourceRevision": "c" * 40,
+                    "smokeEvidence": {
+                        "provider": "YOUR_MT3",
+                        "smokeTested": True,
+                        "checkpointSha256": "a" * 64,
+                        "output": output,
+                        "provenance": {
+                            "checkpointSha256": "a" * 64,
+                            "modalImageId": "im-Current",
+                            "sourceImageDigest": deployment.source_image_digest,
+                        },
+                    },
+                }, "YOUR_MT3")
+
     def test_bs_evidence_rejects_identical_or_silent_stems(self):
         output = bs_output()
         release_modal.validate_bs_roformer_output(output)
