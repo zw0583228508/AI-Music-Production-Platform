@@ -43,6 +43,23 @@ await build({
     js: `import { createRequire as __createRequire } from "node:module";
 globalThis.require = __createRequire(import.meta.url);`,
   },
+  plugins: [{
+    name: "empty-committed-gpu-promotions",
+    setup(build) {
+      build.onResolve(
+        { filter: /gpuPromotions\.generated$/ },
+        () => ({ path: "gpuPromotions.generated", namespace: "test" }),
+      );
+      build.onLoad(
+        { filter: /.*/, namespace: "test" },
+        () => ({
+          contents: `export const committedGpuPromotionsJson =
+            "{\\"bundles\\":{},\\"publicKey\\":\\"\\",\\"schemaVersion\\":1}";`,
+          loader: "js",
+        }),
+      );
+    },
+  }],
 });
 
 const {
@@ -193,6 +210,7 @@ function configureAcePromotion(endpointOrigin) {
     checkpointRevision: "ace-step-1.5-base-r42",
     sourceRevision: "git-test-revision-42",
     sourceImageDigest: `sha256:${"c".repeat(64)}`,
+    releaseEvidenceSha256: "e".repeat(64),
     runtime: aceRuntimePins,
   };
   process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY = promotionPublicKey;

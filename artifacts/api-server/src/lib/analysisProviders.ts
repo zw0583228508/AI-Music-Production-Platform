@@ -511,7 +511,12 @@ async function attestProviderHealth(
       ].join(":")
     : "";
   const cacheKey = `${providerId}:${endpoint}:${promotionIdentity}`;
-  const cacheHealth = !MIR_PROVIDER_IDS.has(providerId);
+  // Signed GPU identities can drift independently of this API process.
+  // Never let a prior successful attestation authorize a later provider POST.
+  const cacheHealth = (
+    !MIR_PROVIDER_IDS.has(providerId)
+    && !requiresGpuPromotionRecord(providerId)
+  );
   if (cacheHealth) {
     const cached = analysisHealthCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
@@ -609,7 +614,10 @@ async function requestProvider(
   }
 
   const token = providerToken(providerId);
-  const reattestBeforeEveryPost = MIR_PROVIDER_IDS.has(providerId);
+  const reattestBeforeEveryPost = (
+    MIR_PROVIDER_IDS.has(providerId)
+    || requiresGpuPromotionRecord(providerId)
+  );
   const initiallyAttestedVersion = reattestBeforeEveryPost
     ? null
     : await attestProviderHealth(providerId, endpoint, token);
