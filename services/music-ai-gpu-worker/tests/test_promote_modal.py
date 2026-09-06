@@ -1,4 +1,6 @@
 import importlib.util
+import base64
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -68,6 +70,34 @@ def health(record: dict, **overrides) -> dict:
 
 
 class PromotionHealthContractTests(unittest.TestCase):
+    def test_workflow_accepts_configured_legacy_signing_key(self):
+        workflow = (ROOT.parents[1] / ".github" / "workflows" /
+                    "sign-modal-promotion.yml").read_text()
+        self.assertIn("secrets.MUSIC_GPU_PROMOTION_PRIVATE_KEY", workflow)
+        self.assertIn("secrets.MUSIC_GPU_PROMOTION_SIGNING_KEY", workflow)
+        self.assertIn(
+            'MUSIC_GPU_PROMOTION_SIGNING_KEY="${STANDARD_KEY:-$LEGACY_KEY}"',
+            workflow,
+        )
+        material = base64.b64encode(b"configured-legacy-key-material!!").decode()
+        with mock.patch.dict(
+            "os.environ",
+            {"MUSIC_GPU_PROMOTION_SIGNING_KEY": material},
+            clear=True,
+        ):
+            key_path, temporary = promote.promotion_private_key()
+        try:
+            self.assertTrue(temporary)
+            result = subprocess.run(
+                ["openssl", "pkey", "-in", str(key_path), "-pubout"],
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(result.stdout.startswith(b"-----BEGIN PUBLIC KEY-----"))
+        finally:
+            key_path.unlink(missing_ok=True)
+
     def test_each_provider_retries_only_its_exact_startup_contract(self):
         for provider in sorted(promote.PROMOTED_PROVIDERS):
             with self.subTest(provider=provider):

@@ -3,6 +3,7 @@ import {
   committedBeatThisPromotionBundle,
   committedBeatThisPromotionPublicKey,
 } from "./beatThisPromotion.generated";
+import { committedGpuPromotionsJson } from "./gpuPromotions.generated";
 
 const GPU_ATTESTED_PROVIDER_IDS = new Set([
   "ACE_STEP",
@@ -74,6 +75,7 @@ export type GpuPromotionRecord = {
   checkpointRevision: string;
   sourceRevision: string;
   sourceImageDigest: string;
+  releaseEvidenceSha256: string;
   runtime: GpuPromotionRuntimePins;
 };
 
@@ -131,6 +133,8 @@ function parsePromotionRecord(value: unknown, providerId: string): GpuPromotionR
       !nonEmptyString(value.sourceRevision) ||
       typeof value.sourceImageDigest !== "string" ||
       !/^sha256:[a-f0-9]{64}$/i.test(value.sourceImageDigest) ||
+       typeof value.releaseEvidenceSha256 !== "string" ||
+       !/^[a-f0-9]{64}$/i.test(value.releaseEvidenceSha256) ||
       !isRecord(value.runtime)) {
     return null;
   }
@@ -153,6 +157,7 @@ function parsePromotionRecord(value: unknown, providerId: string): GpuPromotionR
     checkpointRevision: value.checkpointRevision.trim(),
     sourceRevision: value.sourceRevision.trim(),
     sourceImageDigest: value.sourceImageDigest.toLowerCase(),
+    releaseEvidenceSha256: value.releaseEvidenceSha256.toLowerCase(),
     runtime: Object.fromEntries(runtimeKeys.map((key) =>
       [key, runtime[key] as string])) as GpuPromotionRuntimePins,
   };
@@ -160,9 +165,19 @@ function parsePromotionRecord(value: unknown, providerId: string): GpuPromotionR
 
 function promotionBundle(providerId: string): PromotionBundle | null {
   const key = promotionEnvKey(providerId);
+  let genericCommitted = "";
+  try {
+    const promotions = JSON.parse(committedGpuPromotionsJson) as unknown;
+    if (isRecord(promotions) && isRecord(promotions.bundles)) {
+      const candidate = promotions.bundles[providerId];
+      if (isRecord(candidate)) genericCommitted = JSON.stringify(candidate);
+    }
+  } catch {
+    genericCommitted = "";
+  }
   const committed = providerId === "BEAT_THIS"
     ? committedBeatThisPromotionBundle.trim()
-    : "";
+    : genericCommitted;
   const bundleValue = committed ||
     process.env[`MUSIC_PROVIDER_${key}_PROMOTION_BUNDLE`]?.trim();
   if (!bundleValue) return null;
@@ -186,8 +201,17 @@ export function expectedGpuPromotionRecord(providerId: string): GpuPromotionReco
 
 function promotionPublicKey(providerId: string): string | null {
   const providerKey = promotionEnvKey(providerId);
+  let genericPublicKey = "";
+  try {
+    const promotions = JSON.parse(committedGpuPromotionsJson) as unknown;
+    if (isRecord(promotions) && typeof promotions.publicKey === "string") {
+      genericPublicKey = promotions.publicKey;
+    }
+  } catch {
+    genericPublicKey = "";
+  }
   const publicKey = (
-    ((providerId === "BEAT_THIS" ? committedBeatThisPromotionPublicKey : "") ||
+    ((providerId === "BEAT_THIS" ? committedBeatThisPromotionPublicKey : genericPublicKey) ||
     process.env[`MUSIC_PROVIDER_${providerKey}_PROMOTION_PUBLIC_KEY`]) ??
     process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY ??
     process.env.MUSIC_GPU_PROMOTION_PUBLIC_KEY

@@ -58,6 +58,7 @@ ENABLED = {
 TASKS: dict[str, asyncio.Task[None]] = {}
 PROCESSES: dict[str, asyncio.subprocess.Process] = {}
 SMOKE_ATTESTATIONS: dict[str, str] = {}
+SMOKE_EVIDENCE: dict[str, dict[str, Any]] = {}
 SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_JOBS)
 STARTUP_RETRY_SECONDS = 5
 COLD_START_PROVIDERS = {"ACE_STEP", "BS_ROFORMER", "MT3", "ALL_IN_ONE"}
@@ -258,6 +259,7 @@ def _provider_health(
     provider: str,
     run_smoke: bool = True,
     artifact_base_url: str | None = None,
+    force_smoke: bool = False,
 ) -> dict[str, Any]:
     details = PROVIDERS.get(provider)
     if not details:
@@ -328,6 +330,10 @@ def _provider_health(
         smoke_identity
         and SMOKE_ATTESTATIONS.get(provider) == smoke_identity
     )
+    smoke_evidence = (
+        SMOKE_EVIDENCE.get(provider)
+        if smoke_tested else None
+    )
     smoke_message = (
         "Real GPU smoke inference verified"
         if smoke_tested
@@ -335,7 +341,7 @@ def _provider_health(
     )
     if (
         configured and runtime_ready and checksum_ready and smoke_command
-        and run_smoke and not smoke_tested
+        and run_smoke and (force_smoke or not smoke_tested)
     ):
         code, output, error = _run_command(
             smoke_command,
@@ -371,6 +377,8 @@ def _provider_health(
                 )
                 if smoke_tested and smoke_identity:
                     SMOKE_ATTESTATIONS[provider] = smoke_identity
+                    SMOKE_EVIDENCE[provider] = proof
+                    smoke_evidence = proof
                 smoke_message = "Real GPU smoke inference verified" if smoke_tested else "Smoke proof did not match the loaded model"
             except (json.JSONDecodeError, IndexError):
                 smoke_message = "Smoke runner did not return a valid proof"
@@ -432,6 +440,7 @@ def _provider_health(
         "configReady": config_ready,
         "configSha256": actual_config_hash,
         "smokeTested": smoke_tested,
+        "smokeEvidence": smoke_evidence,
         "framework": expected_runtime,
         "expectedRuntime": expected_runtime,
         "revision": revision,
@@ -900,10 +909,18 @@ def download_artifact(
 
 
 @app.get("/health", dependencies=[Depends(_auth)])
-def health(request: Request, provider: str | None = None):
+def health(
+    request: Request,
+    provider: str | None = None,
+    forceSmoke: bool = False,
+):
     artifact_base = f"{_trusted_artifact_base(request)}/artifacts"
     if provider:
-        return _provider_health(provider, artifact_base_url=artifact_base)
+        return _provider_health(
+            provider,
+            artifact_base_url=artifact_base,
+            force_smoke=forceSmoke,
+        )
     return {
         "providers": {
             name: _provider_health(name, artifact_base_url=artifact_base)

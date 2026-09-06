@@ -38,3 +38,9 @@ Give each provider a distinct Dockerfile path, and keep executable runtime files
 **Why:** Modal can merge Dockerfile-image caches when providers share one Dockerfile with only different build arguments. Remote class hydration also re-imports deployment configuration and may recompute every provider digest; omitting those evidence files crash-loops otherwise healthy images.
 
 **How to apply:** Put only the selected provider runner on the application import path. Copy the complete digest evidence set to a separate non-importable directory, point digest calculation there in containers, and test a constrained-filesystem import before deployment.
+
+Never reuse a historical smoke attestation’s source-image digest as the identity of a newly deployed worker revision. Historical proof remains evidence for that historical release only.
+
+**Why:** A fresh deploy can otherwise repeat an old trusted digest even though its executable source changed, making the new signed promotion claim an identity it did not build.
+
+**How to apply:** Recompute the deterministic source-image digest from the exact checked-out release inputs for every deployment, while retaining historical smoke records unchanged and separately labeled.

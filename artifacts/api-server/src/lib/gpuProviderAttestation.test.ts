@@ -8,7 +8,7 @@ import {
   type GpuPromotionRecord,
 } from "./gpuProviderAttestation";
 
-test("promotion binds BS-RoFormer to the exact image and checkpoint pair", () => {
+test("generic promotion environment compatibility remains fail closed", () => {
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const record: GpuPromotionRecord = {
     schemaVersion: 1,
@@ -23,6 +23,7 @@ test("promotion binds BS-RoFormer to the exact image and checkpoint pair", () =>
     checkpointRevision: "puar-playground/bs-roformer@b1361b816daca507f079d85e935c291bcb0a5351",
     sourceRevision: "4fb6a9ce92fe5689154c1a1af244a099f3d7af93",
     sourceImageDigest: `sha256:${"5".repeat(64)}`,
+    releaseEvidenceSha256: "6".repeat(64),
     runtime: {
       python: "3.11.11",
       cudaImage: "nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04",
@@ -159,6 +160,7 @@ test("Beat This startup requires the exact promoted health schema", () => {
     checkpointRevision: "b95c8ab0c58c2d9fcfd40508ae8dffbc05ac4f5c",
     sourceRevision: "4fb6a9ce92fe5689154c1a1af244a099f3d7af93",
     sourceImageDigest: `sha256:${"5".repeat(64)}`,
+    releaseEvidenceSha256: "6".repeat(64),
     runtime: {
       python: "3.11.11",
       cudaImage: "nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04",

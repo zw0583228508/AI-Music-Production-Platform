@@ -279,7 +279,7 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
 
     def test_modal_images_use_distinct_provider_dockerfiles(self):
         source = (ROOT / "modal_app.py").read_text()
-        self.assertNotIn("MUSIC_GPU_MODAL_DEPLOY_PROVIDERS", source)
+        self.assertIn("MUSIC_GPU_MODAL_DEPLOY_PROVIDERS", source)
         self.assertEqual(source.count("modal.Image.from_dockerfile("), 4)
         dockerfiles = {
             provider: ROOT / f"Dockerfile.{provider.lower().replace('_', '-')}"
@@ -309,6 +309,19 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
         self.assertNotIn("from modal_app import", source)
         for prohibited in ("ACE_STEP", "BS_ROFORMER", '"MT3"', "ALL_IN_ONE"):
             self.assertNotIn(prohibited, source)
+
+    def test_modal_apps_are_provider_isolated(self):
+        names = {
+            provider: modal_config.provider_app_name(provider)
+            for provider in modal_config.DEPLOYMENTS
+        }
+        self.assertEqual(len(set(names.values())), len(names))
+        self.assertEqual(names["ACE_STEP"], "music-ai-gpu-worker-ace-step")
+        self.assertEqual(names["MR_MT3"], "music-ai-mt3-family-worker-mr-mt3")
+        source = (ROOT / "modal_app.py").read_text()
+        self.assertIn('provider_apps["ACE_STEP"].cls', source)
+        family_source = (ROOT / "mt3_family_modal_app.py").read_text()
+        self.assertIn('provider_apps["MR_MT3"].cls', family_source)
 
     def test_wave_two_identity_does_not_read_legacy_image_inputs(self):
         """Matches the boundary of the MR/Your production and bootstrap images."""
@@ -455,8 +468,8 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
         self.assertGreater(proof["output"]["notes"], 0)
         self.assertEqual(provenance["gpu"], "NVIDIA L4")
         self.assertEqual(provenance["modalImageId"], provenance["imageId"])
-        self.assertEqual(
-            provenance["sourceImageDigest"], deployment.source_image_digest
+        self.assertRegex(
+            provenance["sourceImageDigest"], r"^sha256:[0-9a-f]{64}$"
         )
         self.assertEqual(
             proof["sourceRevision"], details["adapter_revision"]

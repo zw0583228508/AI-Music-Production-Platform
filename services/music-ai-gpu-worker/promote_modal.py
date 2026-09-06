@@ -7,8 +7,12 @@ environment and is never copied into the worker environment.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
+import hashlib
 import os
+import subprocess
+import tempfile
 import time
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -18,12 +22,75 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from modal_config import (
     DEPLOYMENTS,
     build_promotion_record,
+    canonical_promotion_record,
     write_promotion_bundle,
     write_worker_identity,
 )
 
 
-PROMOTED_PROVIDERS = {"ACE_STEP", "BS_ROFORMER", "MT3", "ALL_IN_ONE"}
+PROMOTED_PROVIDERS = set(DEPLOYMENTS)
+KEY_DERIVATION_DOMAIN = b"MUSIC_GPU Modal promotion v1\0"
+ED25519_PKCS8_PREFIX = bytes.fromhex("302e020100300506032b657004220420")
+
+
+def _private_key_pem(material: str) -> bytes:
+    """Normalize legacy signing material to an OpenSSL-readable private key."""
+    encoded = material.strip()
+    if encoded.startswith("-----BEGIN"):
+        return encoded.encode()
+    try:
+        raw = base64.b64decode(encoded, validate=True)
+    except ValueError as exc:
+        raise ValueError("promotion signing key is not PEM or base64") from exc
+    if len(raw) < 16:
+        raise ValueError("promotion signing material is too short")
+    seed = raw if len(raw) == 32 else hashlib.sha256(
+        KEY_DERIVATION_DOMAIN + raw
+    ).digest()
+    converted = subprocess.run(
+        ["openssl", "pkey", "-inform", "DER", "-outform", "PEM"],
+        input=ED25519_PKCS8_PREFIX + seed,
+        capture_output=True,
+        check=False,
+    )
+    if converted.returncode or not converted.stdout.startswith(
+        b"-----BEGIN PRIVATE KEY-----"
+    ):
+        raise RuntimeError("Ed25519 promotion key normalization failed")
+    return converted.stdout
+
+
+def promotion_private_key() -> tuple[Path, bool]:
+    configured = os.getenv("MUSIC_GPU_PROMOTION_PRIVATE_KEY_FILE", "").strip()
+    if configured:
+        return Path(configured), False
+    material = os.getenv("MUSIC_GPU_PROMOTION_SIGNING_KEY", "")
+    if not material:
+        raise ValueError("promotion signing key is unavailable")
+    handle = tempfile.NamedTemporaryFile(mode="wb", delete=False)
+    try:
+        handle.write(_private_key_pem(material))
+        handle.close()
+        os.chmod(handle.name, 0o600)
+        return Path(handle.name), True
+    except BaseException:
+        handle.close()
+        Path(handle.name).unlink(missing_ok=True)
+        raise
+
+
+def write_public_key(path: Path, private_key: Path) -> None:
+    result = subprocess.run(
+        ["openssl", "pkey", "-in", str(private_key), "-pubout"],
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode or not result.stdout.startswith(
+        b"-----BEGIN PUBLIC KEY-----"
+    ):
+        raise RuntimeError("Ed25519 promotion public-key derivation failed")
+    path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
+    path.write_bytes(result.stdout)
 
 
 class NoRedirects(HTTPRedirectHandler):
@@ -146,39 +213,60 @@ def verify_live_health_with_retries(fetch_health, expected: dict, attempts: int 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--provider", required=True, choices=sorted(DEPLOYMENTS))
-    parser.add_argument("--modal-app-id", required=True)
-    parser.add_argument("--modal-deployment-id", required=True)
-    parser.add_argument("--modal-function-id", required=True)
-    parser.add_argument("--modal-image-id", required=True)
-    parser.add_argument("--endpoint-origin", required=True)
-    parser.add_argument("--checkpoint-sha256", required=True)
-    parser.add_argument("--source-revision", required=True)
+    parser.add_argument("--evidence", type=Path)
+    parser.add_argument("--modal-app-id")
+    parser.add_argument("--modal-deployment-id")
+    parser.add_argument("--modal-function-id")
+    parser.add_argument("--modal-image-id")
+    parser.add_argument("--endpoint-origin")
+    parser.add_argument("--checkpoint-sha256")
+    parser.add_argument("--source-revision")
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--worker-identity-output", required=True, type=Path)
+    parser.add_argument("--public-key-output", type=Path)
     args = parser.parse_args()
-    private_key = os.getenv("MUSIC_GPU_PROMOTION_PRIVATE_KEY_FILE", "")
-    if not private_key:
-        raise SystemExit(
-            "MUSIC_GPU_PROMOTION_PRIVATE_KEY_FILE must be provided by CI"
-        )
     deployment = DEPLOYMENTS[args.provider]
+    evidence = json.loads(args.evidence.read_text()) if args.evidence else {}
+    if evidence and evidence.get("provider") != args.provider:
+        raise ValueError("promotion evidence provider mismatch")
     record = build_promotion_record(
         deployment,
-        modal_app_id=args.modal_app_id,
-        modal_deployment_id=args.modal_deployment_id,
-        modal_function_id=args.modal_function_id,
-        modal_image_id=args.modal_image_id,
-        endpoint_origin=args.endpoint_origin,
-        checkpoint_sha256=args.checkpoint_sha256,
-        source_revision=args.source_revision,
+        modal_app_id=evidence.get("modalAppId", args.modal_app_id),
+        modal_deployment_id=evidence.get("modalDeploymentId", args.modal_deployment_id),
+        modal_function_id=evidence.get("modalFunctionId", args.modal_function_id),
+        modal_image_id=evidence.get("modalImageId", args.modal_image_id),
+        endpoint_origin=evidence.get("endpointOrigin", args.endpoint_origin),
+        checkpoint_sha256=evidence.get("checkpointSha256", args.checkpoint_sha256),
+        source_revision=evidence.get("sourceRevision", args.source_revision),
+        source_image_digest=evidence.get("sourceImageDigest"),
+        release_evidence_sha256=(
+            hashlib.sha256(canonical_promotion_record(evidence).encode()).hexdigest()
+            if evidence else None
+        ),
     )
-    token = os.getenv("MUSIC_AI_WORKER_TOKEN", "")
-    verify_live_health_with_retries(
-        lambda: fetch_authenticated_health(record["endpointOrigin"], args.provider, token),
-        record,
-    )
-    write_promotion_bundle(args.output, record, Path(private_key))
-    write_worker_identity(args.worker_identity_output, record)
+    if evidence:
+        # The automated release captured this response directly from the
+        # authoritative hydrated Modal endpoint and retains it before signing.
+        verify_live_health(evidence.get("liveHealth"), record)
+    else:
+        # Legacy/manual callers remain restricted to an independently
+        # configured provider origin and the authenticated cold-start contract.
+        token = os.getenv("MUSIC_AI_WORKER_TOKEN", "")
+        verify_live_health_with_retries(
+            lambda: fetch_authenticated_health(
+                record["endpointOrigin"], args.provider, token
+            ),
+            record,
+        )
+    private_key, temporary_key = promotion_private_key()
+    try:
+        write_promotion_bundle(args.output, record, private_key)
+        write_worker_identity(args.worker_identity_output, record)
+        if args.public_key_output:
+            write_public_key(args.public_key_output, private_key)
+    finally:
+        if temporary_key:
+            private_key.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

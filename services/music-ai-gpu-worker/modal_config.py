@@ -99,11 +99,6 @@ def provider_source_image_digest(provider: str, requirements_file: str) -> str:
         # Provider images receive this host-computed build value. Runtime
         # containers contain no Dockerfiles or provenance source tree.
         return injected
-    # MT3 is already promoted. Its reviewed L4 proof binds this historical
-    # source-image identity, which must not be recalculated when sibling Wave 2
-    # providers are added to this repository.
-    if provider == "MT3":
-        return "sha256:9cdef611f1f108d48ce881dff919c93fa46e1045e76d25d036454f287511f002"
     paths = [
         SOURCE_ROOT / f"Dockerfile.{provider.lower().replace('_', '-')}",
         SOURCE_ROOT / "app.py", SOURCE_ROOT / "modal_config.py",
@@ -141,6 +136,14 @@ def promotion_secret_name(provider: str) -> str:
     if provider not in DEPLOYMENTS:
         raise ValueError(f"unknown Modal promotion provider: {provider}")
     return f"{PROMOTION_SECRET_PREFIX}-{provider.lower().replace('_', '-')}-v1"
+
+
+def provider_app_name(provider: str) -> str:
+    """Return the isolated production Modal app for one provider."""
+    if provider not in DEPLOYMENTS:
+        raise ValueError(f"unknown Modal promotion provider: {provider}")
+    family = "music-ai-mt3-family-worker" if provider in {"MR_MT3", "YOUR_MT3"} else "music-ai-gpu-worker"
+    return f"{family}-{provider.lower().replace('_', '-')}"
 
 # SQLite recovery and the in-process task registry are intentionally
 # single-container only. Scaling these HTTP workers horizontally would allow two
@@ -394,6 +397,8 @@ def build_promotion_record(
     endpoint_origin: str,
     checkpoint_sha256: str,
     source_revision: str,
+    source_image_digest: str | None = None,
+    release_evidence_sha256: str | None = None,
 ) -> dict:
     """Build the complete immutable identity recorded by deployment CI."""
     identifiers = {
@@ -413,6 +418,15 @@ def build_promotion_record(
         raise ValueError("promotion checkpoint SHA-256 must be 64 hexadecimal characters")
     if not source_revision.strip():
         raise ValueError("promotion source revision must not be empty")
+    observed_source_image = (
+        source_image_digest or deployment.source_image_digest
+    ).strip().lower()
+    if not re.fullmatch(r"sha256:[a-f0-9]{64}", observed_source_image):
+        raise ValueError("promotion source image digest is invalid")
+    if release_evidence_sha256 is not None and not re.fullmatch(
+        r"[a-f0-9]{64}", release_evidence_sha256.lower()
+    ):
+        raise ValueError("promotion release evidence SHA-256 is invalid")
     if not deployment.source_revision:
         raise ValueError("promotion checkpoint revision must not be empty")
     runtime = {
@@ -435,7 +449,9 @@ def build_promotion_record(
         "checkpointSha256": checkpoint_sha256.lower(),
         "checkpointRevision": deployment.source_revision,
         "sourceRevision": source_revision.strip(),
-        "sourceImageDigest": deployment.source_image_digest,
+        "sourceImageDigest": observed_source_image,
+        **({"releaseEvidenceSha256": release_evidence_sha256.lower()}
+           if release_evidence_sha256 is not None else {}),
         "runtime": runtime,
     }
 

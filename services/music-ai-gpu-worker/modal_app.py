@@ -10,6 +10,7 @@ inference, and the FastAPI bearer token in app.py.
 from __future__ import annotations
 
 from pathlib import Path
+import os
 
 import modal
 
@@ -24,6 +25,7 @@ from modal_config import (
     promotion_secret_name,
     RUNTIME_SECRET_NAME,
     provider_image_build_args,
+    provider_app_name,
     worker_environment,
 )
 
@@ -44,7 +46,22 @@ PROVIDER_DOCKERFILES = {
     "MT3": MODULE_ROOT / "Dockerfile.mt3",
     "ALL_IN_ONE": MODULE_ROOT / "Dockerfile.all-in-one",
 }
-app = modal.App(APP_NAME)
+# Each production provider is a distinct app.  This avoids a deployment of one
+# function replacing sibling functions or stopping their containers.  Keeping
+# all definitions importable preserves the existing local Modal developer flow.
+release_providers = {
+    value.strip().upper() for value in os.getenv(
+        "MUSIC_GPU_MODAL_DEPLOY_PROVIDERS", "BS_ROFORMER,ACE_STEP,MT3,ALL_IN_ONE"
+    ).split(",") if value.strip()
+}
+if not release_providers or release_providers - {"BS_ROFORMER", "ACE_STEP", "MT3", "ALL_IN_ONE"}:
+    raise ValueError("MUSIC_GPU_MODAL_DEPLOY_PROVIDERS selects an unsupported provider")
+if len(release_providers) == 1:
+    app = modal.App(provider_app_name(next(iter(release_providers))))
+else:
+    # Preserve the existing shared-app default for local development/imports.
+    app = modal.App(APP_NAME)
+provider_apps = {provider: app for provider in release_providers}
 
 # Modal identifies Dockerfile-based images by Dockerfile path before it applies
 # build arguments. Every provider therefore needs a unique Dockerfile path.
@@ -98,37 +115,41 @@ def _worker_options(provider: str) -> dict:
     }
 
 
-@app.cls(**_worker_options("BS_ROFORMER"))
-@modal.concurrent(max_inputs=1)
-class BSRoFormerWorker:
-    @modal.asgi_app(label="bs-roformer")
-    def endpoint(self):
-        from app import app as fastapi_app
-        return fastapi_app
+if "BS_ROFORMER" in release_providers:
+    @provider_apps["BS_ROFORMER"].cls(**_worker_options("BS_ROFORMER"))
+    @modal.concurrent(max_inputs=1)
+    class BSRoFormerWorker:
+        @modal.asgi_app(label="bs-roformer")
+        def endpoint(self):
+            from app import app as fastapi_app
+            return fastapi_app
 
 
-@app.cls(**_worker_options("ACE_STEP"))
-@modal.concurrent(max_inputs=1)
-class AceStepWorker:
-    @modal.asgi_app(label="ace-step")
-    def endpoint(self):
-        from app import app as fastapi_app
-        return fastapi_app
+if "ACE_STEP" in release_providers:
+    @provider_apps["ACE_STEP"].cls(**_worker_options("ACE_STEP"))
+    @modal.concurrent(max_inputs=1)
+    class AceStepWorker:
+        @modal.asgi_app(label="ace-step")
+        def endpoint(self):
+            from app import app as fastapi_app
+            return fastapi_app
 
 
-@app.cls(**_worker_options("MT3"))
-@modal.concurrent(max_inputs=1)
-class MT3Worker:
-    @modal.asgi_app(label="mt3")
-    def endpoint(self):
-        from app import app as fastapi_app
-        return fastapi_app
+if "MT3" in release_providers:
+    @provider_apps["MT3"].cls(**_worker_options("MT3"))
+    @modal.concurrent(max_inputs=1)
+    class MT3Worker:
+        @modal.asgi_app(label="mt3")
+        def endpoint(self):
+            from app import app as fastapi_app
+            return fastapi_app
 
 
-@app.cls(**_worker_options("ALL_IN_ONE"))
-@modal.concurrent(max_inputs=1)
-class AllInOneWorker:
-    @modal.asgi_app(label="all-in-one")
-    def endpoint(self):
-        from app import app as fastapi_app
-        return fastapi_app
+if "ALL_IN_ONE" in release_providers:
+    @provider_apps["ALL_IN_ONE"].cls(**_worker_options("ALL_IN_ONE"))
+    @modal.concurrent(max_inputs=1)
+    class AllInOneWorker:
+        @modal.asgi_app(label="all-in-one")
+        def endpoint(self):
+            from app import app as fastapi_app
+            return fastapi_app

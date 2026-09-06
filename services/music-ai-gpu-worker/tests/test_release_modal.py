@@ -1,0 +1,124 @@
+import importlib.util
+import sys
+import types
+import unittest
+from unittest import mock
+from pathlib import Path
+
+
+ROOT = Path(__file__).parents[1]
+sys.path.insert(0, str(ROOT))
+if "modal" not in sys.modules:
+    sys.modules["modal"] = types.SimpleNamespace()
+spec = importlib.util.spec_from_file_location("gpu_release_modal", ROOT / "release_modal.py")
+release_modal = importlib.util.module_from_spec(spec)
+assert spec and spec.loader
+spec.loader.exec_module(release_modal)
+sys.modules["release_modal"] = release_modal
+activation_spec = importlib.util.spec_from_file_location(
+    "gpu_activate_promotion", ROOT / "activate_promotion.py"
+)
+activate_promotion = importlib.util.module_from_spec(activation_spec)
+assert activation_spec and activation_spec.loader
+activation_spec.loader.exec_module(activate_promotion)
+
+
+class GenericModalReleaseTests(unittest.TestCase):
+    def test_every_configured_provider_has_authoritative_modal_lookup(self):
+        self.assertEqual(set(release_modal.APP_CLASSES), set(release_modal.DEPLOYMENTS))
+        self.assertEqual(
+            release_modal.APP_CLASSES["ACE_STEP"][0],
+            "music-ai-gpu-worker-ace-step",
+        )
+        self.assertEqual(
+            release_modal.APP_CLASSES["MR_MT3"][0],
+            "music-ai-mt3-family-worker-mr-mt3",
+        )
+
+    def test_evidence_rejects_smoke_from_another_image(self):
+        evidence = {
+            "schemaVersion": 1,
+            "provider": "MT3",
+            "modalAppId": "ap-Test",
+            "modalDeploymentId": "v2",
+            "modalFunctionId": "fu-Test",
+            "endpointOrigin": "https://worker.example.test",
+            "modalImageId": "im-Current",
+            "checkpointSha256": "a" * 64,
+            "sourceImageDigest": release_modal.DEPLOYMENTS["MT3"].source_image_digest,
+            "sourceRevision": "c" * 40,
+            "smokeEvidence": {
+                "provider": "MT3",
+                "smokeTested": True,
+                "checkpointSha256": "a" * 64,
+                "output": {"notes": 2},
+                "provenance": {
+                    "checkpointSha256": "a" * 64,
+                    "modalImageId": "im-Previous",
+                    "sourceImageDigest": release_modal.DEPLOYMENTS["MT3"].source_image_digest,
+                },
+            },
+        }
+        with self.assertRaisesRegex(ValueError, "provenance"):
+            release_modal.validate_evidence(evidence, "MT3")
+
+    def test_evidence_rejects_runtime_source_digest_not_built_for_provider(self):
+        digest = release_modal.DEPLOYMENTS["MT3"].source_image_digest
+        evidence = {
+            "schemaVersion": 1, "provider": "MT3", "modalAppId": "ap-Test",
+            "modalDeploymentId": "v2", "modalFunctionId": "fu-Test",
+            "endpointOrigin": "https://worker.example.test", "modalImageId": "im-Current",
+            "checkpointSha256": "a" * 64, "sourceImageDigest": "sha256:" + "b" * 64,
+            "sourceRevision": "c" * 40,
+            "smokeEvidence": {
+                "provider": "MT3", "smokeTested": True, "checkpointSha256": "a" * 64,
+                "output": {"notes": 2}, "provenance": {
+                    "checkpointSha256": "a" * 64, "modalImageId": "im-Current",
+                    "sourceImageDigest": "sha256:" + "b" * 64,
+                },
+            },
+        }
+        self.assertNotEqual(evidence["sourceImageDigest"], digest)
+        with self.assertRaisesRegex(ValueError, "source image"):
+            release_modal.validate_evidence(evidence, "MT3")
+
+    def test_evidence_hash_changes_for_retained_health_drift(self):
+        evidence = {"liveHealth": {"healthy": True, "smokeEvidence": {"notes": 2}}}
+        original = activate_promotion.evidence_sha256(evidence)
+        evidence["liveHealth"]["smokeEvidence"]["notes"] = 3
+        self.assertNotEqual(original, activate_promotion.evidence_sha256(evidence))
+
+    def test_evidence_rejects_ci_source_revision_mismatch(self):
+        digest = release_modal.DEPLOYMENTS["MT3"].source_image_digest
+        evidence = {
+            "schemaVersion": 1, "provider": "MT3", "modalAppId": "ap-Test",
+            "modalDeploymentId": "v2", "modalFunctionId": "fu-Test",
+            "endpointOrigin": "https://worker.example.test", "modalImageId": "im-Current",
+            "checkpointSha256": "a" * 64, "sourceImageDigest": digest,
+            "sourceRevision": "c" * 40, "smokeEvidence": {
+                "provider": "MT3", "smokeTested": True, "checkpointSha256": "a" * 64,
+                "output": {"notes": 2}, "provenance": {
+                    "checkpointSha256": "a" * 64, "modalImageId": "im-Current",
+                    "sourceImageDigest": digest,
+                },
+            },
+        }
+        with mock.patch.dict("os.environ", {"MUSIC_GPU_SOURCE_REVISION": "d" * 40}):
+            with self.assertRaisesRegex(ValueError, "source revision"):
+                release_modal.validate_evidence(evidence, "MT3")
+
+    def test_failed_activation_keeps_existing_canonical_file(self):
+        with __import__("tempfile").TemporaryDirectory() as directory:
+            output = Path(directory) / "gpuPromotions.generated.ts"
+            original = "prior canonical promotion"
+            output.write_text(original)
+            with mock.patch.object(
+                activate_promotion, "validate", side_effect=ValueError("evidence drift")
+            ):
+                with self.assertRaisesRegex(ValueError, "evidence drift"):
+                    activate_promotion.activate({}, "", {}, {}, {}, output)
+            self.assertEqual(output.read_text(), original)
+
+
+if __name__ == "__main__":
+    unittest.main()

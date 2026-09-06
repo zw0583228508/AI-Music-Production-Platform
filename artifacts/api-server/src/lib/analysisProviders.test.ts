@@ -454,6 +454,7 @@ test("routes BS-RoFormer separation only after signed deployment attestation", a
     checkpointRevision: "repo/checkpoint@immutable",
     sourceRevision: "a".repeat(40),
     sourceImageDigest: `sha256:${"b".repeat(64)}`,
+    releaseEvidenceSha256: "d".repeat(64),
     runtime: {
       python: "3.11.11",
       cudaImage: "cuda-image",
@@ -589,6 +590,7 @@ test("retries exact Beat This startup before primary beat analysis", async () =>
     checkpointRevision: "final0@8c328b45",
     sourceRevision: "b95c8ab0c58c2d9fcfd40508ae8dffbc05ac4f5c",
     sourceImageDigest: `sha256:${"c".repeat(64)}`,
+    releaseEvidenceSha256: "e".repeat(64),
     runtime: {
       python: "3.11.11",
       cudaImage: "nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04",

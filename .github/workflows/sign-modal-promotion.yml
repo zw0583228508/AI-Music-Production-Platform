@@ -1,10 +1,10 @@
-name: Sign Modal promotion
+name: Release and attest Modal music provider
 
 on:
   workflow_dispatch:
     inputs:
       provider:
-        description: Provider to promote
+        description: Provider to deploy and promote
         required: true
         type: choice
         options:
@@ -12,104 +12,218 @@ on:
           - BS_ROFORMER
           - MT3
           - ALL_IN_ONE
-      modal_app_id:
-        description: Observed Modal app ID
-        required: true
-        type: string
-      modal_deployment_id:
-        description: Observed Modal deployment ID
-        required: true
-        type: string
-      modal_function_id:
-        description: Observed Modal function ID
-        required: true
-        type: string
-      modal_image_id:
-        description: Observed Modal image ID
-        required: true
-        type: string
-      endpoint_origin:
-        description: Canonical HTTPS provider origin
-        required: true
-        type: string
-      checkpoint_sha256:
-        description: Observed checkpoint SHA-256
-        required: true
-        type: string
-      source_revision:
-        description: Immutable deployed source revision
-        required: true
-        type: string
+          - MR_MT3
+          - YOUR_MT3
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
 
 concurrency:
-  group: modal-promotion-${{ inputs.provider }}
+  # Every provider shares one signing key and canonical promotions document.
+  group: modal-promotion-release-trust-root
   cancel-in-progress: false
 
 jobs:
-  sign:
-    name: Sign observed Modal identity
+  release:
+    name: Deploy, attest, and activate provider
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 60
+    environment: production
+    env:
+      PROVIDER: ${{ inputs.provider }}
+      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+      MUSIC_AI_WORKER_TOKEN: ${{ secrets.MUSIC_AI_WORKER_TOKEN }}
+      MUSIC_GPU_SOURCE_REVISION: ${{ github.sha }}
+      MUSIC_GPU_MODAL_DEPLOY_PROVIDERS: ${{ inputs.provider }}
     steps:
-      - name: Check out the promoted revision
+      - name: Check out immutable release source
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.source_revision }}
-          persist-credentials: false
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Install pinned tooling
+        uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.11"
+          enable-cache: true
 
-      - name: Materialize the CI-only signing key
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Require clean branch head
         env:
-          PROMOTION_PRIVATE_KEY: ${{ secrets.MUSIC_GPU_PROMOTION_PRIVATE_KEY }}
+          RELEASE_BRANCH: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          test -n "$PROMOTION_PRIVATE_KEY"
-          install -m 600 /dev/null "$RUNNER_TEMP/promotion-ed25519.pem"
-          printf '%s' "$PROMOTION_PRIVATE_KEY" > "$RUNNER_TEMP/promotion-ed25519.pem"
+          git fetch origin "$RELEASE_BRANCH"
+          test "$(git rev-parse "origin/$RELEASE_BRANCH")" = "$GITHUB_SHA"
+          git diff --quiet
 
-      - name: Sign the promotion record
-        env:
-          PROVIDER: ${{ inputs.provider }}
-          MODAL_APP_ID: ${{ inputs.modal_app_id }}
-          MODAL_DEPLOYMENT_ID: ${{ inputs.modal_deployment_id }}
-          MODAL_FUNCTION_ID: ${{ inputs.modal_function_id }}
-          MODAL_IMAGE_ID: ${{ inputs.modal_image_id }}
-          ENDPOINT_ORIGIN: ${{ inputs.endpoint_origin }}
-          CHECKPOINT_SHA256: ${{ inputs.checkpoint_sha256 }}
-          SOURCE_REVISION: ${{ inputs.source_revision }}
-          MUSIC_GPU_PROMOTION_PRIVATE_KEY_FILE: ${{ runner.temp }}/promotion-ed25519.pem
-          MUSIC_AI_WORKER_TOKEN: ${{ secrets.MUSIC_AI_WORKER_TOKEN }}
-          MUSIC_GPU_TRUSTED_ENDPOINT_ORIGIN_ACE_STEP: ${{ vars.MUSIC_GPU_PUBLIC_ORIGIN_ACE_STEP }}
-          MUSIC_GPU_TRUSTED_ENDPOINT_ORIGIN_BS_ROFORMER: ${{ vars.MUSIC_GPU_PUBLIC_ORIGIN_BS_ROFORMER }}
-          MUSIC_GPU_TRUSTED_ENDPOINT_ORIGIN_MT3: ${{ vars.MUSIC_GPU_PUBLIC_ORIGIN_MT3 }}
-          MUSIC_GPU_TRUSTED_ENDPOINT_ORIGIN_ALL_IN_ONE: ${{ vars.MUSIC_GPU_PUBLIC_ORIGIN_ALL_IN_ONE }}
+      - name: Install fail-closed identity placeholder
         run: |
           set -euo pipefail
           mkdir -p promotion
-          python services/music-ai-gpu-worker/promote_modal.py \
-            --provider "$PROVIDER" \
-            --modal-app-id "$MODAL_APP_ID" \
-            --modal-deployment-id "$MODAL_DEPLOYMENT_ID" \
-            --modal-function-id "$MODAL_FUNCTION_ID" \
-            --modal-image-id "$MODAL_IMAGE_ID" \
-            --endpoint-origin "$ENDPOINT_ORIGIN" \
-            --checkpoint-sha256 "$CHECKPOINT_SHA256" \
-            --source-revision "$SOURCE_REVISION" \
-            --output promotion/bundle.json \
-            --worker-identity-output promotion/worker-identity.json
-          rm -f "$MUSIC_GPU_PROMOTION_PRIVATE_KEY_FILE"
+          printf '%s\n' '{"MUSIC_GPU_MODAL_APP_ID":"unpromoted","MUSIC_GPU_MODAL_DEPLOYMENT_ID":"unpromoted","MUSIC_GPU_MODAL_FUNCTION_ID":"unpromoted"}' > promotion/worker-identity.json
+          secret="music-ai-gpu-promotion-$(printf '%s' "$PROVIDER" | tr '[:upper:]_' '[:lower:]-')-v1"
+          uv run modal secret create "$secret" \
+            --from-json promotion/worker-identity.json --force
 
-      - name: Upload the signed public promotion
+      - name: Deploy exact provider source
+        run: |
+          set -euo pipefail
+          case "$PROVIDER" in
+            MR_MT3|YOUR_MT3)
+              export MUSIC_GPU_MT3_FAMILY_PROVIDERS="$PROVIDER"
+              uv run modal deploy services/music-ai-gpu-worker/mt3_family_modal_app.py
+              ;;
+            *)
+              uv run modal deploy services/music-ai-gpu-worker/modal_app.py
+              ;;
+          esac
+
+      - name: Observe authoritative Modal metadata
+        run: |
+          uv run python services/music-ai-gpu-worker/release_modal.py \
+            --provider "$PROVIDER" observe --output promotion/candidate-metadata.json
+
+      - name: Refresh identity and stop prior containers
+        run: |
+          uv run python services/music-ai-gpu-worker/release_modal.py \
+            --provider "$PROVIDER" install-identity \
+            --metadata promotion/candidate-metadata.json \
+            --identity-output promotion/worker-identity.json \
+            --refresh-output promotion/container-refresh.json
+
+      - name: Capture authenticated health and real smoke
+        run: |
+          uv run python services/music-ai-gpu-worker/release_modal.py \
+            --provider "$PROVIDER" capture \
+            --expected-identity promotion/worker-identity.json \
+            --output promotion/release-evidence.json \
+            --health-output promotion/live-health.json
+
+      - name: Retain authoritative evidence before signing
         uses: actions/upload-artifact@v4
         with:
-          name: modal-promotion-${{ inputs.provider }}-${{ github.run_id }}
-          path: promotion
+          name: modal-provider-evidence-${{ inputs.provider }}-${{ github.run_id }}
+          path: |
+            promotion/candidate-metadata.json
+            promotion/worker-identity.json
+            promotion/container-refresh.json
+            promotion/release-evidence.json
+            promotion/live-health.json
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 90
+
+      - name: Sign evidence-derived identity
+        env:
+          STANDARD_KEY: ${{ secrets.MUSIC_GPU_PROMOTION_PRIVATE_KEY }}
+          LEGACY_KEY: ${{ secrets.MUSIC_GPU_PROMOTION_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          export MUSIC_GPU_PROMOTION_SIGNING_KEY="${STANDARD_KEY:-$LEGACY_KEY}"
+          test -n "$MUSIC_GPU_PROMOTION_SIGNING_KEY"
+          uv run python services/music-ai-gpu-worker/promote_modal.py \
+            --provider "$PROVIDER" \
+            --evidence promotion/release-evidence.json \
+            --output promotion/bundle.json \
+            --worker-identity-output promotion/signed-worker-identity.json \
+            --public-key-output promotion/public-key.pem
+          unset MUSIC_GPU_PROMOTION_SIGNING_KEY
+
+      - name: Validate every gate before canonical replacement
+        run: |
+          set -euo pipefail
+          uv run python services/music-ai-gpu-worker/activate_promotion.py \
+            --bundle promotion/bundle.json \
+            --public-key promotion/public-key.pem \
+            --evidence promotion/release-evidence.json \
+            --refresh promotion/container-refresh.json \
+            --health promotion/live-health.json \
+            --output artifacts/api-server/src/lib/gpuPromotions.generated.ts
+          pnpm --filter @workspace/api-server run typecheck
+          pnpm --filter @workspace/api-server run test:gpu-promotion
+
+      - name: Publish the verified activation pull request
+        id: activation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_BRANCH: ${{ github.ref_name }}
+          SOURCE_REVISION: ${{ github.sha }}
+          EVIDENCE_ARTIFACT: modal-provider-evidence-${{ inputs.provider }}-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          git fetch origin "$RELEASE_BRANCH"
+          test "$(git rev-parse "origin/$RELEASE_BRANCH")" = "$SOURCE_REVISION"
+          git add artifacts/api-server/src/lib/gpuPromotions.generated.ts
+          git diff --cached --quiet && {
+            echo "No new canonical promotion was produced." >&2
+            exit 1
+          }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: activate verified $PROVIDER Modal release from $SOURCE_REVISION"
+
+          provider_slug="$(printf '%s' "$PROVIDER" | tr '[:upper:]_' '[:lower:]-')"
+          activation_branch="modal-activation/$provider_slug/$SOURCE_REVISION"
+          git push origin "HEAD:refs/heads/$activation_branch"
+
+          evidence_sha256="$(python - <<'PY'
+          import json
+          print(json.load(open("promotion/bundle.json"))["record"]["releaseEvidenceSha256"])
+          PY
+          )"
+          bundle_sha256="$(sha256sum promotion/bundle.json | cut -d' ' -f1)"
+          cat > "$RUNNER_TEMP/modal-activation.md" <<EOF
+          ## Verified $PROVIDER Modal activation
+
+          This pull request is the only activation step. Merging it applies the
+          canonical API promotion without bypassing the release branch's review rules.
+
+          - Immutable source revision: \`$SOURCE_REVISION\`
+          - Signed bundle SHA-256: \`$bundle_sha256\`
+          - Signed release evidence SHA-256: \`$evidence_sha256\`
+          - Retained evidence artifact: \`$EVIDENCE_ARTIFACT\`
+          - Validation run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+
+          If review rejects or closes this proposal, the deployed worker is not made
+          canonical. Reopen or merge this same pull request to resume activation;
+          do not deploy a different worker revision.
+          EOF
+
+          pr_url="$(gh pr create \
+            --base "$RELEASE_BRANCH" \
+            --head "$activation_branch" \
+            --title "Activate verified $PROVIDER release ${SOURCE_REVISION:0:12}" \
+            --body-file "$RUNNER_TEMP/modal-activation.md")"
+          echo "pull_request_url=$pr_url" >> "$GITHUB_OUTPUT"
+          {
+            echo "## $PROVIDER activation awaits protected-branch review"
+            echo
+            echo "The worker and signed evidence were validated, but are not active until this pull request is merged:"
+            echo
+            echo "$pr_url"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Retain release, health, refresh, and smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: modal-provider-release-${{ inputs.provider }}-${{ github.run_id }}
+          path: promotion
+          if-no-files-found: warn
+          retention-days: 90

@@ -21,6 +21,7 @@ from modal_config import (
     OUTPUT_VOLUME_NAME,
     promotion_secret_name,
     provider_image_build_args,
+    provider_app_name,
     RUNTIME_SECRET_NAME,
     YOUR_MT3_MODEL_VOLUME_NAME,
     worker_environment,
@@ -34,7 +35,6 @@ REPOSITORY_ROOT = next(
      if (candidate / "pnpm-workspace.yaml").is_file()),
     ROOT,
 )
-app = modal.App(APP_NAME)
 runtime_secret = modal.Secret.from_name(RUNTIME_SECRET_NAME)
 job_volume = modal.Volume.from_name(JOB_VOLUME_NAME, create_if_missing=False)
 output_volume = modal.Volume.from_name(OUTPUT_VOLUME_NAME, create_if_missing=False)
@@ -51,6 +51,12 @@ if not enabled_providers or enabled_providers - {"MR_MT3", "YOUR_MT3"}:
     raise ValueError(
         "MUSIC_GPU_MT3_FAMILY_PROVIDERS must select MR_MT3 and/or YOUR_MT3"
     )
+# Isolate production releases while preserving the shared-app local default.
+if len(enabled_providers) == 1:
+    app = modal.App(provider_app_name(next(iter(enabled_providers))))
+else:
+    app = modal.App(APP_NAME)
+provider_apps = {provider: app for provider in enabled_providers}
 
 provider_images = {
     "MR_MT3": modal.Image.from_dockerfile(
@@ -86,7 +92,7 @@ def _worker_options(provider: str, model_volume: modal.Volume) -> dict:
 
 
 if "MR_MT3" in enabled_providers:
-    @app.cls(**_worker_options("MR_MT3", mr_mt3_model_volume))
+    @provider_apps["MR_MT3"].cls(**_worker_options("MR_MT3", mr_mt3_model_volume))
     @modal.concurrent(max_inputs=1)
     class MrMt3Worker:
         @modal.asgi_app(label="mr-mt3")
@@ -98,7 +104,7 @@ if "MR_MT3" in enabled_providers:
 
 
 if "YOUR_MT3" in enabled_providers:
-    @app.cls(**_worker_options("YOUR_MT3", your_mt3_model_volume))
+    @provider_apps["YOUR_MT3"].cls(**_worker_options("YOUR_MT3", your_mt3_model_volume))
     @modal.concurrent(max_inputs=1)
     class YourMt3Worker:
         @modal.asgi_app(label="your-mt3")
