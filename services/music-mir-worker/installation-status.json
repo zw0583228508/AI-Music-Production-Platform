@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-06T12:33:23Z",
+  "releaseAttestation": {
+    "path": "services/music-mir-worker/release-attestation.json",
+    "sha256": "39acd14b3ce425a26fc12ddbcd9aa4ee9861d6494c06130e645664493f87ec9c"
+  },
+  "providers": {
+    "MADMOM": {
+      "classification": "RESEARCH_READY",
+      "evidence": {
+        "deploymentVersion": "v5",
+        "endpointConfigured": true,
+        "authenticatedLiveHealthStatus": "ready",
+        "identityChecksum": "321f2953f6c102b6485f191dc8e1c7dec7867b6a5b92c27078528b9529c8fcb9",
+        "requirementsLockSha256": "210354042a315551890099c011b375f2ad7df7b5261f9527a16b5176cf2ec2ff",
+        "smokeEvidenceSha256": "12cca65e4ee4aa2dfe33afd93e7b970f823e451456d20e1911e66b519559e9cd",
+        "realInference": true,
+        "promotionRequired": false,
+        "commercialBlocker": "CC-BY-NC-SA-4.0 model assets"
+      }
+    },
+    "ESSENTIA": {
+      "classification": "READY",
+      "evidence": {
+        "deploymentVersion": "v5",
+        "endpointConfigured": true,
+        "authenticatedLiveHealthStatus": "ready",
+        "identityChecksum": "fcce4ef2b3e11796c49377f566af66883d76b7151da678e06d218ea607216850",
+        "requirementsLockSha256": "e209910f7ef96fa768ebd08e2a7101baaf122c9b7b833707d49604721b3d3d1f",
+        "smokeEvidenceSha256": "854bc605fc26f56155e0527a2a6092d890859329ab16f6a3e1c5acc5589066f9",
+        "realInference": true,
+        "promotionRequired": false,
+        "licenseObligationsRetained": true
+      }
+    },
+    "CHROMA": {
+      "classification": "READY",
+      "evidence": {
+        "deploymentVersion": "v5",
+        "endpointConfigured": true,
+        "authenticatedLiveHealthStatus": "ready",
+        "identityChecksum": "4ad194dcae3a9919251a77128026ec07f51c1b7b6b04f146294498e078bc01d5",
+        "requirementsLockSha256": "e209910f7ef96fa768ebd08e2a7101baaf122c9b7b833707d49604721b3d3d1f",
+        "smokeEvidenceSha256": "78da1a741b5fe2f984203c4a0e8c8346322253262659e1c0024865a4c6e80752",
+        "realInference": true,
+        "promotionRequired": false,
+        "licenseObligationsRetained": true
+      }
+    },
+    "TORCHCREPE": {
+      "classification": "READY",
+      "evidence": {
+        "deploymentVersion": "v5",
+        "endpointConfigured": true,
+        "authenticatedLiveHealthStatus": "ready",
+        "identityChecksum": "736f74980913dc3440b6ca4d582adfc0c9c4523c063a44ccfbf2044076c9144b",
+        "requirementsLockSha256": "210354042a315551890099c011b375f2ad7df7b5261f9527a16b5176cf2ec2ff",
+        "smokeEvidenceSha256": "9ec8dfb25cbd6cddd9dba246fc287a96cb549b9f72bdf8d2048a6c78e7d74321",
+        "realInference": true,
+        "promotionRequired": false,
+        "sourceIdentityKind": "PyPI wheel SHA-256"
+      }
+    },
+    "PYLOUDNORM": {
+      "classification": "READY",
+      "evidence": {
+        "deploymentVersion": "v5",
+        "endpointConfigured": true,
+        "authenticatedLiveHealthStatus": "ready",
+        "identityChecksum": "0f9cb48c78a10c760b2ae2cee033da6c0c78cef2b5d6bcddad8f191a12e65c2e",
+        "requirementsLockSha256": "210354042a315551890099c011b375f2ad7df7b5261f9527a16b5176cf2ec2ff",
+        "smokeEvidenceSha256": "72779a7a48c6945807db305498c7e357a19b996f55142c472b01b5b8e93667e6",
+        "realInference": true,
+        "promotionRequired": false
+      }
+    }
+  }
+}

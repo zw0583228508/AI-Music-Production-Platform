@@ -180,6 +180,13 @@ const RETRY_BASE_DELAY_MS = 250;
 const MAX_HEALTH_STARTUP_ATTEMPTS = 6;
 const HEALTH_STARTUP_RETRY_DELAY_MS = 5_000;
 const ANALYSIS_HEALTH_TTL_MS = 30_000;
+const MIR_PROVIDER_IDS = new Set<AnalysisProviderId>([
+  "MADMOM",
+  "ESSENTIA",
+  "CHROMA",
+  "TORCHCREPE",
+  "PYLOUDNORM",
+]);
 const analysisHealthCache = new Map<string, {
   expiresAt: number;
   error: ProviderRequestError | null;
@@ -504,10 +511,13 @@ async function attestProviderHealth(
       ].join(":")
     : "";
   const cacheKey = `${providerId}:${endpoint}:${promotionIdentity}`;
-  const cached = analysisHealthCache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) {
-    if (cached.error) throw cached.error;
-    return cached.version ?? "attested-runtime";
+  const cacheHealth = !MIR_PROVIDER_IDS.has(providerId);
+  if (cacheHealth) {
+    const cached = analysisHealthCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      if (cached.error) throw cached.error;
+      return cached.version ?? "attested-runtime";
+    }
   }
   try {
     const healthUrl = new URL("/health", endpoint);
@@ -542,11 +552,13 @@ async function attestProviderHealth(
         payload,
         endpoint,
       );
-      analysisHealthCache.set(cacheKey, {
-        expiresAt: Date.now() + ANALYSIS_HEALTH_TTL_MS,
-        error: null,
-        version: attestation.version,
-      });
+      if (cacheHealth) {
+        analysisHealthCache.set(cacheKey, {
+          expiresAt: Date.now() + ANALYSIS_HEALTH_TTL_MS,
+          error: null,
+          version: attestation.version,
+        });
+      }
       return attestation.version;
     }
     throw new ProviderStartupTimeoutError(
@@ -564,7 +576,7 @@ async function attestProviderHealth(
       startupTimeout,
       startupTimeout ? MAX_HEALTH_STARTUP_ATTEMPTS : 0,
     );
-    if (!startupTimeout) {
+    if (!startupTimeout && cacheHealth) {
       analysisHealthCache.set(cacheKey, {
         expiresAt: Date.now() + ANALYSIS_HEALTH_TTL_MS,
         error: attestationError,
@@ -597,11 +609,17 @@ async function requestProvider(
   }
 
   const token = providerToken(providerId);
-  const attestedVersion = await attestProviderHealth(providerId, endpoint, token);
+  const reattestBeforeEveryPost = MIR_PROVIDER_IDS.has(providerId);
+  const initiallyAttestedVersion = reattestBeforeEveryPost
+    ? null
+    : await attestProviderHealth(providerId, endpoint, token);
   let lastError: ProviderRequestError | null = null;
   let sheetSageCapacityRejectionReported = false;
   for (let attempt = 1; attempt <= MAX_PROVIDER_ATTEMPTS; attempt += 1) {
     try {
+      const attestedVersion = reattestBeforeEveryPost
+        ? await attestProviderHealth(providerId, endpoint, token)
+        : initiallyAttestedVersion!;
       const signal = AbortSignal.timeout(providerRequestTimeoutMs(providerId));
       const sheetSageSource = providerId === "SHEETSAGE"
         ? await openSheetSageSource(input.sourceUrl, signal)
@@ -674,11 +692,11 @@ async function requestProvider(
               payload = payload["result"];
             }
           }
-           const adapted = adaptProviderPayload(providerId, payload);
-           return {
-             payload: isRecord(adapted) && typeof adapted["version"] !== "string"
-               ? { ...adapted, version: attestedVersion }
-               : adapted,
+          const adapted = adaptProviderPayload(providerId, payload);
+          return {
+            payload: isRecord(adapted) && typeof adapted["version"] !== "string"
+              ? { ...adapted, version: attestedVersion }
+              : adapted,
             attempts: attempt,
           };
         } catch (error) {

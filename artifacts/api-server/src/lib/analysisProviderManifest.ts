@@ -84,15 +84,178 @@ export const VERIFIED_GPU_ANALYSIS_PROVIDERS: Readonly<
   },
 };
 
-const VERIFIED_MIR_PACKAGES: Readonly<Record<VerifiedMirAnalysisProviderId, {
-  packageName: string | null;
-  version: string;
-}>> = {
-  MADMOM: { packageName: "madmom-infer", version: "0.2.0" },
-  TORCHCREPE: { packageName: "torchcrepe", version: "0.0.24" },
-  ESSENTIA: { packageName: "essentia", version: "2.1b6.dev1438" },
-  CHROMA: { packageName: null, version: "essentia-hpcp-plus-librosa-0.11.0" },
-  PYLOUDNORM: { packageName: "pyloudnorm", version: "0.2.0" },
+const MIR_WORKER_SOURCE_TREE_SHA256 =
+  "a148ba1e1732a065e5e2343306273d77e28403ae39bd213900861978d038a7aa";
+const MIR_EVALUATION_FIXTURE_SHA256 =
+  "9c5c2715978ccbe3cc8b90738d9d110346ff26f1f2797ab32dba51a8f666dd52";
+const MIR_RUNTIME_PY311 = {
+  fastapi: "0.141.1",
+  librosa: "0.11.0",
+  numpy: "1.26.4",
+  pydantic: "2.13.5",
+  resampy: "0.4.3",
+  scipy: "1.13.1",
+  soundfile: "0.13.1",
+  torch: "2.14.0",
+  torchaudio: "2.11.0",
+  uvicorn: "0.52.4",
+} as const;
+const MIR_RUNTIME_PY314 = {
+  fastapi: "0.141.1",
+  librosa: "1.0.0",
+  numpy: "2.5.2",
+  pydantic: "2.13.5",
+  scipy: "1.18.1",
+  soundfile: "0.13.1",
+  uvicorn: "0.52.4",
+} as const;
+const MIR_REQUIREMENTS_LOCK_PY311 =
+  "210354042a315551890099c011b375f2ad7df7b5261f9527a16b5176cf2ec2ff";
+const MIR_REQUIREMENTS_LOCK_PY314 =
+  "e209910f7ef96fa768ebd08e2a7101baaf122c9b7b833707d49604721b3d3d1f";
+
+type VerifiedMirIdentity = Readonly<{
+  modelVersion: string;
+  checksum: string;
+  sourceRepository: string;
+  sourceRevision: string;
+  packageName: string;
+  packageVersion: string;
+  packageArtifactSha256: string;
+  packageTreeSha256: string;
+  pythonVersion: string;
+  runtimePackages: Readonly<Record<string, string>>;
+  requirementsLockSha256: string;
+  license: string;
+  licenseClassification: "COMMERCIAL" | "RESEARCH_ONLY";
+  licenseSha256: string;
+  noticeSha256: string | null;
+  commercialUse: boolean;
+  modelRepository: string;
+  modelRevision: string;
+  modelArtifactsSha256: string;
+  smokeEvidenceSha256: string;
+  resultSha256: string;
+}>;
+
+const VERIFIED_MIR_IDENTITIES: Readonly<
+  Record<VerifiedMirAnalysisProviderId, VerifiedMirIdentity>
+> = {
+  MADMOM: {
+    modelVersion: "madmom-infer-0.2.0-downbeats-blstm-2016",
+    checksum: "321f2953f6c102b6485f191dc8e1c7dec7867b6a5b92c27078528b9529c8fcb9",
+    sourceRepository: "https://github.com/openmirlab/madmom-infer",
+    sourceRevision: "cb7a1d3f43e0c7ca1ea9c10316c710b32e18e7a",
+    packageName: "madmom-infer",
+    packageVersion: "0.2.0",
+    packageArtifactSha256: "f4013a7ac2135f2f198d97f9e7840db4fbd993e2922f70b28862394c8f8d28f1",
+    packageTreeSha256: "65b186bcc2b8700e318720f2067860ee402c3be041c18b2ab082111f628be9cd",
+    pythonVersion: "3.11.11",
+    runtimePackages: MIR_RUNTIME_PY311,
+    requirementsLockSha256: MIR_REQUIREMENTS_LOCK_PY311,
+    license: "BSD-2-Clause",
+    licenseClassification: "RESEARCH_ONLY",
+    licenseSha256: "4eac23726289b6a20602be93e570016dd06e4353bc59a4a00207cf8da4ff2839",
+    noticeSha256: "6b8d927d1e7a807c9884e3781888a40de31d3b12c2131afb5c6f9f7c0b9417e3",
+    commercialUse: false,
+    modelRepository: "https://github.com/CPJKU/madmom",
+    modelRevision: "sha256:2cbc981348700f7d75f3c0d9551f1b8381b2a0edd2b1b5da3674f7cec1575807",
+    modelArtifactsSha256: "422855d74225017086720b926298de8363f089883cd238062418f5dbeacd1155",
+    smokeEvidenceSha256: "12cca65e4ee4aa2dfe33afd93e7b970f823e451456d20e1911e66b519559e9cd",
+    resultSha256: "fbacb146b61336f539204b3000255c5c690118272d62e8351b15871110ee1f8e",
+  },
+  TORCHCREPE: {
+    modelVersion: "torchcrepe-0.0.24-full",
+    checksum: "736f74980913dc3440b6ca4d582adfc0c9c4523c063a44ccfbf2044076c9144b",
+    sourceRepository: "https://pypi.org/project/torchcrepe/0.0.24/",
+    sourceRevision: "pypi-wheel-sha256:ec054c23c9d45328f213f93a0131570a3f0e5903e9382792bed95f17a8c36d5a",
+    packageName: "torchcrepe",
+    packageVersion: "0.0.24",
+    packageArtifactSha256: "ec054c23c9d45328f213f93a0131570a3f0e5903e9382792bed95f17a8c36d5a",
+    packageTreeSha256: "092a0c98bef33d6581ae86b578211967b48589989b2194529f7aef6584fa6e42",
+    pythonVersion: "3.11.11",
+    runtimePackages: MIR_RUNTIME_PY311,
+    requirementsLockSha256: MIR_REQUIREMENTS_LOCK_PY311,
+    license: "MIT",
+    licenseClassification: "COMMERCIAL",
+    licenseSha256: "2e1d0b22e64e0f0937cb213dbe45b0b02c97d278c4db8bae926ae031325b2417",
+    noticeSha256: null,
+    commercialUse: true,
+    modelRepository: "https://github.com/maxrmorrison/torchcrepe",
+    modelRevision: "sha256:08ae0c1856a3ae5037d1a95e5c856659518ae9e10b97ee79296a9ebbabf64936",
+    modelArtifactsSha256: "934d3fd30d40a8ed5a8d96cde66958f63b27f0d6f681a4d47e61b5c60e524ac7",
+    smokeEvidenceSha256: "9ec8dfb25cbd6cddd9dba246fc287a96cb549b9f72bdf8d2048a6c78e7d74321",
+    resultSha256: "e973f5a9de723a579a08baa8b77ea7d0d7dfdd664b33553702860ecb6d7a57c0",
+  },
+  ESSENTIA: {
+    modelVersion: "essentia-2.1b6.dev1438-key-hpcp",
+    checksum: "fcce4ef2b3e11796c49377f566af66883d76b7151da678e06d218ea607216850",
+    sourceRepository: "https://github.com/MTG/essentia",
+    sourceRevision: "8dbdc0735c0dc54fc2c57e083883b4baba7bf272",
+    packageName: "essentia",
+    packageVersion: "2.1b6.dev1438",
+    packageArtifactSha256: "1ee6107fe63fb3b50f8aa68466951f6ca1e162a700d8deffd46ab0506dab9acb",
+    packageTreeSha256: "8da7426d8b58cede3564a9fdb9674eb954ac0a909181c16d88ace81da0b0d669",
+    pythonVersion: "3.14.0",
+    runtimePackages: MIR_RUNTIME_PY314,
+    requirementsLockSha256: MIR_REQUIREMENTS_LOCK_PY314,
+    license: "AGPL-3.0-only",
+    licenseClassification: "COMMERCIAL",
+    licenseSha256: "857d4e8afe59718161905db0295c7e09d00674e0be844c2a0500465afbe06521",
+    noticeSha256: null,
+    commercialUse: true,
+    modelRepository: "https://github.com/MTG/essentia",
+    modelRevision: "sha256:8da7426d8b58cede3564a9fdb9674eb954ac0a909181c16d88ace81da0b0d669",
+    modelArtifactsSha256: "8da7426d8b58cede3564a9fdb9674eb954ac0a909181c16d88ace81da0b0d669",
+    smokeEvidenceSha256: "854bc605fc26f56155e0527a2a6092d890859329ab16f6a3e1c5acc5589066f9",
+    resultSha256: "14c65b26d90b2574dacb2ca6dada653de4772a7a00f506fd53c7debfea53a13e",
+  },
+  CHROMA: {
+    modelVersion: "essentia-2.1b6.dev1438-hpcp-plus-librosa-1.0.0",
+    checksum: "4ad194dcae3a9919251a77128026ec07f51c1b7b6b04f146294498e078bc01d5",
+    sourceRepository: "composite:https://github.com/MTG/essentia+https://github.com/librosa/librosa",
+    sourceRevision: "essentia@8dbdc0735c0dc54fc2c57e083883b4baba7bf272+librosa@3e4ff7bf5898ac5b326e7dee56463b4b325b91cb",
+    packageName: "essentia+librosa",
+    packageVersion: "2.1b6.dev1438+1.0.0",
+    packageArtifactSha256: "596701e7b643a3f5454e20725bfe6743feb56273b8ac3d7e50db4ea45341e972",
+    packageTreeSha256: "842c6916f5cef5f701996c0086c4ff79d553eb74a5c751e3139c4817ed0b371d",
+    pythonVersion: "3.14.0",
+    runtimePackages: MIR_RUNTIME_PY314,
+    requirementsLockSha256: MIR_REQUIREMENTS_LOCK_PY314,
+    license: "AGPL-3.0-only + ISC",
+    licenseClassification: "COMMERCIAL",
+    licenseSha256: "39d84b05db5601ec7e0e62a074685fc540cb889cda251f695e792dd112804c3e",
+    noticeSha256: null,
+    commercialUse: true,
+    modelRepository: "composite:https://github.com/MTG/essentia+https://github.com/librosa/librosa",
+    modelRevision: "sha256:62c10b5315ed3e1136f5f908e5d1428d6562ad05c4918d589c827215f60ed975",
+    modelArtifactsSha256: "62c10b5315ed3e1136f5f908e5d1428d6562ad05c4918d589c827215f60ed975",
+    smokeEvidenceSha256: "78da1a741b5fe2f984203c4a0e8c8346322253262659e1c0024865a4c6e80752",
+    resultSha256: "181e6e9c3aea0912ec546305901096c504b22a21a083a442e0a1ed75d57becbf",
+  },
+  PYLOUDNORM: {
+    modelVersion: "pyloudnorm-0.2.0-ebur128",
+    checksum: "0f9cb48c78a10c760b2ae2cee033da6c0c78cef2b5d6bcddad8f191a12e65c2e",
+    sourceRepository: "https://github.com/csteinmetz1/pyloudnorm",
+    sourceRevision: "b8d67bfd3ce5deef872f688fcfa491a0ca69fddd",
+    packageName: "pyloudnorm",
+    packageVersion: "0.2.0",
+    packageArtifactSha256: "9bb69afb904f59d007a7f9ba3d75d16fb8aeef35c44d6df822a9f192d69cf13f",
+    packageTreeSha256: "eba032eb536122df592108c3fdaf67484a5bb770579948759c8462dfdfcd156b",
+    pythonVersion: "3.11.11",
+    runtimePackages: MIR_RUNTIME_PY311,
+    requirementsLockSha256: MIR_REQUIREMENTS_LOCK_PY311,
+    license: "MIT",
+    licenseClassification: "COMMERCIAL",
+    licenseSha256: "1616faebaa2add8b57d4f76403c0c4aa427fdb0d241d8e52b7a12dce4906beaa",
+    noticeSha256: null,
+    commercialUse: true,
+    modelRepository: "https://github.com/csteinmetz1/pyloudnorm",
+    modelRevision: "sha256:eba032eb536122df592108c3fdaf67484a5bb770579948759c8462dfdfcd156b",
+    modelArtifactsSha256: "eba032eb536122df592108c3fdaf67484a5bb770579948759c8462dfdfcd156b",
+    smokeEvidenceSha256: "72779a7a48c6945807db305498c7e357a19b996f55142c472b01b5b8e93667e6",
+    resultSha256: "bba694e4c4e5ca75760b17377437beecfa26bf9c0e5b58decdec8993771f14f2",
+  },
 };
 
 export type AnalysisProviderHealthAttestation = {
@@ -108,6 +271,18 @@ const SHEETSAGE_IDENTITY = {
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function exactStringRecord(
+  actual: unknown,
+  expected: Readonly<Record<string, string>>,
+): boolean {
+  if (!record(actual)) return false;
+  const actualKeys = Object.keys(actual).sort();
+  const expectedKeys = Object.keys(expected).sort();
+  return actualKeys.length === expectedKeys.length && actualKeys.every(
+    (key, index) => key === expectedKeys[index] && actual[key] === expected[key],
+  );
 }
 
 /**
@@ -131,34 +306,56 @@ export function attestAnalysisProviderHealth(
   if (!["healthy", "ready", "ok"].includes(status)) {
     throw new Error("health response status is not healthy");
   }
-  const mirExpected = VERIFIED_MIR_PACKAGES[
+  const mirExpected = VERIFIED_MIR_IDENTITIES[
     requestedProvider as VerifiedMirAnalysisProviderId
   ];
   if (mirExpected) {
-    const packageName = payload.packageName === null
-      ? null
-      : typeof payload.packageName === "string" ? payload.packageName.trim() : "";
-    const packageVersion = typeof payload.packageVersion === "string"
-      ? payload.packageVersion.trim()
-      : "";
     if (
       payload.ready !== true ||
+      payload.modelVersion !== mirExpected.modelVersion ||
+      checksum !== mirExpected.checksum ||
+      payload.identityChecksum !== mirExpected.checksum ||
+      payload.sourceRepository !== mirExpected.sourceRepository ||
+      payload.sourceRevision !== mirExpected.sourceRevision ||
+      payload.packageName !== mirExpected.packageName ||
+      payload.packageVersion !== mirExpected.packageVersion ||
+      payload.packageArtifactSha256 !== mirExpected.packageArtifactSha256 ||
+      payload.packageTreeSha256 !== mirExpected.packageTreeSha256 ||
+      payload.pythonVersion !== mirExpected.pythonVersion ||
+      !exactStringRecord(payload.runtimePackages, mirExpected.runtimePackages) ||
+      payload.requirementsLockSha256 !== mirExpected.requirementsLockSha256 ||
+      payload.license !== mirExpected.license ||
+      payload.licenseClassification !== mirExpected.licenseClassification ||
+      payload.licenseSha256 !== mirExpected.licenseSha256 ||
+      payload.noticeSha256 !== mirExpected.noticeSha256 ||
+      payload.commercialUse !== mirExpected.commercialUse ||
+      payload.modelRepository !== mirExpected.modelRepository ||
+      payload.modelRevision !== mirExpected.modelRevision ||
+      payload.modelArtifactsSha256 !== mirExpected.modelArtifactsSha256 ||
+      payload.workerSourceTreeSha256 !== MIR_WORKER_SOURCE_TREE_SHA256 ||
+      payload.promotionRequired !== false ||
       payload.packageReady !== true ||
       payload.assetReady !== true ||
+      payload.assetsVerified !== true ||
       payload.featureExecutionReady !== true ||
       payload.runtimeReady !== true ||
+      payload.checkpointReady !== true ||
       payload.smokeTested !== true ||
-      packageName !== mirExpected.packageName ||
-      packageVersion !== mirExpected.version
+      payload.smokeProofVerified !== true ||
+      payload.identityReady !== true ||
+      payload.smokeEvidenceSha256 !== mirExpected.smokeEvidenceSha256 ||
+      payload.fixtureSha256 !== MIR_EVALUATION_FIXTURE_SHA256 ||
+      payload.resultSha256 !== mirExpected.resultSha256 ||
+      payload.reason !== null
     ) {
       throw new Error(
-        `health response does not contain verified runtime, package, asset, and smoke proof for ${requestedProvider}`,
+        `health response does not match the exact source, package, runtime, model, worker, and smoke identity for ${requestedProvider}`,
       );
     }
     return {
       provider,
-      version: packageVersion,
-      checksum: /^[a-f0-9]{64}$/i.test(checksum) ? checksum : "runtime-smoke-attested",
+      version: mirExpected.packageVersion,
+      checksum,
     };
   }
   if (requestedProvider === "SHEETSAGE") {

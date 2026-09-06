@@ -12,6 +12,58 @@ import {
   analyzeVerifiedBassStem,
 } from "./analysisProviders";
 
+const VALID_MADMOM_HEALTH = {
+  provider: "MADMOM",
+  status: "ready",
+  ready: true,
+  modelVersion: "madmom-infer-0.2.0-downbeats-blstm-2016",
+  checksum: "321f2953f6c102b6485f191dc8e1c7dec7867b6a5b92c27078528b9529c8fcb9",
+  identityChecksum: "321f2953f6c102b6485f191dc8e1c7dec7867b6a5b92c27078528b9529c8fcb9",
+  sourceRepository: "https://github.com/openmirlab/madmom-infer",
+  sourceRevision: "cb7a1d3f43e0c7ca1ea9c10316c710b32e18e7a",
+  packageName: "madmom-infer",
+  packageVersion: "0.2.0",
+  packageArtifactSha256: "f4013a7ac2135f2f198d97f9e7840db4fbd993e2922f70b28862394c8f8d28f1",
+  packageTreeSha256: "65b186bcc2b8700e318720f2067860ee402c3be041c18b2ab082111f628be9cd",
+  pythonVersion: "3.11.11",
+  runtimePackages: {
+    fastapi: "0.141.1",
+    librosa: "0.11.0",
+    numpy: "1.26.4",
+    pydantic: "2.13.5",
+    resampy: "0.4.3",
+    scipy: "1.13.1",
+    soundfile: "0.13.1",
+    torch: "2.14.0",
+    torchaudio: "2.11.0",
+    uvicorn: "0.52.4",
+  },
+  requirementsLockSha256: "210354042a315551890099c011b375f2ad7df7b5261f9527a16b5176cf2ec2ff",
+  license: "BSD-2-Clause",
+  licenseClassification: "RESEARCH_ONLY",
+  licenseSha256: "4eac23726289b6a20602be93e570016dd06e4353bc59a4a00207cf8da4ff2839",
+  noticeSha256: "6b8d927d1e7a807c9884e3781888a40de31d3b12c2131afb5c6f9f7c0b9417e3",
+  commercialUse: false,
+  modelRepository: "https://github.com/CPJKU/madmom",
+  modelRevision: "sha256:2cbc981348700f7d75f3c0d9551f1b8381b2a0edd2b1b5da3674f7cec1575807",
+  modelArtifactsSha256: "422855d74225017086720b926298de8363f089883cd238062418f5dbeacd1155",
+  workerSourceTreeSha256: "a148ba1e1732a065e5e2343306273d77e28403ae39bd213900861978d038a7aa",
+  promotionRequired: false,
+  packageReady: true,
+  assetReady: true,
+  assetsVerified: true,
+  featureExecutionReady: true,
+  runtimeReady: true,
+  checkpointReady: true,
+  smokeTested: true,
+  smokeProofVerified: true,
+  identityReady: true,
+  smokeEvidenceSha256: "12cca65e4ee4aa2dfe33afd93e7b970f823e451456d20e1911e66b519559e9cd",
+  fixtureSha256: "9c5c2715978ccbe3cc8b90738d9d110346ff26f1f2797ab32dba51a8f666dd52",
+  resultSha256: "fbacb146b61336f539204b3000255c5c690118272d62e8351b15871110ee1f8e",
+  reason: null,
+} as const;
+
 test("pins Basic Pitch health to exact source, package, runtime, and checkpoint identity", () => {
   const health = {
     provider: "BASIC_PITCH",
@@ -46,6 +98,31 @@ test("pins Basic Pitch health to exact source, package, runtime, and checkpoint 
     }),
     /verified BASIC_PITCH/,
   );
+});
+
+test("pins MIR health to exact source, package, model, worker, and smoke evidence", () => {
+  assert.deepEqual(attestAnalysisProviderHealth("MADMOM", VALID_MADMOM_HEALTH), {
+    provider: "MADMOM",
+    version: "0.2.0",
+    checksum: VALID_MADMOM_HEALTH.checksum,
+  });
+  for (const drift of [
+    { sourceRevision: "main" },
+    { packageTreeSha256: "0".repeat(64) },
+    { modelRevision: `sha256:${"0".repeat(64)}` },
+    { workerSourceTreeSha256: "0".repeat(64) },
+    { smokeEvidenceSha256: "0".repeat(64) },
+    { requirementsLockSha256: "0".repeat(64) },
+    { runtimePackages: { ...VALID_MADMOM_HEALTH.runtimePackages, numpy: "2.5.2" } },
+  ]) {
+    assert.throws(
+      () => attestAnalysisProviderHealth("MADMOM", {
+        ...VALID_MADMOM_HEALTH,
+        ...drift,
+      }),
+      /exact source, package, runtime, model, worker, and smoke identity/,
+    );
+  }
 });
 
 test("pins SheetSage health to its exact source and signed smoke identity", () => {
@@ -252,6 +329,7 @@ test("prefers configured DEMUCS and rejects an unsigned GPU fallback", async () 
       response.end(JSON.stringify({
         provider,
         status: "healthy",
+        packageReady: provider === "DEMUCS",
         checkpointReady: true,
         runtimeReady: true,
         smokeTested: true,
@@ -1252,6 +1330,206 @@ test("requires signed exact Modal provenance before sending audio to ALL_IN_ONE"
     });
     assert.equal(accepted.structure?.providerId, "ALL_IN_ONE");
     assert.equal(analysisRequests, 1);
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+test("re-attests MIR health and blocks a second analyze after identity drift", async () => {
+  let healthRequests = 0;
+  let sourceRequests = 0;
+  let analyzeRequests = 0;
+  let healthDrifted = false;
+  const server = createServer((request, response) => {
+    response.setHeader("Content-Type", "application/json");
+    if (request.method === "GET" && request.url === "/health?provider=MADMOM") {
+      healthRequests += 1;
+      response.end(JSON.stringify({
+        ...VALID_MADMOM_HEALTH,
+        ...(healthDrifted
+          ? { smokeEvidenceSha256: "0".repeat(64) }
+          : {}),
+      }));
+      return;
+    }
+    if (request.method === "GET" && request.url === "/source.wav") {
+      sourceRequests += 1;
+      response.end(Buffer.from("private-source-must-not-transfer"));
+      return;
+    }
+    if (request.method === "POST") {
+      analyzeRequests += 1;
+      response.end(JSON.stringify({
+        version: "0.2.0",
+        beats: [0, 0.5, 1],
+        downbeats: [0],
+        tempoBpm: 120,
+      }));
+      return;
+    }
+    response.writeHead(404);
+    response.end(JSON.stringify({ error: "not found" }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const endpoint = `http://127.0.0.1:${address.port}`;
+  const endpointKeys = [
+    "MUSIC_PROVIDER_BASIC_PITCH_URL",
+    "BASIC_PITCH_API_URL",
+    "MUSIC_PROVIDER_DEMUCS_URL",
+    "DEMUCS_API_URL",
+    "MUSIC_PROVIDER_BS_ROFORMER_ENDPOINT",
+    "MUSIC_PROVIDER_BS_ROFORMER_URL",
+    "BS_ROFORMER_API_URL",
+    "BS_ROFORMER_SW_API_URL",
+    "MUSIC_PROVIDER_ALL_IN_ONE_URL",
+    "ALL_IN_ONE_API_URL",
+    "MUSIC_PROVIDER_MT3_URL",
+    "MT3_API_URL",
+    "MUSIC_PROVIDER_MR_MT3_URL",
+    "MR_MT3_API_URL",
+    "MUSIC_PROVIDER_YOUR_MT3_URL",
+    "YOUR_MT3_API_URL",
+    "SHEETSAGE_API_URL",
+    "SHEET_SAGE_API_URL",
+    "MUSIC_PROVIDER_CHROMA_URL",
+    "CHROMA_API_URL",
+    "MUSIC_PROVIDER_MADMOM_URL",
+    "MADMOM_API_URL",
+    "MUSIC_PROVIDER_BEAT_THIS_URL",
+    "BEAT_THIS_API_URL",
+    "MUSIC_PROVIDER_TORCHCREPE_URL",
+    "TORCHCREPE_API_URL",
+    "MUSIC_PROVIDER_ESSENTIA_URL",
+    "ESSENTIA_API_URL",
+    "MUSIC_PROVIDER_PYLOUDNORM_URL",
+    "PYLOUDNORM_API_URL",
+    "MUSIC_MIR_API_URL",
+    "MUSIC_MIR_ESSENTIA_API_URL",
+  ];
+  const previous = new Map(endpointKeys.map((key) => [key, process.env[key]]));
+  for (const key of endpointKeys) delete process.env[key];
+  process.env.MADMOM_API_URL = endpoint;
+  try {
+    const first = await runAnalysisProviders({
+      sourceUrl: `${endpoint}/source.wav`,
+      sourceType: "FULL_SONG",
+      durationSeconds: 2,
+    });
+    assert.ok(first.provenance.some((item) => item.provider === "MADMOM"));
+    assert.equal(healthRequests, analyzeRequests);
+    assert.equal(sourceRequests, 0);
+    assert.ok(analyzeRequests > 0);
+    const healthRequestsAfterFirst = healthRequests;
+    const analyzeRequestsAfterFirst = analyzeRequests;
+    healthDrifted = true;
+    const second = await runAnalysisProviders({
+      sourceUrl: `${endpoint}/source.wav`,
+      sourceType: "FULL_SONG",
+      durationSeconds: 2,
+    });
+    assert.ok(healthRequests > healthRequestsAfterFirst);
+    assert.equal(sourceRequests, 0);
+    assert.equal(analyzeRequests, analyzeRequestsAfterFirst);
+    assert.equal(
+      second.provenance.find((item) => item.provider === "MADMOM")?.status,
+      "failed",
+    );
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+test("re-attests MIR health before a retry and blocks the second POST after drift", async () => {
+  let healthRequests = 0;
+  let analyzeRequests = 0;
+  let healthDrifted = false;
+  const server = createServer((request, response) => {
+    response.setHeader("Content-Type", "application/json");
+    if (request.method === "GET" && request.url === "/health?provider=MADMOM") {
+      healthRequests += 1;
+      response.end(JSON.stringify({
+        ...VALID_MADMOM_HEALTH,
+        ...(healthDrifted
+          ? { smokeEvidenceSha256: "0".repeat(64) }
+          : {}),
+      }));
+      return;
+    }
+    if (request.method === "POST") {
+      analyzeRequests += 1;
+      healthDrifted = true;
+      response.writeHead(503);
+      response.end(JSON.stringify({ error: "retryable failure" }));
+      return;
+    }
+    response.writeHead(404);
+    response.end(JSON.stringify({ error: "not found" }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const endpoint = `http://127.0.0.1:${address.port}`;
+  const endpointKeys = [
+    "MUSIC_PROVIDER_BASIC_PITCH_URL",
+    "BASIC_PITCH_API_URL",
+    "MUSIC_PROVIDER_DEMUCS_URL",
+    "DEMUCS_API_URL",
+    "MUSIC_PROVIDER_BS_ROFORMER_ENDPOINT",
+    "MUSIC_PROVIDER_BS_ROFORMER_URL",
+    "BS_ROFORMER_API_URL",
+    "BS_ROFORMER_SW_API_URL",
+    "MUSIC_PROVIDER_ALL_IN_ONE_URL",
+    "ALL_IN_ONE_API_URL",
+    "MUSIC_PROVIDER_MT3_URL",
+    "MT3_API_URL",
+    "MUSIC_PROVIDER_MR_MT3_URL",
+    "MR_MT3_API_URL",
+    "MUSIC_PROVIDER_YOUR_MT3_URL",
+    "YOUR_MT3_API_URL",
+    "SHEETSAGE_API_URL",
+    "SHEET_SAGE_API_URL",
+    "MUSIC_PROVIDER_CHROMA_URL",
+    "CHROMA_API_URL",
+    "MUSIC_PROVIDER_MADMOM_URL",
+    "MADMOM_API_URL",
+    "MUSIC_PROVIDER_BEAT_THIS_URL",
+    "BEAT_THIS_API_URL",
+    "MUSIC_PROVIDER_TORCHCREPE_URL",
+    "TORCHCREPE_API_URL",
+    "MUSIC_PROVIDER_ESSENTIA_URL",
+    "ESSENTIA_API_URL",
+    "MUSIC_PROVIDER_PYLOUDNORM_URL",
+    "PYLOUDNORM_API_URL",
+    "MUSIC_MIR_API_URL",
+    "MUSIC_MIR_ESSENTIA_API_URL",
+  ];
+  const previous = new Map(endpointKeys.map((key) => [key, process.env[key]]));
+  for (const key of endpointKeys) delete process.env[key];
+  process.env.MADMOM_API_URL = endpoint;
+  try {
+    const result = await runAnalysisProviders({
+      sourceUrl: `${endpoint}/source.wav`,
+      sourceType: "FULL_SONG",
+      durationSeconds: 2,
+    });
+    assert.ok(healthRequests >= 2);
+    assert.equal(analyzeRequests, 1);
+    assert.equal(
+      result.provenance.find((item) => item.provider === "MADMOM")?.status,
+      "failed",
+    );
   } finally {
     for (const [key, value] of previous) {
       if (value === undefined) delete process.env[key];

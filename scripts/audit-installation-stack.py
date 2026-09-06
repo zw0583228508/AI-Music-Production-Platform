@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Validate the authoritative installation matrix without treating code as proof."""
+import hashlib
 import json
 import re
 import sys
@@ -29,6 +30,10 @@ EXPECTED = {"ACE_STEP","BS_ROFORMER","DEMUCS","ALL_IN_ONE","BEAT_THIS","SONGFORM
  "PEDALBOARD","SFIZZ_VSCO2_CE","VST3_HOST","VST3_INSTRUMENT"}
 MUTABLE = {"", "main", "master", "latest", "null"}
 
+def canonical_sha256(value):
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
 def effective(data):
     defaults = data.get("defaults", {})
     return [{**defaults, **row} for row in data.get("providers", [])]
@@ -38,6 +43,9 @@ ENDPOINT_KEYS = {
     "BEAT_THIS": "MUSIC_PROVIDER_BEAT_THIS_URL", "MT3": "MT3_API_URL",
     "MR_MT3": "MR_MT3_API_URL", "SHEETSAGE": "SHEETSAGE_API_URL",
     "DEMUCS": "DEMUCS_API_URL", "BASIC_PITCH": "BASIC_PITCH_API_URL",
+    "MADMOM": "MADMOM_API_URL", "ESSENTIA": "ESSENTIA_API_URL",
+    "CHROMA": "CHROMA_API_URL", "TORCHCREPE": "TORCHCREPE_API_URL",
+    "PYLOUDNORM": "PYLOUDNORM_API_URL",
 }
 
 def report_errors(rows, report_text):
@@ -218,6 +226,165 @@ def evidence_errors(rows, root):
         ]
         if not all(required):
             errors.append("BASIC_PITCH: READY lacks exact source/license/package/runtime/checkpoint, real-note, live-health, or API-path evidence")
+    mir_names = ("MADMOM", "ESSENTIA", "CHROMA", "TORCHCREPE", "PYLOUDNORM")
+    if any(by_name.get(name, {}).get("finalStatus") in {"READY", "RESEARCH_READY"} for name in mir_names):
+        att = read_json("services/music-mir-worker/release-attestation.json")
+        status = read_json("services/music-mir-worker/installation-status.json")
+        manifest = read_json("services/music-mir-worker/assets_manifest.json")
+        attestation_path = root / "services/music-mir-worker/release-attestation.json"
+        api_manifest_path = root / "artifacts/api-server/src/lib/analysisProviderManifest.ts"
+        try:
+            attestation_sha256 = hashlib.sha256(attestation_path.read_bytes()).hexdigest()
+        except OSError:
+            attestation_sha256 = ""
+        try:
+            api_manifest_text = api_manifest_path.read_text(encoding="utf-8")
+        except OSError:
+            api_manifest_text = ""
+        release = att.get("release", {})
+        fixtures = att.get("fixtures", {})
+        endpoint_security = att.get("endpointSecurity", {})
+        api_path = att.get("apiPath", {})
+        release_runtimes = release.get("runtimes", {})
+        py311_release = release_runtimes.get("python311", {})
+        py314_release = release_runtimes.get("python314", {})
+        common_required = [
+            manifest.get("schemaVersion") == 2,
+            release.get("deploymentVersion") == "v5",
+            release.get("modalAppId") == "ap-gRyb2A2JLpBCcqnOci0vH5",
+            release.get("workerSourceTreeSha256") == "a148ba1e1732a065e5e2343306273d77e28403ae39bd213900861978d038a7aa",
+            '"a148ba1e1732a065e5e2343306273d77e28403ae39bd213900861978d038a7aa"' in api_manifest_text,
+            '"210354042a315551890099c011b375f2ad7df7b5261f9527a16b5176cf2ec2ff"' in api_manifest_text,
+            '"e209910f7ef96fa768ebd08e2a7101baaf122c9b7b833707d49604721b3d3d1f"' in api_manifest_text,
+            py311_release.get("imageId") == "im-W2IC7LC7g7dAgXCxihVcDK",
+            py311_release.get("baseImageId") == "im-PzM32shzFGelHvRygKPzz7",
+            py311_release.get("baseImageDigest") == "sha256:081075da77b2b55c23c088251026fb69a7b2bf92471e491ff5fd75c192fd38e5",
+            py311_release.get("uvImageDigest") == "sha256:5713fa8217f92b80223bc83aac7db36ec80a84437dbc0d04bbc659cae030d8c9",
+            py311_release.get("requirementsLockSha256") == "210354042a315551890099c011b375f2ad7df7b5261f9527a16b5176cf2ec2ff",
+            py314_release.get("imageId") == "im-QPBrqDiJhVewL4ITvJ6TGQ",
+            py314_release.get("baseImageId") == "im-8ySCtlMjRWG33rr1YFEgqW",
+            py314_release.get("baseImageDigest") == "sha256:d13fa0424035d290decef3d575cea23d1b7d5952cdf429df8f5542c71e961576",
+            py314_release.get("uvImageDigest") == "sha256:5713fa8217f92b80223bc83aac7db36ec80a84437dbc0d04bbc659cae030d8c9",
+            py314_release.get("requirementsLockSha256") == "e209910f7ef96fa768ebd08e2a7101baaf122c9b7b833707d49604721b3d3d1f",
+            fixtures.get("source", {}).get("retained") is True,
+            fixtures.get("source", {}).get("sha256") == "c4ca79a144bbfd2dcc868710d92de28e0129c8f1a1b8a957b9f8a59e5098e0b0",
+            fixtures.get("evaluationDerivative", {}).get("retained") is False,
+            fixtures.get("evaluationDerivative", {}).get("sha256") == "9c5c2715978ccbe3cc8b90738d9d110346ff26f1f2797ab32dba51a8f666dd52",
+            endpoint_security.get("unauthenticatedHealthStatus") == {"python311": 401, "python314": 401},
+            api_path.get("exactHealthAttestationRequiredBeforeSourceTransfer") is True,
+            api_path.get("successfulMirHealthCachingPermitted") is False,
+            api_path.get("mirHealthReattestedBeforeEverySourceBearingPost") is True,
+            api_path.get("sourcePackageRuntimeModelWorkerAndSmokeDriftRejected") is True,
+            api_path.get("zeroSourceOrAnalyzeTransferOnAttestationFailure") is True,
+            att.get("policy", {}).get("promotionRequired") is False,
+            att.get("policy", {}).get("manualReadinessOverridePermitted") is False,
+            status.get("releaseAttestation", {}).get("sha256") == attestation_sha256,
+        ]
+        if not all(common_required):
+            errors.append("MIR stack: release lacks exact deployment, fixture, endpoint-security, API-path, policy, or retained-attestation integrity evidence")
+        for name in mir_names:
+            row = by_name.get(name, {})
+            if row.get("finalStatus") not in {"READY", "RESEARCH_READY"}:
+                continue
+            provider_att = att.get("providers", {}).get(name, {})
+            provider_status = status.get("providers", {}).get(name, {})
+            provider_status_evidence = provider_status.get("evidence", {})
+            provider_manifest = manifest.get("providers", {}).get(name, {})
+            wheels = [
+                {"filename": item.get("filename"), "sha256": item.get("sha256")}
+                for item in provider_manifest.get("packageArtifacts", [])
+                if item.get("kind") == "wheel"
+            ]
+            expected_package_sha = (
+                wheels[0].get("sha256") if len(wheels) == 1 else canonical_sha256(wheels)
+            )
+            trees = provider_manifest.get("installedPackageTrees", {})
+            expected_tree_sha = (
+                next(iter(trees.values())).get("sha256")
+                if len(trees) == 1 else canonical_sha256(trees)
+            )
+            model_artifacts = provider_manifest.get("model", {}).get("artifacts", [])
+            model_revision = provider_manifest.get("model", {}).get("revision", "")
+            expected_model_sha = (
+                model_revision.removeprefix("sha256:")
+                if not model_artifacts and model_revision.startswith("sha256:")
+                else canonical_sha256(model_artifacts)
+            )
+            source = provider_att.get("source", {})
+            license_evidence = provider_att.get("license", {})
+            model = provider_att.get("model", {})
+            runtime = provider_att.get("runtime", {})
+            smoke = provider_att.get("realAudioSmoke", {})
+            health = provider_att.get("liveHealth", {})
+            expected_runtime_lock = provider_manifest.get("runtime", {}).get("requirementsLockSha256")
+            api_block_match = re.search(
+                rf"^\s{{2}}{re.escape(name)}: \{{(?P<body>.*?)^\s{{2}}\}},",
+                api_manifest_text,
+                flags=re.MULTILINE | re.DOTALL,
+            )
+            api_block = api_block_match.group("body") if api_block_match else ""
+            runtime_lock_symbol = (
+                "MIR_REQUIREMENTS_LOCK_PY311"
+                if provider_manifest.get("runtime", {}).get("python") == "3.11.11"
+                else "MIR_REQUIREMENTS_LOCK_PY314"
+            )
+            api_identity_required = [
+                f'checksum: "{health.get("identityChecksum", "")}"',
+                f'sourceRepository: "{source.get("repository", "")}"',
+                f'sourceRevision: "{source.get("revision", "")}"',
+                f'packageArtifactSha256: "{expected_package_sha}"',
+                f'packageTreeSha256: "{expected_tree_sha}"',
+                f'pythonVersion: "{runtime.get("python", "")}"',
+                f"requirementsLockSha256: {runtime_lock_symbol}",
+                f'modelRepository: "{model.get("repository", "")}"',
+                f'modelRevision: "{model.get("revision", "")}"',
+                f'modelArtifactsSha256: "{expected_model_sha}"',
+                f'smokeEvidenceSha256: "{smoke.get("smokeEvidenceSha256", "")}"',
+                f'resultSha256: "{smoke.get("resultSha256", "")}"',
+            ]
+            required = [
+                provider_att.get("classification") == row.get("finalStatus"),
+                provider_status.get("classification") == row.get("finalStatus"),
+                provider_status_evidence.get("deploymentVersion") == release.get("deploymentVersion"),
+                provider_manifest.get("sourceRepository") == row.get("codeRepository"),
+                provider_manifest.get("sourceRevision") == row.get("codeRevision"),
+                provider_manifest.get("model", {}).get("repository") == row.get("modelRepository"),
+                model_revision == row.get("modelRevision"),
+                source.get("repository") == provider_manifest.get("sourceRepository"),
+                source.get("revision") == provider_manifest.get("sourceRevision"),
+                source.get("packageArtifactSha256") == expected_package_sha,
+                source.get("installedPackageTreeSha256") == expected_tree_sha,
+                runtime.get("python") == provider_manifest.get("runtime", {}).get("python"),
+                runtime.get("packages") == provider_manifest.get("runtime", {}).get("packages"),
+                runtime.get("requirementsLockSha256") == expected_runtime_lock,
+                provider_status_evidence.get("requirementsLockSha256") == expected_runtime_lock,
+                license_evidence.get("classification") == provider_manifest.get("license", {}).get("classification"),
+                license_evidence.get("sha256") == provider_manifest.get("license", {}).get("codeLicenseSha256"),
+                license_evidence.get("commercialUse") == provider_manifest.get("license", {}).get("commercialUse"),
+                model.get("repository") == provider_manifest.get("model", {}).get("repository"),
+                model.get("revision") == model_revision,
+                model.get("artifactsSha256") == expected_model_sha,
+                provider_manifest.get("workerSourceTreeSha256") == release.get("workerSourceTreeSha256"),
+                provider_manifest.get("promotionRequired") is False,
+                smoke.get("realInference") is True,
+                smoke.get("featureExecutionSucceeded") is True,
+                bool(re.fullmatch(r"[a-f0-9]{64}", smoke.get("smokeEvidenceSha256", ""))),
+                bool(re.fullmatch(r"[a-f0-9]{64}", smoke.get("resultSha256", ""))),
+                provider_status_evidence.get("smokeEvidenceSha256") == smoke.get("smokeEvidenceSha256"),
+                health.get("authenticated") is True,
+                health.get("status") == "ready",
+                health.get("ready") is True,
+                health.get("allReadinessFieldsTrue") is True,
+                health.get("workerSourceTreeSha256") == release.get("workerSourceTreeSha256"),
+                health.get("requirementsLockSha256") == expected_runtime_lock,
+                health.get("smokeEvidenceSha256") == smoke.get("smokeEvidenceSha256"),
+                health.get("resultSha256") == smoke.get("resultSha256"),
+                provider_status_evidence.get("identityChecksum") == health.get("identityChecksum"),
+                bool(re.fullmatch(r"[a-f0-9]{64}", health.get("identityChecksum", ""))),
+                all(item in api_block for item in api_identity_required),
+            ]
+            if not all(required):
+                errors.append(f"{name}: ready classification lacks exact manifest/source/license/package/runtime/model/smoke/live-health evidence")
     for name in ("MUSICGEN_LARGE", "MUSICGEN_MELODY_LARGE"):
         row = by_name.get(name, {})
         if row.get("sourcePinned") and row.get("finalStatus") != "BLOCKED_NO_WEIGHTS":

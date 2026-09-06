@@ -8,11 +8,12 @@ import json
 import os
 import secrets
 import socket
+import sys
 import tempfile
 import time
 import threading
 from http.client import HTTPConnection, HTTPSConnection
-from importlib.metadata import PackageNotFoundError, version
+from importlib.metadata import PackageNotFoundError, distribution, version
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
@@ -29,6 +30,9 @@ MAX_DURATION = float(os.getenv("MIR_MAX_DURATION_SECONDS", "300"))
 FETCH_TIMEOUT = float(os.getenv("MIR_FETCH_TIMEOUT_SECONDS", "20"))
 ASSET_ROOT = Path(os.getenv("MIR_ASSET_ROOT", MANIFEST["assetRoot"])).resolve()
 READINESS_ROOT = ASSET_ROOT / ".readiness"
+RUNTIME_LOCK_PATH = Path(
+    os.getenv("MIR_REQUIREMENTS_LOCK", "/opt/mir-venv/requirements.lock")
+).resolve()
 ALL_PROVIDERS = ("MADMOM", "TORCHCREPE", "ESSENTIA", "CHROMA", "PYLOUDNORM")
 PROVIDERS = tuple(
     item.strip() for item in os.getenv("MIR_ENABLED_PROVIDERS", ",".join(ALL_PROVIDERS)).split(",")
@@ -141,16 +145,107 @@ def _decode(request: "AnalysisRequest", directory: Path) -> tuple[np.ndarray, in
     return mono, rate
 
 
-def _package_ready(provider: str) -> tuple[bool, str | None]:
-    package = MANIFEST["providers"][provider].get("package")
-    if not package:
-        return True, None
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _canonical_sha256(value: object) -> str:
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    ).hexdigest()
+
+
+def _tree_sha256(files: list[tuple[str, Path]]) -> tuple[str, int, int]:
+    digest = hashlib.sha256()
+    total = 0
+    count = 0
+    for relative, path in sorted(files):
+        if not path.is_file():
+            continue
+        data = path.read_bytes()
+        key = relative.replace("\\", "/").encode()
+        digest.update(len(key).to_bytes(4, "big"))
+        digest.update(key)
+        digest.update(len(data).to_bytes(8, "big"))
+        digest.update(data)
+        total += len(data)
+        count += 1
+    return digest.hexdigest(), count, total
+
+
+def _distribution_tree(package: str) -> dict:
     try:
-        actual = version(package)
-    except PackageNotFoundError:
-        return False, "package is not installed in isolated runtime"
-    return (actual == MANIFEST["providers"][provider]["version"],
-            None if actual == MANIFEST["providers"][provider]["version"] else "package version is not pinned")
+        installed = distribution(package)
+        tree_hash, files, total = _tree_sha256([
+            (str(relative), installed.locate_file(relative))
+            for relative in installed.files or []
+        ])
+        return {
+            "version": version(package),
+            "sha256": tree_hash,
+            "files": files,
+            "bytes": total,
+        }
+    except (PackageNotFoundError, OSError):
+        return {}
+
+
+def _worker_source_tree_sha256() -> str:
+    files = [(relative, ROOT / relative) for relative in MANIFEST["workerSourceFiles"]]
+    if any(not path.is_file() for _, path in files):
+        return ""
+    return _tree_sha256(files)[0]
+
+
+def _package_tree_sha256(record: dict) -> str:
+    trees = record["installedPackageTrees"]
+    if len(trees) == 1:
+        return next(iter(trees.values()))["sha256"]
+    return _canonical_sha256(trees)
+
+
+def _package_artifact_sha256(record: dict) -> str:
+    wheels = [
+        {"filename": artifact["filename"], "sha256": artifact["sha256"]}
+        for artifact in record["packageArtifacts"]
+        if artifact["kind"] == "wheel"
+    ]
+    if len(wheels) == 1:
+        return wheels[0]["sha256"]
+    return _canonical_sha256(wheels)
+
+
+def _model_artifacts_sha256(record: dict) -> str:
+    artifacts = record["model"]["artifacts"]
+    if not artifacts and record["model"]["revision"].startswith("sha256:"):
+        return record["model"]["revision"].split(":", 1)[1]
+    return _canonical_sha256(artifacts)
+
+
+def _package_ready(provider: str) -> tuple[bool, str | None]:
+    record = MANIFEST["providers"][provider]
+    if (
+        not RUNTIME_LOCK_PATH.is_file()
+        or _file_sha256(RUNTIME_LOCK_PATH) != record["runtime"]["requirementsLockSha256"]
+    ):
+        return False, "runtime requirements lock does not match the verified release"
+    if sys.version.split()[0] != record["runtime"]["python"]:
+        return False, "Python runtime identity does not match the verified release"
+    for package, expected in record["runtime"]["packages"].items():
+        try:
+            actual = version(package)
+        except PackageNotFoundError:
+            return False, f"required runtime package {package} is unavailable"
+        if actual != expected:
+            return False, f"runtime package {package} does not match the verified release"
+    for package, expected in record["installedPackageTrees"].items():
+        if _distribution_tree(package) != expected:
+            return False, f"installed package tree for {package} does not match the verified release"
+    return True, None
 
 
 def _require_enabled(provider: str) -> None:
@@ -160,21 +255,33 @@ def _require_enabled(provider: str) -> None:
         raise HTTPException(404, "provider is not exposed by this runtime")
 
 
-def _madmom_assets_ready() -> bool:
-    expected = MANIFEST["providers"]["MADMOM"]["assets"]
-    for asset in expected:
-        if (not isinstance(asset, dict) or not isinstance(asset.get("path"), str)
-                or not isinstance(asset.get("sha256"), str)
-                or len(asset["sha256"]) != 64):
+def _model_assets_ready(provider: str) -> bool:
+    record = MANIFEST["providers"][provider]
+    for asset in record["model"]["artifacts"]:
+        if asset["location"] == "asset-root":
+            path = (ASSET_ROOT / asset["path"]).resolve()
+            try:
+                path.relative_to(ASSET_ROOT)
+            except ValueError:
+                return False
+        elif asset["location"] == "distribution":
+            try:
+                path = Path(distribution(record["packageName"]).locate_file(asset["path"]))
+            except PackageNotFoundError:
+                return False
+        else:
             return False
-        path = (ASSET_ROOT / asset["path"]).resolve()
-        try:
-            path.relative_to(ASSET_ROOT)
-        except ValueError:
-            return False
-        if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != asset["sha256"].lower():
+        if (
+            not path.is_file()
+            or path.stat().st_size != asset["bytes"]
+            or _file_sha256(path) != asset["sha256"]
+        ):
             return False
     return True
+
+
+def _madmom_assets_ready() -> bool:
+    return _model_assets_ready("MADMOM")
 
 
 def _madmom_session():
@@ -231,18 +338,126 @@ def _madmom_result(audio: np.ndarray, rate: int, directory: Path) -> dict:
     }
 
 
-def _execution_ready(provider: str) -> bool:
-    """A package import is never readiness; only a persisted real execution is."""
+def _is_sha256(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _finite_number(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and np.isfinite(value)
+
+
+def _smoke_evidence_valid(provider: str, evidence: object) -> bool:
+    if not isinstance(evidence, dict):
+        return False
+    if provider == "MADMOM":
+        return (
+            isinstance(evidence.get("beatCount"), int) and evidence["beatCount"] >= 2
+            and isinstance(evidence.get("downbeatCount"), int) and evidence["downbeatCount"] >= 1
+            and isinstance(evidence.get("activationFrames"), int) and evidence["activationFrames"] >= 2
+            and _finite_number(evidence.get("tempoBpm")) and evidence["tempoBpm"] > 0
+        )
+    if provider == "TORCHCREPE":
+        return (
+            evidence.get("model") == "full"
+            and isinstance(evidence.get("frameCount"), int) and evidence["frameCount"] > 0
+            and isinstance(evidence.get("voicedFrameCount"), int)
+            and 0 < evidence["voicedFrameCount"] <= evidence["frameCount"]
+            and _finite_number(evidence.get("minFrequencyHz")) and evidence["minFrequencyHz"] > 0
+            and _finite_number(evidence.get("maxFrequencyHz"))
+            and evidence["maxFrequencyHz"] >= evidence["minFrequencyHz"]
+            and _finite_number(evidence.get("meanPeriodicity"))
+        )
+    if provider == "PYLOUDNORM":
+        return (
+            _finite_number(evidence.get("integratedLUFS"))
+            and _finite_number(evidence.get("loudnessRange"))
+            and evidence["loudnessRange"] >= 0
+            and _finite_number(evidence.get("samplePeak"))
+            and 0 < evidence["samplePeak"] <= 1.000001
+        )
+    if provider == "ESSENTIA":
+        return (
+            isinstance(evidence.get("key"), str) and bool(evidence["key"])
+            and evidence.get("scale") in {"major", "minor"}
+            and _finite_number(evidence.get("confidence"))
+            and evidence.get("hpcpBins") == 12
+            and evidence.get("hpcpFinite") is True
+        )
+    if provider == "CHROMA":
+        return (
+            isinstance(evidence.get("frameCount"), int) and evidence["frameCount"] > 0
+            and isinstance(evidence.get("beatCount"), int) and evidence["beatCount"] >= 2
+            and isinstance(evidence.get("librosaChromaFrames"), int)
+            and evidence["librosaChromaFrames"] > 0
+            and evidence.get("essentiaHpcpBins") == 12
+            and evidence.get("probabilitiesNormalized") is True
+            and isinstance(evidence.get("candidateChordFrames"), int)
+            and evidence["candidateChordFrames"] > 0
+        )
+    return False
+
+
+def _provider_identity_sha256(provider: str) -> str:
+    return _canonical_sha256(MANIFEST["providers"][provider])
+
+
+def _execution_marker(provider: str) -> tuple[dict | None, str | None]:
+    """Only exact, persisted real-output evidence can unlock request execution."""
     try:
         marker = json.loads((READINESS_ROOT / f"{provider.lower()}.json").read_text())
     except (OSError, json.JSONDecodeError):
-        return False
-    expected = MANIFEST["providers"][provider].get("version")
-    return (
-        marker.get("provider") == provider
-        and marker.get("featureExecutionSucceeded") is True
-        and (expected is None or marker.get("packageVersion") == expected)
+        return None, "persisted real feature-execution evidence is unavailable"
+    record = MANIFEST["providers"][provider]
+    source_fixture = marker.get("sourceFixture")
+    evaluation_fixture = marker.get("evaluationFixture")
+    valid_fixture = (
+        isinstance(source_fixture, dict)
+        and source_fixture.get("retained") is True
+        and _is_sha256(source_fixture.get("sha256"))
+        and isinstance(source_fixture.get("bytes"), int) and source_fixture["bytes"] > 0
+        and _finite_number(source_fixture.get("durationSeconds"))
+        and source_fixture["durationSeconds"] >= 10
+        and isinstance(evaluation_fixture, dict)
+        and evaluation_fixture.get("retained") is False
+        and _is_sha256(evaluation_fixture.get("sha256"))
+        and isinstance(evaluation_fixture.get("bytes"), int) and evaluation_fixture["bytes"] > 0
+        and _finite_number(evaluation_fixture.get("durationSeconds"))
+        and evaluation_fixture["durationSeconds"] >= 10
     )
+    if not (
+        marker.get("provider") == provider
+        and marker.get("modelVersion") == record["modelVersion"]
+        and marker.get("featureExecutionSucceeded") is True
+        and marker.get("identitySha256") == _provider_identity_sha256(provider)
+        and marker.get("workerSourceTreeSha256") == record["workerSourceTreeSha256"]
+        and marker.get("packageTrees") == record["installedPackageTrees"]
+        and marker.get("runtime") == record["runtime"]
+        and _is_sha256(marker.get("resultSha256"))
+        and valid_fixture
+        and _smoke_evidence_valid(provider, marker.get("evidence"))
+    ):
+        return None, "persisted real feature-execution evidence does not match the verified release"
+    return marker, None
+
+
+def _execution_ready(provider: str) -> bool:
+    return _execution_marker(provider)[0] is not None
+
+
+def _identity_ready(provider: str) -> tuple[bool, str | None]:
+    record = MANIFEST["providers"][provider]
+    package_ready, reason = _package_ready(provider)
+    if not package_ready:
+        return False, reason
+    if _worker_source_tree_sha256() != record["workerSourceTreeSha256"]:
+        return False, "worker source tree does not match the verified release"
+    if not _model_assets_ready(provider):
+        return False, "model assets do not match the verified release"
+    return True, None
 
 
 def _chords(vector: np.ndarray) -> list[str]:
@@ -318,6 +533,51 @@ def _chroma(audio: np.ndarray, rate: int) -> dict:
             "essentiaHpcp": np.asarray(hpcp).round(7).tolist(), "librosaChromaFrames": int(lib.shape[1])}}
 
 
+def _execute_provider(provider: str, audio: np.ndarray, rate: int, directory: Path) -> dict:
+    """Execute only the provider's real feature path; callers own readiness checks."""
+    if provider == "PYLOUDNORM":
+        import pyloudnorm as pyln
+        meter = pyln.Meter(rate)
+        return {
+            "integratedLUFS": round(float(meter.integrated_loudness(audio)), 4),
+            "loudnessRange": round(float(meter.loudness_range(audio)), 4),
+            "samplePeak": round(float(np.max(np.abs(audio))), 8),
+        }
+    if provider == "TORCHCREPE":
+        import torch
+        import torchcrepe
+        samples = torch.tensor(audio, dtype=torch.float32).unsqueeze(0)
+        pitch, periodicity = torchcrepe.predict(
+            samples, rate, 160, 50, 2000, model="full",
+            return_periodicity=True, batch_size=512, device="cpu",
+        )
+        values = []
+        for index, (hz, confidence) in enumerate(zip(pitch[0].tolist(), periodicity[0].tolist())):
+            voiced = confidence >= 0.5 and hz > 0
+            values.append({
+                "time": round(index * 160 / rate, 6),
+                "frequencyHz": round(hz, 5) if voiced else 0.0,
+                "periodicity": round(confidence, 6),
+                "voiced": voiced,
+                "midiPitch": round(69 + 12 * np.log2(hz / 440), 5) if voiced else None,
+                "confidence": round(confidence, 6),
+            })
+        if not values:
+            raise ValueError("TorchCREPE produced no frames")
+        return {"frames": values, "model": "full"}
+    if provider == "CHROMA":
+        return _chroma(audio, rate)
+    if provider == "ESSENTIA":
+        key, scale, strength = _essentia_key(audio)
+        return {
+            "key": key,
+            "scale": scale,
+            "confidence": round(float(strength), 6),
+            "hpcp": _essentia_hpcp(audio).round(7).tolist(),
+        }
+    return _madmom_result(audio, rate, directory)
+
+
 class AnalysisRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     provider: Literal["MADMOM", "TORCHCREPE", "ESSENTIA", "CHROMA", "PYLOUDNORM"]
@@ -333,65 +593,76 @@ class AnalysisRequest(BaseModel):
 @app.get("/health/{provider}", dependencies=[Depends(_auth)])
 def health(provider: Literal["MADMOM", "TORCHCREPE", "ESSENTIA", "CHROMA", "PYLOUDNORM"]) -> dict:
     _require_enabled(provider)
+    record = MANIFEST["providers"][provider]
     package_ready, reason = _package_ready(provider)
-    model_ready = provider != "MADMOM" or _madmom_assets_ready()
-    execution_ready = _execution_ready(provider)
-    ready = package_ready and model_ready and execution_ready
-    package = MANIFEST["providers"][provider].get("package")
-    pinned_version = (MANIFEST["providers"][provider].get("version")
-                      or MANIFEST["providers"][provider].get("implementation"))
-    identity = json.dumps(MANIFEST["providers"][provider], sort_keys=True).encode()
-    return {"provider": provider, "status": "ready" if ready else "not_ready", "ready": ready,
-            "modelVersion": pinned_version, "checksum": hashlib.sha256(identity).hexdigest(),
-            "packageName": package, "packageVersion": pinned_version,
-            "packageReady": package_ready, "assetReady": model_ready,
-            "featureExecutionReady": execution_ready,
-            "runtimeReady": package_ready and model_ready,
-            "checkpointReady": model_ready, "smokeTested": execution_ready,
-            "reason": reason or (None if model_ready and execution_ready else
-                                  "persisted real feature-execution smoke evidence is required")}
+    source_ready = _worker_source_tree_sha256() == record["workerSourceTreeSha256"]
+    model_ready = _model_assets_ready(provider)
+    marker, marker_reason = _execution_marker(provider)
+    identity_ready = package_ready and source_ready and model_ready
+    ready = identity_ready and marker is not None
+    if reason is None and not source_ready:
+        reason = "worker source tree does not match the verified release"
+    if reason is None and not model_ready:
+        reason = "model assets do not match the verified release"
+    if reason is None:
+        reason = marker_reason
+    checksum = _provider_identity_sha256(provider)
+    return {
+        "provider": provider,
+        "status": "ready" if ready else "not_ready",
+        "ready": ready,
+        "modelVersion": record["modelVersion"],
+        "checksum": checksum,
+        "identityChecksum": checksum,
+        "sourceRepository": record["sourceRepository"],
+        "sourceRevision": record["sourceRevision"],
+        "packageName": record["packageName"],
+        "packageVersion": record["packageVersion"],
+        "packageArtifactSha256": _package_artifact_sha256(record),
+        "packageTreeSha256": _package_tree_sha256(record),
+        "packageTrees": record["installedPackageTrees"],
+        "pythonVersion": record["runtime"]["python"],
+        "runtimePackages": record["runtime"]["packages"],
+        "requirementsLockSha256": record["runtime"]["requirementsLockSha256"],
+        "license": record["license"]["code"],
+        "licenseClassification": record["license"]["classification"],
+        "licenseSha256": record["license"]["codeLicenseSha256"],
+        "noticeSha256": record["license"].get("noticeSha256"),
+        "commercialUse": record["license"]["commercialUse"],
+        "modelRepository": record["model"]["repository"],
+        "modelRevision": record["model"]["revision"],
+        "modelArtifactsSha256": _model_artifacts_sha256(record),
+        "workerSourceTreeSha256": record["workerSourceTreeSha256"],
+        "promotionRequired": record["promotionRequired"],
+        "packageReady": package_ready,
+        "assetReady": model_ready,
+        "assetsVerified": model_ready,
+        "featureExecutionReady": marker is not None,
+        "runtimeReady": identity_ready,
+        "checkpointReady": model_ready,
+        "smokeTested": marker is not None,
+        "smokeProofVerified": marker is not None,
+        "identityReady": identity_ready,
+        "smokeEvidenceSha256": _canonical_sha256(marker) if marker else None,
+        "fixtureSha256": marker["evaluationFixture"]["sha256"] if marker else None,
+        "resultSha256": marker["resultSha256"] if marker else None,
+        "reason": None if ready else reason,
+    }
 
 
 @app.post("/analyze", dependencies=[Depends(_auth)])
 def analyze(request: AnalysisRequest) -> dict:
     _require_enabled(request.provider)
-    package_ready, reason = _package_ready(request.provider)
-    if not package_ready:
+    identity_ready, reason = _identity_ready(request.provider)
+    if not identity_ready:
         raise HTTPException(503, reason)
-    if request.provider == "MADMOM" and not _madmom_assets_ready():
-        raise HTTPException(503, "verified MADMOM assets are required; downloads are disabled")
+    marker, marker_reason = _execution_marker(request.provider)
+    if marker is None:
+        raise HTTPException(503, marker_reason)
     with tempfile.TemporaryDirectory(prefix="mir-") as temporary:
         audio, rate = _decode(request, Path(temporary))
         try:
-            if request.provider == "PYLOUDNORM":
-                import pyloudnorm as pyln
-                meter = pyln.Meter(rate)
-                result = {"integratedLUFS": round(float(meter.integrated_loudness(audio)), 4),
-                          "loudnessRange": round(float(meter.loudness_range(audio)), 4),
-                          "samplePeak": round(float(np.max(np.abs(audio))), 8)}
-            elif request.provider == "TORCHCREPE":
-                import torch
-                import torchcrepe
-                samples = torch.tensor(audio, dtype=torch.float32).unsqueeze(0)
-                pitch, periodicity = torchcrepe.predict(samples, rate, 160, 50, 2000, model="full",
-                                                        return_periodicity=True, batch_size=512, device="cpu")
-                values = []
-                for i, (hz, confidence) in enumerate(zip(pitch[0].tolist(), periodicity[0].tolist())):
-                    voiced = confidence >= 0.5 and hz > 0
-                    values.append({"time": round(i * 160 / rate, 6), "frequencyHz": round(hz, 5) if voiced else 0.0,
-                                   "periodicity": round(confidence, 6), "voiced": voiced,
-                                   "midiPitch": round(69 + 12 * np.log2(hz / 440), 5) if voiced else None,
-                                   "confidence": round(confidence, 6)})
-                if not values: raise ValueError("TorchCREPE produced no frames")
-                result = {"frames": values, "model": "full"}
-            elif request.provider == "CHROMA":
-                result = _chroma(audio, rate)
-            elif request.provider == "ESSENTIA":
-                key, scale, strength = _essentia_key(audio)
-                result = {"key": key, "scale": scale, "confidence": round(float(strength), 6),
-                          "hpcp": _essentia_hpcp(audio).round(7).tolist()}
-            else:
-                result = _madmom_result(audio, rate, Path(temporary))
+            result = _execute_provider(request.provider, audio, rate, Path(temporary))
         except Exception as exc:
             raise HTTPException(503, f"{request.provider} feature execution failed") from exc
     return {"provider": request.provider, "status": "ok", "sampleRate": rate, "result": result,

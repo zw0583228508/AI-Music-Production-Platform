@@ -1,0 +1,378 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-06T12:33:23Z",
+  "release": {
+    "modalAppId": "ap-gRyb2A2JLpBCcqnOci0vH5",
+    "deploymentVersion": "v5",
+    "deployedAt": "2026-09-06T12:19:41Z",
+    "workerSourceTreeSha256": "a148ba1e1732a065e5e2343306273d77e28403ae39bd213900861978d038a7aa",
+    "runtimes": {
+      "python311": {
+        "functionId": "fu-u2Lapotybhgai5ajduuJI6",
+        "imageId": "im-W2IC7LC7g7dAgXCxihVcDK",
+        "baseImageId": "im-PzM32shzFGelHvRygKPzz7",
+        "baseImageDigest": "sha256:081075da77b2b55c23c088251026fb69a7b2bf92471e491ff5fd75c192fd38e5",
+        "uvImageDigest": "sha256:5713fa8217f92b80223bc83aac7db36ec80a84437dbc0d04bbc659cae030d8c9",
+        "requirementsLockSha256": "210354042a315551890099c011b375f2ad7df7b5261f9527a16b5176cf2ec2ff",
+        "endpointOrigin": "https://windot100--music-mir.modal.run"
+      },
+      "python314": {
+        "functionId": "fu-hJkCcWxPmtLSvOxOrkFOM7",
+        "imageId": "im-QPBrqDiJhVewL4ITvJ6TGQ",
+        "baseImageId": "im-8ySCtlMjRWG33rr1YFEgqW",
+        "baseImageDigest": "sha256:d13fa0424035d290decef3d575cea23d1b7d5952cdf429df8f5542c71e961576",
+        "uvImageDigest": "sha256:5713fa8217f92b80223bc83aac7db36ec80a84437dbc0d04bbc659cae030d8c9",
+        "requirementsLockSha256": "e209910f7ef96fa768ebd08e2a7101baaf122c9b7b833707d49604721b3d3d1f",
+        "endpointOrigin": "https://windot100--music-mir-essentia.modal.run"
+      }
+    }
+  },
+  "policy": {
+    "promotionRequired": false,
+    "reason": "Both isolated workers are CPU-bounded; their base and build images are digest-pinned, complete dependency graphs are hash-locked, runtime integrity is recomputed, and every API request is re-attested before any source-bearing POST.",
+    "manualReadinessOverridePermitted": false,
+    "syntheticFallbackPermitted": false
+  },
+  "fixtures": {
+    "source": {
+      "privateVolumePath": "_smoke/real-audio.wav",
+      "retained": true,
+      "bytes": 3969198,
+      "durationSeconds": 45.0,
+      "sampleRate": 44100,
+      "channels": 1,
+      "sha256": "c4ca79a144bbfd2dcc868710d92de28e0129c8f1a1b8a957b9f8a59e5098e0b0"
+    },
+    "evaluationDerivative": {
+      "retained": false,
+      "kind": "temporary deterministic PCM_16 derivative",
+      "bytes": 1323044,
+      "durationSeconds": 15.0,
+      "sampleRate": 44100,
+      "channels": 1,
+      "sha256": "9c5c2715978ccbe3cc8b90738d9d110346ff26f1f2797ab32dba51a8f666dd52"
+    }
+  },
+  "providers": {
+    "MADMOM": {
+      "classification": "RESEARCH_READY",
+      "endpointKey": "MADMOM_API_URL",
+      "source": {
+        "repository": "https://github.com/openmirlab/madmom-infer",
+        "revision": "cb7a1d3f43e0c7ca1ea9c10316c710b32e18e7a",
+        "packageArtifactSha256": "f4013a7ac2135f2f198d97f9e7840db4fbd993e2922f70b28862394c8f8d28f1",
+        "installedPackageTreeSha256": "65b186bcc2b8700e318720f2067860ee402c3be041c18b2ab082111f628be9cd"
+      },
+      "license": {
+        "spdx": "BSD-2-Clause",
+        "classification": "RESEARCH_ONLY",
+        "sha256": "4eac23726289b6a20602be93e570016dd06e4353bc59a4a00207cf8da4ff2839",
+        "noticeSha256": "6b8d927d1e7a807c9884e3781888a40de31d3b12c2131afb5c6f9f7c0b9417e3",
+        "commercialUse": false,
+        "modelAssetTerms": "CC-BY-NC-SA-4.0"
+      },
+      "model": {
+        "repository": "https://github.com/CPJKU/madmom",
+        "revision": "sha256:2cbc981348700f7d75f3c0d9551f1b8381b2a0edd2b1b5da3674f7cec1575807",
+        "artifactsSha256": "422855d74225017086720b926298de8363f089883cd238062418f5dbeacd1155"
+      },
+      "runtime": {
+        "python": "3.11.11",
+        "requirementsLockSha256": "210354042a315551890099c011b375f2ad7df7b5261f9527a16b5176cf2ec2ff",
+        "packages": {
+          "fastapi": "0.141.1",
+          "librosa": "0.11.0",
+          "numpy": "1.26.4",
+          "pydantic": "2.13.5",
+          "resampy": "0.4.3",
+          "scipy": "1.13.1",
+          "soundfile": "0.13.1",
+          "torch": "2.14.0",
+          "torchaudio": "2.11.0",
+          "uvicorn": "0.52.4"
+        }
+      },
+      "realAudioSmoke": {
+        "realInference": true,
+        "featureExecutionSucceeded": true,
+        "smokeEvidenceSha256": "12cca65e4ee4aa2dfe33afd93e7b970f823e451456d20e1911e66b519559e9cd",
+        "resultSha256": "fbacb146b61336f539204b3000255c5c690118272d62e8351b15871110ee1f8e",
+        "evidence": {
+          "activationFrames": 1500,
+          "beatCount": 45,
+          "downbeatCount": 15,
+          "tempoBpm": 181.8182
+        }
+      },
+      "liveHealth": {
+        "authenticated": true,
+        "status": "ready",
+        "ready": true,
+        "identityChecksum": "321f2953f6c102b6485f191dc8e1c7dec7867b6a5b92c27078528b9529c8fcb9",
+        "workerSourceTreeSha256": "a148ba1e1732a065e5e2343306273d77e28403ae39bd213900861978d038a7aa",
+        "requirementsLockSha256": "210354042a315551890099c011b375f2ad7df7b5261f9527a16b5176cf2ec2ff",
+        "smokeEvidenceSha256": "12cca65e4ee4aa2dfe33afd93e7b970f823e451456d20e1911e66b519559e9cd",
+        "resultSha256": "fbacb146b61336f539204b3000255c5c690118272d62e8351b15871110ee1f8e",
+        "allReadinessFieldsTrue": true
+      }
+    },
+    "TORCHCREPE": {
+      "classification": "READY",
+      "endpointKey": "TORCHCREPE_API_URL",
+      "source": {
+        "repository": "https://pypi.org/project/torchcrepe/0.0.24/",
+        "upstreamRepository": "https://github.com/maxrmorrison/torchcrepe",
+        "revision": "pypi-wheel-sha256:ec054c23c9d45328f213f93a0131570a3f0e5903e9382792bed95f17a8c36d5a",
+        "packageArtifactSha256": "ec054c23c9d45328f213f93a0131570a3f0e5903e9382792bed95f17a8c36d5a",
+        "installedPackageTreeSha256": "092a0c98bef33d6581ae86b578211967b48589989b2194529f7aef6584fa6e42"
+      },
+      "license": {
+        "spdx": "MIT",
+        "classification": "COMMERCIAL",
+        "sha256": "2e1d0b22e64e0f0937cb213dbe45b0b02c97d278c4db8bae926ae031325b2417",
+        "commercialUse": true
+      },
+      "model": {
+        "repository": "https://github.com/maxrmorrison/torchcrepe",
+        "revision": "sha256:08ae0c1856a3ae5037d1a95e5c856659518ae9e10b97ee79296a9ebbabf64936",
+        "artifactsSha256": "934d3fd30d40a8ed5a8d96cde66958f63b27f0d6f681a4d47e61b5c60e524ac7"
+      },
+      "runtime": {
+        "python": "3.11.11",
+        "requirementsLockSha256": "210354042a315551890099c011b375f2ad7df7b5261f9527a16b5176cf2ec2ff",
+        "packages": {
+          "fastapi": "0.141.1",
+          "librosa": "0.11.0",
+          "numpy": "1.26.4",
+          "pydantic": "2.13.5",
+          "resampy": "0.4.3",
+          "scipy": "1.13.1",
+          "soundfile": "0.13.1",
+          "torch": "2.14.0",
+          "torchaudio": "2.11.0",
+          "uvicorn": "0.52.4"
+        }
+      },
+      "realAudioSmoke": {
+        "realInference": true,
+        "featureExecutionSucceeded": true,
+        "smokeEvidenceSha256": "9ec8dfb25cbd6cddd9dba246fc287a96cb549b9f72bdf8d2048a6c78e7d74321",
+        "resultSha256": "e973f5a9de723a579a08baa8b77ea7d0d7dfdd664b33553702860ecb6d7a57c0",
+        "evidence": {
+          "model": "full",
+          "frameCount": 4138,
+          "voicedFrameCount": 3101,
+          "minFrequencyHz": 107.91032,
+          "maxFrequencyHz": 499.39233,
+          "meanPeriodicity": 0.63845
+        }
+      },
+      "liveHealth": {
+        "authenticated": true,
+        "status": "ready",
+        "ready": true,
+        "identityChecksum": "736f74980913dc3440b6ca4d582adfc0c9c4523c063a44ccfbf2044076c9144b",
+        "workerSourceTreeSha256": "a148ba1e1732a065e5e2343306273d77e28403ae39bd213900861978d038a7aa",
+        "requirementsLockSha256": "210354042a315551890099c011b375f2ad7df7b5261f9527a16b5176cf2ec2ff",
+        "smokeEvidenceSha256": "9ec8dfb25cbd6cddd9dba246fc287a96cb549b9f72bdf8d2048a6c78e7d74321",
+        "resultSha256": "e973f5a9de723a579a08baa8b77ea7d0d7dfdd664b33553702860ecb6d7a57c0",
+        "allReadinessFieldsTrue": true
+      }
+    },
+    "PYLOUDNORM": {
+      "classification": "READY",
+      "endpointKey": "PYLOUDNORM_API_URL",
+      "source": {
+        "repository": "https://github.com/csteinmetz1/pyloudnorm",
+        "revision": "b8d67bfd3ce5deef872f688fcfa491a0ca69fddd",
+        "packageArtifactSha256": "9bb69afb904f59d007a7f9ba3d75d16fb8aeef35c44d6df822a9f192d69cf13f",
+        "installedPackageTreeSha256": "eba032eb536122df592108c3fdaf67484a5bb770579948759c8462dfdfcd156b"
+      },
+      "license": {
+        "spdx": "MIT",
+        "classification": "COMMERCIAL",
+        "sha256": "1616faebaa2add8b57d4f76403c0c4aa427fdb0d241d8e52b7a12dce4906beaa",
+        "commercialUse": true
+      },
+      "model": {
+        "repository": "https://github.com/csteinmetz1/pyloudnorm",
+        "revision": "sha256:eba032eb536122df592108c3fdaf67484a5bb770579948759c8462dfdfcd156b",
+        "artifactsSha256": "eba032eb536122df592108c3fdaf67484a5bb770579948759c8462dfdfcd156b"
+      },
+      "runtime": {
+        "python": "3.11.11",
+        "requirementsLockSha256": "210354042a315551890099c011b375f2ad7df7b5261f9527a16b5176cf2ec2ff",
+        "packages": {
+          "fastapi": "0.141.1",
+          "librosa": "0.11.0",
+          "numpy": "1.26.4",
+          "pydantic": "2.13.5",
+          "resampy": "0.4.3",
+          "scipy": "1.13.1",
+          "soundfile": "0.13.1",
+          "torch": "2.14.0",
+          "torchaudio": "2.11.0",
+          "uvicorn": "0.52.4"
+        }
+      },
+      "realAudioSmoke": {
+        "realInference": true,
+        "featureExecutionSucceeded": true,
+        "smokeEvidenceSha256": "72779a7a48c6945807db305498c7e357a19b996f55142c472b01b5b8e93667e6",
+        "resultSha256": "bba694e4c4e5ca75760b17377437beecfa26bf9c0e5b58decdec8993771f14f2",
+        "evidence": {
+          "integratedLUFS": -15.556,
+          "loudnessRange": 3.0335,
+          "samplePeak": 0.8677063
+        }
+      },
+      "liveHealth": {
+        "authenticated": true,
+        "status": "ready",
+        "ready": true,
+        "identityChecksum": "0f9cb48c78a10c760b2ae2cee033da6c0c78cef2b5d6bcddad8f191a12e65c2e",
+        "workerSourceTreeSha256": "a148ba1e1732a065e5e2343306273d77e28403ae39bd213900861978d038a7aa",
+        "requirementsLockSha256": "210354042a315551890099c011b375f2ad7df7b5261f9527a16b5176cf2ec2ff",
+        "smokeEvidenceSha256": "72779a7a48c6945807db305498c7e357a19b996f55142c472b01b5b8e93667e6",
+        "resultSha256": "bba694e4c4e5ca75760b17377437beecfa26bf9c0e5b58decdec8993771f14f2",
+        "allReadinessFieldsTrue": true
+      }
+    },
+    "ESSENTIA": {
+      "classification": "READY",
+      "endpointKey": "ESSENTIA_API_URL",
+      "source": {
+        "repository": "https://github.com/MTG/essentia",
+        "revision": "8dbdc0735c0dc54fc2c57e083883b4baba7bf272",
+        "upstreamVersion": "v2.1_beta5-1438-g8dbdc073",
+        "packageArtifactSha256": "1ee6107fe63fb3b50f8aa68466951f6ca1e162a700d8deffd46ab0506dab9acb",
+        "installedPackageTreeSha256": "8da7426d8b58cede3564a9fdb9674eb954ac0a909181c16d88ace81da0b0d669"
+      },
+      "license": {
+        "spdx": "AGPL-3.0-only",
+        "classification": "COMMERCIAL",
+        "sha256": "857d4e8afe59718161905db0295c7e09d00674e0be844c2a0500465afbe06521",
+        "commercialUse": true,
+        "obligations": "Network use must satisfy AGPL-3.0 source-offer and corresponding-source obligations."
+      },
+      "model": {
+        "repository": "https://github.com/MTG/essentia",
+        "revision": "sha256:8da7426d8b58cede3564a9fdb9674eb954ac0a909181c16d88ace81da0b0d669",
+        "artifactsSha256": "8da7426d8b58cede3564a9fdb9674eb954ac0a909181c16d88ace81da0b0d669"
+      },
+      "runtime": {
+        "python": "3.14.0",
+        "requirementsLockSha256": "e209910f7ef96fa768ebd08e2a7101baaf122c9b7b833707d49604721b3d3d1f",
+        "packages": {
+          "fastapi": "0.141.1",
+          "librosa": "1.0.0",
+          "numpy": "2.5.2",
+          "pydantic": "2.13.5",
+          "scipy": "1.18.1",
+          "soundfile": "0.13.1",
+          "uvicorn": "0.52.4"
+        }
+      },
+      "realAudioSmoke": {
+        "realInference": true,
+        "featureExecutionSucceeded": true,
+        "smokeEvidenceSha256": "854bc605fc26f56155e0527a2a6092d890859329ab16f6a3e1c5acc5589066f9",
+        "resultSha256": "14c65b26d90b2574dacb2ca6dada653de4772a7a00f506fd53c7debfea53a13e",
+        "evidence": {
+          "key": "A",
+          "scale": "minor",
+          "confidence": 0.901448,
+          "hpcpBins": 12,
+          "hpcpFinite": true
+        }
+      },
+      "liveHealth": {
+        "authenticated": true,
+        "status": "ready",
+        "ready": true,
+        "identityChecksum": "fcce4ef2b3e11796c49377f566af66883d76b7151da678e06d218ea607216850",
+        "workerSourceTreeSha256": "a148ba1e1732a065e5e2343306273d77e28403ae39bd213900861978d038a7aa",
+        "requirementsLockSha256": "e209910f7ef96fa768ebd08e2a7101baaf122c9b7b833707d49604721b3d3d1f",
+        "smokeEvidenceSha256": "854bc605fc26f56155e0527a2a6092d890859329ab16f6a3e1c5acc5589066f9",
+        "resultSha256": "14c65b26d90b2574dacb2ca6dada653de4772a7a00f506fd53c7debfea53a13e",
+        "allReadinessFieldsTrue": true
+      }
+    },
+    "CHROMA": {
+      "classification": "READY",
+      "endpointKey": "CHROMA_API_URL",
+      "source": {
+        "repository": "composite:https://github.com/MTG/essentia+https://github.com/librosa/librosa",
+        "revision": "essentia@8dbdc0735c0dc54fc2c57e083883b4baba7bf272+librosa@3e4ff7bf5898ac5b326e7dee56463b4b325b91cb",
+        "packageArtifactSha256": "596701e7b643a3f5454e20725bfe6743feb56273b8ac3d7e50db4ea45341e972",
+        "installedPackageTreeSha256": "842c6916f5cef5f701996c0086c4ff79d553eb74a5c751e3139c4817ed0b371d"
+      },
+      "license": {
+        "spdx": "AGPL-3.0-only + ISC",
+        "classification": "COMMERCIAL",
+        "sha256": "39d84b05db5601ec7e0e62a074685fc540cb889cda251f695e792dd112804c3e",
+        "commercialUse": true,
+        "obligations": "Essentia network use must satisfy AGPL-3.0; librosa notices must retain the ISC copyright and permission notice."
+      },
+      "model": {
+        "repository": "composite:https://github.com/MTG/essentia+https://github.com/librosa/librosa",
+        "revision": "sha256:62c10b5315ed3e1136f5f908e5d1428d6562ad05c4918d589c827215f60ed975",
+        "artifactsSha256": "62c10b5315ed3e1136f5f908e5d1428d6562ad05c4918d589c827215f60ed975"
+      },
+      "runtime": {
+        "python": "3.14.0",
+        "requirementsLockSha256": "e209910f7ef96fa768ebd08e2a7101baaf122c9b7b833707d49604721b3d3d1f",
+        "packages": {
+          "fastapi": "0.141.1",
+          "librosa": "1.0.0",
+          "numpy": "2.5.2",
+          "pydantic": "2.13.5",
+          "scipy": "1.18.1",
+          "soundfile": "0.13.1",
+          "uvicorn": "0.52.4"
+        }
+      },
+      "realAudioSmoke": {
+        "realInference": true,
+        "featureExecutionSucceeded": true,
+        "smokeEvidenceSha256": "78da1a741b5fe2f984203c4a0e8c8346322253262659e1c0024865a4c6e80752",
+        "resultSha256": "181e6e9c3aea0912ec546305901096c504b22a21a083a442e0a1ed75d57becbf",
+        "evidence": {
+          "beatCount": 34,
+          "frameCount": 33,
+          "candidateChordFrames": 33,
+          "librosaChromaFrames": 1292,
+          "essentiaHpcpBins": 12,
+          "probabilitiesNormalized": true
+        }
+      },
+      "liveHealth": {
+        "authenticated": true,
+        "status": "ready",
+        "ready": true,
+        "identityChecksum": "4ad194dcae3a9919251a77128026ec07f51c1b7b6b04f146294498e078bc01d5",
+        "workerSourceTreeSha256": "a148ba1e1732a065e5e2343306273d77e28403ae39bd213900861978d038a7aa",
+        "requirementsLockSha256": "e209910f7ef96fa768ebd08e2a7101baaf122c9b7b833707d49604721b3d3d1f",
+        "smokeEvidenceSha256": "78da1a741b5fe2f984203c4a0e8c8346322253262659e1c0024865a4c6e80752",
+        "resultSha256": "181e6e9c3aea0912ec546305901096c504b22a21a083a442e0a1ed75d57becbf",
+        "allReadinessFieldsTrue": true
+      }
+    }
+  },
+  "endpointSecurity": {
+    "authenticatedHealthStatus": 200,
+    "unauthenticatedHealthStatus": {
+      "python311": 401,
+      "python314": 401
+    },
+    "secretConfigured": true
+  },
+  "apiPath": {
+    "exactHealthAttestationRequiredBeforeSourceTransfer": true,
+    "successfulMirHealthCachingPermitted": false,
+    "mirHealthReattestedBeforeEverySourceBearingPost": true,
+    "sourcePackageRuntimeModelWorkerAndSmokeDriftRejected": true,
+    "zeroSourceOrAnalyzeTransferOnAttestationFailure": true,
+    "regressionTest": "artifacts/api-server/src/lib/analysisProviders.test.ts"
+  }
+}

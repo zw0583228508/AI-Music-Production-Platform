@@ -33,8 +33,8 @@ Modal may hydrate an ASGI class with its control-plane Python rather than the im
 
 **How to apply:** Use the absolute interpreter installed in the image, discard child stderr, validate a minimal typed result, retry only transient initialization, and convert spawn/parse failures into sanitized health states.
 
-Every production consumer of an authenticated startup contract must verify the complete promoted identity before retrying, and must not negative-cache a response that remains validly provisional.
+Every production consumer of an authenticated startup contract must verify the complete promoted identity before retrying, and must not negative-cache a response that remains validly provisional. A cached successful health result must never authorize a later source-bearing request.
 
-**Why:** A worker and release validator can correctly emit and accept `starting` while an API caller still converts that same response into a cached terminal failure, making cold recovery impossible for real user traffic.
+**Why:** A worker and release validator can correctly emit and accept `starting` while an API caller still converts that same response into a cached terminal failure, making cold recovery impossible for real user traffic. Conversely, package, source-tree, runtime-lock, model, or smoke evidence can drift after a cached success; forwarding private source under that stale success bypasses the fail-closed gate.
 
-**How to apply:** Share the signed identity gate with the ready path, allow only the exact provider-specific startup schema, retry on a fixed bound, cache the eventual ready result, and leave bounded startup exhaustion uncached so a later request can recover.
+**How to apply:** Share the signed identity gate with the ready path, allow only the exact provider-specific startup schema, retry on a fixed bound, and leave bounded startup exhaustion uncached so a later request can recover. Status-only callers may use a short cache, but every source-bearing request must perform a fresh complete health attestation immediately before each POST, including retries, and transfer nothing when it fails.

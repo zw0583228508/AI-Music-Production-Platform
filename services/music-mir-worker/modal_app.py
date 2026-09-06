@@ -12,7 +12,6 @@ import json
 import os
 import subprocess
 import sys
-import time
 import re
 from pathlib import Path
 
@@ -119,7 +118,8 @@ def provision_madmom_assets() -> dict:
     files = sorted(Path(path) for path in paths)
     expected = {
         item["path"]: item["sha256"]
-        for item in json.loads((Path("/app") / "assets_manifest.json").read_text())["providers"]["MADMOM"]["assets"]
+        for item in json.loads((Path("/app") / "assets_manifest.json").read_text())["providers"]["MADMOM"]["model"]["artifacts"]
+        if item["location"] == "asset-root"
     }
     records = [
         {"path": path.relative_to(root).as_posix(), "sha256": _sha256(path), "bytes": path.stat().st_size}
@@ -166,11 +166,16 @@ def _smoke(volume, providers: tuple[str, ...], fixture_path: str) -> dict:
             proof = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             raise RuntimeError(f"{provider} did not persist a smoke proof") from exc
-        if proof.get("provider") != provider or proof.get("featureExecutionSucceeded") is not True:
+        if (
+            proof.get("schemaVersion") != 2
+            or proof.get("provider") != provider
+            or proof.get("featureExecutionSucceeded") is not True
+            or not isinstance(proof.get("identitySha256"), str)
+            or not isinstance(proof.get("resultSha256"), str)
+            or proof.get("sourceFixture", {}).get("retained") is not True
+            or proof.get("evaluationFixture", {}).get("retained") is not False
+        ):
             raise RuntimeError(f"{provider} smoke proof is invalid")
-        proof["fixtureSha256"] = _sha256(fixture)
-        proof["completedAt"] = int(time.time())
-        path.write_text(json.dumps(proof, sort_keys=True, separators=(",", ":")), encoding="utf-8")
         proofs.append(proof)
     volume.commit()
     return {"status": "ok", "fixture": _relative_fixture(fixture_path).as_posix(), "providers": proofs}
