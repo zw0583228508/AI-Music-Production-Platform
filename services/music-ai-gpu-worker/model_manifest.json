@@ -59,23 +59,41 @@
       "smoke_env": "MUSIC_GPU_SMOKE_BS_ROFORMER"
     },
     "MT3": {
-      "model_version": "mt3-ismir2021",
-      "revision": "kunato/mt3-pytorch@e203122fb40eefd3f9068dc6efd1870fe54ca57b#pretrained",
-      "checkpoint_source": "https://github.com/kunato/mt3-pytorch/tree/e203122fb40eefd3f9068dc6efd1870fe54ca57b/pretrained",
-      "checkpoint_license": "NOASSERTION (the conversion repository declares no license)",
+      "model_version": "mt3-pytorch-multitrack",
+      "revision": "gs://mt3/checkpoints/mt3@inventory-sha256:117ba05b5fac97d2fa7c9d0452691607ec49903efcf5393c374541eca828c60b;kunato/mt3-pytorch@03a06ef7f288f64e7cd25f17c3f37bcf9fe111bc#pretrained",
+      "checkpoint_source": "gs://mt3/checkpoints/mt3 serialized as pretrained/mt3.pth at kunato/mt3-pytorch@03a06ef7f288f64e7cd25f17c3f37bcf9fe111bc",
+      "checkpoint_license": "Apache-2.0",
+      "checkpoint_asset_sha256": "b8a3807ed265059abd25ad7f68142c06c35e8f6144dcaa45bd55946a3745398f",
+      "checkpoint_asset_bytes": 183672643,
+      "checkpoint_config_sha256": "e1584759624ddecfeca7eaaaaf60cea58a5dbd1012957666dc685bf51b93907a",
+      "checkpoint_config_bytes": 466,
+      "official_checkpoint": {
+        "bucket": "mt3",
+        "prefix": "checkpoints/mt3/",
+        "object_count": 296,
+        "object_bytes": 171589452,
+        "object_inventory_sha256": "117ba05b5fac97d2fa7c9d0452691607ec49903efcf5393c374541eca828c60b",
+        "official_tensor_count": 189,
+        "converted_assignment_count": 191,
+        "all_converted_assignments_exact": true,
+        "conversion_max_abs_delta": 0.0,
+        "deterministic_buffer_count": 2
+      },
       "adapter_revision": "openmirlab/mt3-infer@280a95817a67da0ae46987ddbb18c946963afffe",
+      "adapter_license": "MIT; vendored MT3-PyTorch T5 implementation carries an Apache-2.0 source header",
       "adapter_patch": "Dockerfile.mt3 exact transformers-to-torch checkpoint import relocation",
       "adapter_runtime_additions": {
         "absl-py": "2.1.0"
       },
       "runtime": {
+        "cuda_image": "nvidia/cuda@sha256:2fcc4280646484290cc50dce5e65f388dd04352b07cbe89a635703bd1f9aedb6",
         "transformers": "4.38.2"
       },
-      "upstream_revision": "magenta/mt3@fa53e12321ac417d3baf01f43e6796a7d0775f55",
+      "upstream_revision": "magenta/mt3@63e58268d9279cf91d9902bbdc166ab6d3c20c97",
       "upstream_license": "Apache-2.0",
       "conversion_revision": "kunato/mt3-pytorch@03a06ef7f288f64e7cd25f17c3f37bcf9fe111bc#tools/convert_weight.py",
-      "conversion_summary": "T5X arrays were flattened, kernels transposed into PyTorch layout, loaded into the 8-layer MT3 T5 architecture, and serialized as pretrained/mt3.pth.",
-      "checkpoint_path": "mt3-ismir2021",
+      "conversion_summary": "All 191 mapped PyTorch assignments are exactly equal to the official multitrack MT3 T5X checkpoint (149 assignments from 147 external Zarr arrays plus 42 inline MessagePack arrays); the two remaining positional buffers exactly match the pinned constructor.",
+      "checkpoint_path": "mt3-official-multitrack",
       "checkpoint_sha256": "33f6bc4c0410a1c7c1c426c5406566de0b7418af2dc3dfd798496f70cef85622",
       "runner_env": "MUSIC_GPU_RUNNER_MT3",
       "smoke_env": "MUSIC_GPU_SMOKE_MT3"

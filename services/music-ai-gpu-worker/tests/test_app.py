@@ -322,7 +322,7 @@ class GpuWorkerContractTests(unittest.TestCase):
             )
             connection.close()
             return {
-                "modelVersion": "mt3-ismir2021",
+                "modelVersion": "mt3-pytorch-multitrack",
                 "checkpointSha256": "a" * 64,
             }
 
@@ -347,7 +347,7 @@ class GpuWorkerContractTests(unittest.TestCase):
 
     def test_runner_result_requires_exact_nested_runtime_provenance(self):
         health = {
-            "modelVersion": "mt3-ismir2021",
+            "modelVersion": "mt3-pytorch-multitrack",
             "checkpointSha256": "a" * 64,
             "revision": "repo@revision",
             "containerDigest": "sha256:" + "b" * 64,

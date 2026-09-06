@@ -22,12 +22,12 @@ BACKEND_DISTRIBUTION = "mt3-infer"
 BACKEND_VERSION = "0.1.3"
 BACKEND_SOURCE_REVISION = "openmirlab/mt3-infer@280a95817a67da0ae46987ddbb18c946963afffe"
 BACKEND_PATCH = "Dockerfile.mt3:checkpoint-import-relocation"
-UPSTREAM_SOURCE_REVISION = "magenta/mt3@fa53e12321ac417d3baf01f43e6796a7d0775f55"
-CHECKPOINT_SOURCE_REVISION = "kunato/mt3-pytorch@e203122fb40eefd3f9068dc6efd1870fe54ca57b#pretrained"
+UPSTREAM_SOURCE_REVISION = "magenta/mt3@63e58268d9279cf91d9902bbdc166ab6d3c20c97"
+CHECKPOINT_SOURCE_REVISION = "gs://mt3/checkpoints/mt3@inventory-sha256:117ba05b5fac97d2fa7c9d0452691607ec49903efcf5393c374541eca828c60b;kunato/mt3-pytorch@03a06ef7f288f64e7cd25f17c3f37bcf9fe111bc#pretrained"
 CONVERSION_SOURCE_REVISION = "kunato/mt3-pytorch@03a06ef7f288f64e7cd25f17c3f37bcf9fe111bc#tools/convert_weight.py"
-CHECKPOINT_LICENSE = "NOASSERTION"
+CHECKPOINT_LICENSE = "Apache-2.0"
 PROVIDER = "MT3"
-MODEL_VERSION = "mt3-ismir2021"
+MODEL_VERSION = "mt3-pytorch-multitrack"
 
 
 class Mt3Backend(Protocol):

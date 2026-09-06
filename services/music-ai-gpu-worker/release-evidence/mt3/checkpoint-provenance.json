@@ -1,0 +1,90 @@
+{
+  "aggregateCheckpoint": {
+    "algorithm": "SHA-256 over each relative POSIX path followed by file bytes, files sorted lexicographically, with no separators",
+    "files": [
+      {
+        "bytes": 466,
+        "path": "config.json",
+        "sha256": "e1584759624ddecfeca7eaaaaf60cea58a5dbd1012957666dc685bf51b93907a"
+      },
+      {
+        "bytes": 183672643,
+        "path": "mt3.pth",
+        "sha256": "b8a3807ed265059abd25ad7f68142c06c35e8f6144dcaa45bd55946a3745398f"
+      }
+    ],
+    "sha256": "33f6bc4c0410a1c7c1c426c5406566de0b7418af2dc3dfd798496f70cef85622"
+  },
+  "convertedCheckpoint": {
+    "bytes": 183672643,
+    "configBytes": 466,
+    "configSha256": "e1584759624ddecfeca7eaaaaf60cea58a5dbd1012957666dc685bf51b93907a",
+    "introductionCommit": "03a06ef7f288f64e7cd25f17c3f37bcf9fe111bc",
+    "lfsOidSha256": "b8a3807ed265059abd25ad7f68142c06c35e8f6144dcaa45bd55946a3745398f",
+    "path": "pretrained/mt3.pth",
+    "repository": "kunato/mt3-pytorch",
+    "sha256": "b8a3807ed265059abd25ad7f68142c06c35e8f6144dcaa45bd55946a3745398f"
+  },
+  "conversion": {
+    "allMappedAssignmentsExact": true,
+    "deterministicBuffers": [
+      {
+        "constructorMatch": true,
+        "key": "decoder.pos_emb.inv_freq",
+        "sha256": "42aa811f42eeba805298d498d5d1c454cf8834695ffc81a9fb2c2fddc975596b",
+        "shape": [
+          256
+        ]
+      },
+      {
+        "constructorMatch": true,
+        "key": "encoder.pos_emb.inv_freq",
+        "sha256": "42aa811f42eeba805298d498d5d1c454cf8834695ffc81a9fb2c2fddc975596b",
+        "shape": [
+          256
+        ]
+      }
+    ],
+    "exactExternalAssignmentCount": 149,
+    "exactInlineAssignmentCount": 42,
+    "exactMappedAssignmentCount": 191,
+    "externalOfficialTensorCount": 147,
+    "inlineOfficialTensorCount": 42,
+    "mappedAssignmentCount": 191,
+    "maxAbsDelta": 0.0,
+    "officialTensorCount": 189,
+    "scriptPath": "tools/convert_weight.py",
+    "scriptRepository": "kunato/mt3-pytorch",
+    "scriptRevision": "03a06ef7f288f64e7cd25f17c3f37bcf9fe111bc",
+    "scriptSha256": "eef2ab505ffaa204611825e9421b63a0dbea32f67d671085bdbc673b899eaeba",
+    "verificationMethod": "Decoded all official external Zarr gzip arrays and inline Flax MessagePack arrays, applied the pinned converter mapping and transpositions, then required NumPy array_equal for every mapped PyTorch assignment. The two remaining state entries were reproduced with the exact pinned PyTorch constructor expression."
+  },
+  "negativeControl": {
+    "allMappedAssignmentsExact": false,
+    "exactMappedAssignmentCount": 0,
+    "inventorySha256": "8e7b97907a8cd28ff3272b80dd7d1258b07a5ab3d904b12c4b6c08d11a53b155",
+    "mappedAssignmentCount": 191,
+    "maxAbsDelta": 10.270174503326416,
+    "prefix": "checkpoints/ismir2021/",
+    "result": "The converted checkpoint is not the ISMIR 2021 piano checkpoint."
+  },
+  "officialCheckpoint": {
+    "bucket": "mt3",
+    "checkpointMetadataObject": {
+      "bytes": 894205,
+      "crc32cBase64": "LEVesQ==",
+      "generation": "1638304509125226",
+      "md5Base64": "h9RvC2gJeF/GSKs3EoA6Kw==",
+      "name": "checkpoints/mt3/checkpoint",
+      "updated": "2021-11-30T20:35:09.145Z"
+    },
+    "inventoryCanonicalization": "JSON array sorted by object name; each object retains name, generation, size, md5Hash, crc32c, timeCreated and updated; object keys sorted and separators compact",
+    "inventorySha256": "117ba05b5fac97d2fa7c9d0452691607ec49903efcf5393c374541eca828c60b",
+    "objectBytes": 171589452,
+    "objectCount": 296,
+    "prefix": "checkpoints/mt3/"
+  },
+  "provider": "MT3",
+  "schemaVersion": 1,
+  "verifiedAt": "2026-09-06T16:49:21Z"
+}

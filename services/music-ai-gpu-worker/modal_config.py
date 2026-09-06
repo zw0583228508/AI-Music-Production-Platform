@@ -29,6 +29,7 @@ RUNTIME_SECRET_NAME = "music-ai-worker-runtime"
 PROMOTION_SECRET_PREFIX = "music-ai-gpu-promotion"
 PROMOTION_SCHEMA_VERSION = 1
 MODEL_VOLUME_NAME = "music-ai-models-v1"
+MT3_MODEL_VOLUME_NAME = "music-ai-mt3-models-v1"
 MR_MT3_MODEL_VOLUME_NAME = "music-ai-mr-mt3-models-v1"
 YOUR_MT3_MODEL_VOLUME_NAME = "music-ai-your-mt3-models-v2"
 JOB_VOLUME_NAME = "music-ai-jobs-v1"
@@ -145,6 +146,18 @@ def provider_app_name(provider: str) -> str:
     family = "music-ai-mt3-family-worker" if provider in {"MR_MT3", "YOUR_MT3"} else "music-ai-gpu-worker"
     return f"{family}-{provider.lower().replace('_', '-')}"
 
+def provider_model_volume_name(provider: str) -> str:
+    """Return the provider-private model volume used by production workers."""
+    if provider not in MANIFEST["providers"]:
+        raise ValueError(f"unknown Modal model provider: {provider}")
+    if provider == "MT3":
+        return MT3_MODEL_VOLUME_NAME
+    if provider == "MR_MT3":
+        return MR_MT3_MODEL_VOLUME_NAME
+    if provider == "YOUR_MT3":
+        return YOUR_MT3_MODEL_VOLUME_NAME
+    return MODEL_VOLUME_NAME
+
 # SQLite recovery and the in-process task registry are intentionally
 # single-container only. Scaling these HTTP workers horizontally would allow two
 # process-local schedulers to resume the same durable queue.
@@ -170,7 +183,11 @@ def _deployment(provider: str) -> ProviderDeployment:
     details = MANIFEST["providers"][provider]
     return ProviderDeployment(
         provider=provider,
-        endpoint_label=provider.lower().replace("_", "-"),
+        endpoint_label={
+            "ACE_STEP": "ace-step-isolated",
+            "MT3": "mt3-isolated",
+            "ALL_IN_ONE": "all-in-one-isolated",
+        }.get(provider, provider.lower().replace("_", "-")),
         gpu=_CAPACITY[provider][0],
         max_containers=_CAPACITY[provider][1],
         timeout_seconds=_CAPACITY[provider][2],

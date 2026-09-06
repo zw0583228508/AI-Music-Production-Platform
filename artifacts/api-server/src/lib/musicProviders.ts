@@ -1799,7 +1799,7 @@ export const providerDefinitions: ProviderDefinition[] = [
   {
     id: "MT3",
     displayName: "MT3",
-    modelVersion: "mt3-ismir2021",
+    modelVersion: "mt3-pytorch-multitrack",
     tasks: ["TRANSCRIPTION"],
     hardware: ["GPU"],
     speeds: ["BALANCED", "QUALITY"],

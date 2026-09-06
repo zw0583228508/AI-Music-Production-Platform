@@ -259,22 +259,35 @@ before publishing the config and then the checkpoint readiness marker. The
 snapshot card carries an MIT license declaration and credits the Viperx
 checkpoint and upstream MIT BS-RoFormer implementations; this reviewed package,
 not the mutable third-party release URL, is the production source.
-MT3 stages only `config.json` and `mt3.pth` from `kunato/mt3-pytorch` commit
-`e203122fb40eefd3f9068dc6efd1870fe54ca57b`. Each file is bounded and
-SHA-256 verified before the directory is atomically published. The canonical
-directory digest is
+MT3 uses the provider-private `music-ai-mt3-models-v1` Volume. Provision it
+with:
+
+```sh
+modal run services/music-ai-gpu-worker/mt3_bootstrap_modal.py
+```
+
+The bootstrap stages only `config.json` and `mt3.pth` from the weight
+introduction commit
+`kunato/mt3-pytorch@03a06ef7f288f64e7cd25f17c3f37bcf9fe111bc`.
+Each file has an exact retained size and SHA-256 before the directory is
+atomically published as `mt3-official-multitrack`. The canonical directory
+digest is
 `33f6bc4c0410a1c7c1c426c5406566de0b7418af2dc3dfd798496f70cef85622`.
-The checkpoint was converted by `tools/convert_weight.py` at
-`kunato/mt3-pytorch@03a06ef7f288f64e7cd25f17c3f37bcf9fe111bc` from the
-Apache-2.0 Magenta MT3 source, but the conversion repository declares no
-license; its checkpoint license is therefore recorded as `NOASSERTION`.
+Retained provenance in `release-evidence/mt3/checkpoint-provenance.json`
+shows that all 191 mapped assignments are exactly equal to
+`gs://mt3/checkpoints/mt3` (`maxAbsDelta=0`) and both additional positional
+buffers exactly match the pinned constructor. The `ismir2021` negative control
+matched zero assignments, so the truthful model version is
+`mt3-pytorch-multitrack`. The official Google checkpoint is Apache-2.0; no
+rights are inferred from the unlicensed conversion repository.
 The reviewed runtime uses `mt3-infer==0.1.3` at
 `280a95817a67da0ae46987ddbb18c946963afffe`, Transformers 4.38.2, and one
 exact build-time import relocation identified in runtime provenance.
-The retained L4 result is in `smoke_proofs/mt3-l4.json`: the 32-second
+The historical L4 result is in `smoke_proofs/mt3-l4.json`: the 32-second
 non-silent structured fixture produced 48 notes and matched the reviewed image
-and source digest. This evidence does not promote the provider or enable API
-routing; only a separately signed, exact matching promotion bundle can do that.
+and source digest. It predates the isolated deployment and is not release
+evidence. Only a newly retained smoke result and separately signed exact
+promotion bundle can enable API routing.
 
 Successful bootstrap output contains only provider, relative path, digest,
 revision, and size.

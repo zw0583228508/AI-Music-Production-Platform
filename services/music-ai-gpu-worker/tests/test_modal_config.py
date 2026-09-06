@@ -43,6 +43,20 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
         self.assertIn('@modal.asgi_app(label="ace-step-isolated")', modal_app_source)
         self.assertNotIn('@modal.asgi_app(label="ace-step")', modal_app_source)
 
+    def test_mt3_uses_an_isolated_webhook_and_model_volume(self):
+        modal_app_source = (ROOT / "modal_app.py").read_text()
+        self.assertIn('@modal.asgi_app(label="mt3-isolated")', modal_app_source)
+        self.assertNotIn('@modal.asgi_app(label="mt3")', modal_app_source)
+        self.assertEqual(
+            modal_config.provider_model_volume_name("MT3"),
+            "music-ai-mt3-models-v1",
+        )
+        self.assertNotEqual(
+            modal_config.provider_model_volume_name("MT3"),
+            modal_config.MODEL_VOLUME_NAME,
+        )
+        self.assertIn("model_volumes[provider]", modal_app_source)
+
     def test_each_manifest_provider_has_a_bounded_deployment(self):
         self.assertEqual(
             set(modal_config.DEPLOYMENTS),
@@ -125,6 +139,14 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
         self.assertEqual(
             modal_config.DEPLOYMENTS["MT3"].transformers,
             "4.38.2",
+        )
+        self.assertRegex(
+            modal_config.DEPLOYMENTS["MT3"].cuda_image,
+            r"^nvidia/cuda@sha256:[0-9a-f]{64}$",
+        )
+        self.assertIn(
+            "ghcr.io/astral-sh/uv@sha256:",
+            dockerfile,
         )
 
     def test_wave_two_has_compatible_transformers_and_isolated_yourmt3_extras(self):
@@ -271,6 +293,10 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
     def test_secret_and_volume_names_are_explicitly_versioned(self):
         self.assertEqual(modal_config.RUNTIME_SECRET_NAME, "music-ai-worker-runtime")
         self.assertTrue(modal_config.MODEL_VOLUME_NAME.endswith("-v1"))
+        self.assertEqual(
+            modal_config.MT3_MODEL_VOLUME_NAME,
+            "music-ai-mt3-models-v1",
+        )
         self.assertTrue(modal_config.MR_MT3_MODEL_VOLUME_NAME.endswith("-v1"))
         self.assertEqual(
             modal_config.YOUR_MT3_MODEL_VOLUME_NAME,
@@ -454,16 +480,25 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             environment["MUSIC_PROVIDER_MT3_CHECKPOINT_SHA256"],
             "33f6bc4c0410a1c7c1c426c5406566de0b7418af2dc3dfd798496f70cef85622",
         )
+        details = modal_config.MANIFEST["providers"]["MT3"]
+        self.assertEqual(details["model_version"], "mt3-pytorch-multitrack")
+        self.assertEqual(details["checkpoint_license"], "Apache-2.0")
+        self.assertEqual(
+            details["checkpoint_asset_sha256"],
+            "b8a3807ed265059abd25ad7f68142c06c35e8f6144dcaa45bd55946a3745398f",
+        )
+        self.assertTrue(
+            details["official_checkpoint"]["all_converted_assignments_exact"]
+        )
 
-    def test_retained_mt3_l4_proof_matches_the_reviewed_deployment(self):
+    def test_retained_mt3_l4_proof_is_historical_and_not_current_release_evidence(self):
         record = json.loads((ROOT / "smoke_proofs" / "mt3-l4.json").read_text())
         proof = record["proof"]
         provenance = proof["provenance"]
         deployment = modal_config.DEPLOYMENTS["MT3"]
-        details = modal_config.MANIFEST["providers"]["MT3"]
         self.assertEqual(proof["provider"], deployment.provider)
-        self.assertEqual(proof["modelVersion"], deployment.model_version)
-        self.assertEqual(proof["revision"], deployment.source_revision)
+        self.assertNotEqual(proof["modelVersion"], deployment.model_version)
+        self.assertNotEqual(proof["revision"], deployment.source_revision)
         self.assertEqual(
             proof["checkpointSha256"],
             modal_config.worker_environment(deployment)[
@@ -478,23 +513,10 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
         self.assertRegex(
             provenance["sourceImageDigest"], r"^sha256:[0-9a-f]{64}$"
         )
-        self.assertEqual(
-            proof["sourceRevision"], details["adapter_revision"]
-        )
-        self.assertEqual(
-            proof["conversionSourceRevision"], details["conversion_revision"]
-        )
-        self.assertEqual(
-            proof["upstreamSourceRevision"], details["upstream_revision"]
-        )
         self.assertEqual(proof["checkpointLicense"], "NOASSERTION")
         self.assertEqual(
             proof["sourcePatch"],
             "Dockerfile.mt3:checkpoint-import-relocation",
-        )
-        self.assertEqual(
-            details["adapter_patch"],
-            "Dockerfile.mt3 exact transformers-to-torch checkpoint import relocation",
         )
         for field in (
             "sourceRevision",
@@ -516,6 +538,7 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
                 name: {
                     "url": f"https://example.test/{name}",
                     "sha256": __import__("hashlib").sha256(content).hexdigest(),
+                    "bytes": len(content),
                     "max_bytes": 1024,
                 }
                 for name, content in artifacts.items()
@@ -551,7 +574,7 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             ):
                 result = checkpoint_bootstrap.bootstrap_provider("MT3")
 
-            destination = root / "mt3-ismir2021"
+            destination = root / "mt3-official-multitrack"
             self.assertEqual(
                 {item.name for item in destination.iterdir()}, set(artifacts)
             )
