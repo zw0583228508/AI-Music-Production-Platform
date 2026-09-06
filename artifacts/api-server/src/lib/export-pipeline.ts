@@ -874,7 +874,7 @@ export function createExportBundle(
       true,
       input.masterProfile,
     ));
-    fileRecords.push({ name: "mix/premaster.wav", type: "MIX", data: premaster });
+    fileRecords.push({ name: "mix/premaster.wav", type: "PREMASTER", data: premaster });
     fileRecords.push({ name: "mix/instrumental.wav", type: "MIX", data: instrumental });
     fileRecords.push({ name: "mix/mastered.wav", type: "MASTER", data: mastered });
   }

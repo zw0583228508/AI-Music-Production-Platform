@@ -216,7 +216,16 @@ test("persisted stem bytes match the checksum in authorized artifact metadata", 
     renderedFiles,
   );
   const stem = renderedFiles.find((file) => file.type === "STEM");
+  const premaster = renderedFiles.find((file) => file.name === "mix/premaster.wav");
   assert.ok(stem?.rendererEvidence);
+  assert.equal(premaster?.type, "PREMASTER");
+  const manifest = JSON.parse(
+    openStoredZip(bundle.zip).get("metadata/export-manifest.json").toString("utf8"),
+  );
+  assert.equal(
+    manifest.files.find((file) => file.name === "mix/premaster.wav")?.type,
+    "PREMASTER",
+  );
   const artifactMetadata = {
     trackName: stem.rendererEvidence.trackName,
     role: stem.rendererEvidence.role,
@@ -410,9 +419,22 @@ test("export ZIP keeps MIDI and WAV timelines aligned with section activation", 
   const entries = openStoredZip(result.zip);
   const midi = entries.get("midi/timeline-test-arrangement.mid");
   const master = entries.get("mix/mastered.wav");
+  const manifest = JSON.parse(entries.get("metadata/export-manifest.json").toString("utf8"));
   const bassStem = entries.get("stems/electric-bass.wav");
   const pianoStem = entries.get("stems/grand-piano.wav");
   assert.ok(midi && master && bassStem && pianoStem);
+  assert.equal(
+    manifest.files.find((file) => file.name === "mix/premaster.wav")?.type,
+    "PREMASTER",
+  );
+  assert.equal(
+    manifest.files.find((file) => file.name === "mix/instrumental.wav")?.type,
+    "MIX",
+  );
+  assert.equal(
+    manifest.files.find((file) => file.name === "mix/mastered.wav")?.type,
+    "MASTER",
+  );
 
   const midiEndTick = lastMidiTick(midi);
   assert.equal(midiEndTick, 6 * 4 * 480);
