@@ -258,6 +258,7 @@ def evidence_errors(rows, root):
         refresh = read_json(base / "worker-refresh.json")
         bundle = read_json(base / "bs-roformer-promotion-v1.json")
         source_license = read_json(base / "source-license-evidence-v1.json")
+        deployment_stop = read_json(base / "deployment-stopped-v1.json")
         try:
             public_key = (root / base / "promotion-public-key.pem").read_text()
             canonical_text = (
@@ -295,8 +296,22 @@ def evidence_errors(rows, root):
                 root
                 / "services/music-ai-gpu-worker/runners/requirements-bs-roformer.txt"
             ).read_text()
+            modal_app_source = (
+                root / "services/music-ai-gpu-worker/modal_app.py"
+            ).read_text()
+            worker_app_source = (
+                root / "services/music-ai-gpu-worker/app.py"
+            ).read_text()
+            bootstrap_source = (
+                root / "services/music-ai-gpu-worker/checkpoint_bootstrap.py"
+            ).read_text()
+            catalog_source = (
+                root / "artifacts/api-server/src/lib/musicProviders.ts"
+            ).read_text()
+            dot_replit = (root / ".replit").read_text()
         except OSError:
-            dockerfile, requirements = "", ""
+            dockerfile = requirements = modal_app_source = worker_app_source = ""
+            bootstrap_source = catalog_source = dot_replit = ""
         identity_fields = (
             "modalAppId", "modalDeploymentId", "modalFunctionId",
             "modalImageId", "sourceRevision", "sourceImageDigest",
@@ -423,6 +438,12 @@ def evidence_errors(rows, root):
         if bs_roformer.get("finalStatus") == "BLOCKED_LICENSE":
             required.extend([
                 local_provider.get("classification") == "BLOCKED_LICENSE",
+                manifest.get("routing_status") == "BLOCKED_LICENSE",
+                manifest.get("license") == "UNVERIFIED",
+                manifest.get("license_status") == "UNVERIFIED",
+                manifest.get("checkpoint_license") == "UNVERIFIED",
+                manifest.get("wrapper_license") == "MIT",
+                manifest.get("commercial_use_permitted") is False,
                 model.get("checkpointLicenseStatus") == "UNVERIFIED",
                 model.get("checkpointLicenseSpdx") is None,
                 model.get("commercialUsePermitted") is False,
@@ -432,11 +453,44 @@ def evidence_errors(rows, root):
                 local.get("checkpointLicenseStatus") == "UNVERIFIED",
                 local.get("upstreamCheckpointOriginGrantRetained") is False,
                 local.get("commercialUsePermitted") is False,
+                local.get("checkpointBootstrapBlocked") is True,
+                local.get("modalDeploymentBlocked") is True,
+                local.get("workerLicenseGateEnforced") is True,
+                local.get("endpointDeployed") is False,
                 local.get("endpointConfigured") is False,
                 local.get("apiConnected") is False,
                 local.get("promotionActiveForRouting") is False,
+                local.get("liveHealthStatus") == "stopped",
+                local.get("deploymentStoppedAt") == deployment_stop.get("stoppedAt"),
+                bs_roformer.get("endpointDeployed") is False,
                 bs_roformer.get("endpointConfigured") is False,
+                bs_roformer.get("healthReady") is False,
                 bs_roformer.get("apiConnected") is False,
+                deployment_stop.get("modalAppId") == record.get("modalAppId"),
+                deployment_stop.get("modalAppState") == "stopped",
+                deployment_stop.get("stoppedAt") == "2026-09-06T18:49:44Z",
+                deployment_stop.get("historicalEndpointOrigin")
+                == record.get("endpointOrigin"),
+                deployment_stop.get("postStopEndpointHttpStatus") == 404,
+                deployment_stop.get("postStopResponseBytes") == 34,
+                deployment_stop.get("postStopResponseSha256")
+                == "140b2f05397afc9e90c6c7e1143a13a78ab60ca5a035022e2fade1edacccc8a0",
+                '"ACE_STEP,MT3,ALL_IN_ONE"' in modal_app_source,
+                'LICENSE_BLOCKED_PROVIDERS = {"BS_ROFORMER"}'
+                in modal_app_source,
+                "release_providers & LICENSE_BLOCKED_PROVIDERS"
+                in modal_app_source,
+                '"BS_ROFORMER": (' in bootstrap_source,
+                "_assert_provider_license_allows_execution(request.provider)"
+                in worker_app_source,
+                bool(re.search(
+                    r'id: "BS_ROFORMER".*?status: "unavailable".*?'
+                    r'license: "UNVERIFIED checkpoint rights"',
+                    catalog_source,
+                    re.DOTALL,
+                )),
+                "MUSIC_PROVIDER_BS_ROFORMER_" not in dot_replit,
+                "MUSIC_GPU_PUBLIC_ORIGIN_BS_ROFORMER" not in dot_replit,
                 "BS_ROFORMER" not in canonical.get("bundles", {}),
                 bool(bs_roformer.get("blockers")),
             ])
