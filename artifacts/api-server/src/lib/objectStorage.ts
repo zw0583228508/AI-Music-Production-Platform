@@ -248,6 +248,14 @@ export async function deleteExportObject(downloadUrl: string): Promise<void> {
 
 type ExportObjectStore = Pick<Storage, "bucket">;
 
+export type ExportObjectReclamationReport = {
+  discovered: number;
+  reclaimed: number;
+  preservedReady: number;
+  failedDeletions: number;
+  reclaimedStorageUris: string[];
+};
+
 /**
  * Remove content-addressed packages left behind before an export artifact was
  * committed. The exact export-id prefix and checksum suffix keep other export
@@ -257,7 +265,7 @@ export async function reclaimIncompleteExportObjects(
   exportId: string,
   readyStorageUris: readonly string[],
   storage: ExportObjectStore = objectStorageClient,
-): Promise<string[]> {
+): Promise<ExportObjectReclamationReport> {
   if (!/^[a-zA-Z0-9._-]+$/.test(exportId)) {
     throw new Error("Invalid export id");
   }
@@ -276,18 +284,34 @@ export async function reclaimIncompleteExportObjects(
   const candidateName = new RegExp(
     `^${exportId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-[a-f0-9]{64}\\.zip$`,
   );
-  const reclaimed: string[] = [];
+  const report: ExportObjectReclamationReport = {
+    discovered: 0,
+    reclaimed: 0,
+    preservedReady: 0,
+    failedDeletions: 0,
+    reclaimedStorageUris: [],
+  };
   for (const file of files) {
     const relativeName = file.name.startsWith(objectPrefix)
       ? file.name.slice(objectPrefix.length)
       : "";
     const storageUri = `/api/storage/objects/${relativeName}`;
     const basename = relativeName.slice("exports/".length);
-    if (!candidateName.test(basename) || readyPaths.has(storageUri)) continue;
-    await file.delete({ ignoreNotFound: true });
-    reclaimed.push(storageUri);
+    if (!candidateName.test(basename)) continue;
+    report.discovered += 1;
+    if (readyPaths.has(storageUri)) {
+      report.preservedReady += 1;
+      continue;
+    }
+    try {
+      await file.delete({ ignoreNotFound: true });
+      report.reclaimed += 1;
+      report.reclaimedStorageUris.push(storageUri);
+    } catch {
+      report.failedDeletions += 1;
+    }
   }
-  return reclaimed;
+  return report;
 }
 
 function privateObjectWildcard(objectPath: string): string | null {

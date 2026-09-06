@@ -711,7 +711,13 @@ test("terminal cleanup cannot delete the package produced by a concurrent retry"
       "retry must wait for terminal reclamation's project lock",
     );
     await writeFile(`${gateBase}.release`, "");
-    assert.deepEqual(await cleanup, [orphanUri]);
+    assert.deepEqual(await cleanup, {
+      discovered: 1,
+      reclaimed: 1,
+      preservedReady: 0,
+      failedDeletions: 0,
+      reclaimedStorageUris: [orphanUri],
+    });
     const retried = await retry;
     assert.equal(retried?.status, "queued");
   } finally {

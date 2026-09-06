@@ -30,6 +30,7 @@ import {
 } from "./exportAudioRoles";
 import {
   deleteExportObject,
+  type ExportObjectReclamationReport,
   getPrivateObject,
   reclaimIncompleteExportObjects,
 } from "./objectStorage";
@@ -216,12 +217,13 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
       await completeProductionJob(job.id, workerId, leaseVersion, [input.exportId]);
       return;
     }
-    await reclaimIncompleteExportObjects(
+    const reclamation = await reclaimIncompleteExportObjects(
       input.exportId,
       artifacts
         .filter((artifact) => artifact.state === "ready" && artifact.storageUri)
         .map((artifact) => artifact.storageUri as string),
     );
+    logExportObjectReclamation(reclamation, "job_start");
     const { songModel, bpm, key, meter } = resolveExportSongModel(
       songModels,
       arrangement.songModelVersion,
@@ -491,20 +493,65 @@ export async function recoverExportProductionJobs(): Promise<void> {
   const terminalJobs = jobs.filter(({ status }) =>
     status === "failed" || status === "cancelled"
   );
-  await Promise.all(terminalJobs.map(({ id }) =>
+  const reports = await Promise.all(terminalJobs.map(({ id }) =>
     reclaimTerminalExportJobObjects(id).catch((error) => {
       logger.error({ err: error, jobId: id }, "export_object_reclamation_failed");
+      return emptyExportObjectReclamationReport();
     })
   ));
+  const recoveryReport = reports.reduce<ExportObjectReclamationReport>(
+    (total, report) => ({
+      discovered: total.discovered + report.discovered,
+      reclaimed: total.reclaimed + report.reclaimed,
+      preservedReady: total.preservedReady + report.preservedReady,
+      failedDeletions: total.failedDeletions + report.failedDeletions,
+      reclaimedStorageUris: [],
+    }),
+    emptyExportObjectReclamationReport(),
+  );
+  logExportObjectReclamation(recoveryReport, "recovery_sweep");
   await Promise.all(jobs.map(({ id }) => runExportProductionJob(id)));
 }
 
-export async function reclaimTerminalExportJobObjects(jobId: string): Promise<string[]> {
+function emptyExportObjectReclamationReport(): ExportObjectReclamationReport {
+  return {
+    discovered: 0,
+    reclaimed: 0,
+    preservedReady: 0,
+    failedDeletions: 0,
+    reclaimedStorageUris: [],
+  };
+}
+
+function logExportObjectReclamation(
+  report: ExportObjectReclamationReport,
+  scope: "job_start" | "recovery_sweep",
+): void {
+  const fields = {
+    scope,
+    discovered: report.discovered,
+    reclaimed: report.reclaimed,
+    preservedReady: report.preservedReady,
+    failedDeletions: report.failedDeletions,
+    operationalAlert: report.reclaimed > 0 || report.failedDeletions > 0,
+  };
+  if (report.failedDeletions > 0) {
+    logger.error(fields, "export_object_reclamation_deletion_failures");
+  } else if (report.reclaimed > 0) {
+    logger.warn(fields, "export_object_reclamation_detected");
+  } else {
+    logger.info(fields, "export_object_reclamation_summary");
+  }
+}
+
+export async function reclaimTerminalExportJobObjects(
+  jobId: string,
+): Promise<ExportObjectReclamationReport> {
   return db.transaction(async (transaction) => {
     const [candidate] = await transaction.select({
       projectId: productionJobsTable.projectId,
     }).from(productionJobsTable).where(eq(productionJobsTable.id, jobId)).limit(1);
-    if (!candidate) return [];
+    if (!candidate) return emptyExportObjectReclamationReport();
     await transaction.execute(
       sql`select pg_advisory_xact_lock(hashtext(${candidate.projectId}))`,
     );
@@ -519,7 +566,7 @@ export async function reclaimTerminalExportJobObjects(jobId: string): Promise<st
       !terminalJob ||
       (terminalJob.status !== "failed" && terminalJob.status !== "cancelled")
     ) {
-      return [];
+      return emptyExportObjectReclamationReport();
     }
     const readyStorageUris = (await transaction.select({
       storageUri: musicArtifactsTable.storageUri,

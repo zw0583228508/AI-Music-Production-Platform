@@ -59,7 +59,7 @@ test("crash recovery deletes only unreferenced incomplete export packages", asyn
   };
 
   const readyUri = `/api/storage/objects/exports/${exportId}-${"b".repeat(64)}.zip`;
-  const reclaimed = await reclaimIncompleteExportObjects(
+  const report = await reclaimIncompleteExportObjects(
     exportId,
     [readyUri],
     storage,
@@ -67,7 +67,44 @@ test("crash recovery deletes only unreferenced incomplete export packages", asyn
 
   assert.equal(listedPrefix, `private/exports/${exportId}-`);
   assert.deepEqual(deleted, [incomplete]);
-  assert.deepEqual(reclaimed, [
-    `/api/storage/objects/exports/${exportId}-${"a".repeat(64)}.zip`,
-  ]);
+  assert.deepEqual(report, {
+    discovered: 2,
+    reclaimed: 1,
+    preservedReady: 1,
+    failedDeletions: 0,
+    reclaimedStorageUris: [
+      `/api/storage/objects/exports/${exportId}-${"a".repeat(64)}.zip`,
+    ],
+  });
+});
+
+test("crash recovery reports deletion failures and continues reclaiming", async () => {
+  process.env.PRIVATE_OBJECT_DIR = "/test-bucket/private";
+  const exportId = "export-delete-failure";
+  const failed = `private/exports/${exportId}-${"d".repeat(64)}.zip`;
+  const reclaimed = `private/exports/${exportId}-${"e".repeat(64)}.zip`;
+  const storage = {
+    bucket() {
+      return {
+        async getFiles() {
+          return [[
+            { name: failed, async delete() { throw new Error("storage unavailable"); } },
+            { name: reclaimed, async delete() {} },
+          ]];
+        },
+      };
+    },
+  };
+
+  const report = await reclaimIncompleteExportObjects(exportId, [], storage);
+
+  assert.deepEqual(report, {
+    discovered: 2,
+    reclaimed: 1,
+    preservedReady: 0,
+    failedDeletions: 1,
+    reclaimedStorageUris: [
+      `/api/storage/objects/exports/${exportId}-${"e".repeat(64)}.zip`,
+    ],
+  });
 });
