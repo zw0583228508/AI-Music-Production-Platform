@@ -1,10 +1,51 @@
 {
+  "schemaVersion": 2,
   "provider": "SONGFORMER",
-  "sourceRepository": "ASLP-lab/SongFormer",
-  "sourceCommit": "139b2aa3b14bd1c6d961d0994e9fc975f1ef7fd5",
-  "sourceLicense": "CC-BY-4.0",
-  "modelRepository": "ASLP-lab/SongFormer",
-  "modelRevision": "a75880ed1b7375ac71860ec6c4fc9c899cf99515",
-  "modelLicense": "CC-BY-4.0",
-  "commercialReviewRequired": true
+  "classification": "BLOCKED_LICENSE",
+  "components": {
+    "songformer": {
+      "sourceRepository": "ASLP-lab/SongFormer",
+      "sourceCommit": "139b2aa3b14bd1c6d961d0994e9fc975f1ef7fd5",
+      "sourceLicense": "CC-BY-4.0",
+      "sourceLicenseSha256": "1a0e476350ac340a5f96af1aef1a3a46e3f28e8be595dff9501dad084148b29e",
+      "modelRepository": "ASLP-lab/SongFormer",
+      "modelRevision": "a75880ed1b7375ac71860ec6c4fc9c899cf99515",
+      "modelCardLicense": "CC-BY-4.0",
+      "modelCardSha256": "91a9bae1abefaceff0696248128675b3bceab45d714702c001f4008804351e47",
+      "commercialUseAllowed": true
+    },
+    "musicfm": {
+      "sourceRepository": "minzwon/musicfm",
+      "sourceCommit": "b83ebedb401bcef639b26b05c0c8bee1dc2dfe71",
+      "sourceCodeLicense": "MIT except flash_conformer.py under Apache-2.0",
+      "sourceLicenseSha256": "5684e11c103b652a5fc59a2cc930c4bb63b5d4aa497e8519aaeb147bc4d34877",
+      "modelRepository": "minzwon/MusicFM",
+      "modelRevision": "4513b38bc25ad1d227b1980819b9691ba97f4d87",
+      "checkpoint": "pretrained_msd.pt",
+      "checkpointLicense": "UNVERIFIED",
+      "modelRepositoryLicenseFilePresent": false,
+      "modelCardSha256": "3e0e15fa0c5cc81675bd69af8eb469d128a725c1a7bfc71f03b7877b7b650567",
+      "researchUseAllowed": false,
+      "commercialUseAllowed": false,
+      "reason": "The source-code license does not state that it covers the externally hosted pretrained_msd.pt checkpoint, and the immutable model repository contains no license file or checkpoint-specific grant."
+    },
+    "muq": {
+      "sourceRepository": "tencent-ailab/MuQ",
+      "sourceCommit": "28847ea50cd31ac4b8b6a7dacc051ad7d1c7606a",
+      "sourceCodeLicense": "MIT",
+      "sourceLicenseSha256": "8f4b76ec1ca72efcde8b595df518f3a861d83c04c275dea72eb4e3ba5d00a503",
+      "modelRepository": "OpenMuQ/MuQ-large-msd-iter",
+      "modelRevision": "0562a57814f6f8bbd9fdea0a25921a2fce1a841a",
+      "checkpointLicense": "CC-BY-NC-4.0",
+      "modelCardSha256": "8d7322961d39f52f83953bef164503d6fb84757b00326a0107c0e1d84b880465",
+      "researchUseAllowed": true,
+      "commercialUseAllowed": false
+    }
+  },
+  "overall": {
+    "provisioningAllowed": false,
+    "researchDeploymentAllowed": false,
+    "commercialDeploymentAllowed": false,
+    "reason": "Every required checkpoint must have an affirmative grant. MusicFM checkpoint rights remain unverified, and MuQ weights independently prohibit commercial use."
+  }
 }
