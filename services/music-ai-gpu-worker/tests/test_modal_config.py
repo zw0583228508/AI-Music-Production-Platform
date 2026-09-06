@@ -43,6 +43,20 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
         self.assertIn('@modal.asgi_app(label="ace-step-isolated")', modal_app_source)
         self.assertNotIn('@modal.asgi_app(label="ace-step")', modal_app_source)
 
+    def test_mt3_uses_an_isolated_webhook_and_model_volume(self):
+        modal_app_source = (ROOT / "modal_app.py").read_text()
+        self.assertIn('@modal.asgi_app(label="mt3-isolated")', modal_app_source)
+        self.assertNotIn('@modal.asgi_app(label="mt3")', modal_app_source)
+        self.assertEqual(
+            modal_config.provider_model_volume_name("MT3"),
+            "music-ai-mt3-models-v1",
+        )
+        self.assertNotEqual(
+            modal_config.provider_model_volume_name("MT3"),
+            modal_config.MODEL_VOLUME_NAME,
+        )
+        self.assertIn("model_volumes[provider]", modal_app_source)
+
     def test_each_manifest_provider_has_a_bounded_deployment(self):
         self.assertEqual(
             set(modal_config.DEPLOYMENTS),
@@ -57,7 +71,9 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             self.assertEqual(deployment.max_containers, 1)
             self.assertTrue((ROOT / "runners" / deployment.requirements_file).is_file())
             self.assertRegex(deployment.source_image_digest, r"^sha256:[0-9a-f]{64}$")
-            self.assertTrue(deployment.cuda_image.startswith("nvidia/cuda:"))
+            self.assertTrue(
+                deployment.cuda_image.startswith(("nvidia/cuda:", "nvidia/cuda@sha256:"))
+            )
             self.assertTrue(deployment.pytorch)
 
     def test_environment_is_provider_isolated_and_uses_durable_mounts(self):
@@ -69,9 +85,14 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             self.assertNotIn("MUSIC_GPU_OUTPUT_ROOT", environment)
             self.assertEqual(environment["MUSIC_GPU_MAX_CONCURRENT_JOBS"], "1")
             self.assertNotIn("MUSIC_AI_WORKER_TOKEN", environment)
-            self.assertEqual(
-                environment["MUSIC_GPU_CONTAINER_DIGEST"], deployment.source_image_digest
-            )
+            if deployment.provider in {"MT3", "BS_ROFORMER"}:
+                self.assertNotIn("MUSIC_GPU_CONTAINER_DIGEST", environment)
+                self.assertNotIn("MUSIC_GPU_SOURCE_REVISION", environment)
+            else:
+                self.assertEqual(
+                    environment["MUSIC_GPU_CONTAINER_DIGEST"],
+                    deployment.source_image_digest,
+                )
             module = deployment.provider.lower()
             self.assertEqual(
                 environment[f"MUSIC_GPU_RUNNER_{deployment.provider}"],
@@ -96,6 +117,22 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             bs_environment["MUSIC_PROVIDER_BS_ROFORMER_CONFIG_PATH"],
             f"{modal_config.MODEL_MOUNT}/bs-roformer-viperx-v1.yaml",
         )
+        self.assertEqual(
+            bs_environment["MUSIC_GPU_SMOKE_INPUT_PATH"],
+            f"{modal_config.MODEL_MOUNT}/_smoke/bs-roformer-real-song-v1.wav",
+        )
+        self.assertEqual(
+            bs_environment["MUSIC_PROVIDER_BS_ROFORMER_SMOKE_INPUT_SHA256"],
+            "b2626121f7f2987843d7212c82b8f1222f2f023fc3d4b07c07ede1b24535feb9",
+        )
+        self.assertEqual(
+            modal_config.DEPLOYMENTS["BS_ROFORMER"].endpoint_label,
+            "bs-roformer-isolated",
+        )
+        self.assertIn(
+            '@modal.asgi_app(label="bs-roformer-isolated")',
+            (ROOT / "modal_app.py").read_text(),
+        )
 
     def test_image_build_args_inject_wave_two_host_identity_only(self):
         for deployment in modal_config.DEPLOYMENTS.values():
@@ -111,9 +148,17 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
                     "TRANSFORMERS_SPEC",
                     "ACCELERATE_SPEC",
             }
-            if deployment.provider in {"MR_MT3", "YOUR_MT3"}:
+            if deployment.provider in {
+                "MT3", "BS_ROFORMER", "MR_MT3", "YOUR_MT3",
+            }:
                 expected.add("SOURCE_IMAGE_DIGEST")
                 self.assertEqual(build_args["SOURCE_IMAGE_DIGEST"], deployment.source_image_digest)
+            if deployment.provider in {"MT3", "BS_ROFORMER"}:
+                expected.add("SOURCE_REVISION")
+                self.assertRegex(
+                    build_args["SOURCE_REVISION"],
+                    r"^(?:[a-f0-9]{40}|UNSET)$",
+                )
             self.assertEqual(set(build_args), expected)
             self.assertNotIn("MUSIC_GPU_SOURCE_IMAGE_DIGEST", build_args)
 
@@ -124,12 +169,39 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             modal_config.DEPLOYMENTS["MT3"].transformers,
             "4.38.2",
         )
+        self.assertRegex(
+            modal_config.DEPLOYMENTS["MT3"].cuda_image,
+            r"^nvidia/cuda@sha256:[0-9a-f]{64}$",
+        )
+        self.assertIn(
+            "ghcr.io/astral-sh/uv@sha256:",
+            dockerfile,
+        )
+        bs_dockerfile = (ROOT / "Dockerfile.bs-roformer").read_text()
+        self.assertRegex(
+            modal_config.DEPLOYMENTS["BS_ROFORMER"].cuda_image,
+            r"^nvidia/cuda@sha256:[0-9a-f]{64}$",
+        )
+        self.assertIn("ghcr.io/astral-sh/uv@sha256:", bs_dockerfile)
+        self.assertIn("ARG SOURCE_IMAGE_DIGEST", bs_dockerfile)
+        self.assertIn(
+            "MUSIC_GPU_CONTAINER_DIGEST=${SOURCE_IMAGE_DIGEST}",
+            bs_dockerfile,
+        )
+        self.assertIn(
+            "ghcr.io/astral-sh/uv@sha256:"
+            "1ececcacbbde240ffca54d400df86e4fdd38f29c1a2366299279d197e92eaed3",
+            dockerfile,
+        )
+        self.assertIn("MUSIC_GPU_RUNTIME_IDENTITY=1", dockerfile)
+        self.assertIn("MUSIC_GPU_CONTAINER_DIGEST=${SOURCE_IMAGE_DIGEST}", dockerfile)
+        self.assertIn("MUSIC_GPU_SOURCE_REVISION=${SOURCE_REVISION}", dockerfile)
 
     def test_wave_two_has_compatible_transformers_and_isolated_yourmt3_extras(self):
         mr = (ROOT / "Dockerfile.mr-mt3").read_text()
         your = (ROOT / "Dockerfile.your-mt3").read_text()
         self.assertIn("ARG TRANSFORMERS_SPEC=transformers==4.48.3", mr)
-        self.assertIn("ARG TRANSFORMERS_SPEC=transformers==4.48.3", your)
+        self.assertIn("ARG TRANSFORMERS_SPEC=transformers==4.45.1", your)
         self.assertIn("git-lfs", mr)
         self.assertIn("git-lfs", your)
         self.assertIn("git lfs install --system", your)
@@ -142,6 +214,7 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             (ROOT / "runners" / "requirements-mt3.txt").read_text(),
         )
         self.assertEqual(modal_config.DEPLOYMENTS["MT3"].transformers, "4.38.2")
+        self.assertEqual(modal_config.DEPLOYMENTS["YOUR_MT3"].transformers, "4.45.1")
 
     def test_wave_two_patch_is_hash_guarded_and_provider_isolated(self):
         expected = {
@@ -155,33 +228,18 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
                 your_compat_patch,
                 "your_mt3_transformers_compat_patch.py",
                 "b2cc683b55f5d3284c0788d59f8f0a7c39b03535731aeb7a62c81c86c351f480",
-                "81363b1b69d01d9ea94ac72201f897fdd2ba011b7d0090219b509fa6909ad3ee",
+                "b2cc683b55f5d3284c0788d59f8f0a7c39b03535731aeb7a62c81c86c351f480",
             ),
         }
         with self.assertRaisesRegex(RuntimeError, "source hash mismatch"):
             compat_patch.patch_content(compat_patch.ORIGINAL_FRAGMENT)
         with self.assertRaisesRegex(RuntimeError, "source hash mismatch"):
             your_compat_patch.patch_content(b"unreviewed")
-        your_replacements = b"".join(
-            replacement for _, replacement in your_compat_patch.REPLACEMENTS
+        self.assertEqual(
+            your_compat_patch.PATCHED_SHA256,
+            your_compat_patch.ORIGINAL_SHA256,
         )
-        self.assertIn(
-            b"past_key_values_length + seq_length", your_replacements
-        )
-        self.assertIn(
-            b"bool(past_key_values) and past_key_values[0] is not None",
-            your_replacements,
-        )
-        self.assertIn(
-            b"if has_first_layer_cache else seq_length", your_replacements
-        )
-        self.assertIn(
-            b"if has_first_layer_cache else 0", your_replacements
-        )
-        self.assertIn(b"device=inputs_embeds.device", your_replacements)
-        self.assertGreaterEqual(
-            your_replacements.count(b"cache_position=cache_position"), 3
-        )
+        self.assertEqual(your_compat_patch.EXPECTED_TRANSFORMERS_VERSION, "4.45.1")
         for provider, (module, script, source_sha, patch_sha) in expected.items():
             details = modal_config.MANIFEST["providers"][provider]
             docker = (
@@ -223,12 +281,15 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             self.assertNotIn("/provenance/runners/", dockerfile.read_text())
         self.assertNotIn("SOURCE_IMAGE_DIGEST", modal_app)
         for deployment in modal_config.DEPLOYMENTS.values():
-            self.assertEqual(
-                modal_config.worker_environment(deployment)[
+            if deployment.provider in {"MT3", "BS_ROFORMER"}:
+                observed = modal_config.provider_image_build_args(deployment)[
+                    "SOURCE_IMAGE_DIGEST"
+                ]
+            else:
+                observed = modal_config.worker_environment(deployment)[
                     "MUSIC_GPU_CONTAINER_DIGEST"
-                ],
-                deployment.source_image_digest,
-            )
+                ]
+            self.assertEqual(observed, deployment.source_image_digest)
 
     def test_source_digest_covers_every_copied_executable_input(self):
         source = (ROOT / "modal_config.py").read_text()
@@ -269,6 +330,10 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
     def test_secret_and_volume_names_are_explicitly_versioned(self):
         self.assertEqual(modal_config.RUNTIME_SECRET_NAME, "music-ai-worker-runtime")
         self.assertTrue(modal_config.MODEL_VOLUME_NAME.endswith("-v1"))
+        self.assertEqual(
+            modal_config.MT3_MODEL_VOLUME_NAME,
+            "music-ai-mt3-models-v1",
+        )
         self.assertTrue(modal_config.MR_MT3_MODEL_VOLUME_NAME.endswith("-v1"))
         self.assertEqual(
             modal_config.YOUR_MT3_MODEL_VOLUME_NAME,
@@ -285,6 +350,9 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
     def test_modal_images_use_distinct_provider_dockerfiles(self):
         source = (ROOT / "modal_app.py").read_text()
         self.assertIn("MUSIC_GPU_MODAL_DEPLOY_PROVIDERS", source)
+        self.assertIn('"ACE_STEP,MT3,ALL_IN_ONE"', source)
+        self.assertIn('LICENSE_BLOCKED_PROVIDERS = {"BS_ROFORMER"}', source)
+        self.assertIn("release_providers & LICENSE_BLOCKED_PROVIDERS", source)
         self.assertEqual(source.count("modal.Image.from_dockerfile("), 4)
         dockerfiles = {
             provider: ROOT / f"Dockerfile.{provider.lower().replace('_', '-')}"
@@ -452,16 +520,25 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             environment["MUSIC_PROVIDER_MT3_CHECKPOINT_SHA256"],
             "33f6bc4c0410a1c7c1c426c5406566de0b7418af2dc3dfd798496f70cef85622",
         )
+        details = modal_config.MANIFEST["providers"]["MT3"]
+        self.assertEqual(details["model_version"], "mt3-pytorch-multitrack")
+        self.assertEqual(details["checkpoint_license"], "Apache-2.0")
+        self.assertEqual(
+            details["checkpoint_asset_sha256"],
+            "b8a3807ed265059abd25ad7f68142c06c35e8f6144dcaa45bd55946a3745398f",
+        )
+        self.assertTrue(
+            details["official_checkpoint"]["all_converted_assignments_exact"]
+        )
 
-    def test_retained_mt3_l4_proof_matches_the_reviewed_deployment(self):
+    def test_retained_mt3_l4_proof_is_historical_and_not_current_release_evidence(self):
         record = json.loads((ROOT / "smoke_proofs" / "mt3-l4.json").read_text())
         proof = record["proof"]
         provenance = proof["provenance"]
         deployment = modal_config.DEPLOYMENTS["MT3"]
-        details = modal_config.MANIFEST["providers"]["MT3"]
         self.assertEqual(proof["provider"], deployment.provider)
-        self.assertEqual(proof["modelVersion"], deployment.model_version)
-        self.assertEqual(proof["revision"], deployment.source_revision)
+        self.assertNotEqual(proof["modelVersion"], deployment.model_version)
+        self.assertNotEqual(proof["revision"], deployment.source_revision)
         self.assertEqual(
             proof["checkpointSha256"],
             modal_config.worker_environment(deployment)[
@@ -476,23 +553,10 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
         self.assertRegex(
             provenance["sourceImageDigest"], r"^sha256:[0-9a-f]{64}$"
         )
-        self.assertEqual(
-            proof["sourceRevision"], details["adapter_revision"]
-        )
-        self.assertEqual(
-            proof["conversionSourceRevision"], details["conversion_revision"]
-        )
-        self.assertEqual(
-            proof["upstreamSourceRevision"], details["upstream_revision"]
-        )
         self.assertEqual(proof["checkpointLicense"], "NOASSERTION")
         self.assertEqual(
             proof["sourcePatch"],
             "Dockerfile.mt3:checkpoint-import-relocation",
-        )
-        self.assertEqual(
-            details["adapter_patch"],
-            "Dockerfile.mt3 exact transformers-to-torch checkpoint import relocation",
         )
         for field in (
             "sourceRevision",
@@ -514,6 +578,7 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
                 name: {
                     "url": f"https://example.test/{name}",
                     "sha256": __import__("hashlib").sha256(content).hexdigest(),
+                    "bytes": len(content),
                     "max_bytes": 1024,
                 }
                 for name, content in artifacts.items()
@@ -549,7 +614,7 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             ):
                 result = checkpoint_bootstrap.bootstrap_provider("MT3")
 
-            destination = root / "mt3-ismir2021"
+            destination = root / "mt3-official-multitrack"
             self.assertEqual(
                 {item.name for item in destination.iterdir()}, set(artifacts)
             )
@@ -595,6 +660,8 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
                 __import__("hashlib").sha256(config).hexdigest(),
             ), mock.patch.object(
                 checkpoint_bootstrap, "BS_CONFIG_SIZE", len(config)
+            ), mock.patch.dict(
+                checkpoint_bootstrap.UNVERIFIED_SOURCES, {}, clear=True
             ), mock.patch.dict(sys.modules, {"huggingface_hub": fake_hub}):
                 result = checkpoint_bootstrap.bootstrap_provider("BS_ROFORMER")
 
@@ -609,6 +676,21 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
                 "b1361b816daca507f079d85e935c291bcb0a5351",
             )
             self.assertEqual(list(root.glob(".bootstrap-bs_roformer-*")), [])
+
+    def test_bs_roformer_bootstrap_is_blocked_before_checkpoint_download(self):
+        fake_hub = types.SimpleNamespace(
+            hf_hub_download=mock.Mock(
+                side_effect=AssertionError("blocked bootstrap reached Hugging Face")
+            )
+        )
+        with mock.patch.object(
+            checkpoint_bootstrap, "_write_smoke_fixture"
+        ), mock.patch.dict(sys.modules, {"huggingface_hub": fake_hub}):
+            with self.assertRaisesRegex(
+                RuntimeError, "checkpoint-owner license"
+            ):
+                checkpoint_bootstrap.bootstrap_provider("BS_ROFORMER")
+        fake_hub.hf_hub_download.assert_not_called()
 
     def test_ace_bootstrap_builds_atomic_minimal_composite_and_keeps_old_base(self):
         with tempfile.TemporaryDirectory() as directory:

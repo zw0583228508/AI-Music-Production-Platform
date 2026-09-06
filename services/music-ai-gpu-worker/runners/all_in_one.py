@@ -253,7 +253,9 @@ def run_job(request: dict[str, Any], checkpoint: Path, backend: AllInOneBackend 
     require_cuda()
     digest = attest_checkpoint(checkpoint, PROVIDER)
     work = durable_job_dir(request, PROVIDER)
-    audio = materialize_source(request, work / "source.wav", checkpoint, smoke)
+    audio = materialize_source(
+        request, work / "source.wav", checkpoint, PROVIDER, smoke,
+    )
     measured_duration = validate_audio(audio)["durationSeconds"]
     requested_duration = request_value(request, "durationSeconds")
     duration = (

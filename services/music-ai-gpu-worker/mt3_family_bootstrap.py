@@ -17,6 +17,7 @@ import subprocess
 import math
 import struct
 import uuid
+import urllib.request
 import wave
 from pathlib import Path
 
@@ -41,6 +42,14 @@ PROVIDERS = {
             "last.ckpt"
         ),
         "license": "Apache-2.0",
+        "checkpoint_url": (
+            "https://huggingface.co/mimbres/YourMT3/resolve/"
+            "e45ebd70398682d54b7bb1901a5216e18f3b1824/logs/2024/"
+            "mc13_256_g4_all_v7_mt3f_sqr_rms_moe_wf4_n8k2_silu_rope_rp_b36_nops/"
+            "checkpoints/last.ckpt"
+        ),
+        "checkpoint_bytes": 561_544_628,
+        "checkpoint_sha256": "ae38e415c79efd5592dcb9b658cdb99ddb11d4c4e1eaa364cab04a052473fc25",
     },
 }
 MAX_INVENTORY_FILES = 512
@@ -97,9 +106,75 @@ def write_structured_smoke_fixture(checkpoint_root: Path) -> Path:
     return fixture
 
 
+def write_your_mt3_smoke_fixture(checkpoint_root: Path) -> Path:
+    """Create an original note-on/off phrase in YourMT3's native audio domain."""
+    fixture = checkpoint_root / "_smoke" / "structured-melodic-phrase-12s.wav"
+    fixture.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
+    temporary = fixture.with_name(f".{fixture.name}.{uuid.uuid4().hex}")
+    sample_rate, seconds = 16_000, 12
+    chords = ((48, 55, 60), (53, 57, 60), (55, 59, 62), (48, 55, 64))
+    melody = (
+        72, 74, 76, 79, 76, 74, 72, 67, 69, 72, 76, 74,
+        71, 74, 79, 76, 72, 71, 69, 67, 64, 67, 72, 76,
+    )
+    events: list[tuple[float, float, int, float]] = []
+    for bar in range(6):
+        events.extend((bar * 2.0, 1.75, note, 0.32) for note in chords[bar % len(chords)])
+    events.extend((index * 0.5, 0.42, note, 0.42) for index, note in enumerate(melody))
+
+    def frequency(note: int) -> float:
+        return 440.0 * 2 ** ((note - 69) / 12)
+
+    samples: list[float] = []
+    for index in range(sample_rate * seconds):
+        time = index / sample_rate
+        sample = 0.0
+        for onset, duration, note, amplitude in events:
+            age = time - onset
+            if age < 0 or age > duration:
+                continue
+            attack = min(1.0, age / 0.012)
+            release = min(1.0, (duration - age) / 0.06)
+            envelope = attack * release * math.exp(-2.1 * age)
+            fundamental = frequency(note)
+            tone = sum(
+                math.sin(2 * math.pi * fundamental * harmonic * age + 0.09 * harmonic * harmonic)
+                / harmonic ** 1.35
+                for harmonic in range(1, 9)
+            )
+            sample += amplitude * envelope * tone
+        samples.append(sample)
+    peak = max(abs(sample) for sample in samples)
+    scale = 0.62 / peak
+    with wave.open(str(temporary), "wb") as output:
+        output.setnchannels(1)
+        output.setsampwidth(2)
+        output.setframerate(sample_rate)
+        output.writeframes(b"".join(
+            struct.pack("<h", int(max(-0.98, min(0.98, sample * scale)) * 32767))
+            for sample in samples
+        ))
+    os.replace(temporary, fixture)
+    with wave.open(str(fixture), "rb") as verified:
+        if (
+            verified.getframerate() != sample_rate
+            or verified.getnframes() != sample_rate * seconds
+            or verified.getnchannels() != 1
+            or verified.getsampwidth() != 2
+        ):
+            raise RuntimeError("YourMT3 smoke fixture failed exact validation")
+    return fixture
+
+
+def write_smoke_fixture(provider: str, checkpoint_root: Path) -> Path:
+    if provider == "YOUR_MT3":
+        return write_your_mt3_smoke_fixture(checkpoint_root)
+    return write_structured_smoke_fixture(checkpoint_root)
+
+
 def run_smoke(provider: str, checkpoint_root: Path, checkpoint: Path, digest: str) -> dict[str, object]:
     model_version = str(PROVIDERS[provider]["model_version"])
-    fixture = write_structured_smoke_fixture(checkpoint_root)
+    fixture = write_smoke_fixture(provider, checkpoint_root)
     environment = {
         **os.environ,
         "MUSIC_GPU_CHECKPOINT_ROOT": str(checkpoint_root),
@@ -137,7 +212,7 @@ def run_smoke(provider: str, checkpoint_root: Path, checkpoint: Path, digest: st
         raise RuntimeError(f"{provider} CUDA smoke evidence failed validation")
     return {
         "fixture": fixture.relative_to(checkpoint_root).as_posix(),
-        "fixtureSha256": tree_sha256(fixture.parent),
+        "fixtureSha256": tree_sha256(fixture),
         "notes": proof["output"]["notes"],
         "device": "cuda",
     }
@@ -199,32 +274,71 @@ def selected_checkpoint(provider: str, checkpoint_root: Path, inventory: list[di
     return target
 
 
+def provision_checkpoint(provider: str, checkpoint_root: Path) -> None:
+    """Materialize one reviewed checkpoint, reusing exact bytes when present."""
+    metadata = PROVIDERS[provider]
+    immutable_url = metadata.get("checkpoint_url")
+    if not isinstance(immutable_url, str):
+        environment = {
+            **os.environ,
+            "MT3_CHECKPOINT_DIR": str(checkpoint_root),
+            "HF_HOME": str(checkpoint_root / ".hf"),
+        }
+        completed = subprocess.run(
+            ["mt3-infer", "download", str(metadata["toolkit_id"])],
+            cwd=checkpoint_root,
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=60 * 60,
+            check=False,
+        )
+        if completed.returncode:
+            raise RuntimeError(
+                "mt3-infer provisioning download failed: "
+                f"{bounded_diagnostic(completed.stderr)}"
+            )
+        return
+
+    target = checkpoint_root / str(metadata["checkpoint"])
+    expected_bytes = int(metadata["checkpoint_bytes"])
+    expected_sha256 = str(metadata["checkpoint_sha256"])
+    if (
+        target.is_file()
+        and not target.is_symlink()
+        and target.stat().st_size == expected_bytes
+        and tree_sha256(target) == expected_sha256
+    ):
+        return
+    target.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
+    temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}")
+    try:
+        request = urllib.request.Request(
+            immutable_url, headers={"User-Agent": f"music-ai-bootstrap/{ADAPTER_VERSION}"},
+        )
+        with urllib.request.urlopen(request, timeout=60 * 60) as response, temporary.open("wb") as output:
+            copied = 0
+            for block in iter(lambda: response.read(1024 * 1024), b""):
+                copied += len(block)
+                if copied > expected_bytes:
+                    raise RuntimeError("immutable checkpoint download exceeded reviewed size")
+                output.write(block)
+            output.flush()
+            os.fsync(output.fileno())
+        if copied != expected_bytes or tree_sha256(temporary) != expected_sha256:
+            raise RuntimeError("immutable checkpoint download failed identity validation")
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def bootstrap(provider: str, checkpoint_root: Path) -> dict[str, object]:
     """Download only during explicit bootstrap and record observed evidence."""
     metadata = PROVIDERS[provider]
     model_version = str(metadata["model_version"])
     license_name = str(metadata["license"])
     checkpoint_root.mkdir(mode=0o750, parents=True, exist_ok=True)
-    environment = {
-        **os.environ,
-        "MT3_CHECKPOINT_DIR": str(checkpoint_root),
-        # The adapter must never fall back to an arbitrary HF cache location.
-        "HF_HOME": str(checkpoint_root / ".hf"),
-    }
-    completed = subprocess.run(
-        ["mt3-infer", "download", str(metadata["toolkit_id"])],
-        cwd=checkpoint_root,
-        env=environment,
-        capture_output=True,
-        text=True,
-        timeout=60 * 60,
-        check=False,
-    )
-    if completed.returncode:
-        raise RuntimeError(
-            "mt3-infer provisioning download failed: "
-            f"{bounded_diagnostic(completed.stderr)}"
-        )
+    provision_checkpoint(provider, checkpoint_root)
     inventory = observed_inventory(checkpoint_root)
     checkpoint = selected_checkpoint(provider, checkpoint_root, inventory)
     # The serving pin covers exactly the requested provider file.

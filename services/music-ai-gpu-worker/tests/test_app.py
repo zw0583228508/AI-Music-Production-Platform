@@ -5,12 +5,13 @@ import hmac
 import importlib.util
 import json
 import os
+import sys
 import tempfile
 import time
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
-
 
 ROOT = Path(__file__).parents[1]
 RUNTIME = tempfile.TemporaryDirectory()
@@ -129,6 +130,112 @@ class GpuWorkerContractTests(unittest.TestCase):
         self.assertFalse(result["retryable"])
         self.assertNotIn("private runtime detail", result["message"])
 
+    def test_yourmt3_health_rejects_incomplete_terminated_note_evidence(self):
+        checkpoint = worker.CHECKPOINT_ROOT / "test-your-mt3.ckpt"
+        checkpoint.write_bytes(b"your-mt3-checkpoint")
+        checkpoint_hash = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+        details = {
+            **worker.PROVIDERS["YOUR_MT3"],
+            "checkpoint_path": checkpoint.name,
+            "checkpoint_sha256": checkpoint_hash,
+        }
+        container_digest = "sha256:" + "a" * 64
+        modal_image_id = "im-TestImage123"
+        fake_torch = types.SimpleNamespace(
+            __version__="2.5.1+cu124",
+            version=types.SimpleNamespace(cuda="12.4"),
+            cuda=types.SimpleNamespace(
+                is_available=lambda: True,
+                get_device_name=lambda _index: "NVIDIA L4",
+            ),
+        )
+        base_event = {
+            "start": 0.0,
+            "end": 0.5,
+            "pitch": 60,
+            "velocity": 96,
+            "confidence": 96 / 127,
+        }
+        valid_hash = hashlib.sha256(json.dumps(
+            [base_event], sort_keys=True, separators=(",", ":"), allow_nan=False,
+        ).encode()).hexdigest()
+        invalid_outputs = {
+            "zero notes": {
+                "notes": 0,
+                "terminatedNotes": 0,
+                "allNotesTerminated": True,
+                "noteEvents": [],
+                "noteEventsSha256": hashlib.sha256(b"[]").hexdigest(),
+            },
+            "unterminated notes": {
+                "notes": 1,
+                "terminatedNotes": 0,
+                "allNotesTerminated": False,
+                "noteEvents": [base_event],
+                "noteEventsSha256": valid_hash,
+            },
+            "event hash drift": {
+                "notes": 1,
+                "terminatedNotes": 1,
+                "allNotesTerminated": True,
+                "noteEvents": [base_event],
+                "noteEventsSha256": "0" * 64,
+            },
+        }
+        for label, output in invalid_outputs.items():
+            with self.subTest(label=label):
+                proof = {
+                    "provider": "YOUR_MT3",
+                    "modelVersion": details["model_version"],
+                    "checkpointSha256": checkpoint_hash,
+                    "smokeTested": True,
+                    "output": output,
+                    "provenance": {
+                        "modelVersion": details["model_version"],
+                        "checkpointSha256": checkpoint_hash,
+                        "revision": details["revision"],
+                        "sourceImageDigest": container_digest,
+                        "modalImageId": modal_image_id,
+                        "cudaVersion": "12.4",
+                        "pytorchVersion": "2.5.1+cu124",
+                        "gpu": "NVIDIA L4",
+                    },
+                }
+                worker.SMOKE_ATTESTATIONS.clear()
+                worker.SMOKE_EVIDENCE.clear()
+                with mock.patch.dict(
+                    worker.PROVIDERS, {"YOUR_MT3": details}
+                ), mock.patch.object(
+                    worker, "ENABLED", {"YOUR_MT3"}
+                ), mock.patch.object(
+                    worker, "_gpu_runtime", return_value=(True, "ready")
+                ), mock.patch.object(
+                    worker, "_run_command",
+                    return_value=(0, json.dumps(proof), ""),
+                ), mock.patch.dict(
+                    sys.modules, {"torch": fake_torch}
+                ), mock.patch.dict(
+                    os.environ,
+                    {
+                        details["runner_env"]: "python -m runners.your_mt3",
+                        "MUSIC_PROVIDER_YOUR_MT3_CHECKPOINT_SHA256": checkpoint_hash,
+                        "MUSIC_GPU_CONTAINER_DIGEST": container_digest,
+                        "MODAL_IMAGE_ID": modal_image_id,
+                        "MUSIC_GPU_MODAL_APP_ID": "ap-Test",
+                        "MUSIC_GPU_MODAL_DEPLOYMENT_ID": "v3",
+                        "MUSIC_GPU_MODAL_FUNCTION_ID": "fu-Test",
+                        "MUSIC_GPU_SOURCE_REVISION": "b" * 40,
+                    },
+                    clear=False,
+                ):
+                    result = worker._provider_health(
+                        "YOUR_MT3", run_smoke=True, force_smoke=True,
+                    )
+                self.assertFalse(result["ready"])
+                self.assertFalse(result["smokeTested"])
+                self.assertIsNone(result["smokeEvidence"])
+                self.assertNotIn("YOUR_MT3", worker.SMOKE_ATTESTATIONS)
+
     def test_only_recognized_cuda_initialization_errors_are_retryable(self):
         with self.assertRaises(worker.RuntimeInitializing):
             worker._cuda_probe_failure(
@@ -162,6 +269,9 @@ class GpuWorkerContractTests(unittest.TestCase):
             "checkpoint_sha256": checkpoint_hash,
             "config_path": config.name,
             "config_sha256": config_hash,
+            "routing_status": "READY",
+            "license_status": "VERIFIED",
+            "commercial_use_permitted": True,
         }
         smoke_identity = f"{checkpoint_hash}:{config_hash}"
         worker.SMOKE_ATTESTATIONS["BS_ROFORMER"] = smoke_identity
@@ -180,6 +290,110 @@ class GpuWorkerContractTests(unittest.TestCase):
         self.assertFalse(second["checkpointReady"])
         self.assertFalse(second["smokeTested"])
         self.assertNotEqual(second["configSha256"], config_hash)
+
+    def test_bs_roformer_license_block_short_circuits_health_and_worker_route(self):
+        os.environ["MUSIC_AI_WORKER_TOKEN"] = "license-block-test-token"
+        os.environ["MUSIC_GPU_PUBLIC_ORIGIN"] = (
+            "https://workspace--music-ai-gpu-worker-bs-roformer.modal.run"
+        )
+
+        async def request(method, path, query_string=b"", body=b""):
+            sent = []
+            requests = iter([
+                {"type": "http.request", "body": body, "more_body": False},
+                {"type": "http.disconnect"},
+            ])
+
+            async def receive():
+                return next(requests)
+
+            async def send(message):
+                sent.append(message)
+
+            headers = [
+                (b"authorization", b"Bearer license-block-test-token"),
+            ]
+            if body:
+                headers.extend([
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(body)).encode()),
+                ])
+            await worker.app(
+                {
+                    "type": "http",
+                    "asgi": {"version": "3.0"},
+                    "http_version": "1.1",
+                    "method": method,
+                    "scheme": "https",
+                    "path": path,
+                    "raw_path": path.encode(),
+                    "query_string": query_string,
+                    "headers": headers,
+                    "client": ("127.0.0.1", 1),
+                    "server": (
+                        "workspace--music-ai-gpu-worker-bs-roformer.modal.run",
+                        443,
+                    ),
+                    "root_path": "",
+                },
+                receive,
+                send,
+            )
+            status = next(
+                item["status"]
+                for item in sent
+                if item["type"] == "http.response.start"
+            )
+            response_body = b"".join(
+                item.get("body", b"")
+                for item in sent
+                if item["type"] == "http.response.body"
+            )
+            return status, worker.json.loads(response_body)
+
+        try:
+            with mock.patch.object(
+                worker, "ENABLED", {"BS_ROFORMER"}
+            ), mock.patch.object(
+                worker, "_checkpoint_digest"
+            ) as checkpoint_digest, mock.patch.object(
+                worker, "_gpu_runtime"
+            ) as gpu_runtime, mock.patch.object(
+                worker, "_run_command"
+            ) as run_command, mock.patch.object(
+                worker, "_queue"
+            ) as queue_job, mock.patch.object(
+                worker.asyncio, "create_subprocess_exec"
+            ) as create_subprocess:
+                health = worker._provider_health("BS_ROFORMER")
+                self.assertEqual(health["status"], "blocked")
+                self.assertEqual(health["licenseStatus"], "UNVERIFIED")
+                self.assertFalse(health["commercialUsePermitted"])
+                self.assertFalse(health["checkpointReady"])
+                self.assertFalse(health["smokeTested"])
+
+                status, payload = asyncio.run(request(
+                    "GET", "/health", b"provider=BS_ROFORMER"
+                ))
+                self.assertEqual(status, 200)
+                self.assertEqual(payload["status"], "blocked")
+                status, payload = asyncio.run(request(
+                    "POST",
+                    "/separate",
+                    body=b'{"provider":"BS_ROFORMER"}',
+                ))
+                self.assertEqual(status, 503)
+                self.assertIn("checkpoint-owner", payload["detail"])
+
+                checkpoint_digest.assert_not_called()
+                gpu_runtime.assert_not_called()
+                run_command.assert_not_called()
+                queue_job.assert_not_called()
+                create_subprocess.assert_not_called()
+                self.assertEqual(worker.TASKS, {})
+        finally:
+            del os.environ["MUSIC_AI_WORKER_TOKEN"]
+            del os.environ["MUSIC_GPU_PUBLIC_ORIGIN"]
 
     def test_provider_qualified_health_returns_the_direct_contract(self):
         os.environ["MUSIC_AI_WORKER_TOKEN"] = "health-test-token"
@@ -322,7 +536,7 @@ class GpuWorkerContractTests(unittest.TestCase):
             )
             connection.close()
             return {
-                "modelVersion": "mt3-ismir2021",
+                "modelVersion": "mt3-pytorch-multitrack",
                 "checkpointSha256": "a" * 64,
             }
 
@@ -347,7 +561,7 @@ class GpuWorkerContractTests(unittest.TestCase):
 
     def test_runner_result_requires_exact_nested_runtime_provenance(self):
         health = {
-            "modelVersion": "mt3-ismir2021",
+            "modelVersion": "mt3-pytorch-multitrack",
             "checkpointSha256": "a" * 64,
             "revision": "repo@revision",
             "containerDigest": "sha256:" + "b" * 64,
