@@ -23,6 +23,7 @@ SMOKE_FUNCTION = "smoke_real_audio"
 ENDPOINT_CLASS = "BeatThisWorker"
 ENDPOINT_METHOD = "endpoint"
 ROOT = Path(__file__).resolve().parent
+HEALTH_REQUEST_TIMEOUT_SECONDS = 300
 
 
 def command_json(*args: str) -> object:
@@ -269,7 +270,9 @@ def read_health(endpoint_origin: str, token: str) -> dict:
         headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
     )
     opener = urllib.request.build_opener(NoRedirect)
-    with opener.open(request, timeout=30) as response:
+    with opener.open(
+        request, timeout=HEALTH_REQUEST_TIMEOUT_SECONDS
+    ) as response:
         if response.status != 200 or response.geturl() != url:
             raise RuntimeError("Beat This health did not return directly from its origin")
         if urlsplit(response.geturl()).hostname != urlsplit(origin).hostname:

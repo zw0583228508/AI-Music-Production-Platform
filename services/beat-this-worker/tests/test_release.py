@@ -123,6 +123,9 @@ def container_refresh(evidence):
 
 
 class BeatThisReleaseTests(unittest.TestCase):
+    def test_health_request_budget_covers_a_real_gpu_cold_start(self):
+        self.assertEqual(release_modal.HEALTH_REQUEST_TIMEOUT_SECONDS, 300)
+
     def test_release_activation_uses_a_reviewed_source_revision_branch(self):
         repository = Path(__file__).resolve().parents[3]
         workflow = (
