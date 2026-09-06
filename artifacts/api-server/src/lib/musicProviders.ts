@@ -304,12 +304,10 @@ export const MUSIC_PROVIDERS: MusicProviderDescriptor[] = [
     capabilities: ["arrangement"],
     inputTypes: ["VOCAL_ONLY"],
     execution: "remote",
-    status: remoteConfigured("LADA_BAND") &&
-      process.env.LADA_BAND_ACCEPT_NONCOMMERCIAL_RESEARCH === "accepted"
-      ? "configured" : "unavailable",
-    license: "NONCOMMERCIAL_RESEARCH_ONLY",
+    status: "unavailable",
+    license: "UNVERIFIED first-party source/model rights",
     priority: 41,
-    notes: "Research-only direct vocal-to-accompaniment candidate. Explicit non-commercial acceptance, gated weights, private volume, immutable artifact inventory, real-audio smoke, and signed GPU deployment evidence are required; never production-routable.",
+    notes: "BLOCKED_LICENSE: the first-party source has no owner-specified license, the license=other model revision requires manual approval, and no accepted-account or complete bundled-weight grant is retained. Endpoint, token, and acceptance environment values cannot authorize routing.",
   },
   {
     id: "HAFM",

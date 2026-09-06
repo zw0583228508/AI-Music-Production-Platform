@@ -2,7 +2,9 @@
 from __future__ import annotations
 import subprocess,tempfile
 from pathlib import Path
+from license_gate import require_authorization
 def infer(vocal_wav: bytes, output: Path, asset_root: Path, prompt: str|None, style: str|None) -> None:
+    require_authorization("LaDA-Band inference")
     with tempfile.TemporaryDirectory() as tmp:
         vocal=Path(tmp)/"vocal.wav"; vocal.write_bytes(vocal_wav)
         command=["python","infer.py","--vocal_path",str(vocal),"--output_path",str(output),"--checkpoint_root",str(asset_root/"snapshot"/"checkpoints"),"--pretrained_root",str(asset_root/"snapshot"/"pretrained")]

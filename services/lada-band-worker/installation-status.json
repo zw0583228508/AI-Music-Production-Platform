@@ -1,21 +1,57 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "providers": {
     "LADA_BAND": {
       "classification": "BLOCKED_LICENSE",
+      "source": {
+        "repository": "Duoluoluos/TME-LaDA-Band",
+        "revision": "e4ff7918454d96912b366ef8e12e792b0066c1c6",
+        "pinned": true,
+        "firstPartyLicenseStatus": "UNSPECIFIED_BY_OWNER"
+      },
+      "model": {
+        "repository": "sDuoluoluos/LaDA-Band",
+        "revision": "6d444caee85385677b0652ecb0b2b8220436dd37",
+        "pinned": true,
+        "gating": "manual",
+        "license": "other"
+      },
       "evidence": {
         "modelManifest": "model_manifest.json",
         "licenseManifest": "license_manifest.json",
+        "licenseReview": "release-evidence/license-review.json",
+        "licenseReviewSha256": "478ef64a685931453bd5d285205101f69697af164fb0ee9a5893fec0bc0315c5",
         "sourceRevisionPinned": true,
-        "license": "NONCOMMERCIAL_RESEARCH_ONLY",
-        "licenseAcceptancePresent": false,
+        "modelRevisionPinned": true,
+        "approvedGatedAccountEvidenceRetained": false,
+        "acceptedTermsEvidenceRetained": false,
+        "firstPartySourceGrantRetained": false,
+        "firstPartyModelGrantRetained": false,
+        "completeThirdPartyWeightGrantsRetained": false,
+        "licenseAcceptanceEnvironmentPresent": false,
         "licensedAccessTokenPresent": false,
         "assetInventoryPresent": false,
-        "realSmokeProofPresent": false
+        "volumeProvisioned": false,
+        "runtimeBuilt": false,
+        "realSmokeProofPresent": false,
+        "endpointDeployed": false,
+        "endpointConfigured": false,
+        "promotionSigned": false,
+        "healthReady": false,
+        "apiConnected": false,
+        "workerLicenseGateEnforced": true,
+        "bootstrapBlockedBeforeNetwork": true,
+        "inferenceBoundaryLicenseGateEnforced": true,
+        "smokeLicenseGateEnforced": true,
+        "dockerBuildBlockedBeforeUpstreamDownload": true,
+        "modalProvisionBlockedBeforeGpu": true,
+        "modalDeployBlockedBeforeGpu": true,
+        "apiProductionRoutingBlocked": true
       },
       "blockers": [
-        "Non-commercial research terms have not been explicitly accepted in the current environment.",
-        "No licensed Hugging Face access token is available, so the exact snapshot cannot be provisioned."
+        "The pinned public source contains no first-party license file and says first-party source/model terms still require owner specification.",
+        "The exact Hugging Face revision is manually gated with license=other. No approved-account or accepted-terms evidence is retained.",
+        "Complete license grants for all bundled model weights are not retained. Environment strings and a token are operational inputs, not authorization evidence."
       ]
     }
   }

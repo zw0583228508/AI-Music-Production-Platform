@@ -2,6 +2,8 @@ from __future__ import annotations
 import os,subprocess,sys
 from pathlib import Path
 ROOT=Path("/app") if Path("/app/modal_config.py").is_file() else Path(__file__).resolve().parent; sys.path.insert(0,str(ROOT))
+from license_gate import require_authorization
+require_authorization("LaDA-Band Modal deployment")
 import modal
 from modal_config import *
 app=modal.App(APP_NAME); image=modal.Image.from_dockerfile(WORKER_ROOT/"Dockerfile",context_dir=REPOSITORY_ROOT)

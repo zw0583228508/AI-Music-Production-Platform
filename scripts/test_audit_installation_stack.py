@@ -115,6 +115,26 @@ class AuditFixtures(unittest.TestCase):
         self.assertTrue(probe.is_file())
         self.assertNotEqual(probe.suffix, ".log")
 
+    def test_lada_blocked_requires_retained_license_review(self):
+        m = self.matrix(self.row())
+        row = next(
+            item for item in m["providers"]
+            if item["provider"] == "LADA_BAND"
+        )
+        row.update({
+            "category": "generation",
+            "codeRepository": "https://github.com/Duoluoluos/TME-LaDA-Band",
+            "codeRevision": "e4ff7918454d96912b366ef8e12e792b0066c1c6",
+            "modelRepository": "https://huggingface.co/sDuoluoluos/LaDA-Band",
+            "modelRevision": "6d444caee85385677b0652ecb0b2b8220436dd37",
+            "sourcePinned": True,
+            "licenseStatus": "UNVERIFIED",
+            "promotionRequired": True,
+            "finalStatus": "BLOCKED_LICENSE",
+        })
+        errors = audit.audit(m, root=Path("/definitely/missing"))
+        self.assertTrue(any("LADA_BAND" in error for error in errors))
+
     def test_demucs_ready_requires_retained_release_attestation(self):
         m=self.matrix(self.row())
         r=next(x for x in m["providers"] if x["provider"]=="DEMUCS")
