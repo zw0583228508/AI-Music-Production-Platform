@@ -15,7 +15,21 @@ await build({
     contents: `
       import { logger } from "./src/lib/logger";
 
-      logger.info({
+      class IntegrationWrapper {
+        constructor() {
+          this.safeKind = "custom-wrapper";
+          this.inner = {
+            signedUrl:
+              "https://storage.example/wrapped.wav?token=wrapper-secret",
+            credentials: {
+              secret: "wrapper-credential-secret",
+            },
+            retryable: true,
+          };
+        }
+      }
+
+      const payload = {
         operation: "export_recovery",
         exportId: "export-safe-123",
         reclamation: {
@@ -37,6 +51,31 @@ await build({
           },
           authorization: "Bearer provider-secret",
         },
+        integrations: {
+          wrapper: new IntegrationWrapper(),
+          attempts: [
+            {
+              safeProvider: "storage-a",
+              response: {
+                links: {
+                  signed_url: "https://storage.example/deep.wav?token=deep-secret",
+                  expiresIn: 900,
+                },
+              },
+            },
+            {
+              safeProvider: "storage-b",
+              response: {
+                auth: {
+                  credentials: {
+                    accessKey: "array-credential-secret",
+                  },
+                  region: "us-east-1",
+                },
+              },
+            },
+          ],
+        },
         req: {
           headers: {
             authorization: "Bearer request-secret",
@@ -49,7 +88,20 @@ await build({
             "set-cookie": "session=response-cookie-secret",
           },
         },
-      }, "export_object_reclamation_summary");
+      };
+
+      Object.freeze(payload.integrations.attempts[0].response.links);
+      Object.freeze(payload.integrations.attempts[1].response.auth.credentials);
+      logger.info(payload, "export_object_reclamation_summary");
+
+      if (
+        payload.integrations.attempts[0].response.links.signed_url !==
+          "https://storage.example/deep.wav?token=deep-secret" ||
+        payload.integrations.attempts[1].response.auth.credentials.accessKey !==
+          "array-credential-secret"
+      ) {
+        throw new Error("logger mutated the caller's payload");
+      }
     `,
     resolveDir: apiDirectory,
     sourcefile: "logger-redaction-harness.ts",
@@ -92,6 +144,10 @@ test("serialized logs redact private URLs and credentials while preserving opera
     "private-client",
     "credential-secret",
     "provider-secret",
+    "deep-secret",
+    "array-credential-secret",
+    "wrapper-secret",
+    "wrapper-credential-secret",
     "request-secret",
     "request-cookie-secret",
     "response-cookie-secret",
@@ -119,6 +175,22 @@ test("serialized logs redact private URLs and credentials while preserving opera
   assert.equal(entry.upload.uploadURL, "[Redacted]");
   assert.equal(entry.provider.credentials, "[Redacted]");
   assert.equal(entry.provider.authorization, "[Redacted]");
+  assert.equal(
+    entry.integrations.attempts[0].response.links.signed_url,
+    "[Redacted]",
+  );
+  assert.equal(entry.integrations.attempts[0].safeProvider, "storage-a");
+  assert.equal(entry.integrations.attempts[0].response.links.expiresIn, 900);
+  assert.equal(
+    entry.integrations.attempts[1].response.auth.credentials,
+    "[Redacted]",
+  );
+  assert.equal(entry.integrations.attempts[1].safeProvider, "storage-b");
+  assert.equal(entry.integrations.attempts[1].response.auth.region, "us-east-1");
+  assert.equal(entry.integrations.wrapper.inner.signedUrl, "[Redacted]");
+  assert.equal(entry.integrations.wrapper.inner.credentials, "[Redacted]");
+  assert.equal(entry.integrations.wrapper.safeKind, "custom-wrapper");
+  assert.equal(entry.integrations.wrapper.inner.retryable, true);
   assert.equal(entry.req.headers.authorization, "[Redacted]");
   assert.equal(entry.req.headers.cookie, "[Redacted]");
   assert.equal(entry.res.headers["set-cookie"], "[Redacted]");
