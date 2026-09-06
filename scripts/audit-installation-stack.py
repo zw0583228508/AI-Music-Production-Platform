@@ -136,6 +136,7 @@ def evidence_errors(rows, root):
         record = bundle.get("record", {})
         smoke = release.get("smokeEvidence", {})
         artifact = smoke.get("output", {}).get("artifact", {})
+        retained_smoke = root / base / str(artifact.get("retainedEvidenceFile", ""))
         source_license = license_evidence.get("source", {})
         models = license_evidence.get("models", [])
         identity_fields = (
@@ -166,6 +167,17 @@ def evidence_errors(rows, root):
             artifact.get("channels", 0) > 0,
             artifact.get("bytes", 0) > 44,
             re.fullmatch(r"[a-f0-9]{64}", artifact.get("sha256", "")),
+            artifact.get("peakAmplitude", 0) >= 1e-5,
+            artifact.get("rmsAmplitude", 0) >= 1e-7,
+            retained_smoke.is_file(),
+            retained_smoke.stat().st_size == artifact.get("bytes")
+            if retained_smoke.is_file() else False,
+            hashlib.sha256(retained_smoke.read_bytes()).hexdigest() == artifact.get("sha256")
+            if retained_smoke.is_file() else False,
+            "@sha256:17e2934e1fa96152b14f78078bfbafd0f00f391df995dc6c641a720fce1202bb"
+            in (root / "services/music-ai-gpu-worker/Dockerfile.ace-step").read_text(),
+            "@sha256:90daa0b4d74ea55c7b8e06d25d3826b1eac66e7994387248e6173dd2b66668e2"
+            in (root / "services/music-ai-gpu-worker/Dockerfile.ace-step").read_text(),
             all(release.get(field) == health.get(field) == record.get(field)
                 for field in identity_fields),
             all(observed.get(field) == record.get(field)
