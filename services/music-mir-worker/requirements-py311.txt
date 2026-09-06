@@ -1,0 +1,12 @@
+# Python 3.11 only.  Essentia is deliberately absent: its pinned release has
+# no cp311 wheel.
+fastapi==0.141.1
+uvicorn==0.52.4
+pydantic==2.13.5
+numpy==1.26.4
+scipy==1.13.1
+librosa==0.11.0
+soundfile==0.13.1
+madmom-infer==0.2.0
+torchcrepe==0.0.24
+pyloudnorm==0.2.0

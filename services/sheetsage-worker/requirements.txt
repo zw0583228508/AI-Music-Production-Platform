@@ -1,0 +1,10 @@
+# Provider-only environment. Hash pin prevents a substituted SheetSage wheel.
+sheetsage-infer==0.2.1 \
+    --hash=sha256:605ad15130587d548e40c3f4526aefd14748944003c462acb19d56149932bce4
+jukebox-infer==0.1.2 \
+    --hash=sha256:6aaf973f6f2346139c3004de2ded4f7b796360e3d3b08df413a4859fb4f87a9d
+madmom-infer==0.2.0 \
+    --hash=sha256:f4013a7ac2135f2f198d97f9e7840db4fbd993e2922f70b28862394c8f8d28f1
+fastapi==0.115.12
+uvicorn==0.34.2
+pydantic==2.11.3

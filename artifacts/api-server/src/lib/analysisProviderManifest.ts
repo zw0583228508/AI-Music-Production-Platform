@@ -1,6 +1,12 @@
 import { gpuPromotionAttestationFailure } from "./gpuProviderAttestation";
 
 export type VerifiedLocalAnalysisProviderId = "BASIC_PITCH" | "DEMUCS";
+export type VerifiedMirAnalysisProviderId =
+  | "MADMOM"
+  | "TORCHCREPE"
+  | "ESSENTIA"
+  | "CHROMA"
+  | "PYLOUDNORM";
 export type VerifiedGpuAnalysisProviderId = "BS_ROFORMER" | "ALL_IN_ONE" | "MT3";
 
 export type AnalysisProviderManifestEntry = {
@@ -36,6 +42,17 @@ export const VERIFIED_GPU_ANALYSIS_PROVIDERS: Readonly<
   },
 };
 
+const VERIFIED_MIR_PACKAGES: Readonly<Record<VerifiedMirAnalysisProviderId, {
+  packageName: string | null;
+  version: string;
+}>> = {
+  MADMOM: { packageName: "madmom-infer", version: "0.2.0" },
+  TORCHCREPE: { packageName: "torchcrepe", version: "0.0.24" },
+  ESSENTIA: { packageName: "essentia", version: "2.1b6.dev1438" },
+  CHROMA: { packageName: null, version: "essentia-hpcp-plus-librosa-0.11.0" },
+  PYLOUDNORM: { packageName: "pyloudnorm", version: "0.2.0" },
+};
+
 export type AnalysisProviderHealthAttestation = {
   provider: string;
   version: string;
@@ -66,6 +83,36 @@ export function attestAnalysisProviderHealth(
   }
   if (!["healthy", "ready", "ok"].includes(status)) {
     throw new Error("health response status is not healthy");
+  }
+  const mirExpected = VERIFIED_MIR_PACKAGES[
+    requestedProvider as VerifiedMirAnalysisProviderId
+  ];
+  if (mirExpected) {
+    const packageName = payload.packageName === null
+      ? null
+      : typeof payload.packageName === "string" ? payload.packageName.trim() : "";
+    const packageVersion = typeof payload.packageVersion === "string"
+      ? payload.packageVersion.trim()
+      : "";
+    if (
+      payload.ready !== true ||
+      payload.packageReady !== true ||
+      payload.assetReady !== true ||
+      payload.featureExecutionReady !== true ||
+      payload.runtimeReady !== true ||
+      payload.smokeTested !== true ||
+      packageName !== mirExpected.packageName ||
+      packageVersion !== mirExpected.version
+    ) {
+      throw new Error(
+        `health response does not contain verified runtime, package, asset, and smoke proof for ${requestedProvider}`,
+      );
+    }
+    return {
+      provider,
+      version: packageVersion,
+      checksum: /^[a-f0-9]{64}$/i.test(checksum) ? checksum : "runtime-smoke-attested",
+    };
   }
   if (
     payload.runtimeReady !== true ||

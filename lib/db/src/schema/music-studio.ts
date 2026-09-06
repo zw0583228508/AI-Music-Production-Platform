@@ -217,6 +217,42 @@ export type SongModelData = SongModelCore & {
     errorCode?: string;
     errorMessage?: string;
   }>;
+  rhythmEvidence?: Array<{
+    provider: string;
+    version: string;
+    beats: number[];
+    downbeats: number[];
+    tempoBpm: number;
+  }>;
+  pitchEvidence?: Array<{
+    provider: string;
+    version: string;
+    sourceStem: string;
+    frames: Array<{
+      time: number;
+      frequencyHz: number;
+      midiPitch: number | null;
+      periodicity: number;
+      voiced: boolean;
+      confidence: number;
+    }>;
+  }>;
+  keyEvidence?: Array<{
+    provider: string;
+    version: string;
+    key: string;
+    scale: string;
+    confidence: number;
+    hpcp: number[];
+  }>;
+  loudness?: {
+    provider: string;
+    version: string;
+    integratedLUFS: number;
+    loudnessRange: number;
+    /** Linear sample peak. This is deliberately not labelled true peak. */
+    samplePeak: number;
+  } | null;
   fieldStatus?: Partial<Record<SongModelField, SongModelFieldStatus>>;
   provenance?: Partial<Record<SongModelField, string[]>>;
 };
@@ -778,6 +814,9 @@ export type SongModelCore = {
     pitch: number;
     confidence: number;
     provider?: string;
+    sourceStem?: string;
+    sourceStemProvider?: string;
+    providers?: string[];
   }>;
   chords: ChordHarmonyEvent[];
   sections: AnalysisSection[];

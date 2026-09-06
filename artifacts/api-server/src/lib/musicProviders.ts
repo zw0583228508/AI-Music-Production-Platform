@@ -78,6 +78,8 @@ type ProviderDescriptorCatalogEntry = MusicProviderDescriptor & {
   configured: boolean;
   checkpointReady: boolean;
   runtimeReady: boolean;
+  packageReady: boolean;
+  smokeTested: boolean;
   reportedVersion: string | null;
   lastHealth: {
     status: ProviderRuntimeSnapshot["healthStatus"];
@@ -385,13 +387,37 @@ export const MUSIC_PROVIDERS: MusicProviderDescriptor[] = [
     capabilities: ["harmony"],
     inputTypes: ["FULL_SONG", "INSTRUMENTAL", "VIDEO"],
     execution: "remote",
-    status: remoteConfigured("SHEETSAGE") || remoteConfigured("SHEET_SAGE")
+    status: process.env.SHEETSAGE_LICENSE_AUTHORIZED === "true" &&
+      (remoteConfigured("SHEETSAGE") || remoteConfigured("SHEET_SAGE"))
       ? "configured"
       : "unavailable",
     license: "Model-specific",
     priority: 110,
-    notes: "Requires SHEETSAGE_API_URL (legacy SHEET_SAGE_API_URL is also accepted); supplies chord candidates for canonical fusion.",
+    notes: "BLOCKED unless SHEETSAGE_LICENSE_AUTHORIZED=true and a real licensed endpoint is configured.",
   },
+  ...[
+    ["MADMOM", "Madmom Rhythm Evidence", "structure", "CC-BY-NC-SA-4.0 weights"],
+    ["TORCHCREPE", "TorchCREPE Pitch Evidence", "transcription", "MIT"],
+    ["ESSENTIA", "Essentia Key/HPCP Evidence", "harmony", "AGPL-3.0-only"],
+    ["PYLOUDNORM", "pyloudnorm Loudness Evidence", "structure", "MIT"],
+  ].map(([id, name, capability, license], index): MusicProviderDescriptor => ({
+    id,
+    name,
+    provider: id,
+    version: "health-attested",
+    capabilities: [capability as ModelCapability],
+    inputTypes: id === "TORCHCREPE"
+      ? ["VOCAL_ONLY", "SOLO_INSTRUMENT"]
+      : ["FULL_SONG", "INSTRUMENTAL", "VIDEO"],
+    execution: "remote",
+    status: (
+      remoteConfigured(id) ||
+      remoteConfigured(id === "ESSENTIA" ? "MUSIC_MIR_ESSENTIA" : "MUSIC_MIR")
+    ) ? "configured" : "unavailable",
+    license,
+    priority: 111 + index,
+    notes: `Requires provider-specific ${id}_API_URL (or its MIR runtime URL) and strict runtime/package/smoke attestation.`,
+  })),
   {
     id: "CHROMA",
     name: "Chroma Harmony Evidence",
@@ -400,7 +426,9 @@ export const MUSIC_PROVIDERS: MusicProviderDescriptor[] = [
     capabilities: ["harmony"],
     inputTypes: ["FULL_SONG", "INSTRUMENTAL", "VIDEO"],
     execution: "remote",
-    status: remoteConfigured("CHROMA") ? "configured" : "unavailable",
+    status: remoteConfigured("CHROMA") || remoteConfigured("MUSIC_MIR_ESSENTIA")
+      ? "configured"
+      : "unavailable",
     license: "Provider terms",
     priority: 120,
     notes: "Requires CHROMA_API_URL; supplies normalized chroma frames and optional chord candidates.",
@@ -424,7 +452,7 @@ export function providerDescriptorCatalog(): ProviderDescriptorCatalogEntry[] {
   return MUSIC_PROVIDERS.map((provider) => {
     const status = provider.id === "ANYACCOMP" && !anyAccompCommercialUseAuthorized()
       ? "unavailable"
-      : ["BASIC_PITCH", "DEMUCS"].includes(provider.id)
+      : ["BASIC_PITCH", "DEMUCS", "MADMOM", "TORCHCREPE", "ESSENTIA", "CHROMA", "PYLOUDNORM"].includes(provider.id)
       ? remoteConfigured(provider.id) ? "configured" : "unavailable"
       : provider.status;
     const localReady = provider.execution === "local" && status === "ready";
@@ -435,6 +463,8 @@ export function providerDescriptorCatalog(): ProviderDescriptorCatalogEntry[] {
       configured,
       checkpointReady: localReady,
       runtimeReady: localReady,
+      packageReady: localReady,
+      smokeTested: localReady,
       reportedVersion: localReady ? provider.version : null,
       lastHealth: {
         status: localReady ? "healthy" as const : "unknown" as const,
@@ -455,11 +485,17 @@ async function verifyAnalysisProviderHealth(
 ): Promise<ProviderDescriptorCatalogEntry> {
   if (
     !provider.configured ||
-    !["BASIC_PITCH", "DEMUCS"].includes(provider.id)
+    !["BASIC_PITCH", "DEMUCS", "MADMOM", "TORCHCREPE", "ESSENTIA", "CHROMA", "PYLOUDNORM"].includes(provider.id)
   ) {
     return provider;
   }
-  const endpoint = process.env[`${provider.id}_API_URL`];
+  const endpoint = process.env[`MUSIC_PROVIDER_${provider.id}_URL`] ??
+    process.env[`${provider.id}_API_URL`] ??
+    process.env[
+      ["ESSENTIA", "CHROMA"].includes(provider.id)
+        ? "MUSIC_MIR_ESSENTIA_API_URL"
+        : "MUSIC_MIR_API_URL"
+    ];
   if (!endpoint) return provider;
   const checkedAt = new Date().toISOString();
   const startedAt = Date.now();
@@ -479,6 +515,8 @@ async function verifyAnalysisProviderHealth(
     if (!isRecord(payload)) throw new Error("health response must be a JSON object");
     const runtimeReady = payload["runtimeReady"] === true;
     const checkpointReady = payload["checkpointReady"] === true;
+    const packageReady = payload["packageReady"] === true;
+    const smokeTested = payload["smokeTested"] === true;
     const reportedVersion = typeof payload["modelVersion"] === "string" &&
       payload["modelVersion"].trim()
       ? payload["modelVersion"].trim()
@@ -498,6 +536,8 @@ async function verifyAnalysisProviderHealth(
       status: ready ? "ready" : "configured",
       checkpointReady,
       runtimeReady,
+      packageReady,
+      smokeTested,
       reportedVersion,
       lastHealth: {
         status: ready ? "healthy" : "unhealthy",
@@ -512,6 +552,8 @@ async function verifyAnalysisProviderHealth(
       status: "configured",
       checkpointReady: false,
       runtimeReady: false,
+      packageReady: false,
+      smokeTested: false,
       reportedVersion: null,
       lastHealth: {
         status: "unhealthy",
@@ -547,6 +589,8 @@ export async function verifiedProviderDescriptorCatalog() {
       configured: readiness.configurationReady,
       checkpointReady: readiness.checkpointReady,
       runtimeReady: readiness.runtimeReady,
+      packageReady: readiness.runtimeReady,
+      smokeTested: readiness.smokeTested,
       reportedVersion: readiness.reportedVersion,
       lastHealth: {
         status: readiness.healthStatus,

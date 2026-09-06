@@ -139,6 +139,27 @@ export async function createSourceDownloadUrl(objectPath: string): Promise<strin
   return signObjectUrl(bucketName, objectName, "GET");
 }
 
+/** Creates a short-lived read URL only for a persisted private analysis artifact. */
+export async function createAnalysisDownloadUrl(objectPath: string): Promise<string> {
+  const prefix = "/objects/analysis/";
+  if (!objectPath.startsWith(prefix)) {
+    throw new Error("Invalid analysis object path");
+  }
+  const relativePath = objectPath.slice("/objects/".length);
+  if (
+    !relativePath ||
+    !relativePath.split("/").every((part) =>
+      Boolean(part) && part !== "." && part !== ".." &&
+      /^[a-zA-Z0-9._-]+$/.test(part))
+  ) {
+    throw new Error("Invalid analysis object path");
+  }
+  const { bucketName, objectName } = parseObjectPath(
+    `${privateObjectDir()}/${relativePath}`,
+  );
+  return signObjectUrl(bucketName, objectName, "GET");
+}
+
 export async function createPrivateExportDownloadUrl(
   objectPath: string,
 ): Promise<string> {

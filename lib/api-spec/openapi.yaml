@@ -1282,6 +1282,66 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ProviderProvenance"
+        rhythmEvidence:
+          type: array
+          items:
+            type: object
+            required: [provider, version, beats, downbeats, tempoBpm]
+            properties:
+              provider: { type: string, enum: [MADMOM] }
+              version: { type: string }
+              beats: { type: array, items: { type: number, minimum: 0 } }
+              downbeats: { type: array, items: { type: number, minimum: 0 } }
+              tempoBpm: { type: number, minimum: 20, maximum: 400 }
+        pitchEvidence:
+          type: array
+          items:
+            type: object
+            required: [provider, version, sourceStem, frames]
+            properties:
+              provider: { type: string, enum: [TORCHCREPE] }
+              version: { type: string }
+              sourceStem: { type: string }
+              frames:
+                type: array
+                items:
+                  type: object
+                  required: [time, frequencyHz, midiPitch, periodicity, voiced, confidence]
+                  properties:
+                    time: { type: number, minimum: 0 }
+                    frequencyHz: { type: number, minimum: 0 }
+                    midiPitch: { type: ["number", "null"] }
+                    periodicity: { type: number, minimum: 0, maximum: 1 }
+                    voiced: { type: boolean }
+                    confidence: { type: number, minimum: 0, maximum: 1 }
+        keyEvidence:
+          type: array
+          items:
+            type: object
+            required: [provider, version, key, scale, confidence, hpcp]
+            properties:
+              provider: { type: string, enum: [ESSENTIA] }
+              version: { type: string }
+              key: { type: string }
+              scale: { type: string }
+              confidence: { type: number, minimum: 0, maximum: 1 }
+              hpcp:
+                type: array
+                minItems: 12
+                maxItems: 12
+                items: { type: number, minimum: 0 }
+        loudness:
+          description: pyloudnorm evidence. samplePeak is linear sample peak, not true peak.
+          oneOf:
+            - type: object
+              required: [provider, version, integratedLUFS, loudnessRange, samplePeak]
+              properties:
+                provider: { type: string, enum: [PYLOUDNORM] }
+                version: { type: string }
+                integratedLUFS: { type: number }
+                loudnessRange: { type: number, minimum: 0 }
+                samplePeak: { type: number, minimum: 0 }
+            - type: "null"
         fieldStatus:
           $ref: "#/components/schemas/SongModelFieldStatus"
         provenance:
@@ -1533,7 +1593,7 @@ components:
         updatedAt: { type: string }
     MusicProvider:
       type: object
-      required: [id, name, provider, version, capabilities, inputTypes, execution, status, configured, checkpointReady, runtimeReady, reportedVersion, lastHealth, license, priority, notes]
+      required: [id, name, provider, version, capabilities, inputTypes, execution, status, configured, checkpointReady, runtimeReady, packageReady, smokeTested, reportedVersion, lastHealth, license, priority, notes]
       properties:
         id: { type: string }
         name: { type: string }
@@ -1554,6 +1614,8 @@ components:
         configured: { type: boolean }
         checkpointReady: { type: boolean }
         runtimeReady: { type: boolean }
+        packageReady: { type: boolean }
+        smokeTested: { type: boolean }
         reportedVersion:
           type: [string, "null"]
         lastHealth:
@@ -1580,6 +1642,13 @@ components:
         pitch: { type: number, minimum: 0, maximum: 127 }
         confidence: { type: number, minimum: 0, maximum: 1 }
         provider: { type: string }
+        sourceStem:
+          type: string
+          description: Private persisted analysis artifact lineage; never a signed URL.
+        sourceStemProvider: { type: string, enum: [BS_ROFORMER] }
+        providers:
+          type: array
+          items: { type: string }
     ChordEvent:
       type: object
       required: [start, end, symbol, roman, confidence]

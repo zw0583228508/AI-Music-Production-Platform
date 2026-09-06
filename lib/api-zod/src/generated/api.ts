@@ -23,6 +23,7 @@ export const HealthCheckResponse = zod.object({
   "timestamp": zod.string()
 })
 
+
 /**
  * @summary Get studio dashboard
  */
@@ -38,6 +39,8 @@ export const GetDashboardResponse = zod.object({
   "type": zod.enum(['analysis', 'arrangement', 'render', 'export'])
 }))
 })
+
+
 /**
  * @summary List active, staged, and previously active licensed instrument packs
  */
@@ -222,6 +225,7 @@ export const ListLicensedInstrumentPacksResponse = zod.object({
 }))
 })
 })
+
 
 /**
  * Streams a licensed plugin/library and its preapproved native host to private worker storage, then returns only after canonical smoke verification succeeds.
@@ -1093,6 +1097,35 @@ export const getProjectSongModelResponseStemsItemConfidenceMax = 1;
 
 export const getProjectSongModelResponseProviderProvenanceItemAttemptsMin = 0;
 
+export const getProjectSongModelResponseRhythmEvidenceItemBeatsItemMin = 0;
+
+export const getProjectSongModelResponseRhythmEvidenceItemDownbeatsItemMin = 0;
+
+export const getProjectSongModelResponseRhythmEvidenceItemTempoBpmMin = 20;
+export const getProjectSongModelResponseRhythmEvidenceItemTempoBpmMax = 400;
+
+export const getProjectSongModelResponsePitchEvidenceItemFramesItemTimeMin = 0;
+
+export const getProjectSongModelResponsePitchEvidenceItemFramesItemFrequencyHzMin = 0;
+
+export const getProjectSongModelResponsePitchEvidenceItemFramesItemPeriodicityMin = 0;
+export const getProjectSongModelResponsePitchEvidenceItemFramesItemPeriodicityMax = 1;
+
+export const getProjectSongModelResponsePitchEvidenceItemFramesItemConfidenceMin = 0;
+export const getProjectSongModelResponsePitchEvidenceItemFramesItemConfidenceMax = 1;
+
+export const getProjectSongModelResponseKeyEvidenceItemConfidenceMin = 0;
+export const getProjectSongModelResponseKeyEvidenceItemConfidenceMax = 1;
+
+export const getProjectSongModelResponseKeyEvidenceItemHpcpItemMin = 0;
+
+export const getProjectSongModelResponseKeyEvidenceItemHpcpMin = 12;
+export const getProjectSongModelResponseKeyEvidenceItemHpcpMax = 12;
+
+export const getProjectSongModelResponseLoudnessOneLoudnessRangeMin = 0;
+
+export const getProjectSongModelResponseLoudnessOneSamplePeakMin = 0;
+
 export const getProjectSongModelResponseConfidenceMin = 0;
 export const getProjectSongModelResponseConfidenceMax = 1;
 
@@ -1189,7 +1222,10 @@ export const GetProjectSongModelResponse = zod.object({
   "end": zod.number().min(getProjectSongModelResponseBassItemEndMin),
   "pitch": zod.number().min(getProjectSongModelResponseBassItemPitchMin).max(getProjectSongModelResponseBassItemPitchMax),
   "confidence": zod.number().min(getProjectSongModelResponseBassItemConfidenceMin).max(getProjectSongModelResponseBassItemConfidenceMax),
-  "provider": zod.string().optional()
+  "provider": zod.string().optional(),
+  "sourceStem": zod.string().optional().describe('Private persisted analysis artifact lineage; never a signed URL.'),
+  "sourceStemProvider": zod.enum(['BS_ROFORMER']).optional(),
+  "providers": zod.array(zod.string()).optional()
 })).describe('Observed bass evidence. An empty array means no provider bass evidence was available.'),
   "chords": zod.array(zod.object({
   "start": zod.number(),
@@ -1273,6 +1309,41 @@ export const GetProjectSongModelResponse = zod.object({
   "errorCode": zod.string().optional(),
   "errorMessage": zod.string().optional()
 })),
+  "rhythmEvidence": zod.array(zod.object({
+  "provider": zod.enum(['MADMOM']),
+  "version": zod.string(),
+  "beats": zod.array(zod.number().min(getProjectSongModelResponseRhythmEvidenceItemBeatsItemMin)),
+  "downbeats": zod.array(zod.number().min(getProjectSongModelResponseRhythmEvidenceItemDownbeatsItemMin)),
+  "tempoBpm": zod.number().min(getProjectSongModelResponseRhythmEvidenceItemTempoBpmMin).max(getProjectSongModelResponseRhythmEvidenceItemTempoBpmMax)
+})).optional(),
+  "pitchEvidence": zod.array(zod.object({
+  "provider": zod.enum(['TORCHCREPE']),
+  "version": zod.string(),
+  "sourceStem": zod.string(),
+  "frames": zod.array(zod.object({
+  "time": zod.number().min(getProjectSongModelResponsePitchEvidenceItemFramesItemTimeMin),
+  "frequencyHz": zod.number().min(getProjectSongModelResponsePitchEvidenceItemFramesItemFrequencyHzMin),
+  "midiPitch": zod.number().nullable(),
+  "periodicity": zod.number().min(getProjectSongModelResponsePitchEvidenceItemFramesItemPeriodicityMin).max(getProjectSongModelResponsePitchEvidenceItemFramesItemPeriodicityMax),
+  "voiced": zod.boolean(),
+  "confidence": zod.number().min(getProjectSongModelResponsePitchEvidenceItemFramesItemConfidenceMin).max(getProjectSongModelResponsePitchEvidenceItemFramesItemConfidenceMax)
+}))
+})).optional(),
+  "keyEvidence": zod.array(zod.object({
+  "provider": zod.enum(['ESSENTIA']),
+  "version": zod.string(),
+  "key": zod.string(),
+  "scale": zod.string(),
+  "confidence": zod.number().min(getProjectSongModelResponseKeyEvidenceItemConfidenceMin).max(getProjectSongModelResponseKeyEvidenceItemConfidenceMax),
+  "hpcp": zod.array(zod.number().min(getProjectSongModelResponseKeyEvidenceItemHpcpItemMin)).min(getProjectSongModelResponseKeyEvidenceItemHpcpMin).max(getProjectSongModelResponseKeyEvidenceItemHpcpMax)
+})).optional(),
+  "loudness": zod.union([zod.object({
+  "provider": zod.enum(['PYLOUDNORM']),
+  "version": zod.string(),
+  "integratedLUFS": zod.number(),
+  "loudnessRange": zod.number().min(getProjectSongModelResponseLoudnessOneLoudnessRangeMin),
+  "samplePeak": zod.number().min(getProjectSongModelResponseLoudnessOneSamplePeakMin)
+}),zod.null()]).optional().describe('pyloudnorm evidence. samplePeak is linear sample peak, not true peak.'),
   "fieldStatus": zod.object({
   "tempo": zod.object({
   "status": zod.enum(['detected', 'low_confidence', 'failed', 'not_available']),
@@ -1469,6 +1540,35 @@ export const correctProjectSongModelResponseStemsItemConfidenceMax = 1;
 
 export const correctProjectSongModelResponseProviderProvenanceItemAttemptsMin = 0;
 
+export const correctProjectSongModelResponseRhythmEvidenceItemBeatsItemMin = 0;
+
+export const correctProjectSongModelResponseRhythmEvidenceItemDownbeatsItemMin = 0;
+
+export const correctProjectSongModelResponseRhythmEvidenceItemTempoBpmMin = 20;
+export const correctProjectSongModelResponseRhythmEvidenceItemTempoBpmMax = 400;
+
+export const correctProjectSongModelResponsePitchEvidenceItemFramesItemTimeMin = 0;
+
+export const correctProjectSongModelResponsePitchEvidenceItemFramesItemFrequencyHzMin = 0;
+
+export const correctProjectSongModelResponsePitchEvidenceItemFramesItemPeriodicityMin = 0;
+export const correctProjectSongModelResponsePitchEvidenceItemFramesItemPeriodicityMax = 1;
+
+export const correctProjectSongModelResponsePitchEvidenceItemFramesItemConfidenceMin = 0;
+export const correctProjectSongModelResponsePitchEvidenceItemFramesItemConfidenceMax = 1;
+
+export const correctProjectSongModelResponseKeyEvidenceItemConfidenceMin = 0;
+export const correctProjectSongModelResponseKeyEvidenceItemConfidenceMax = 1;
+
+export const correctProjectSongModelResponseKeyEvidenceItemHpcpItemMin = 0;
+
+export const correctProjectSongModelResponseKeyEvidenceItemHpcpMin = 12;
+export const correctProjectSongModelResponseKeyEvidenceItemHpcpMax = 12;
+
+export const correctProjectSongModelResponseLoudnessOneLoudnessRangeMin = 0;
+
+export const correctProjectSongModelResponseLoudnessOneSamplePeakMin = 0;
+
 export const correctProjectSongModelResponseConfidenceMin = 0;
 export const correctProjectSongModelResponseConfidenceMax = 1;
 
@@ -1565,7 +1665,10 @@ export const CorrectProjectSongModelResponse = zod.object({
   "end": zod.number().min(correctProjectSongModelResponseBassItemEndMin),
   "pitch": zod.number().min(correctProjectSongModelResponseBassItemPitchMin).max(correctProjectSongModelResponseBassItemPitchMax),
   "confidence": zod.number().min(correctProjectSongModelResponseBassItemConfidenceMin).max(correctProjectSongModelResponseBassItemConfidenceMax),
-  "provider": zod.string().optional()
+  "provider": zod.string().optional(),
+  "sourceStem": zod.string().optional().describe('Private persisted analysis artifact lineage; never a signed URL.'),
+  "sourceStemProvider": zod.enum(['BS_ROFORMER']).optional(),
+  "providers": zod.array(zod.string()).optional()
 })).describe('Observed bass evidence. An empty array means no provider bass evidence was available.'),
   "chords": zod.array(zod.object({
   "start": zod.number(),
@@ -1649,6 +1752,41 @@ export const CorrectProjectSongModelResponse = zod.object({
   "errorCode": zod.string().optional(),
   "errorMessage": zod.string().optional()
 })),
+  "rhythmEvidence": zod.array(zod.object({
+  "provider": zod.enum(['MADMOM']),
+  "version": zod.string(),
+  "beats": zod.array(zod.number().min(correctProjectSongModelResponseRhythmEvidenceItemBeatsItemMin)),
+  "downbeats": zod.array(zod.number().min(correctProjectSongModelResponseRhythmEvidenceItemDownbeatsItemMin)),
+  "tempoBpm": zod.number().min(correctProjectSongModelResponseRhythmEvidenceItemTempoBpmMin).max(correctProjectSongModelResponseRhythmEvidenceItemTempoBpmMax)
+})).optional(),
+  "pitchEvidence": zod.array(zod.object({
+  "provider": zod.enum(['TORCHCREPE']),
+  "version": zod.string(),
+  "sourceStem": zod.string(),
+  "frames": zod.array(zod.object({
+  "time": zod.number().min(correctProjectSongModelResponsePitchEvidenceItemFramesItemTimeMin),
+  "frequencyHz": zod.number().min(correctProjectSongModelResponsePitchEvidenceItemFramesItemFrequencyHzMin),
+  "midiPitch": zod.number().nullable(),
+  "periodicity": zod.number().min(correctProjectSongModelResponsePitchEvidenceItemFramesItemPeriodicityMin).max(correctProjectSongModelResponsePitchEvidenceItemFramesItemPeriodicityMax),
+  "voiced": zod.boolean(),
+  "confidence": zod.number().min(correctProjectSongModelResponsePitchEvidenceItemFramesItemConfidenceMin).max(correctProjectSongModelResponsePitchEvidenceItemFramesItemConfidenceMax)
+}))
+})).optional(),
+  "keyEvidence": zod.array(zod.object({
+  "provider": zod.enum(['ESSENTIA']),
+  "version": zod.string(),
+  "key": zod.string(),
+  "scale": zod.string(),
+  "confidence": zod.number().min(correctProjectSongModelResponseKeyEvidenceItemConfidenceMin).max(correctProjectSongModelResponseKeyEvidenceItemConfidenceMax),
+  "hpcp": zod.array(zod.number().min(correctProjectSongModelResponseKeyEvidenceItemHpcpItemMin)).min(correctProjectSongModelResponseKeyEvidenceItemHpcpMin).max(correctProjectSongModelResponseKeyEvidenceItemHpcpMax)
+})).optional(),
+  "loudness": zod.union([zod.object({
+  "provider": zod.enum(['PYLOUDNORM']),
+  "version": zod.string(),
+  "integratedLUFS": zod.number(),
+  "loudnessRange": zod.number().min(correctProjectSongModelResponseLoudnessOneLoudnessRangeMin),
+  "samplePeak": zod.number().min(correctProjectSongModelResponseLoudnessOneSamplePeakMin)
+}),zod.null()]).optional().describe('pyloudnorm evidence. samplePeak is linear sample peak, not true peak.'),
   "fieldStatus": zod.object({
   "tempo": zod.object({
   "status": zod.enum(['detected', 'low_confidence', 'failed', 'not_available']),
@@ -1768,6 +1906,8 @@ export const ListMusicProvidersResponseItem = zod.object({
   "configured": zod.boolean(),
   "checkpointReady": zod.boolean(),
   "runtimeReady": zod.boolean(),
+  "packageReady": zod.boolean(),
+  "smokeTested": zod.boolean(),
   "reportedVersion": zod.string().nullable(),
   "lastHealth": zod.object({
   "status": zod.enum(['healthy', 'unhealthy', 'unknown']),

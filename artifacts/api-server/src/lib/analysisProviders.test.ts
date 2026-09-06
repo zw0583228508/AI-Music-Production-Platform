@@ -8,7 +8,44 @@ import {
   fuseHarmonyEvidence,
   parseSeparation,
   runAnalysisProviders,
+  analyzeVerifiedBassStem,
 } from "./analysisProviders";
+
+test("verified bass phase fails closed when either real pitch provider is unavailable", async () => {
+  const previousTorch = process.env.TORCHCREPE_API_URL;
+  const previousBasic = process.env.BASIC_PITCH_API_URL;
+  const previousTorchCanonical = process.env.MUSIC_PROVIDER_TORCHCREPE_URL;
+  const previousBasicCanonical = process.env.MUSIC_PROVIDER_BASIC_PITCH_URL;
+  const previousMir = process.env.MUSIC_MIR_API_URL;
+  delete process.env.TORCHCREPE_API_URL;
+  delete process.env.BASIC_PITCH_API_URL;
+  delete process.env.MUSIC_PROVIDER_TORCHCREPE_URL;
+  delete process.env.MUSIC_PROVIDER_BASIC_PITCH_URL;
+  delete process.env.MUSIC_MIR_API_URL;
+  try {
+    const result = await analyzeVerifiedBassStem({
+      sourceUrl: "https://storage.example/bass",
+      durationSeconds: 4,
+      idempotencyKey: "attempt",
+      sourceStem: "/objects/analysis/project/attempt/bass.wav",
+      sourceStemProvider: "BS_ROFORMER",
+    });
+    assert.deepEqual(result.bassEvidence, []);
+    assert.equal(result.provenance[0].status, "unavailable");
+    assert.equal(result.provenance[0].errorCode, "required-provider-unavailable");
+  } finally {
+    if (previousTorch === undefined) delete process.env.TORCHCREPE_API_URL;
+    else process.env.TORCHCREPE_API_URL = previousTorch;
+    if (previousBasic === undefined) delete process.env.BASIC_PITCH_API_URL;
+    else process.env.BASIC_PITCH_API_URL = previousBasic;
+    if (previousTorchCanonical === undefined) delete process.env.MUSIC_PROVIDER_TORCHCREPE_URL;
+    else process.env.MUSIC_PROVIDER_TORCHCREPE_URL = previousTorchCanonical;
+    if (previousBasicCanonical === undefined) delete process.env.MUSIC_PROVIDER_BASIC_PITCH_URL;
+    else process.env.MUSIC_PROVIDER_BASIC_PITCH_URL = previousBasicCanonical;
+    if (previousMir === undefined) delete process.env.MUSIC_MIR_API_URL;
+    else process.env.MUSIC_MIR_API_URL = previousMir;
+  }
+});
 
 test("parses valid harmony evidence and rejects out-of-range chords", () => {
   const result = parseHarmony("SHEETSAGE", {
@@ -370,7 +407,16 @@ test("keeps absent providers explicit without fabricating analysis results", asy
     assert.deepEqual(result.harmony, []);
     assert.deepEqual(
       new Set(result.provenance.map((item) => item.provider)),
-      new Set(["ALL_IN_ONE", "MT3", "BS_ROFORMER", "SHEETSAGE", "CHROMA", "BASS"]),
+      new Set([
+        "ALL_IN_ONE",
+        "MT3",
+        "BS_ROFORMER",
+        "SHEETSAGE",
+        "CHROMA",
+        "MADMOM",
+        "ESSENTIA",
+        "PYLOUDNORM",
+      ]),
     );
     assert.ok(result.provenance.every((item) => item.status === "unavailable"));
   } finally {

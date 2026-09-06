@@ -21,6 +21,8 @@ export interface MusicProvider {
   configured: boolean;
   checkpointReady: boolean;
   runtimeReady: boolean;
+  packageReady: boolean;
+  smokeTested: boolean;
   /** @nullable */
   reportedVersion: string | null;
   lastHealth: ProviderHealthResult;

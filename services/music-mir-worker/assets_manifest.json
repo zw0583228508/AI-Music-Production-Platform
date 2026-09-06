@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "assetRoot": "/var/lib/music-mir/assets",
+  "providers": {
+    "MADMOM": {
+      "package": "madmom-infer",
+      "version": "0.2.0",
+      "wheelSha256": "f4013a7ac2135f2f198d97f9e7840db4fbd993e2922f70b28862394c8f8d28f1",
+      "sourceLicense": "BSD-2-Clause",
+      "weightsLicense": "CC-BY-NC-SA-4.0",
+      "assets": [
+        {"path": ".cache/madmom_infer/models/downbeats/2016/downbeats_blstm_1.pkl", "sha256": "b02c4b8aa963069449422fd5cc55bd4077105fe268b0d83036b7d68b5520f38d"},
+        {"path": ".cache/madmom_infer/models/downbeats/2016/downbeats_blstm_2.pkl", "sha256": "6fa9d138ed84bed14ab5ef6f81f3a7e1a125ff8c571a255f6ce91ccf93390eee"},
+        {"path": ".cache/madmom_infer/models/downbeats/2016/downbeats_blstm_3.pkl", "sha256": "adf6a3e3bf345a9172e8252a511dae28622afe26ee653354c0d4c9e37de8f89a"},
+        {"path": ".cache/madmom_infer/models/downbeats/2016/downbeats_blstm_4.pkl", "sha256": "a4f9a09b1588ca74b0157251364650d3fe81e383019b5986941415e08b37fcde"},
+        {"path": ".cache/madmom_infer/models/downbeats/2016/downbeats_blstm_5.pkl", "sha256": "e40aea9b8221babaf14a9211a48dccc3ebcecdf8bcd6d62d60f0949445de9bb6"},
+        {"path": ".cache/madmom_infer/models/downbeats/2016/downbeats_blstm_6.pkl", "sha256": "89b6854c5d6b2381687731aedc9bce6c84894021d1c2eeb60d161cefe997d68c"},
+        {"path": ".cache/madmom_infer/models/downbeats/2016/downbeats_blstm_7.pkl", "sha256": "371a319a66d32bee6ab8d4a15f6ae9e4ee22ff97b4276736bab93d9a994c06c1"},
+        {"path": ".cache/madmom_infer/models/downbeats/2016/downbeats_blstm_8.pkl", "sha256": "a0d20e1922872a3e5b74df451d8b5701de6ca88d9f5739f313fb2991d7a84c77"}
+      ]
+    },
+    "TORCHCREPE": {
+      "package": "torchcrepe",
+      "version": "0.0.24",
+      "wheelSha256": "ec054c23c9d45328f213f93a0131570a3f0e5903e9382792bed95f17a8c36d5a",
+      "weights": "packaged-with-wheel"
+    },
+    "ESSENTIA": {
+      "package": "essentia",
+      "version": "2.1b6.dev1438",
+      "license": "AGPL-3.0-only"
+    },
+    "CHROMA": {
+      "implementation": "essentia-hpcp-plus-librosa-0.11.0",
+      "license": "AGPL-3.0-only (Essentia component)"
+    },
+    "PYLOUDNORM": {
+      "package": "pyloudnorm",
+      "version": "0.2.0",
+      "license": "MIT"
+    }
+  }
+}

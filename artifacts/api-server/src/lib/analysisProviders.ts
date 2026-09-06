@@ -18,6 +18,10 @@ export type AnalysisProviderId =
   | "MT3"
   | "SHEETSAGE"
   | "CHROMA"
+  | "MADMOM"
+  | "TORCHCREPE"
+  | "ESSENTIA"
+  | "PYLOUDNORM"
   | "BASS";
 
 export type ProviderStem = {
@@ -85,8 +89,52 @@ export type AnalysisProviderResults = {
   transcriptions: TranscriptionAnalysisResult[];
   harmony: HarmonyAnalysisResult[];
   chords: ChordEvent[];
-  bassEvidence: Array<{ start: number; end: number; pitch: number; confidence: number; provider?: string }>;
+  bassEvidence: Array<{
+    start: number;
+    end: number;
+    pitch: number;
+    confidence: number;
+    provider?: string;
+    sourceStem?: string;
+    sourceStemProvider?: string;
+    providers?: string[];
+  }>;
   harmonyConfidence: number;
+  rhythmEvidence: Array<{
+    provider: "MADMOM";
+    version: string;
+    beats: number[];
+    downbeats: number[];
+    tempoBpm: number;
+  }>;
+  pitchEvidence: Array<{
+    provider: "TORCHCREPE";
+    version: string;
+    sourceStem: string;
+    frames: Array<{
+      time: number;
+      frequencyHz: number;
+      midiPitch: number | null;
+      periodicity: number;
+      voiced: boolean;
+      confidence: number;
+    }>;
+  }>;
+  keyEvidence: Array<{
+    provider: "ESSENTIA";
+    version: string;
+    key: string;
+    scale: string;
+    confidence: number;
+    hpcp: number[];
+  }>;
+  loudness: {
+    provider: "PYLOUDNORM";
+    version: string;
+    integratedLUFS: number;
+    loudnessRange: number;
+    samplePeak: number;
+  } | null;
   provenance: ProviderProvenance[];
 };
 
@@ -114,9 +162,21 @@ const ANALYSIS_HEALTH_TTL_MS = 30_000;
 const analysisHealthCache = new Map<string, {
   expiresAt: number;
   error: ProviderRequestError | null;
+  version?: string;
 }>();
 
 export const configuredAnalysisProviderEndpoint = (providerId: AnalysisProviderId): string | null => {
+  if (
+    providerId === "SHEETSAGE" &&
+    process.env.SHEETSAGE_LICENSE_AUTHORIZED !== "true"
+  ) {
+    return null;
+  }
+  const mirGroup = ["MADMOM", "TORCHCREPE", "PYLOUDNORM"].includes(providerId)
+    ? "MUSIC_MIR"
+    : ["ESSENTIA", "CHROMA"].includes(providerId)
+      ? "MUSIC_MIR_ESSENTIA"
+      : null;
   const aliases = providerId === "BS_ROFORMER"
     ? [
         "MUSIC_PROVIDER_BS_ROFORMER_ENDPOINT",
@@ -125,7 +185,11 @@ export const configuredAnalysisProviderEndpoint = (providerId: AnalysisProviderI
       ]
     : providerId === "SHEETSAGE"
       ? ["SHEETSAGE_API_URL", "SHEET_SAGE_API_URL"]
-      : [`${providerId}_API_URL`];
+      : [
+          `MUSIC_PROVIDER_${providerId}_URL`,
+          `${providerId}_API_URL`,
+          ...(mirGroup ? [`${mirGroup}_API_URL`] : []),
+        ];
   return aliases
     .map((name) => process.env[name]?.trim())
     .find((value): value is string => Boolean(value)) ?? null;
@@ -140,8 +204,9 @@ const providerToken = (providerId: AnalysisProviderId): string | undefined => {
   if (providerId === "SHEETSAGE") {
     return process.env.SHEETSAGE_API_TOKEN ?? process.env.SHEET_SAGE_API_TOKEN;
   }
-  return process.env[`${providerId}_API_TOKEN`] ??
-    (["BASIC_PITCH", "DEMUCS"].includes(providerId)
+  return process.env[`MUSIC_PROVIDER_${providerId}_TOKEN`] ??
+    process.env[`${providerId}_API_TOKEN`] ??
+    (["BASIC_PITCH", "DEMUCS", "MADMOM", "TORCHCREPE", "ESSENTIA", "CHROMA", "PYLOUDNORM"].includes(providerId)
       ? process.env.MUSIC_AI_WORKER_TOKEN
       : undefined);
 };
@@ -199,8 +264,28 @@ function providerRequestUrl(endpoint: string, action: string): URL {
   return url;
 }
 
+function adaptProviderPayload(providerId: AnalysisProviderId, payload: unknown): unknown {
+  if (
+    ["MADMOM", "TORCHCREPE", "ESSENTIA", "CHROMA", "PYLOUDNORM"].includes(providerId)
+  ) {
+    if (!isRecord(payload) || payload["provider"] !== providerId ||
+      payload["status"] !== "ok" || !isRecord(payload["result"])) {
+      throw new Error(`${providerId} response is missing its executed result envelope`);
+    }
+    return payload["result"];
+  }
+  return payload;
+}
+
 function retryableStatus(status: number): boolean {
   return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+function providerRequestTimeoutMs(providerId: AnalysisProviderId): number {
+  if (providerId === "PYLOUDNORM" || providerId === "ESSENTIA") return 2 * 60_000;
+  if (providerId === "CHROMA" || providerId === "MADMOM") return 5 * 60_000;
+  if (providerId === "TORCHCREPE") return 8 * 60_000;
+  return 10 * 60_000;
 }
 
 async function readProviderJson(
@@ -325,7 +410,7 @@ async function attestProviderHealth(
   providerId: AnalysisProviderId,
   endpoint: string,
   token: string | undefined,
-): Promise<void> {
+): Promise<string> {
   const promotionKey = providerId.replace(/[^A-Z0-9]/g, "_");
   const promotionIdentity = requiresGpuPromotionRecord(providerId)
     ? [
@@ -338,7 +423,7 @@ async function attestProviderHealth(
   const cached = analysisHealthCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     if (cached.error) throw cached.error;
-    return;
+    return cached.version ?? "attested-runtime";
   }
   try {
     const healthUrl = new URL("/health", endpoint);
@@ -349,11 +434,13 @@ async function attestProviderHealth(
     });
     if (!response.ok) throw new Error(`health check returned HTTP ${response.status}`);
     const payload = await readProviderJson(providerId, response);
-    attestAnalysisProviderHealth(providerId, payload, endpoint);
+    const attestation = attestAnalysisProviderHealth(providerId, payload, endpoint);
     analysisHealthCache.set(cacheKey, {
       expiresAt: Date.now() + ANALYSIS_HEALTH_TTL_MS,
       error: null,
+      version: attestation.version,
     });
+    return attestation.version;
   } catch (error) {
     const attestationError = new ProviderRequestError(
       `${providerId} health attestation failed: ${
@@ -394,7 +481,7 @@ async function requestProvider(
   }
 
   const token = providerToken(providerId);
-  await attestProviderHealth(providerId, endpoint, token);
+  const attestedVersion = await attestProviderHealth(providerId, endpoint, token);
   let lastError: ProviderRequestError | null = null;
   for (let attempt = 1; attempt <= MAX_PROVIDER_ATTEMPTS; attempt += 1) {
     try {
@@ -415,7 +502,7 @@ async function requestProvider(
             sourceType: input.sourceType,
             durationSeconds: input.durationSeconds,
           }),
-          signal: AbortSignal.timeout(10 * 60_000),
+           signal: AbortSignal.timeout(providerRequestTimeoutMs(providerId)),
         },
       );
       if (!response.ok) {
@@ -453,8 +540,11 @@ async function requestProvider(
               payload = payload["result"];
             }
           }
-          return {
-            payload,
+           const adapted = adaptProviderPayload(providerId, payload);
+           return {
+             payload: isRecord(adapted) && typeof adapted["version"] !== "string"
+               ? { ...adapted, version: attestedVersion }
+               : adapted,
             attempts: attempt,
           };
         } catch (error) {
@@ -1394,6 +1484,333 @@ export function fuseCanonicalNotes(
     left.start - right.start || left.pitch - right.pitch);
 }
 
+export type VerifiedBassStemAnalysisResult = {
+  bassEvidence: AnalysisProviderResults["bassEvidence"];
+  provenance: ProviderProvenance[];
+};
+
+export function fuseVerifiedBassEvidence(
+  basic: TranscriptionAnalysisResult,
+  torch: AnalysisProviderResults["pitchEvidence"][number],
+  lineage: { sourceStem: string; sourceStemProvider: "BS_ROFORMER" },
+): AnalysisProviderResults["bassEvidence"] {
+  return basic.notes.flatMap((note) => {
+    const overlapping = torch.frames.filter((frame) =>
+      frame.voiced && frame.midiPitch !== null &&
+      frame.time >= note.start && frame.time < note.end);
+    if (!overlapping.length) return [];
+    const totalWeight = overlapping.reduce(
+      (sum, frame) => sum + frame.confidence,
+      0,
+    );
+    if (totalWeight <= 0) return [];
+    const torchPitch = Math.round(overlapping.reduce(
+      (sum, frame) => sum + frame.midiPitch! * frame.confidence,
+      0,
+    ) / totalWeight);
+    const torchConfidence = totalWeight / overlapping.length;
+    const basicConfidence = note.confidence * basic.confidence;
+    const pitch = Math.abs(torchPitch - note.pitch) <= 1
+      ? note.pitch
+      : torchConfidence > basicConfidence
+        ? torchPitch
+        : note.pitch;
+    return [{
+      start: note.start,
+      end: note.end,
+      pitch,
+      confidence: Number(Math.min(basicConfidence, torchConfidence).toFixed(6)),
+      provider: "BASS_FUSION",
+      sourceStem: lineage.sourceStem,
+      sourceStemProvider: lineage.sourceStemProvider,
+      providers: ["BS_ROFORMER", "TORCHCREPE", "BASIC_PITCH"],
+    }];
+  });
+}
+
+/**
+ * Runs only after the caller has persisted and audio-verified a real
+ * BS-RoFormer bass artifact. Both independent pitch providers must succeed;
+ * partial evidence is never promoted to canonical bass notes.
+ */
+export async function analyzeVerifiedBassStem(input: {
+  sourceUrl: string;
+  durationSeconds: number;
+  idempotencyKey: string;
+  sourceStem: string;
+  sourceStemProvider: "BS_ROFORMER";
+}): Promise<VerifiedBassStemAnalysisResult> {
+  const providerInput: AnalysisProviderInput = {
+    sourceUrl: input.sourceUrl,
+    sourceType: "SOLO_INSTRUMENT",
+    durationSeconds: input.durationSeconds,
+    idempotencyKey: `${input.idempotencyKey}:verified-bass`,
+  };
+  const required = ["TORCHCREPE", "BASIC_PITCH"] as const;
+  const missing = required.filter((provider) =>
+    !configuredAnalysisProviderEndpoint(provider));
+  if (missing.length) {
+    return {
+      bassEvidence: [],
+      provenance: [{
+        capability: "bass_evidence",
+        provider: "BASS",
+        version: "unavailable",
+        status: "unavailable",
+        attempts: 0,
+        errorCode: "required-provider-unavailable",
+        errorMessage: `Verified bass analysis requires ${missing.join(" and ")}.`,
+      }],
+    };
+  }
+
+  const outcomes = await Promise.all(required.map(async (provider) => {
+    try {
+      return {
+        provider,
+        request: await requestProvider(provider, providerInput),
+        error: null,
+      };
+    } catch (error) {
+      return {
+        provider,
+        request: null,
+        error: error instanceof ProviderRequestError
+          ? error
+          : new ProviderRequestError(
+              `${provider} failed during verified bass analysis`,
+              "request-failed",
+              false,
+              1,
+            ),
+      };
+    }
+  }));
+  const failed = outcomes.filter((outcome) => outcome.error);
+  if (failed.length) {
+    return {
+      bassEvidence: [],
+      provenance: [
+        ...failed.map(({ provider, error }): ProviderProvenance => ({
+          capability: "bass_pitch_evidence",
+          provider,
+          version: error!.code,
+          status: "failed",
+          attempts: error!.attempts,
+          errorCode: error!.code,
+          errorMessage: error!.message,
+        })),
+        {
+          capability: "bass_evidence",
+          provider: "BASS",
+          version: "unavailable",
+          status: "unavailable",
+          attempts: 0,
+          errorCode: "required-provider-failed",
+          errorMessage: "Canonical bass requires both TorchCREPE and Basic Pitch evidence.",
+        },
+      ],
+    };
+  }
+
+  try {
+    const torchOutcome = outcomes.find((item) => item.provider === "TORCHCREPE")!;
+    const basicOutcome = outcomes.find((item) => item.provider === "BASIC_PITCH")!;
+    const torch = parseTorchCrepe(
+      torchOutcome.request!.payload,
+      input.durationSeconds,
+      input.sourceStem,
+    );
+    const basic = parseTranscription(
+      "BASIC_PITCH",
+      basicOutcome.request!.payload,
+      input.durationSeconds,
+    );
+    const bassEvidence = fuseVerifiedBassEvidence(basic, torch, input);
+    return {
+      bassEvidence,
+      provenance: [
+        {
+          capability: "bass_pitch_evidence",
+          provider: "TORCHCREPE",
+          version: torch.version,
+          status: "ready",
+          attempts: torchOutcome.request!.attempts,
+        },
+        {
+          capability: "bass_transcription_evidence",
+          provider: "BASIC_PITCH",
+          version: basic.version,
+          status: "ready",
+          attempts: basicOutcome.request!.attempts,
+        },
+        {
+          capability: "bass_evidence",
+          provider: "BASS_FUSION",
+          version: "2.0.0",
+          status: bassEvidence.length ? "ready" : "unavailable",
+          attempts: 1,
+          ...(!bassEvidence.length
+            ? {
+                errorCode: "no-consensus-notes",
+                errorMessage: "The verified bass stem produced no overlapping real note and pitch evidence.",
+              }
+            : {}),
+        },
+      ],
+    };
+  } catch (error) {
+    return {
+      bassEvidence: [],
+      provenance: [{
+        capability: "bass_evidence",
+        provider: "BASS",
+        version: "contract-invalid",
+        status: "failed",
+        attempts: 1,
+        errorCode: "contract-invalid",
+        errorMessage: error instanceof Error ? error.message : "Bass evidence was invalid.",
+      }],
+    };
+  }
+}
+
+function parseMadmom(payload: unknown, durationSeconds: number) {
+  if (!isRecord(payload)) throw new Error("MADMOM response must be an object");
+  const beats = payload["beats"];
+  const downbeats = payload["downbeats"];
+  const tempoBpm = payload["tempoBpm"];
+  if (
+    !Array.isArray(beats) || beats.length < 2 ||
+    !beats.every((item) => finiteNumber(item) && item >= 0 && item <= durationSeconds + 1) ||
+    beats.some((item, index) => index > 0 && item <= beats[index - 1]) ||
+    !Array.isArray(downbeats) ||
+    !downbeats.every((item) => finiteNumber(item) && beats.includes(item)) ||
+    !finiteNumber(tempoBpm) || tempoBpm < 20 || tempoBpm > 400
+  ) {
+    throw new Error("MADMOM returned invalid beat, downbeat, or tempo evidence");
+  }
+  return {
+    provider: "MADMOM" as const,
+    version: providerVersion(payload, "MADMOM"),
+    beats: beats as number[],
+    downbeats: downbeats as number[],
+    tempoBpm,
+  };
+}
+
+function parseTorchCrepe(payload: unknown, durationSeconds: number, sourceStem: string) {
+  if (!isRecord(payload) || payload["model"] !== "full" || !Array.isArray(payload["frames"])) {
+    throw new Error("TORCHCREPE response must contain full-model pitch frames");
+  }
+  const frames = payload["frames"].map((value, index) => {
+    if (!isRecord(value)) throw new Error(`TORCHCREPE frame ${index + 1} must be an object`);
+    const time = value["time"];
+    const frequencyHz = value["frequencyHz"];
+    const midiPitch = value["midiPitch"];
+    const periodicity = value["periodicity"];
+    const voiced = value["voiced"];
+    const itemConfidence = value["confidence"];
+    if (
+      !finiteNumber(time) || time < 0 || time > durationSeconds + 1 ||
+      !finiteNumber(frequencyHz) || frequencyHz < 0 ||
+      !(midiPitch === null || finiteNumber(midiPitch)) ||
+      !finiteNumber(periodicity) || periodicity < 0 || periodicity > 1 ||
+      typeof voiced !== "boolean" ||
+      !finiteNumber(itemConfidence) || itemConfidence < 0 || itemConfidence > 1 ||
+      (voiced && (frequencyHz <= 0 || midiPitch === null)) ||
+      (!voiced && midiPitch !== null)
+    ) throw new Error(`TORCHCREPE frame ${index + 1} is invalid`);
+    return { time, frequencyHz, midiPitch, periodicity, voiced, confidence: itemConfidence };
+  });
+  if (!frames.length) throw new Error("TORCHCREPE returned no pitch evidence");
+  return {
+    provider: "TORCHCREPE" as const,
+    version: providerVersion(payload, "TORCHCREPE"),
+    sourceStem,
+    frames,
+  };
+}
+
+function parseEssentia(payload: unknown) {
+  if (!isRecord(payload)) throw new Error("ESSENTIA response must be an object");
+  const key = payload["key"];
+  const scale = payload["scale"];
+  const hpcp = payload["hpcp"];
+  const itemConfidence = payload["confidence"];
+  if (
+    typeof key !== "string" || !key.trim() ||
+    typeof scale !== "string" || !scale.trim() ||
+    !Array.isArray(hpcp) || hpcp.length !== 12 ||
+    !hpcp.every((item) => finiteNumber(item) && item >= 0) ||
+    !finiteNumber(itemConfidence) || itemConfidence < 0 || itemConfidence > 1
+  ) throw new Error("ESSENTIA returned invalid key or HPCP evidence");
+  return {
+    provider: "ESSENTIA" as const,
+    version: providerVersion(payload, "ESSENTIA"),
+    key: key.trim(),
+    scale: scale.trim(),
+    confidence: itemConfidence,
+    hpcp: hpcp as number[],
+  };
+}
+
+function parseLoudness(payload: unknown) {
+  if (!isRecord(payload)) throw new Error("PYLOUDNORM response must be an object");
+  const integratedLUFS = payload["integratedLUFS"];
+  const loudnessRange = payload["loudnessRange"];
+  const samplePeak = payload["samplePeak"];
+  if (
+    !finiteNumber(integratedLUFS) || integratedLUFS > 10 ||
+    !finiteNumber(loudnessRange) || loudnessRange < 0 ||
+    !finiteNumber(samplePeak) || samplePeak < 0
+  ) throw new Error("PYLOUDNORM returned invalid loudness evidence");
+  return {
+    provider: "PYLOUDNORM" as const,
+    version: providerVersion(payload, "PYLOUDNORM"),
+    integratedLUFS,
+    loudnessRange,
+    samplePeak,
+  };
+}
+
+function parseMirChroma(payload: unknown, durationSeconds: number): HarmonyAnalysisResult {
+  if (!isRecord(payload) || !Array.isArray(payload["frames"])) {
+    throw new Error("CHROMA response must contain beat-aligned frames");
+  }
+  const rawFrames = payload["frames"];
+  const frames = rawFrames.map((value, index) => {
+    if (!isRecord(value)) throw new Error(`CHROMA frame ${index + 1} must be an object`);
+    const start = value["time"];
+    const next = rawFrames[index + 1];
+    const end = isRecord(next) ? next["time"] : durationSeconds;
+    return {
+      start,
+      end,
+      values: value["pitchClassProbabilities"],
+      confidence: value["confidence"],
+    };
+  });
+  const chords = rawFrames.flatMap((value, index) => {
+    if (!isRecord(value) || !Array.isArray(value["candidateChords"])) return [];
+    const start = value["time"];
+    const next = rawFrames[index + 1];
+    const end = isRecord(next) ? next["time"] : durationSeconds;
+    const symbol = value["candidateChords"][0];
+    return typeof symbol === "string"
+      ? [{ start, end, symbol, roman: "", confidence: value["confidence"] }]
+      : [];
+  });
+  return parseHarmony("CHROMA", {
+    version: providerVersion(payload, "CHROMA"),
+    confidence: frames.length
+      ? frames.reduce((sum, frame) => sum + Number(frame.confidence), 0) / frames.length
+      : 0,
+    chroma: frames,
+    chords,
+  }, durationSeconds);
+}
+
 function unavailableProvenance(
   providerId: AnalysisProviderId,
   capability: string,
@@ -1423,6 +1840,10 @@ export async function runAnalysisProviders(
   let structure: StructureAnalysisResult | null = null;
   const transcriptions: TranscriptionAnalysisResult[] = [];
   const harmony: HarmonyAnalysisResult[] = [];
+  const rhythmEvidence: AnalysisProviderResults["rhythmEvidence"] = [];
+  const pitchEvidence: AnalysisProviderResults["pitchEvidence"] = [];
+  const keyEvidence: AnalysisProviderResults["keyEvidence"] = [];
+  let loudness: AnalysisProviderResults["loudness"] = null;
   const tasks: Promise<void>[] = [];
 
   const schedule = <T>(
@@ -1500,6 +1921,13 @@ export async function runAnalysisProviders(
     );
   }
   if (isFullMix) {
+    schedule("MADMOM", "rhythm_evidence",
+      (payload) => parseMadmom(payload, input.durationSeconds),
+      (result) => rhythmEvidence.push(result));
+    schedule("ESSENTIA", "key_evidence", parseEssentia,
+      (result) => keyEvidence.push(result));
+    schedule("PYLOUDNORM", "loudness", parseLoudness,
+      (result) => { loudness = result; });
     schedule(
       "ALL_IN_ONE",
       "structure",
@@ -1527,21 +1955,17 @@ export async function runAnalysisProviders(
     schedule(
       "CHROMA",
       "harmony_evidence",
-      (payload) => parseHarmony("CHROMA", payload, input.durationSeconds),
-      (result) => {
-        harmony.push(result);
-      },
-    );
-    schedule(
-      "BASS",
-      "bass_evidence",
-      (payload) => parseHarmony("BASS", payload, input.durationSeconds),
+      (payload) => parseMirChroma(payload, input.durationSeconds),
       (result) => {
         harmony.push(result);
       },
     );
   }
   if (wantsBasicPitch) {
+    schedule("TORCHCREPE", "pitch_evidence",
+      (payload) => parseTorchCrepe(payload, input.durationSeconds,
+        input.sourceType === "VOCAL_ONLY" ? "lead_vocal" : "solo_instrument"),
+      (result) => pitchEvidence.push(result));
     schedule(
       "BASIC_PITCH",
       "transcription",
@@ -1574,6 +1998,10 @@ export async function runAnalysisProviders(
       provider: result.providerId,
     }))),
     harmonyConfidence: fusedHarmony.confidence,
+    rhythmEvidence,
+    pitchEvidence,
+    keyEvidence,
+    loudness,
     provenance,
   };
 }

@@ -19,3 +19,4 @@
 - [Observable musical controls](observable-musical-controls.md) — producer controls and readiness claims must survive typed evidence flow and change shipped musical output, not just metadata.
 - [Pino regression harnesses](pino-regression-harnesses.md) — standalone logger tests should externalize Pino and emit inside the package tree rather than rebundling its workers.
 - [Historical export reconciliation](historical-export-reconciliation.md) — cleanup requires an aged current-package dry run and exact reviewed candidates; ambiguous export objects stay preserved.
+- [MIR runtime isolation](mir-runtime-isolation.md) — exact MIR pins require separate Python 3.11 and 3.14 images; SheetSage weights are noncommercial/share-alike licensed.

@@ -8,7 +8,11 @@ import {
   getInstrumentDefinition,
   HarmonyEngine,
 } from "../src/lib/musicEngines";
-import { fuseHarmonyEvidence, parseHarmony } from "../src/lib/analysisProviders";
+import {
+  fuseHarmonyEvidence,
+  fuseVerifiedBassEvidence,
+  parseHarmony,
+} from "../src/lib/analysisProviders";
 import { fuseProviderSongModels } from "../src/lib/songModelValidation";
 
 const song = (overrides: Partial<SongModelData> = {}): SongModelData => ({
@@ -31,6 +35,64 @@ const song = (overrides: Partial<SongModelData> = {}): SongModelData => ({
   sections: [{ name: "Verse", startBar: 1, endBar: 2, energy: .6 }],
   energy: [.6],
   ...overrides,
+});
+
+test("verified bass fusion preserves stem lineage and resolves pitch conflicts deterministically", () => {
+  const bass = fuseVerifiedBassEvidence({
+    providerId: "BASIC_PITCH",
+    version: "0.4.0",
+    confidence: 0.8,
+    notes: [{
+      start: 1,
+      end: 2,
+      pitch: 40,
+      velocity: 90,
+      confidence: 0.75,
+      source: "BASIC_PITCH",
+    }],
+  }, {
+    provider: "TORCHCREPE",
+    version: "0.0.24",
+    sourceStem: "/objects/analysis/project/job/bass.wav",
+    frames: [
+      { time: 1.1, frequencyHz: 110, midiPitch: 45, periodicity: 0.9, voiced: true, confidence: 0.9 },
+      { time: 1.2, frequencyHz: 110, midiPitch: 45, periodicity: 0.9, voiced: true, confidence: 0.9 },
+    ],
+  }, {
+    sourceStem: "/objects/analysis/project/job/bass.wav",
+    sourceStemProvider: "BS_ROFORMER",
+  });
+  assert.equal(bass.length, 1);
+  assert.equal(bass[0].pitch, 45);
+  assert.equal(bass[0].sourceStemProvider, "BS_ROFORMER");
+  assert.deepEqual(bass[0].providers, ["BS_ROFORMER", "TORCHCREPE", "BASIC_PITCH"]);
+});
+
+test("verified bass fusion never creates notes without overlapping voiced evidence", () => {
+  const bass = fuseVerifiedBassEvidence({
+    providerId: "BASIC_PITCH",
+    version: "0.4.0",
+    confidence: 1,
+    notes: [{
+      start: 1,
+      end: 2,
+      pitch: 40,
+      velocity: 90,
+      confidence: 1,
+      source: "BASIC_PITCH",
+    }],
+  }, {
+    provider: "TORCHCREPE",
+    version: "0.0.24",
+    sourceStem: "/objects/analysis/project/job/bass.wav",
+    frames: [
+      { time: 1.1, frequencyHz: 0, midiPitch: null, periodicity: 0.1, voiced: false, confidence: 0.1 },
+    ],
+  }, {
+    sourceStem: "/objects/analysis/project/job/bass.wav",
+    sourceStemProvider: "BS_ROFORMER",
+  });
+  assert.deepEqual(bass, []);
 });
 
 const planFor = (model: SongModelData, version = 7, controls: Record<string, number> = {}) => createArrangementPlan({

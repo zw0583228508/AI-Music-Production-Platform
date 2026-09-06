@@ -1,0 +1,54 @@
+{
+  "provider": "SHEETSAGE",
+  "package": {
+    "name": "sheetsage-infer",
+    "version": "0.2.1",
+    "wheel_sha256": "605ad15130587d548e40c3f4526aefd14748944003c462acb19d56149932bce4",
+    "source_revision": "openmirlab/sheetsage-infer@ee7c2aeeb8084840a4f938ae6913f566afdaebdc"
+  },
+  "runtime": {
+    "python": "3.11"
+  },
+  "dependencies": {
+    "jukebox-infer": {
+      "version": "0.1.2",
+      "wheel_sha256": "6aaf973f6f2346139c3004de2ded4f7b796360e3d3b08df413a4859fb4f87a9d",
+      "profile": "inspected but disabled: handcrafted baseline does not load Jukebox"
+    },
+    "madmom-infer": {
+      "version": "0.2.0",
+      "wheel_sha256": "f4013a7ac2135f2f198d97f9e7840db4fbd993e2922f70b28862394c8f8d28f1"
+    }
+  },
+  "profile": "HANDCRAFTED",
+  "asset_root": "/var/lib/sheetsage/assets",
+  "asset_manifest": "assets.manifest.json",
+  "required_asset_sha256": {
+    "sheetsage/v0.2/oafmelspec_moments.npy": "81d20995052676ca4cd60afd2657c8fa0c10e21c0895b39cda85fe3f4d1255e5",
+    "sheetsage/v0.2/0919_02_e0908_oafmelspecnorm/5b739ce5efa2b6d4d70c5f1feac802684f0ee6f4.cfg.json": "5b739ce5efa2b6d4d70c5f1feac802684f0ee6f4",
+    "sheetsage/v0.2/0919_02_e0908_oafmelspecnorm/step.pkl": "06fa1073e4fea8a9af2e5560e11f67fc91b6089d218d872f0b70cad5318fd583",
+    "sheetsage/v0.2/0919_02_e0908_oafmelspecnorm/model.pt": "d7f6dae6902618ba285d78459010a5388002efcd685f1f2ce334297eec6c799f",
+    "sheetsage/v0.2/0919_00_e0830_oafmelspecnorm/7d82e6839e582936ea428a823a0d868075a52dc5.cfg.json": "7d82e6839e582936ea428a823a0d868075a52dc5",
+    "sheetsage/v0.2/0919_00_e0830_oafmelspecnorm/step.pkl": "287bdfc444a79ebee76722726d29f57169d2170c95363ed122866ea534206006",
+    "sheetsage/v0.2/0919_00_e0830_oafmelspecnorm/model.pt": "70f10a4146da8f1294597516622901d93621c5cd1bbb4e9dc831f9c43c081ef4",
+    "madmom_infer/models/downbeats/2016/downbeats_blstm_1.pkl": "b02c4b8aa963069449422fd5cc55bd4077105fe268b0d83036b7d68b5520f38d",
+    "madmom_infer/models/downbeats/2016/downbeats_blstm_2.pkl": "6fa9d138ed84bed14ab5ef6f81f3a7e1a125ff8c571a255f6ce91ccf93390eee",
+    "madmom_infer/models/downbeats/2016/downbeats_blstm_3.pkl": "adf6a3e3bf345a9172e8252a511dae28622afe26ee653354c0d4c9e37de8f89a",
+    "madmom_infer/models/downbeats/2016/downbeats_blstm_4.pkl": "a4f9a09b1588ca74b0157251364650d3fe81e383019b5986941415e08b37fcde",
+    "madmom_infer/models/downbeats/2016/downbeats_blstm_5.pkl": "e40aea9b8221babaf14a9211a48dccc3ebcecdf8bcd6d62d60f0949445de9bb6",
+    "madmom_infer/models/downbeats/2016/downbeats_blstm_6.pkl": "89b6854c5d6b2381687731aedc9bce6c84894021d1c2eeb60d161cefe997d68c",
+    "madmom_infer/models/downbeats/2016/downbeats_blstm_7.pkl": "371a319a66d32bee6ab8d4a15f6ae9e4ee22ff97b4276736bab93d9a994c06c1",
+    "madmom_infer/models/downbeats/2016/downbeats_blstm_8.pkl": "a0d20e1922872a3e5b74df451d8b5701de6ca88d9f5739f313fb2991d7a84c77"
+  },
+  "license": {
+    "acceptance_environment": "SHEETSAGE_ACCEPT_NONCOMMERCIAL_WEIGHTS",
+    "required_value": "CC-BY-NC-SA-3.0+4.0",
+    "weights": "CC-BY-NC-SA-3.0",
+    "downbeat_weights": "CC-BY-NC-SA-4.0",
+    "status": "BLOCKED unless deployment is eligible for and explicitly accepts non-commercial/share-alike terms"
+  },
+  "network_policy": "bootstrap-only; inference requests run with offline environment variables",
+  "output_contract": {
+    "required": ["melody", "chords", "timing", "confidence"]
+  }
+}

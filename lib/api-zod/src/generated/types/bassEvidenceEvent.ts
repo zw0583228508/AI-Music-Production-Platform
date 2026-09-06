@@ -5,6 +5,7 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { BassEvidenceEventSourceStemProvider } from './bassEvidenceEventSourceStemProvider';
 
 export interface BassEvidenceEvent {
   /** @minimum 0 */
@@ -22,4 +23,8 @@ export interface BassEvidenceEvent {
      */
   confidence: number;
   provider?: string;
+  /** Private persisted analysis artifact lineage; never a signed URL. */
+  sourceStem?: string;
+  sourceStemProvider?: BassEvidenceEventSourceStemProvider;
+  providers?: string[];
 }

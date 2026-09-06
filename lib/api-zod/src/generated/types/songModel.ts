@@ -21,7 +21,11 @@ import type { SongModelContractVersion } from './songModelContractVersion';
 import type { SongModelCorrection } from './songModelCorrection';
 import type { SongModelFieldStatus } from './songModelFieldStatus';
 import type { SongModelFusion } from './songModelFusion';
+import type { SongModelKeyEvidenceItem } from './songModelKeyEvidenceItem';
+import type { SongModelLoudness } from './songModelLoudness';
+import type { SongModelPitchEvidenceItem } from './songModelPitchEvidenceItem';
 import type { SongModelProvenance } from './songModelProvenance';
+import type { SongModelRhythmEvidenceItem } from './songModelRhythmEvidenceItem';
 import type { SongModelStatus } from './songModelStatus';
 import type { SongModelStem } from './songModelStem';
 import type { SongModelValidation } from './songModelValidation';
@@ -68,6 +72,11 @@ export interface SongModel {
   lyrics: LyricEvent[];
   confidenceByField: SongModelConfidenceByField;
   providerProvenance: ProviderProvenance[];
+  rhythmEvidence?: SongModelRhythmEvidenceItem[];
+  pitchEvidence?: SongModelPitchEvidenceItem[];
+  keyEvidence?: SongModelKeyEvidenceItem[];
+  /** pyloudnorm evidence. samplePeak is linear sample peak, not true peak. */
+  loudness?: SongModelLoudness;
   fieldStatus: SongModelFieldStatus;
   provenance: SongModelProvenance;
   providers: string[];

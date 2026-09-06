@@ -260,6 +260,106 @@ export const SongModelStatus = {
 
 export type SongModelConfidenceByField = {[key: string]: number};
 
+export type SongModelRhythmEvidenceItemProvider = typeof SongModelRhythmEvidenceItemProvider[keyof typeof SongModelRhythmEvidenceItemProvider];
+
+
+export const SongModelRhythmEvidenceItemProvider = {
+  MADMOM: 'MADMOM',
+} as const;
+
+export type SongModelRhythmEvidenceItem = {
+  provider: SongModelRhythmEvidenceItemProvider;
+  version: string;
+  /** @items.minimum 0 */
+  beats: number[];
+  /** @items.minimum 0 */
+  downbeats: number[];
+  /**
+     * @minimum 20
+     * @maximum 400
+     */
+  tempoBpm: number;
+};
+
+export type SongModelPitchEvidenceItemProvider = typeof SongModelPitchEvidenceItemProvider[keyof typeof SongModelPitchEvidenceItemProvider];
+
+
+export const SongModelPitchEvidenceItemProvider = {
+  TORCHCREPE: 'TORCHCREPE',
+} as const;
+
+export type SongModelPitchEvidenceItemFramesItem = {
+  /** @minimum 0 */
+  time: number;
+  /** @minimum 0 */
+  frequencyHz: number;
+  /** @nullable */
+  midiPitch: number | null;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  periodicity: number;
+  voiced: boolean;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  confidence: number;
+};
+
+export type SongModelPitchEvidenceItem = {
+  provider: SongModelPitchEvidenceItemProvider;
+  version: string;
+  sourceStem: string;
+  frames: SongModelPitchEvidenceItemFramesItem[];
+};
+
+export type SongModelKeyEvidenceItemProvider = typeof SongModelKeyEvidenceItemProvider[keyof typeof SongModelKeyEvidenceItemProvider];
+
+
+export const SongModelKeyEvidenceItemProvider = {
+  ESSENTIA: 'ESSENTIA',
+} as const;
+
+export type SongModelKeyEvidenceItem = {
+  provider: SongModelKeyEvidenceItemProvider;
+  version: string;
+  key: string;
+  scale: string;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  confidence: number;
+  /**
+     * @minItems 12
+     * @maxItems 12
+     * @items.minimum 0
+     */
+  hpcp: number[];
+};
+
+export type SongModelLoudnessProvider = typeof SongModelLoudnessProvider[keyof typeof SongModelLoudnessProvider];
+
+
+export const SongModelLoudnessProvider = {
+  PYLOUDNORM: 'PYLOUDNORM',
+} as const;
+
+/**
+ * pyloudnorm evidence. samplePeak is linear sample peak, not true peak.
+ */
+export type SongModelLoudness = {
+  provider: SongModelLoudnessProvider;
+  version: string;
+  integratedLUFS: number;
+  /** @minimum 0 */
+  loudnessRange: number;
+  /** @minimum 0 */
+  samplePeak: number;
+} | null;
+
 export type SongModelContractVersion = typeof SongModelContractVersion[keyof typeof SongModelContractVersion];
 
 
@@ -420,6 +520,13 @@ export interface NoteEvent {
   source: string;
 }
 
+export type BassEvidenceEventSourceStemProvider = typeof BassEvidenceEventSourceStemProvider[keyof typeof BassEvidenceEventSourceStemProvider];
+
+
+export const BassEvidenceEventSourceStemProvider = {
+  BS_ROFORMER: 'BS_ROFORMER',
+} as const;
+
 export interface BassEvidenceEvent {
   /** @minimum 0 */
   start: number;
@@ -436,6 +543,10 @@ export interface BassEvidenceEvent {
      */
   confidence: number;
   provider?: string;
+  /** Private persisted analysis artifact lineage; never a signed URL. */
+  sourceStem?: string;
+  sourceStemProvider?: BassEvidenceEventSourceStemProvider;
+  providers?: string[];
 }
 
 export interface ChordTiming {
@@ -688,6 +799,11 @@ export interface SongModel {
   lyrics: LyricEvent[];
   confidenceByField: SongModelConfidenceByField;
   providerProvenance: ProviderProvenance[];
+  rhythmEvidence?: SongModelRhythmEvidenceItem[];
+  pitchEvidence?: SongModelPitchEvidenceItem[];
+  keyEvidence?: SongModelKeyEvidenceItem[];
+  /** pyloudnorm evidence. samplePeak is linear sample peak, not true peak. */
+  loudness?: SongModelLoudness;
   fieldStatus: SongModelFieldStatus;
   provenance: SongModelProvenance;
   providers: string[];
@@ -809,6 +925,8 @@ export interface MusicProvider {
   configured: boolean;
   checkpointReady: boolean;
   runtimeReady: boolean;
+  packageReady: boolean;
+  smokeTested: boolean;
   /** @nullable */
   reportedVersion: string | null;
   lastHealth: ProviderHealthResult;

@@ -22,12 +22,14 @@ import {
 import {
   fuseCanonicalNotes,
   runAnalysisProviders,
+  analyzeVerifiedBassStem,
   configuredAnalysisProviderEndpoint,
   type SeparationAnalysisResult,
 } from "./analysisProviders";
 import { fuseProviderSongModels } from "./songModelValidation";
 import {
   createSourceDownloadUrl,
+  createAnalysisDownloadUrl,
   deleteAnalysisObjects,
   getSourceObject,
   saveAnalysisObject,
@@ -1115,7 +1117,7 @@ export async function analyzeProjectSource(
       : waveform;
     if (midi) waveform = energy;
     let bpm = midi?.bpm ?? localTempo?.bpm ?? 0;
-    const key = midi?.keyMap.length ? midi.key : keyDetection?.key ?? "—";
+    let key = midi?.keyMap.length ? midi.key : keyDetection?.key ?? "—";
     let meter = midi?.meterMap.length ? midi.meter : "—";
     let sections: AnalysisSection[] = [];
     let beats = midi?.beats ?? [];
@@ -1131,7 +1133,13 @@ export async function analyzeProjectSource(
       "SHEETSAGE",
       "CHROMA",
       "BASS",
-    ].some((provider) => Boolean(process.env[`${provider}_API_URL`]));
+      "MADMOM",
+      "TORCHCREPE",
+      "ESSENTIA",
+      "PYLOUDNORM",
+    ].some((provider) => Boolean(configuredAnalysisProviderEndpoint(
+      provider as Parameters<typeof configuredAnalysisProviderEndpoint>[0],
+    )));
     let sourceUrl: string | null = null;
     if (needsProviderSource) {
       try {
@@ -1190,6 +1198,58 @@ export async function analyzeProjectSource(
         }] : [];
       }
     }
+    if (!midi) {
+      const verifiedBassStem = providerResults.separation?.providerId === "BS_ROFORMER"
+        ? sourceStems.find((stem) =>
+            stem.provider === "BS_ROFORMER" && stem.role.toLowerCase() === "bass")
+        : undefined;
+      if (verifiedBassStem) {
+        await updateOwnedStage("bass_provider_analysis", 78);
+        try {
+          const bassSourceUrl = await createAnalysisDownloadUrl(
+            verifiedBassStem.objectPath,
+          );
+          const bassPhase = await analyzeVerifiedBassStem({
+            sourceUrl: bassSourceUrl,
+            durationSeconds,
+            idempotencyKey: attempt.id,
+            sourceStem: verifiedBassStem.objectPath,
+            sourceStemProvider: "BS_ROFORMER",
+          });
+          // This authoritative source/attempt fence occurs after both external
+          // calls. A deleted project or superseded attempt cannot publish them.
+          await updateOwnedStage("bass_provider_analysis_complete", 82);
+          providerResults.bassEvidence = bassPhase.bassEvidence;
+          providerResults.provenance.push(...bassPhase.provenance);
+        } catch (error) {
+          // Also fence the failure path so stale work cannot affect field state.
+          await updateOwnedStage("bass_provider_analysis_complete", 82);
+          providerResults.bassEvidence = [];
+          providerResults.provenance.push({
+            capability: "bass_evidence",
+            provider: "BASS",
+            version: "unavailable",
+            status: "unavailable",
+            attempts: 0,
+            errorCode: "verified-stem-read-unavailable",
+            errorMessage: error instanceof Error
+              ? error.message
+              : "The verified bass artifact could not be read.",
+          });
+        }
+      } else {
+        providerResults.bassEvidence = [];
+        providerResults.provenance.push({
+          capability: "bass_evidence",
+          provider: "BASS",
+          version: "unavailable",
+          status: "unavailable",
+          attempts: 0,
+          errorCode: "verified-bs-roformer-bass-stem-unavailable",
+          errorMessage: "No verified BS-RoFormer bass stem is available; full-mix fallback is forbidden.",
+        });
+      }
+    }
     if (!midi && providerResults.structure) {
       bpm = providerResults.structure.bpm;
       meter = providerResults.structure.meter;
@@ -1197,11 +1257,15 @@ export async function analyzeProjectSource(
       bars = providerResults.structure.bars;
       sections = providerResults.structure.sections;
     }
+    const essentiaKey = providerResults.keyEvidence[0];
+    if (!midi && essentiaKey) {
+      key = `${essentiaKey.key} ${essentiaKey.scale}`.trim();
+    }
     const melody = midi?.melody ??
       fuseCanonicalNotes(providerResults.transcriptions);
     const bass = midi ? [] : providerResults.bassEvidence;
     const bassProviders = [...new Set(bass.flatMap((note) =>
-      note.provider ? [note.provider] : []
+      note.providers?.length ? note.providers : note.provider ? [note.provider] : []
     ))];
     const bassConfidence = bass.length
       ? Math.max(...bass.map((note) => note.confidence))
@@ -1209,7 +1273,7 @@ export async function analyzeProjectSource(
     const confidenceByField = {
       tempo: midi ? 1 : providerResults.structure?.confidence ?? localTempo?.confidence ?? 0,
       meter: midi?.meterMap.length ? 1 : providerResults.structure?.confidence ?? 0,
-      key: midi?.keyMap.length ? 1 : keyDetection?.confidence ?? 0,
+      key: midi?.keyMap.length ? 1 : essentiaKey?.confidence ?? keyDetection?.confidence ?? 0,
       structure: providerResults.structure?.confidence ?? 0,
       melody: midi
         ? 1
@@ -1247,11 +1311,11 @@ export async function analyzeProjectSource(
         edited: false,
       },
       key: {
-        status: midi?.keyMap.length ? "detected" : keyDetection ? "low_confidence" : "not_available",
+        status: midi?.keyMap.length || essentiaKey ? "detected" : keyDetection ? "low_confidence" : "not_available",
         confidence: confidenceByField.key || null,
         providers: midi?.keyMap.length ? ["STANDARD_MIDI"] :
-          keyDetection ? ["LOCAL_SIGNAL_ANALYZER_V1"] : [],
-        message: midi?.keyMap.length ? null : keyDetection
+          essentiaKey ? ["ESSENTIA"] : keyDetection ? ["LOCAL_SIGNAL_ANALYZER_V1"] : [],
+        message: midi?.keyMap.length || essentiaKey ? null : keyDetection
           ? "Key is a local spectral estimate and was not confirmed by a harmony provider."
           : "No unambiguous tonal center was detected.",
         edited: false,
@@ -1340,7 +1404,9 @@ export async function analyzeProjectSource(
         : providerResults.structure?.meterMap ?? [],
       keyMap: midi?.keyMap.length
         ? midi.keyMap
-        : keyDetection
+        : essentiaKey
+          ? [{ time: 0, key, confidence: essentiaKey.confidence }]
+          : keyDetection
           ? [{ time: 0, key: keyDetection.key, confidence: keyDetection.confidence }]
           : [],
       beats,
@@ -1392,6 +1458,10 @@ export async function analyzeProjectSource(
             : []),
         ...providerResults.provenance,
       ],
+      rhythmEvidence: providerResults.rhythmEvidence,
+      pitchEvidence: providerResults.pitchEvidence,
+      keyEvidence: providerResults.keyEvidence,
+      loudness: providerResults.loudness,
       fieldStatus,
       provenance: {
         tempo: fieldStatus.tempo.providers,
