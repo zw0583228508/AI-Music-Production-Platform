@@ -107,7 +107,9 @@ def run_job(request: dict[str, Any], checkpoint: Path, backend_cls=BSRoformerInf
     if prior is not None:
         return prior
     require_cuda()
-    source = materialize_source(request, work / "source.wav", checkpoint, smoke)
+    source = materialize_source(
+        request, work / "source.wav", checkpoint, PROVIDER, smoke,
+    )
     source_evidence = validate_audio(source)
     source_evidence.pop("path", None)
     if smoke:

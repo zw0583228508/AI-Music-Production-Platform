@@ -38,6 +38,51 @@ def finite_number(value: Any, label: str, low: float | None = None,
     return value
 
 
+def validate_mt3_note_output(output: object) -> None:
+    """Require bounded, terminated, canonical, hash-addressed MT3 note evidence."""
+    if not isinstance(output, dict):
+        raise ValueError("MT3 retained note evidence is missing")
+    events = output.get("noteEvents")
+    if (
+        not isinstance(events, list)
+        or not 1 <= len(events) <= 4096
+        or output.get("notes") != len(events)
+        or output.get("terminatedNotes") != len(events)
+        or output.get("allNotesTerminated") is not True
+    ):
+        raise ValueError("MT3 retained note evidence count is invalid")
+    previous = None
+    for event in events:
+        if not isinstance(event, dict):
+            raise ValueError("MT3 retained note evidence has an invalid event")
+        start, end = event.get("start"), event.get("end")
+        pitch, velocity = event.get("pitch"), event.get("velocity")
+        confidence = event.get("confidence")
+        if (
+            isinstance(start, bool) or not isinstance(start, (int, float))
+            or isinstance(end, bool) or not isinstance(end, (int, float))
+            or not math.isfinite(start) or not math.isfinite(end)
+            or start < 0 or end <= start
+            or isinstance(pitch, bool) or not isinstance(pitch, int)
+            or not 0 <= pitch <= 127
+            or isinstance(velocity, bool) or not isinstance(velocity, int)
+            or not 1 <= velocity <= 127
+            or isinstance(confidence, bool)
+            or not isinstance(confidence, (int, float))
+            or not math.isfinite(confidence) or not 0 <= confidence <= 1
+        ):
+            raise ValueError("MT3 retained note evidence has invalid bounds")
+        ordering = (start, end, pitch)
+        if previous is not None and ordering < previous:
+            raise ValueError("MT3 retained note evidence is not canonical")
+        previous = ordering
+    expected = hashlib.sha256(json.dumps(
+        events, sort_keys=True, separators=(",", ":"), allow_nan=False,
+    ).encode()).hexdigest()
+    if output.get("noteEventsSha256") != expected:
+        raise ValueError("MT3 retained note evidence hash is invalid")
+
+
 def require_distribution_version(distribution: str, expected: str) -> None:
     """Prevent a mutable/incorrect installed wheel from claiming pinned provenance."""
     try:
@@ -192,7 +237,7 @@ def download_source(source_url: Any, destination: Path) -> Path:
     return destination
 
 
-def smoke_input_path(checkpoint: Path) -> Path | None:
+def smoke_input_path(checkpoint: Path, provider: str) -> Path | None:
     """Resolve a trusted mounted smoke fixture without permitting arbitrary files."""
     value = os.environ.get("MUSIC_GPU_SMOKE_INPUT_PATH", "").strip()
     if not value:
@@ -204,13 +249,24 @@ def smoke_input_path(checkpoint: Path) -> Path | None:
     if candidate != volume and volume not in candidate.parents:
         raise RunnerError("smoke input path must be inside MUSIC_GPU_CHECKPOINT_ROOT")
     validate_audio(candidate)
+    pin_key = f"MUSIC_PROVIDER_{provider}_SMOKE_INPUT_SHA256"
+    expected = os.environ.get(pin_key, "").strip().lower()
+    if not expected:
+        if provider in {"BS_ROFORMER", "YOUR_MT3"}:
+            raise RunnerError(f"{pin_key} must be an exact SHA-256")
+        return candidate
+    if len(expected) != 64 or any(char not in "0123456789abcdef" for char in expected):
+        raise RunnerError(f"{pin_key} must be an exact SHA-256")
+    actual = checkpoint_sha256(candidate)
+    if not hmac.compare_digest(actual, expected):
+        raise RunnerError("mounted smoke input SHA-256 does not match its pinned environment value")
     return candidate
 
 
 def materialize_source(request: dict[str, Any], destination: Path,
-                       checkpoint: Path, smoke: bool = False) -> Path:
+                       checkpoint: Path, provider: str, smoke: bool = False) -> Path:
     """Use a trusted local smoke fixture or the normal vetted HTTPS source path."""
-    local = smoke_input_path(checkpoint) if smoke else None
+    local = smoke_input_path(checkpoint, provider) if smoke else None
     if local is not None:
         shutil.copyfile(local, destination)
         validate_audio(destination)

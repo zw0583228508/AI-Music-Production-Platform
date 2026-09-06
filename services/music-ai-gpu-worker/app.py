@@ -29,6 +29,7 @@ from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 from pydantic import BaseModel, ConfigDict, Field
+from runners.common import validate_mt3_note_output
 
 ROOT = Path(__file__).resolve().parent
 MANIFEST = json.loads((ROOT / "model_manifest.json").read_text())
@@ -442,6 +443,10 @@ def _provider_health(
         if code == 0:
             try:
                 proof = json.loads(output.strip().splitlines()[-1])
+                if not isinstance(proof, dict):
+                    raise ValueError("smoke proof must be an object")
+                if provider in {"MT3", "YOUR_MT3"}:
+                    validate_mt3_note_output(proof.get("output"))
                 proof_provenance = (
                     proof.get("provenance")
                     if isinstance(proof.get("provenance"), dict)
@@ -463,7 +468,7 @@ def _provider_health(
                     SMOKE_EVIDENCE[provider] = proof
                     smoke_evidence = proof
                 smoke_message = "Real GPU smoke inference verified" if smoke_tested else "Smoke proof did not match the loaded model"
-            except (json.JSONDecodeError, IndexError):
+            except (json.JSONDecodeError, IndexError, ValueError):
                 smoke_message = "Smoke runner did not return a valid proof"
         else:
             # stderr can contain local paths, framework internals, or very

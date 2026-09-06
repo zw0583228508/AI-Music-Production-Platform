@@ -23,6 +23,7 @@ from modal_config import (
     promotion_secret_name,
     provider_app_name,
 )
+from runners.common import validate_mt3_note_output
 
 ROOT = Path(__file__).resolve().parent
 APP_CLASSES = {
@@ -213,50 +214,6 @@ def retain_smoke_artifact(health: dict, metadata: dict, output: Path) -> None:
         descriptor.pop(field, None)
 
 
-def validate_mt3_note_output(output: object) -> None:
-    if not isinstance(output, dict):
-        raise ValueError("MT3 retained note evidence is missing")
-    events = output.get("noteEvents")
-    if (
-        not isinstance(events, list)
-        or not 1 <= len(events) <= 4096
-        or output.get("notes") != len(events)
-        or output.get("terminatedNotes") != len(events)
-        or output.get("allNotesTerminated") is not True
-    ):
-        raise ValueError("MT3 retained note evidence count is invalid")
-    previous = None
-    for event in events:
-        if not isinstance(event, dict):
-            raise ValueError("MT3 retained note evidence has an invalid event")
-        start, end = event.get("start"), event.get("end")
-        pitch, velocity = event.get("pitch"), event.get("velocity")
-        confidence = event.get("confidence")
-        if (
-            isinstance(start, bool) or not isinstance(start, (int, float))
-            or isinstance(end, bool) or not isinstance(end, (int, float))
-            or not math.isfinite(start) or not math.isfinite(end)
-            or start < 0 or end <= start
-            or isinstance(pitch, bool) or not isinstance(pitch, int)
-            or not 0 <= pitch <= 127
-            or isinstance(velocity, bool) or not isinstance(velocity, int)
-            or not 1 <= velocity <= 127
-            or isinstance(confidence, bool)
-            or not isinstance(confidence, (int, float))
-            or not math.isfinite(confidence) or not 0 <= confidence <= 1
-        ):
-            raise ValueError("MT3 retained note evidence has invalid bounds")
-        ordering = (start, end, pitch)
-        if previous is not None and ordering < previous:
-            raise ValueError("MT3 retained note evidence is not canonical")
-        previous = ordering
-    expected = hashlib.sha256(json.dumps(
-        events, sort_keys=True, separators=(",", ":"), allow_nan=False,
-    ).encode()).hexdigest()
-    if output.get("noteEventsSha256") != expected:
-        raise ValueError("MT3 retained note evidence hash is invalid")
-
-
 def _valid_audio_descriptor(value: object) -> bool:
     return (
         isinstance(value, dict)
@@ -321,7 +278,7 @@ def validate_evidence(value: object, provider: str) -> None:
             or str(proof.get("checkpointSha256", "")).lower()
             != value["checkpointSha256"]):
         raise ValueError("real provider smoke evidence is incomplete")
-    if provider == "MT3":
+    if provider in {"MT3", "YOUR_MT3"}:
         validate_mt3_note_output(proof["output"])
     if provider == "BS_ROFORMER":
         validate_bs_roformer_output(proof["output"])

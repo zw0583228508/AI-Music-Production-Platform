@@ -1,6 +1,7 @@
 """Contract tests use fakes only; they do not attest model inference."""
 from __future__ import annotations
 
+import hashlib
 import tempfile
 import unittest
 import os
@@ -72,17 +73,55 @@ class RunnerContractTests(unittest.TestCase):
                 "MUSIC_GPU_CHECKPOINT_ROOT": volume,
                 "MUSIC_GPU_SMOKE_INPUT_PATH": str(fixture),
             }), self.assertRaisesRegex(RunnerError, "inside"):
-                common.smoke_input_path(Path(volume) / "model.ckpt")
+                common.smoke_input_path(Path(volume) / "model.ckpt", "YOUR_MT3")
 
     def test_smoke_fixture_uses_job_audio_validation(self) -> None:
         with tempfile.TemporaryDirectory() as volume:
             fixture = Path(volume) / "smoke.wav"
             fixture.write_bytes(b"fixture")
+            digest = hashlib.sha256(fixture.read_bytes()).hexdigest()
             with patch.dict(os.environ, {
                 "MUSIC_GPU_CHECKPOINT_ROOT": volume,
                 "MUSIC_GPU_SMOKE_INPUT_PATH": str(fixture),
+                "MUSIC_PROVIDER_YOUR_MT3_SMOKE_INPUT_SHA256": digest,
             }), patch.object(common, "validate_audio") as validate:
-                self.assertEqual(common.smoke_input_path(Path(volume) / "model.ckpt"), fixture)
+                self.assertEqual(
+                    common.smoke_input_path(
+                        Path(volume) / "model.ckpt", "YOUR_MT3",
+                    ),
+                    fixture,
+                )
+                validate.assert_called_once_with(fixture)
+
+    def test_smoke_fixture_must_match_provider_sha256_pin(self) -> None:
+        with tempfile.TemporaryDirectory() as volume:
+            fixture = Path(volume) / "smoke.wav"
+            fixture.write_bytes(b"tampered-fixture")
+            with patch.dict(os.environ, {
+                "MUSIC_GPU_CHECKPOINT_ROOT": volume,
+                "MUSIC_GPU_SMOKE_INPUT_PATH": str(fixture),
+                "MUSIC_PROVIDER_YOUR_MT3_SMOKE_INPUT_SHA256": "0" * 64,
+            }), patch.object(common, "validate_audio"), self.assertRaisesRegex(
+                RunnerError, "does not match"
+            ):
+                common.smoke_input_path(
+                    Path(volume) / "model.ckpt", "YOUR_MT3",
+                )
+
+    def test_unpinned_mt3_fixture_preserves_existing_smoke_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as volume:
+            fixture = Path(volume) / "smoke.wav"
+            fixture.write_bytes(b"reviewed-existing-fixture")
+            with patch.dict(os.environ, {
+                "MUSIC_GPU_CHECKPOINT_ROOT": volume,
+                "MUSIC_GPU_SMOKE_INPUT_PATH": str(fixture),
+            }, clear=True), patch.object(common, "validate_audio") as validate:
+                self.assertEqual(
+                    common.smoke_input_path(
+                        Path(volume) / "model.ckpt", "MT3",
+                    ),
+                    fixture,
+                )
                 validate.assert_called_once_with(fixture)
 
     def test_verified_provider_pins(self) -> None:
