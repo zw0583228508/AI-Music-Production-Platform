@@ -51,10 +51,10 @@ BASIC_PITCH_API_URL = "http://127.0.0.1:8008"
 DEMUCS_API_URL = "http://127.0.0.1:8008"
 ACE_STEP_API_URL = "https://windot100--ace-step.modal.run"
 MUSIC_PROVIDER_ACE_STEP_CHECKPOINT_SHA256 = "d3f38c0fb68bd980d4f49c469f68bce9a94216cef614a85f7cea34fc98bd8b4e"
-MUSIC_PROVIDER_ACE_STEP_CONTAINER_DIGEST = "sha256:c24957d8b4fc84f6e676675fd00ccbd3d8cf5beb3464eb80ab60e75057c08eae"
+MUSIC_PROVIDER_ACE_STEP_CONTAINER_DIGEST = "sha256:9c2a14160848a4272f7bde4b14843bc8de9b5ce36e0f6a873e68e88dab530b57"
 MUSIC_PROVIDER_ACE_STEP_MODEL_VERSION = "ace-step-1.5-base"
-MUSIC_PROVIDER_ACE_STEP_MODAL_IMAGE_ID = "im-JZ7V3KgPwL1NLT6Q6bZfQe"
-MUSIC_PROVIDER_ACE_STEP_SOURCE_IMAGE_DIGEST = "sha256:c24957d8b4fc84f6e676675fd00ccbd3d8cf5beb3464eb80ab60e75057c08eae"
+MUSIC_PROVIDER_ACE_STEP_MODAL_IMAGE_ID = "im-6bFstiehvzXdeYMw8kSh7p"
+MUSIC_PROVIDER_ACE_STEP_SOURCE_IMAGE_DIGEST = "sha256:9c2a14160848a4272f7bde4b14843bc8de9b5ce36e0f6a873e68e88dab530b57"
 MUSIC_PROVIDER_ACE_STEP_URL = "https://windot100--ace-step.modal.run"
 
 [userenv.shared]
@@ -65,7 +65,7 @@ MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY = """
 MCowBQYDK2VwAyEAVLdMvdZTwwh+4hyMY+SagtPVZuXDhpjmDyaNf+KxjHc=
 -----END PUBLIC KEY-----"""
 MUSIC_GPU_PUBLIC_ORIGIN_BS_ROFORMER = "https://windot100--bs-roformer.modal.run"
-MUSIC_PROVIDER_ACE_STEP_PROMOTION_BUNDLE = "{\"record\":{\"checkpointRevision\":\"ace-step/ACE-Step-1.5@ca1e85fe9430179831e6bc6be790c332190a3866\",\"checkpointSha256\":\"d3f38c0fb68bd980d4f49c469f68bce9a94216cef614a85f7cea34fc98bd8b4e\",\"endpointOrigin\":\"https://windot100--ace-step.modal.run\",\"modalAppId\":\"ap-UhchqZUaMD3Ssp89GaDcxo\",\"modalDeploymentId\":\"v26\",\"modalFunctionId\":\"fu-KoYw3hWXvFJht0TZ0ZWeye\",\"modalImageId\":\"im-oG0RfCI8BQmyNevuGuYbel\",\"modelVersion\":\"ace-step-1.5-base\",\"provider\":\"ACE_STEP\",\"runtime\":{\"accelerate\":\"1.12.0\",\"cuda\":\"12.8.1\",\"cudaImage\":\"nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04\",\"python\":\"3.11.11\",\"pytorch\":\"2.10.0+cu128\",\"torchIndexUrl\":\"https://download.pytorch.org/whl/cu128\",\"torchaudio\":\"2.10.0+cu128\",\"torchvision\":\"0.25.0+cu128\",\"transformers\":\"4.57.6\"},\"schemaVersion\":1,\"sourceImageDigest\":\"sha256:e812791242c880fef8baad5a617bc598261dff1d6f268a4aa7005336afab2413\",\"sourceRevision\":\"2332cb522f932249815948017ede1fe11337a528\"},\"signature\":\"DaYVnt42u5bXVadClPPhtEPGshkcEo3rBCdTgZChL16ovRa6PEPYBnxsHeTRqvglHdl7XE5I6Pd04e+dJx2bAA==\"}"
+MUSIC_PROVIDER_ACE_STEP_PROMOTION_BUNDLE = "{\"record\":{\"checkpointRevision\":\"ace-step/ACE-Step-1.5@ca1e85fe9430179831e6bc6be790c332190a3866\",\"checkpointSha256\":\"d3f38c0fb68bd980d4f49c469f68bce9a94216cef614a85f7cea34fc98bd8b4e\",\"endpointOrigin\":\"https://windot100--ace-step.modal.run\",\"modalAppId\":\"ap-UhchqZUaMD3Ssp89GaDcxo\",\"modalDeploymentId\":\"v26\",\"modalFunctionId\":\"fu-KoYw3hWXvFJht0TZ0ZWeye\",\"modalImageId\":\"im-6bFstiehvzXdeYMw8kSh7p\",\"modelVersion\":\"ace-step-1.5-base\",\"provider\":\"ACE_STEP\",\"runtime\":{\"accelerate\":\"1.12.0\",\"cuda\":\"12.8.1\",\"cudaImage\":\"nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04\",\"python\":\"3.11.11\",\"pytorch\":\"2.10.0+cu128\",\"torchIndexUrl\":\"https://download.pytorch.org/whl/cu128\",\"torchaudio\":\"2.10.0+cu128\",\"torchvision\":\"0.25.0+cu128\",\"transformers\":\"4.57.6\"},\"schemaVersion\":1,\"sourceImageDigest\":\"sha256:9c2a14160848a4272f7bde4b14843bc8de9b5ce36e0f6a873e68e88dab530b57\",\"sourceRevision\":\"136359dfbb18f79ba5e23060e49f78362a62f62f\"},\"signature\":\"CbGwkTG2BukJ32ijYgM00i5t3mJvjLM7TZCsXCSSo+dx31vrL3BrO63S8TAqJ0TF1CRSAKd4OZwJ1ec0HYSfAA==\"}"
 MUSIC_PROVIDER_ACE_STEP_PROMOTION_PUBLIC_KEY = """
 -----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAGdaYm17+m00QQeHCMmSUDBycHagQLJmnmfwoa8KJo64=
