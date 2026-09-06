@@ -33,6 +33,7 @@ class SongFormerLicenseBlockTests(unittest.TestCase):
         stop = json.loads(
             (ROOT / "release-evidence" / "modal-app-stopped-v1.json").read_text()
         )
+        self.assertEqual(status["schemaVersion"], 1)
         self.assertEqual(model["provider"], "SONGFORMER")
         self.assertEqual(
             model["source"]["commit"],
