@@ -27,4 +27,6 @@ converted checkpoint, rerun immutable bootstrap and real GPU transcription.
 Bind the adapter/runtime decision, image/source identity, checkpoint lineage,
 hash-guarded compatibility patch identity, and non-empty output into the same
 promotion evidence. Require runtime fixture-hash comparison for reviewed local
-smoke inputs, and keep each model family in a fresh provider-private volume.
+smoke inputs. Explicit provisioning/bootstrap subprocesses must receive the
+same pin; runner tests that inject it directly do not prove bootstrap
+reproducibility. Keep each model family in a fresh provider-private volume.
