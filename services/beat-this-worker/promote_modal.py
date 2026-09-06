@@ -60,6 +60,61 @@ def origin(value: str) -> str:
         f":{parsed.port}" if parsed.port and parsed.port != 443 else ""
     )
 
+
+def validate_release_branch(value: object) -> str:
+    if not isinstance(value, str) or not value or value.startswith("-"):
+        raise ValueError("release branch is invalid")
+    result = subprocess.run(
+        ["git", "check-ref-format", "--branch", value],
+        cwd=ROOT.parents[1],
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode:
+        raise ValueError("release branch is invalid")
+    return value
+
+
+def validate_release_evidence(evidence: object) -> None:
+    if not isinstance(evidence, dict) or evidence.get("provider") != "BEAT_THIS":
+        raise ValueError("release evidence is not for Beat This")
+    patterns = {
+        "modalAppId": r"ap-[A-Za-z0-9]+",
+        "modalDeploymentId": r"v[1-9][0-9]*",
+        "modalFunctionId": r"fu-[A-Za-z0-9]+",
+        "modalImageId": r"im-[A-Za-z0-9]+",
+        "sourceRevision": r"[a-f0-9]{40}",
+        "sourceImageDigest": r"sha256:[a-f0-9]{64}",
+    }
+    for field, pattern in patterns.items():
+        if not re.fullmatch(pattern, str(evidence.get(field, ""))):
+            raise ValueError(f"release evidence has invalid {field}")
+    origin(str(evidence.get("endpointOrigin", "")))
+    if "releaseBranch" in evidence:
+        validate_release_branch(evidence["releaseBranch"])
+    proof = evidence.get("smokeEvidence")
+    if not isinstance(proof, dict) or proof.get("provider") != "BEAT_THIS":
+        raise ValueError("real smoke evidence is missing")
+    if proof.get("featureExecutionSucceeded") is not True:
+        raise ValueError("real smoke execution did not succeed")
+    result = proof.get("result")
+    fixture = proof.get("fixture")
+    checkpoint = proof.get("checkpoint")
+    if (
+        not isinstance(result, dict)
+        or not isinstance(fixture, dict)
+        or not isinstance(checkpoint, dict)
+        or not isinstance(result.get("beatCount"), int)
+        or result["beatCount"] < 2
+        or not isinstance(result.get("downbeatCount"), int)
+        or result["downbeatCount"] < 1
+        or not re.fullmatch(r"[a-f0-9]{64}", str(fixture.get("sha256", "")))
+        or not re.fullmatch(r"[a-f0-9]{64}", str(fixture.get("sourceSha256", "")))
+        or not re.fullmatch(r"[a-f0-9]{64}", str(checkpoint.get("sha256", "")))
+    ):
+        raise ValueError("real beat/downbeat smoke evidence is incomplete")
+
+
 def record(args: argparse.Namespace) -> dict:
     identifier_patterns = (
         (args.modal_app_id, r"ap-[A-Za-z0-9]+", "app"),

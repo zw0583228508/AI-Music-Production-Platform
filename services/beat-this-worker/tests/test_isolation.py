@@ -83,9 +83,14 @@ class BeatThisIsolationTests(unittest.TestCase):
             '{"beat-this-worker", "beat-this-candidate"}',
             source,
         )
-        self.assertIn('VOLUME_NAME = "beat-this-models-smoke-v1"', source)
-        self.assertIn('SECRET_NAME = "music-ai-worker-runtime"', source)
-        self.assertIn('IDENTITY_SECRET_NAME = "beat-this-deployment-identity-v1"', source)
+        self.assertIn('"beat-this-models-smoke-candidate-v1"', source)
+        self.assertIn('"beat-this-models-smoke-v1"', source)
+        self.assertIn('"beat-this-candidate-runtime"', source)
+        self.assertIn('"music-ai-worker-runtime"', source)
+        self.assertIn(
+            '"beat-this-candidate-deployment-identity-v1"', source
+        )
+        self.assertIn('"beat-this-deployment-identity-v1"', source)
         self.assertIn('"gpu": "L4"', source)
         self.assertIn('"BEAT_THIS_MODAL_APP_NAME": APP_NAME', source)
         self.assertIn('"BEAT_THIS_MODAL_ENDPOINT_LABEL": ENDPOINT_LABEL', source)
@@ -101,6 +106,27 @@ class BeatThisIsolationTests(unittest.TestCase):
         modal_source = (ROOT / "modal_app.py").read_text()
         smoke_source = (ROOT / "smoke_test.py").read_text()
         source_sha = "ae58781b9d3ac4b6e57aaf94a146cb04565ea1b4cc58cc99cdc41cb507274749"
+        fixture = ROOT / "fixtures/real-audio-source.mp3"
+        self.assertTrue(fixture.is_file())
+        self.assertEqual(
+            hashlib.sha256(fixture.read_bytes()).hexdigest(),
+            source_sha,
+        )
+        tracked = subprocess.run(
+            [
+                "git", "ls-files", "--error-unmatch",
+                "services/beat-this-worker/fixtures/real-audio-source.mp3",
+            ],
+            cwd=ROOT.parents[1],
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(tracked.returncode, 0)
+        self.assertIn(
+            "COPY services/beat-this-worker/fixtures/real-audio-source.mp3",
+            docker,
+        )
+        self.assertNotIn("COPY attached_assets/", docker)
         self.assertIn(source_sha, docker)
         self.assertIn("ffmpeg -v error -ss 30 -t 30", docker)
         self.assertNotIn("sine=", docker)
@@ -385,6 +411,18 @@ class BeatThisIsolationTests(unittest.TestCase):
             })())
             with self.assertRaises(Exception):
                 worker_app.auth(request)
+        with patch.dict(
+            os.environ,
+            {"BEAT_THIS_WORKER_TOKEN": "candidate"},
+            clear=True,
+        ):
+            worker_app.auth(type("Request", (), {
+                "headers": {"authorization": "Bearer candidate"}
+            })())
+            with self.assertRaises(Exception):
+                worker_app.auth(type("Request", (), {
+                    "headers": {"authorization": "Bearer production"}
+                })())
 
     def test_health_contract_contains_complete_promotion_identity(self):
         source = (ROOT / "app.py").read_text()
