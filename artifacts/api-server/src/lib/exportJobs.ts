@@ -306,8 +306,6 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
           processingEvidence: processed.evidence,
           provenance: {
             ...file.provenance,
-            model: processed.evidence.provider,
-            version: processed.evidence.version,
             parameters: {
               ...file.provenance.parameters,
               processingStatus: processed.evidence.status,

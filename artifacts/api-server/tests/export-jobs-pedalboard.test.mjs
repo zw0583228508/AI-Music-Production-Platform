@@ -91,6 +91,9 @@ const ids = {
   track: `pedalboard-export-track-${process.pid}`,
   planArtifact: `pedalboard-export-plan-${process.pid}`,
   trackArtifact: `pedalboard-export-track-artifact-${process.pid}`,
+   providerArrangement: `pedalboard-provider-arrangement-${process.pid}`,
+   providerAudio: `pedalboard-provider-audio-${process.pid}`,
+   providerPlanArtifact: `pedalboard-provider-plan-${process.pid}`,
 };
 const ownerId = `pedalboard-export-owner-${process.pid}`;
 const workerToken = `pedalboard-export-token-${process.pid}`;
@@ -247,6 +250,47 @@ async function allocateExport(suffix, options = {}) {
       exportId,
       version: 1,
       arrangementId: ids.arrangement,
+      includeStems: false,
+      includeMidi: false,
+      includeMix: true,
+      includeMetadata: true,
+      processingProvider: "PEDALBOARD_BUILTIN",
+      ...options,
+    },
+    requiredCapabilities: ["export"],
+    resourcePool: "STUDIO_RENDER",
+    estimatedCostUnits: 100,
+  });
+  return { exportId, jobId: job.id };
+}
+
+async function allocateProviderExport(suffix, options = {}) {
+  const exportId = `pedalboard-provider-export-${suffix}-${process.pid}`;
+  await db.insert(musicArtifactsTable).values({
+    id: exportId,
+    projectId: ids.project,
+    type: "EXPORT",
+    label: `${suffix} provider export`,
+    version: 1,
+    size: "Queued",
+    format: "ZIP",
+    state: "rendering",
+    parentIds: [],
+    createdBy: "export-pipeline",
+    modelVersion: "EXPORT_PIPELINE@1.0.0",
+    parameters: { arrangementId: ids.providerArrangement },
+    storageUri: `db://music_exports/${exportId}`,
+    immutable: false,
+  });
+  const { job } = await queueProductionJob({
+    projectId: ids.project,
+    ownerId,
+    kind: "export",
+    idempotencyKey: `pedalboard-provider-${suffix}-${process.pid}`,
+    inputSnapshot: {
+      exportId,
+      version: 1,
+      arrangementId: ids.providerArrangement,
       includeStems: false,
       includeMidi: false,
       includeMix: true,
@@ -435,6 +479,104 @@ before(async () => {
       parentIds: [ids.planArtifact],
     },
   ]);
+
+  const providerWav = Buffer.alloc(48);
+  providerWav.write("RIFF", 0, "ascii");
+  providerWav.writeUInt32LE(providerWav.length - 8, 4);
+  providerWav.write("WAVE", 8, "ascii");
+  providerWav.write("fmt ", 12, "ascii");
+  providerWav.writeUInt32LE(16, 16);
+  providerWav.writeUInt16LE(1, 20);
+  providerWav.writeUInt16LE(1, 22);
+  providerWav.writeUInt32LE(44_100, 24);
+  providerWav.writeUInt32LE(88_200, 28);
+  providerWav.writeUInt16LE(2, 32);
+  providerWav.writeUInt16LE(16, 34);
+  providerWav.write("data", 36, "ascii");
+  providerWav.writeUInt32LE(4, 40);
+  providerWav.writeInt16LE(1234, 44);
+  const providerStorageUri = await saveExportObject(
+    `generation/pedalboard-test-${process.pid}/provider/render.wav`,
+    providerWav,
+    "audio/wav",
+  );
+  await db.insert(arrangementsTable).values({
+    id: ids.providerArrangement,
+    projectId: ids.project,
+    name: "Provider audio arrangement",
+    style: "pop",
+    mode: "STUDIO",
+    status: "ready",
+    harmonyComplexity: 4,
+    energy: 0.6,
+    density: 0.5,
+    sections: [{
+      name: "Verse",
+      startBar: 1,
+      endBar: 2,
+      energy: 0.6,
+      density: 0.5,
+      tracks: [],
+    }],
+    styleSpec,
+    plan,
+    trackModels: [],
+    songModelVersion: 1,
+    generationProvider: "TEST_PROVIDER",
+    modelVersion: "provider-model-1",
+    generationProvenance: {
+      provider: "TEST_PROVIDER",
+      modelVersion: "provider-model-1",
+      reportedModelVersion: "provider-model-1",
+      candidateId: "provider-candidate-1",
+      providerRequestId: "provider-request-1",
+      seed: 42,
+      parentArtifactIds: [ids.planArtifact],
+      evaluation: {
+        status: "evaluated",
+        providerScore: 0.9,
+        renderArtifactIds: [ids.providerAudio],
+        artifacts: [{
+          id: ids.providerAudio,
+          type: "AUDIO_TRACK",
+          label: "Provider audio",
+          url: providerStorageUri,
+        }],
+        qualityReport: null,
+        error: null,
+      },
+    },
+    provenance,
+  });
+  await db.insert(musicArtifactsTable).values([
+    {
+      id: ids.providerPlanArtifact,
+      projectId: ids.project,
+      type: "ARRANGEMENT_PLAN",
+      label: "Provider plan",
+      size: "DB",
+      format: "JSON",
+      storageUri: `db://music_arrangements/${ids.providerArrangement}`,
+      parentIds: [ids.planArtifact],
+    },
+    {
+      id: ids.providerAudio,
+      projectId: ids.project,
+      type: "AUDIO_TRACK",
+      label: "Provider generated audio",
+      version: 1,
+      size: `${providerWav.length} B`,
+      format: "WAV",
+      storageUri: providerStorageUri,
+      url: providerStorageUri,
+      hash: sha256(providerWav),
+      checksum: sha256(providerWav),
+      parentIds: [ids.providerPlanArtifact, ids.planArtifact],
+      createdBy: "gpu-provider-output-ingest",
+      modelVersion: "provider-model-1",
+      provider: "TEST_PROVIDER",
+    },
+  ]);
 });
 
 after(async () => {
@@ -602,6 +744,67 @@ test("processing cannot publish contradictory evidence when final mixes are excl
     includeMix: false,
     includeStems: true,
     includeMidi: true,
+    includeMetadata: false,
+  });
+  await runExportProductionJob(jobId);
+  const [failedExport, failedJob] = await Promise.all([
+    artifact(exportId),
+    productionJob(jobId),
+  ]);
+  assert.equal(failedJob.status, "failed");
+  assert.equal(failedExport.state, "failed");
+  const children = await db.select().from(musicArtifactsTable)
+    .where(eq(musicArtifactsTable.projectId, ids.project));
+  assert.equal(children.some((row) => row.parameters.exportId === exportId), false);
+});
+
+test("provider-only export preserves source lineage and matches mastered byte evidence", async () => {
+  workerMode = "valid";
+  processedPairs.length = 0;
+  const { exportId, jobId } = await allocateProviderExport("success");
+  await runExportProductionJob(jobId);
+
+  const readyExport = await artifact(exportId);
+  assert.equal(readyExport.state, "ready");
+  const object = await getPrivateObject(
+    readyExport.storageUri.slice("/api/storage/objects/".length),
+  );
+  assert.ok(object);
+  const [zip] = await object.download();
+  const entries = openStoredZip(zip);
+  const manifest = JSON.parse(entries.get("metadata/export-manifest.json").toString());
+  const fileName = "mix/generated-accompaniment.wav";
+  const shipped = entries.get(fileName);
+  const evidence = manifest.processingEvidence[fileName];
+  const pair = processedPairs.find(({ output }) => output.equals(shipped));
+  assert.ok(pair, "provider final audio must ship authenticated mastered bytes");
+  assert.equal(evidence.inputSha256, sha256(pair.input));
+  assert.equal(evidence.outputSha256, sha256(shipped));
+  assert.equal(manifest.generation.provider, "TEST_PROVIDER");
+  assert.equal(manifest.generation.modelVersion, "provider-model-1");
+  assert.equal(manifest.generation.candidateId, "provider-candidate-1");
+  assert.deepEqual(
+    manifest.artifactGraph.find((entry) => entry.file === fileName).parentIds,
+    [ids.providerAudio],
+  );
+
+  const rows = await db.select().from(musicArtifactsTable)
+    .where(eq(musicArtifactsTable.projectId, ids.project));
+  const wavArtifact = rows.find((row) =>
+    row.parameters.exportId === exportId && row.label === fileName);
+  assert.ok(wavArtifact);
+  assert.equal(wavArtifact.hash, sha256(shipped));
+  assert.equal(wavArtifact.checksum, sha256(shipped));
+  assert.equal(wavArtifact.provider, "TEST_PROVIDER");
+  assert.deepEqual(wavArtifact.parentIds, [ids.providerAudio]);
+  assert.equal(wavArtifact.technicalMetadata.processingInputSha256, sha256(pair.input));
+  assert.equal(wavArtifact.technicalMetadata.processingOutputSha256, sha256(shipped));
+});
+
+test("provider-only export cannot publish processing evidence when mix is excluded", async () => {
+  workerMode = "valid";
+  const { exportId, jobId } = await allocateProviderExport("no-final-mix", {
+    includeMix: false,
     includeMetadata: false,
   });
   await runExportProductionJob(jobId);
