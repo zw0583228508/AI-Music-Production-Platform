@@ -335,7 +335,9 @@ jobs:
       - name: Authenticate retained evidence and verify the activation branch
         id: retained
         env:
+          GH_TOKEN: ${{ github.token }}
           SOURCE_REVISION: ${{ inputs.resume_source_revision }}
+          RELEASE_RUN_ID: ${{ inputs.resume_run_id }}
         run: |
           set -euo pipefail
           readarray -t run_fields < <(gh run view "$RELEASE_RUN_ID" \

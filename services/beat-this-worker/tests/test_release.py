@@ -158,6 +158,15 @@ class BeatThisReleaseTests(unittest.TestCase):
         self.assertIn('--base "$BASE_BRANCH"', workflow)
         self.assertNotIn("--base main", workflow)
         self.assertIn("--release-branch", workflow)
+        retained_step = workflow.split(
+            "Authenticate retained evidence and verify the activation branch",
+            1,
+        )[1].split(
+            "Reopen the protected-branch activation proposal",
+            1,
+        )[0]
+        self.assertIn("GH_TOKEN: ${{ github.token }}", retained_step)
+        self.assertIn('gh run view "$RELEASE_RUN_ID"', retained_step)
         candidate_deploy = workflow.index(
             "deploy.py --candidate"
         )
