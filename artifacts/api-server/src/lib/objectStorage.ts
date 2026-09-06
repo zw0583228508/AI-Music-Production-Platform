@@ -246,6 +246,50 @@ export async function deleteExportObject(downloadUrl: string): Promise<void> {
   if (file) await file.delete({ ignoreNotFound: true });
 }
 
+type ExportObjectStore = Pick<Storage, "bucket">;
+
+/**
+ * Remove content-addressed packages left behind before an export artifact was
+ * committed. The exact export-id prefix and checksum suffix keep other export
+ * assets out of the recovery set, while ready paths are always retained.
+ */
+export async function reclaimIncompleteExportObjects(
+  exportId: string,
+  readyStorageUris: readonly string[],
+  storage: ExportObjectStore = objectStorageClient,
+): Promise<string[]> {
+  if (!/^[a-zA-Z0-9._-]+$/.test(exportId)) {
+    throw new Error("Invalid export id");
+  }
+  const { bucketName, objectName } = parseObjectPath(
+    `${privateObjectDir()}/exports/${exportId}-`,
+  );
+  const [files] = await storage.bucket(bucketName).getFiles({
+    prefix: objectName,
+  });
+  await waitForProjectStorageRaceGate("export-reclaim", exportId);
+  const readyPaths = new Set(readyStorageUris);
+  const exportsSegment = objectName.lastIndexOf("exports/");
+  const objectPrefix = exportsSegment >= 0
+    ? objectName.slice(0, exportsSegment)
+    : "";
+  const candidateName = new RegExp(
+    `^${exportId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-[a-f0-9]{64}\\.zip$`,
+  );
+  const reclaimed: string[] = [];
+  for (const file of files) {
+    const relativeName = file.name.startsWith(objectPrefix)
+      ? file.name.slice(objectPrefix.length)
+      : "";
+    const storageUri = `/api/storage/objects/${relativeName}`;
+    const basename = relativeName.slice("exports/".length);
+    if (!candidateName.test(basename) || readyPaths.has(storageUri)) continue;
+    await file.delete({ ignoreNotFound: true });
+    reclaimed.push(storageUri);
+  }
+  return reclaimed;
+}
+
 function privateObjectWildcard(objectPath: string): string | null {
   let wildcardPath: string | null = null;
   if (objectPath.startsWith("/objects/uploads/")) {

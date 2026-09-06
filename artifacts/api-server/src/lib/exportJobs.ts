@@ -22,7 +22,12 @@ import { processPedalboardBuiltinWav, type PedalboardProcessingEvidence } from "
 import { resolveExportSongModel } from "./exportLineage";
 import { applyArrangementEditorChanges } from "./musicEngines";
 import { validateCanonicalTrackModels } from "./musicProviders";
-import { deleteExportObject, getPrivateObject } from "./objectStorage";
+import { logger } from "./logger";
+import {
+  deleteExportObject,
+  getPrivateObject,
+  reclaimIncompleteExportObjects,
+} from "./objectStorage";
 import {
   claimProductionJob,
   completeProductionJob,
@@ -206,6 +211,12 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
       await completeProductionJob(job.id, workerId, leaseVersion, [input.exportId]);
       return;
     }
+    await reclaimIncompleteExportObjects(
+      input.exportId,
+      artifacts
+        .filter((artifact) => artifact.state === "ready" && artifact.storageUri)
+        .map((artifact) => artifact.storageUri as string),
+    );
     const { songModel, bpm, key, meter } = resolveExportSongModel(
       songModels,
       arrangement.songModelVersion,
@@ -466,7 +477,54 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
 export async function recoverExportProductionJobs(): Promise<void> {
   await recoverProductionJobs();
   const { productionJobsTable } = await import("@workspace/db");
-  const jobs = await db.select({ id: productionJobsTable.id }).from(productionJobsTable)
+  const jobs = await db.select({
+    id: productionJobsTable.id,
+    status: productionJobsTable.status,
+    inputSnapshot: productionJobsTable.inputSnapshot,
+  }).from(productionJobsTable)
     .where(eq(productionJobsTable.kind, "export"));
+  const terminalJobs = jobs.filter(({ status }) =>
+    status === "failed" || status === "cancelled"
+  );
+  await Promise.all(terminalJobs.map(({ id }) =>
+    reclaimTerminalExportJobObjects(id).catch((error) => {
+      logger.error({ err: error, jobId: id }, "export_object_reclamation_failed");
+    })
+  ));
   await Promise.all(jobs.map(({ id }) => runExportProductionJob(id)));
+}
+
+export async function reclaimTerminalExportJobObjects(jobId: string): Promise<string[]> {
+  return db.transaction(async (transaction) => {
+    const [candidate] = await transaction.select({
+      projectId: productionJobsTable.projectId,
+    }).from(productionJobsTable).where(eq(productionJobsTable.id, jobId)).limit(1);
+    if (!candidate) return [];
+    await transaction.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${candidate.projectId}))`,
+    );
+    const [terminalJob] = await transaction.select({
+      status: productionJobsTable.status,
+      inputSnapshot: productionJobsTable.inputSnapshot,
+    }).from(productionJobsTable).where(and(
+      eq(productionJobsTable.id, jobId),
+      eq(productionJobsTable.projectId, candidate.projectId),
+    )).limit(1);
+    if (
+      !terminalJob ||
+      (terminalJob.status !== "failed" && terminalJob.status !== "cancelled")
+    ) {
+      return [];
+    }
+    const readyStorageUris = (await transaction.select({
+      storageUri: musicArtifactsTable.storageUri,
+    }).from(musicArtifactsTable).where(and(
+      eq(musicArtifactsTable.projectId, candidate.projectId),
+      eq(musicArtifactsTable.state, "ready"),
+    ))).flatMap(({ storageUri }) => storageUri ? [storageUri] : []);
+    return reclaimIncompleteExportObjects(
+      exportInput(terminalJob.inputSnapshot).exportId,
+      readyStorageUris,
+    );
+  });
 }

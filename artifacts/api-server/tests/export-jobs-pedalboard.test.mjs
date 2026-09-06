@@ -2,7 +2,9 @@ import { strict as assert } from "node:assert";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { after, before, test } from "node:test";
-import { unlink } from "node:fs/promises";
+import { access, mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
 
@@ -12,10 +14,10 @@ process.env.NODE_ENV = "production";
 await build({
   stdin: {
     contents: `
-      export { runExportProductionJob } from "./src/lib/exportJobs";
-      export { queueProductionJob } from "./src/lib/productionJobs";
+      export { reclaimTerminalExportJobObjects, runExportProductionJob } from "./src/lib/exportJobs";
+      export { queueProductionJob, retryProductionJob } from "./src/lib/productionJobs";
       export { createStyleSpec } from "./src/lib/musicEngines";
-      export { deleteExportObject, getPrivateObject } from "./src/lib/objectStorage";
+      export { deleteExportObject, getPrivateObject, saveExportObject } from "./src/lib/objectStorage";
       export {
         arrangementsTable,
         db,
@@ -54,11 +56,32 @@ const {
   productionJobsTable,
   projectSourcesTable,
   queueProductionJob,
+  reclaimTerminalExportJobObjects,
+  retryProductionJob,
   runExportProductionJob,
+  saveExportObject,
   songModelsTable,
   sql,
   tracksTable,
 } = await import(pathToFileURL(harnessPath).href);
+
+async function pathExists(path) {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForPath(path) {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    if (await pathExists(path)) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`Timed out waiting for ${path}`);
+}
 
 const ids = {
   project: `pedalboard-export-project-${process.pid}`,
@@ -643,4 +666,75 @@ test("database publication failure removes the uploaded ZIP and rolls back evide
     `exports/${exportId}-${sha256(uploadedZip)}.zip`,
   );
   assert.equal(incompleteObject, null, "incomplete uploaded ZIP must be deleted");
+});
+
+test("terminal cleanup cannot delete the package produced by a concurrent retry", async () => {
+  workerMode = "valid";
+  const { exportId, jobId } = await allocateExport("cleanup-retry-race");
+  await db.update(productionJobsTable).set({
+    status: "failed",
+    stage: "worker_interrupted",
+    retryable: true,
+    attempt: 1,
+    leaseExpiresAt: null,
+  }).where(eq(productionJobsTable.id, jobId));
+  await db.update(musicArtifactsTable).set({
+    state: "failed",
+    size: "Failed",
+  }).where(eq(musicArtifactsTable.id, exportId));
+
+  const orphanBytes = Buffer.from("crashed-worker-incomplete-zip");
+  const orphanRelativePath = `${exportId}-${sha256(orphanBytes)}.zip`;
+  const orphanUri = await saveExportObject(
+    orphanRelativePath,
+    orphanBytes,
+    "application/zip",
+  );
+  const gateDirectory = await mkdtemp(join(tmpdir(), "export-reclaim-race-"));
+  const safeExportId = exportId.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const gateBase = join(gateDirectory, `gate-export-reclaim-${safeExportId}`);
+  const previousNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = "test";
+  process.env.TEST_PROJECT_STORAGE_RACE_DIR = gateDirectory;
+  await writeFile(`${gateBase}.enabled`, "");
+  try {
+    const cleanup = reclaimTerminalExportJobObjects(jobId);
+    await waitForPath(`${gateBase}.entered`);
+    let retrySettled = false;
+    const retry = retryProductionJob(jobId, ownerId).finally(() => {
+      retrySettled = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(
+      retrySettled,
+      false,
+      "retry must wait for terminal reclamation's project lock",
+    );
+    await writeFile(`${gateBase}.release`, "");
+    assert.deepEqual(await cleanup, [orphanUri]);
+    const retried = await retry;
+    assert.equal(retried?.status, "queued");
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+    delete process.env.TEST_PROJECT_STORAGE_RACE_DIR;
+    await rm(gateDirectory, { recursive: true, force: true });
+  }
+
+  assert.equal(
+    await getPrivateObject(`exports/${orphanRelativePath}`),
+    null,
+    "the old crashed package must be reclaimed",
+  );
+  await runExportProductionJob(jobId);
+  const [readyExport, completedJob] = await Promise.all([
+    artifact(exportId),
+    productionJob(jobId),
+  ]);
+  assert.equal(completedJob.status, "succeeded", JSON.stringify(completedJob.error));
+  assert.equal(readyExport.state, "ready");
+  const readyObject = await getPrivateObject(
+    readyExport.storageUri.slice("/api/storage/objects/".length),
+  );
+  assert.ok(readyObject, "the concurrent retry's ready package must remain downloadable");
 });

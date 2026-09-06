@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 export type ProjectStorageRaceGate =
+  | "export-reclaim"
   | "project-delete"
   | "source-upload-write";
 

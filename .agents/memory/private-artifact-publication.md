@@ -14,3 +14,9 @@ Cleanup must normalize every still-supported historical storage URI to the same 
 **Why:** Backward-compatible downloads prove historical rows remain live; ignoring their old URI scheme during deletion or retention leaks the underlying content-addressed object.
 
 **How to apply:** Whenever a private artifact URI representation changes, keep deletion, retention, and integration tests compatible with both old and new forms until the old records are migrated away.
+
+Crash reclamation must derive candidates from the durable job allocation and content-addressed naming, run after lease recovery (or for terminal interrupted jobs), and exclude every object referenced by ready artifact metadata.
+
+**Why:** A process can stop after bytes are uploaded but before the database transaction commits, while broad prefix cleanup can destroy a valid package published by another attempt.
+
+**How to apply:** Reclaim only exact job-owned object names, treat ready storage URIs as a deletion denylist, and make retry transitions share the publication lock with terminal cleanup.

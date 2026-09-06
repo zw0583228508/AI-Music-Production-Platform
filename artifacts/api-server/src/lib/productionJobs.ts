@@ -432,27 +432,39 @@ export async function requestProductionJobCancellation(
 }
 
 export async function retryProductionJob(jobId: string, ownerId: string) {
-  const [job] = await db
-    .update(productionJobsTable)
-    .set({
-      status: "queued",
-      stage: "retry_queued",
-      progress: 0,
-      attempt: sql`${productionJobsTable.attempt}`,
-      error: null,
-      cancelRequestedAt: null,
-      completedAt: null,
-      updatedAt: new Date(),
-    })
-    .where(and(
+  return db.transaction(async (transaction) => {
+    const [candidate] = await transaction.select({
+      projectId: productionJobsTable.projectId,
+    }).from(productionJobsTable).where(and(
       eq(productionJobsTable.id, jobId),
       eq(productionJobsTable.ownerId, ownerId),
-      eq(productionJobsTable.status, "failed"),
-      eq(productionJobsTable.retryable, true),
-      sql`${productionJobsTable.attempt} < ${productionJobsTable.maxAttempts}`,
-    ))
-    .returning();
-  return job ?? null;
+    )).limit(1);
+    if (!candidate) return null;
+    await transaction.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${candidate.projectId}))`,
+    );
+    const [job] = await transaction
+      .update(productionJobsTable)
+      .set({
+        status: "queued",
+        stage: "retry_queued",
+        progress: 0,
+        attempt: sql`${productionJobsTable.attempt}`,
+        error: null,
+        cancelRequestedAt: null,
+        completedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(and(
+        eq(productionJobsTable.id, jobId),
+        eq(productionJobsTable.ownerId, ownerId),
+        eq(productionJobsTable.status, "failed"),
+        eq(productionJobsTable.retryable, true),
+        sql`${productionJobsTable.attempt} < ${productionJobsTable.maxAttempts}`,
+      ))
+      .returning();
+    return job ?? null;
+  });
 }
 
 export async function recoverProductionJobs(now = new Date()): Promise<void> {
