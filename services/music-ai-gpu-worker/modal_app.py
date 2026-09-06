@@ -149,7 +149,7 @@ if "ALL_IN_ONE" in release_providers:
     @provider_apps["ALL_IN_ONE"].cls(**_worker_options("ALL_IN_ONE"))
     @modal.concurrent(max_inputs=1)
     class AllInOneWorker:
-        @modal.asgi_app(label="all-in-one")
+        @modal.asgi_app(label="all-in-one-isolated")
         def endpoint(self):
             from app import app as fastapi_app
             return fastapi_app
