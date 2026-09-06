@@ -3,7 +3,7 @@ name: Protected release proposals
 description: External repository constraints and recovery rules for reviewed GPU activation pull requests.
 ---
 
-Keep GPU activation behind an enforced pull-request review, including for repository administrators. A rejected or closed proposal must leave canonical promotion files unchanged, and recovery must reuse the original activation commit and retained signed evidence rather than deploying again.
+Keep GPU activation behind an enforced pull-request review, including for repository administrators. A rejected or closed proposal must leave canonical promotion files unchanged, and recovery must reuse the original one-commit, canonical-files-only activation branch and retained signed evidence rather than deploying again. Candidate deployments require separate identity, runtime credentials, and mutable storage from production.
 
 **Why:** Repository protection and GitHub Actions pull-request permissions live outside the codebase. A real drill found that both must be enabled before a validated release can create and merge its proposal; regenerating a release after rejection would defeat the identity proof.
 

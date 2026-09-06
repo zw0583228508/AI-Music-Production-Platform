@@ -421,9 +421,13 @@ def main() -> None:
         )
     elif args.command in ("verify-health", "verify-candidate-refresh"):
         token = (
-            os.getenv("BEAT_THIS_WORKER_TOKEN")
-            or os.getenv("MUSIC_AI_WORKER_TOKEN")
-            or ""
+            os.getenv("BEAT_THIS_CANDIDATE_WORKER_TOKEN", "")
+            if args.command == "verify-candidate-refresh"
+            else (
+                os.getenv("BEAT_THIS_WORKER_TOKEN")
+                or os.getenv("MUSIC_AI_WORKER_TOKEN")
+                or ""
+            )
         ).strip()
         if not token:
             raise ValueError("Beat This worker token is unavailable")

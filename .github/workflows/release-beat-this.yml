@@ -78,6 +78,19 @@ jobs:
           JSON
           uv run modal secret create beat-this-candidate-deployment-identity-v1 \
             --from-json promotion/unpromoted-identity.json --force
+          candidate_token="$(openssl rand -hex 32)"
+          echo "::add-mask::$candidate_token"
+          echo "BEAT_THIS_CANDIDATE_WORKER_TOKEN=$candidate_token" >> "$GITHUB_ENV"
+          CANDIDATE_TOKEN="$candidate_token" python - <<'PY'
+          import json, os
+          from pathlib import Path
+          Path("promotion/candidate-runtime.json").write_text(json.dumps({
+              "BEAT_THIS_WORKER_TOKEN": os.environ["CANDIDATE_TOKEN"],
+          }))
+          PY
+          uv run modal secret create beat-this-candidate-runtime \
+            --from-json promotion/candidate-runtime.json --force
+          rm -f promotion/candidate-runtime.json
 
       - name: Deploy the exact non-production candidate revision
         run: uv run python services/beat-this-worker/deploy.py --candidate
@@ -325,9 +338,19 @@ jobs:
           SOURCE_REVISION: ${{ inputs.resume_source_revision }}
         run: |
           set -euo pipefail
+          readarray -t run_fields < <(gh run view "$RELEASE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json event,headBranch,headSha \
+            --jq '.event,.headBranch,.headSha')
+          test "${run_fields[0]}" = "workflow_dispatch"
+          test "${run_fields[2]}" = "$SOURCE_REVISION"
+          run_branch="${run_fields[1]}"
           python services/beat-this-worker/activate_promotion.py \
             --verify-existing \
             --expected-source-revision "$SOURCE_REVISION" \
+            --repository . \
+            --retained-run-branch "$run_branch" \
+            --github-output "$GITHUB_OUTPUT" \
             --bundle promotion/bundle.json \
             --public-key promotion/public-key.pem \
             --evidence promotion/release-evidence.json \
@@ -335,20 +358,6 @@ jobs:
             --health promotion/live-health.json \
             --api-output artifacts/api-server/src/lib/beatThisPromotion.generated.ts \
             --release-output services/beat-this-worker/release-attestation.json
-          base_branch="$(python - <<'PY'
-          import json
-          from pathlib import Path
-          evidence = json.loads(
-              Path("promotion/release-evidence.json").read_text()
-          )
-          branch = evidence.get("releaseBranch")
-          if not isinstance(branch, str) or not branch:
-              raise SystemExit("retained evidence has no authenticated release branch")
-          print(branch)
-          PY
-          )"
-          git check-ref-format --branch "$base_branch"
-          echo "base_branch=$base_branch" >> "$GITHUB_OUTPUT"
 
       - name: Reopen the protected-branch activation proposal
         env:

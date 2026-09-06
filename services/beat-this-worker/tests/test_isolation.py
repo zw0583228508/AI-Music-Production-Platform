@@ -83,8 +83,10 @@ class BeatThisIsolationTests(unittest.TestCase):
             '{"beat-this-worker", "beat-this-candidate"}',
             source,
         )
-        self.assertIn('VOLUME_NAME = "beat-this-models-smoke-v1"', source)
-        self.assertIn('SECRET_NAME = "music-ai-worker-runtime"', source)
+        self.assertIn('"beat-this-models-smoke-candidate-v1"', source)
+        self.assertIn('"beat-this-models-smoke-v1"', source)
+        self.assertIn('"beat-this-candidate-runtime"', source)
+        self.assertIn('"music-ai-worker-runtime"', source)
         self.assertIn(
             '"beat-this-candidate-deployment-identity-v1"', source
         )
@@ -388,6 +390,18 @@ class BeatThisIsolationTests(unittest.TestCase):
             })())
             with self.assertRaises(Exception):
                 worker_app.auth(request)
+        with patch.dict(
+            os.environ,
+            {"BEAT_THIS_WORKER_TOKEN": "candidate"},
+            clear=True,
+        ):
+            worker_app.auth(type("Request", (), {
+                "headers": {"authorization": "Bearer candidate"}
+            })())
+            with self.assertRaises(Exception):
+                worker_app.auth(type("Request", (), {
+                    "headers": {"authorization": "Bearer production"}
+                })())
 
     def test_health_contract_contains_complete_promotion_identity(self):
         source = (ROOT / "app.py").read_text()

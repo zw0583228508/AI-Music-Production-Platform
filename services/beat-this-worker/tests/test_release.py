@@ -447,6 +447,86 @@ class BeatThisReleaseTests(unittest.TestCase):
                 "ap-Candidate", api_output.read_text()
             )
 
+    def test_resume_requires_the_original_one_commit_activation_branch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            subprocess.run(["git", "init"], cwd=repository, check=True)
+            subprocess.run(
+                ["git", "config", "user.email", "test@example.invalid"],
+                cwd=repository,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Release Test"],
+                cwd=repository,
+                check=True,
+            )
+            for relative in activate_promotion.ACTIVATION_PATHS:
+                path = repository / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("unpromoted\n")
+            subprocess.run(
+                ["git", "add", "."], cwd=repository, check=True
+            )
+            subprocess.run(
+                ["git", "commit", "-m", "source"],
+                cwd=repository,
+                check=True,
+                capture_output=True,
+            )
+            source = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"],
+                cwd=repository,
+                text=True,
+            ).strip()
+            for relative in activate_promotion.ACTIVATION_PATHS:
+                (repository / relative).write_text("activated\n")
+            subprocess.run(
+                ["git", "commit", "-am", "activation"],
+                cwd=repository,
+                check=True,
+                capture_output=True,
+            )
+            activate_promotion.verify_activation_commit(
+                repository, source
+            )
+            (repository / "unexpected.txt").write_text("tampered\n")
+            subprocess.run(
+                ["git", "add", "unexpected.txt"],
+                cwd=repository,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "commit", "-m", "append tamper"],
+                cwd=repository,
+                check=True,
+                capture_output=True,
+            )
+            with self.assertRaisesRegex(ValueError, "original source child"):
+                activate_promotion.verify_activation_commit(
+                    repository, source
+                )
+
+    def test_resume_authenticates_new_and_legacy_release_branches(self):
+        evidence = release_evidence()
+        self.assertEqual(
+            activate_promotion.authenticated_release_branch(
+                evidence, "main"
+            ),
+            "main",
+        )
+        evidence["releaseBranch"] = "release/beat-this"
+        self.assertEqual(
+            activate_promotion.authenticated_release_branch(
+                evidence, "release/beat-this"
+            ),
+            "release/beat-this",
+        )
+        with self.assertRaisesRegex(ValueError, "differs"):
+            activate_promotion.authenticated_release_branch(
+                evidence, "main"
+            )
+
     def test_validation_precedes_canonical_record_replacement(self):
         evidence = release_evidence()
         record = promotion_record(evidence)
@@ -547,8 +627,8 @@ class BeatThisReleaseTests(unittest.TestCase):
                     changes.get("bundle", bundle),
                     changes.get("public_key", public_key),
                     changes.get("evidence", evidence),
-                    refresh,
-                    health,
+                    changes.get("refresh", refresh),
+                    changes.get("health", health),
                     changes.get("api_output", api_output),
                     changes.get("release_output", release_output),
                     changes.get("source_revision", record["sourceRevision"]),
@@ -574,6 +654,16 @@ class BeatThisReleaseTests(unittest.TestCase):
             altered_evidence["smokeEvidence"]["fixture"]["sha256"] = "f" * 64
             with self.assertRaisesRegex(ValueError, "release evidence"):
                 verify(evidence=altered_evidence)
+
+            altered_refresh = copy.deepcopy(refresh)
+            altered_refresh["staleContainerIds"] = ["ta-Stale"]
+            with self.assertRaisesRegex(ValueError, "container refresh"):
+                verify(refresh=altered_refresh)
+
+            altered_health = copy.deepcopy(health)
+            altered_health["modalFunctionId"] = "fu-Altered"
+            with self.assertRaisesRegex(ValueError, "live health"):
+                verify(health=altered_health)
 
             original_generated = api_output.read_text()
             api_output.write_text(

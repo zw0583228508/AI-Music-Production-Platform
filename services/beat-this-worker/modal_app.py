@@ -11,8 +11,16 @@ if APP_NAME not in {"beat-this-worker", "beat-this-candidate"}:
 if not re.fullmatch(r"beat-this(?:-candidate)?", ENDPOINT_LABEL):
     raise RuntimeError("invalid Beat This Modal endpoint label")
 ASSET_MOUNT = "/var/lib/beat-this"
-VOLUME_NAME = "beat-this-models-smoke-v1"
-SECRET_NAME = "music-ai-worker-runtime"
+VOLUME_NAME = (
+    "beat-this-models-smoke-candidate-v1"
+    if APP_NAME == "beat-this-candidate"
+    else "beat-this-models-smoke-v1"
+)
+SECRET_NAME = (
+    "beat-this-candidate-runtime"
+    if APP_NAME == "beat-this-candidate"
+    else "music-ai-worker-runtime"
+)
 IDENTITY_SECRET_NAME = (
     "beat-this-candidate-deployment-identity-v1"
     if APP_NAME == "beat-this-candidate"
