@@ -2,6 +2,15 @@ name: Release and attest Beat This
 
 on:
   workflow_dispatch:
+    inputs:
+      resume_source_revision:
+        description: Immutable source revision whose existing activation branch should be resumed
+        required: false
+        type: string
+      resume_run_id:
+        description: Retained successful release run containing the original signed evidence
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -13,6 +22,7 @@ concurrency:
 
 jobs:
   release:
+    if: inputs.resume_source_revision == ''
     name: Deploy, attest, and propose Beat This activation
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -250,3 +260,93 @@ jobs:
           path: promotion
           if-no-files-found: warn
           retention-days: 90
+
+  resume-activation:
+    if: inputs.resume_source_revision != ''
+    name: Resume a retained Beat This activation proposal
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require immutable resume inputs
+        env:
+          SOURCE_REVISION: ${{ inputs.resume_source_revision }}
+          RELEASE_RUN_ID: ${{ inputs.resume_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_REVISION" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$RELEASE_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+
+      - name: Check out the existing source-revision activation branch
+        uses: actions/checkout@v4
+        with:
+          ref: beat-this-activation/${{ inputs.resume_source_revision }}
+          fetch-depth: 0
+
+      - name: Download the original retained release evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: beat-this-release-${{ inputs.resume_run_id }}
+          path: promotion
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.resume_run_id }}
+
+      - name: Verify the retained bundle and branch are identical
+        env:
+          SOURCE_REVISION: ${{ inputs.resume_source_revision }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+
+          source = os.environ["SOURCE_REVISION"]
+          evidence_bytes = Path("promotion/release-evidence.json").read_bytes()
+          evidence = json.loads(evidence_bytes)
+          bundle = json.loads(Path("promotion/bundle.json").read_text())
+          retained = json.loads(
+              Path("services/beat-this-worker/release-attestation.json").read_text()
+          )
+          generated = Path(
+              "artifacts/api-server/src/lib/beatThisPromotion.generated.ts"
+          ).read_text()
+          evidence_hash = hashlib.sha256(evidence_bytes).hexdigest()
+          if evidence.get("sourceRevision") != source:
+              raise SystemExit("retained evidence source revision changed")
+          if bundle.get("record", {}).get("sourceRevision") != source:
+              raise SystemExit("signed bundle source revision changed")
+          if bundle["record"].get("releaseEvidenceSha256") != evidence_hash:
+              raise SystemExit("signed bundle no longer matches retained evidence")
+          if retained.get("record") != bundle["record"]:
+              raise SystemExit("activation branch attestation changed")
+          canonical_bundle = json.dumps(
+              bundle, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+          )
+          if json.dumps(canonical_bundle) not in generated:
+              raise SystemExit("activation branch generated bundle changed")
+          PY
+
+      - name: Reopen the protected-branch activation proposal
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REVISION: ${{ inputs.resume_source_revision }}
+          RELEASE_RUN_ID: ${{ inputs.resume_run_id }}
+        run: |
+          set -euo pipefail
+          evidence_sha256="$(sha256sum promotion/release-evidence.json | cut -d' ' -f1)"
+          bundle_sha256="$(sha256sum promotion/bundle.json | cut -d' ' -f1)"
+          cat > "$RUNNER_TEMP/beat-this-activation.md" <<EOF
+          ## Verified Beat This activation
+
+          This pull request resumes the original retained release without another
+          worker deployment.
+
+          - Immutable source revision: \`$SOURCE_REVISION\`
+          - Signed bundle SHA-256: \`$bundle_sha256\`
+          - Release evidence SHA-256: \`$evidence_sha256\`
+          - Retained workflow artifact: \`beat-this-release-$RELEASE_RUN_ID\`
+          - Validation run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$RELEASE_RUN_ID
+          EOF
+          gh pr create \
+            --base main \
+            --head "beat-this-activation/$SOURCE_REVISION" \
+            --title "Activate verified Beat This release ${SOURCE_REVISION:0:12}" \
+            --body-file "$RUNNER_TEMP/beat-this-activation.md"
