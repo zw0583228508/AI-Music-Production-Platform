@@ -679,6 +679,136 @@ test("retries exact Beat This startup before primary beat analysis", async () =>
   }
 });
 
+test("blocks YOUR_MT3 analyze POST when promoted runtime identity drifts", async () => {
+  const record = expectedGpuPromotionRecord("YOUR_MT3");
+  assert.ok(record);
+  let healthRequests = 0;
+  let analyzeRequests = 0;
+  const server = createServer((request, response) => {
+    response.setHeader("Content-Type", "application/json");
+    if (request.method === "GET" && request.url === "/health?provider=YOUR_MT3") {
+      healthRequests += 1;
+      response.end(JSON.stringify({
+        provider: record.provider,
+        status: "ready",
+        ready: true,
+        healthy: true,
+        runtimeReady: true,
+        gpuReady: true,
+        checkpointReady: true,
+        smokeTested: true,
+        modalAppId: record.modalAppId,
+        modalDeploymentId: record.modalDeploymentId,
+        modalFunctionId: record.modalFunctionId,
+        modalImageId: "im-Drifted",
+        modelVersion: record.modelVersion,
+        version: record.modelVersion,
+        checkpointSha256: record.checkpointSha256,
+        checksum: record.checkpointSha256,
+        revision: record.checkpointRevision,
+        sourceRevision: record.sourceRevision,
+        sourceImageDigest: record.sourceImageDigest,
+        runtime: { pythonVersion: record.runtime.python },
+        framework: {
+          cuda_image: record.runtime.cudaImage,
+          cuda: record.runtime.cuda,
+          pytorch: record.runtime.pytorch,
+          torchvision: record.runtime.torchvision,
+          torchaudio: record.runtime.torchaudio,
+          torch_index_url: record.runtime.torchIndexUrl,
+          transformers: record.runtime.transformers,
+          accelerate: record.runtime.accelerate,
+        },
+      }));
+      return;
+    }
+    if (request.method === "POST") {
+      analyzeRequests += 1;
+      response.end(JSON.stringify({ status: "completed", result: {} }));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("{}");
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const localEndpoint = `http://127.0.0.1:${address.port}`;
+  const endpointKeys = [
+    "MUSIC_PROVIDER_BASIC_PITCH_URL",
+    "BASIC_PITCH_API_URL",
+    "MUSIC_PROVIDER_DEMUCS_URL",
+    "DEMUCS_API_URL",
+    "MUSIC_PROVIDER_BS_ROFORMER_ENDPOINT",
+    "MUSIC_PROVIDER_BS_ROFORMER_URL",
+    "BS_ROFORMER_API_URL",
+    "BS_ROFORMER_SW_API_URL",
+    "MUSIC_PROVIDER_ALL_IN_ONE_URL",
+    "ALL_IN_ONE_API_URL",
+    "MUSIC_PROVIDER_MT3_URL",
+    "MT3_API_URL",
+    "MUSIC_PROVIDER_MR_MT3_URL",
+    "MR_MT3_API_URL",
+    "MUSIC_PROVIDER_YOUR_MT3_URL",
+    "YOUR_MT3_API_URL",
+    "SHEETSAGE_API_URL",
+    "SHEET_SAGE_API_URL",
+    "MUSIC_PROVIDER_CHROMA_URL",
+    "CHROMA_API_URL",
+    "MUSIC_PROVIDER_MADMOM_URL",
+    "MADMOM_API_URL",
+    "MUSIC_PROVIDER_BEAT_THIS_URL",
+    "BEAT_THIS_API_URL",
+    "MUSIC_PROVIDER_TORCHCREPE_URL",
+    "TORCHCREPE_API_URL",
+    "MUSIC_PROVIDER_ESSENTIA_URL",
+    "ESSENTIA_API_URL",
+    "MUSIC_PROVIDER_PYLOUDNORM_URL",
+    "PYLOUDNORM_API_URL",
+    "MUSIC_MIR_API_URL",
+    "MUSIC_MIR_ESSENTIA_API_URL",
+  ];
+  const previous = new Map(endpointKeys.map((key) => [key, process.env[key]]));
+  for (const key of endpointKeys) delete process.env[key];
+  process.env.YOUR_MT3_API_URL = record.endpointOrigin;
+  const nativeFetch = globalThis.fetch;
+  globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+    const requested = new URL(
+      typeof input === "string" || input instanceof URL ? input : input.url,
+    );
+    if (requested.origin === record.endpointOrigin) {
+      return nativeFetch(
+        `${localEndpoint}${requested.pathname}${requested.search}`,
+        init,
+      );
+    }
+    return nativeFetch(input, init);
+  }) as typeof fetch;
+  try {
+    const result = await runAnalysisProviders({
+      sourceUrl: "https://storage.invalid/signed-source",
+      sourceType: "FULL_SONG",
+      durationSeconds: 2,
+    });
+    assert.equal(healthRequests, 1);
+    assert.equal(analyzeRequests, 0);
+    const provenance = result.provenance.find(
+      (item) => item.provider === "YOUR_MT3",
+    );
+    assert.equal(provenance?.status, "failed");
+    assert.equal(provenance?.errorCode, "health-attestation-failed");
+  } finally {
+    globalThis.fetch = nativeFetch;
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    });
+  }
+});
+
 test("keeps absent providers explicit without fabricating analysis results", async () => {
   const keys = [
     "ALL_IN_ONE_API_URL",

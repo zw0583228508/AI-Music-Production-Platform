@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "provider": "YOUR_MT3",
+  "classification": "READY",
+  "commercialUsePermitted": true,
+  "checkpoint": {
+    "repository": "mimbres/YourMT3",
+    "revision": "e45ebd70398682d54b7bb1901a5216e18f3b1824",
+    "licenseFile": {
+      "spdx": "Apache-2.0",
+      "source": "https://huggingface.co/mimbres/YourMT3/blob/e45ebd70398682d54b7bb1901a5216e18f3b1824/README.md"
+    }
+  },
+  "adapter": {
+    "repository": "openmirlab/mt3-infer",
+    "revision": "280a95817a67da0ae46987ddbb18c946963afffe",
+    "licenseFile": {
+      "spdx": "MIT",
+      "source": "https://github.com/openmirlab/mt3-infer/blob/280a95817a67da0ae46987ddbb18c946963afffe/LICENSE"
+    }
+  }
+}
