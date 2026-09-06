@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "provider": "YOUR_MT3",
+  "checkpoint": {
+    "repository": "mimbres/YourMT3",
+    "revision": "e45ebd70398682d54b7bb1901a5216e18f3b1824",
+    "path": "logs/2024/mc13_256_g4_all_v7_mt3f_sqr_rms_moe_wf4_n8k2_silu_rope_rp_b36_nops/checkpoints/last.ckpt",
+    "sourceUrl": "https://huggingface.co/mimbres/YourMT3/resolve/e45ebd70398682d54b7bb1901a5216e18f3b1824/logs/2024/mc13_256_g4_all_v7_mt3f_sqr_rms_moe_wf4_n8k2_silu_rope_rp_b36_nops/checkpoints/last.ckpt",
+    "sizeBytes": 561544628,
+    "sha256": "ae38e415c79efd5592dcb9b658cdb99ddb11d4c4e1eaa364cab04a052473fc25",
+    "lfsOidSha256": "ae38e415c79efd5592dcb9b658cdb99ddb11d4c4e1eaa364cab04a052473fc25"
+  },
+  "spaceReference": {
+    "repository": "spaces/mimbres/YourMT3",
+    "revision": "5e66c1ea173a8186e0d20432b841d3180cc015b5",
+    "checkpointPath": "logs/2024/mc13_256_g4_all_v7_mt3f_sqr_rms_moe_wf4_n8k2_silu_rope_rp_b36_nops/checkpoints/last.ckpt",
+    "lfsOidSha256": "ae38e415c79efd5592dcb9b658cdb99ddb11d4c4e1eaa364cab04a052473fc25"
+  },
+  "verification": {
+    "immutableModelAndSpaceReferencesAgree": true,
+    "downloadedBytesMatchPinnedLfsObject": true
+  }
+}
