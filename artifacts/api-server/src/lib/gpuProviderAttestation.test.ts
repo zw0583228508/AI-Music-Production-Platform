@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   canonicalGpuPromotionJson,
   gpuPromotionAttestationFailure,
+  isAttestedGpuProviderStartup,
   type GpuPromotionRecord,
 } from "./gpuProviderAttestation";
 
@@ -88,6 +89,38 @@ test("promotion binds BS-RoFormer to the exact image and checkpoint pair", () =>
         { ...health, modalImageId: "im-Other" },
       ) ?? "",
       /runtime identity/,
+    );
+    const startup = {
+      ...health,
+      status: "starting",
+      ready: false,
+      healthy: false,
+      retryable: true,
+      retryAfterSeconds: 5,
+    };
+    assert.equal(
+      isAttestedGpuProviderStartup(
+        "BS_ROFORMER",
+        `${record.endpointOrigin}/health`,
+        startup,
+      ),
+      true,
+    );
+    assert.equal(
+      isAttestedGpuProviderStartup(
+        "BS_ROFORMER",
+        `${record.endpointOrigin}/health`,
+        { ...startup, modalImageId: "im-Other" },
+      ),
+      false,
+    );
+    assert.equal(
+      isAttestedGpuProviderStartup(
+        "BS_ROFORMER",
+        `${record.endpointOrigin}/health`,
+        { ...startup, retryAfterSeconds: 10 },
+      ),
+      false,
     );
     assert.match(
       gpuPromotionAttestationFailure(

@@ -168,6 +168,8 @@ creates the signed bundle:
 
 ```sh
 MUSIC_GPU_PROMOTION_PRIVATE_KEY_FILE='/ci/secrets/promotion-ed25519.pem' \
+MUSIC_AI_WORKER_TOKEN='<runtime secret>' \
+MUSIC_GPU_TRUSTED_ENDPOINT_ORIGIN_ACE_STEP='https://workspace--music-ai-gpu-worker-ace-step.modal.run' \
 python services/music-ai-gpu-worker/promote_modal.py \
   --provider ACE_STEP \
   --modal-app-id '<Modal app ID>' \
@@ -181,9 +183,13 @@ python services/music-ai-gpu-worker/promote_modal.py \
   --worker-identity-output /ci/promotions/ace-step-worker-identity.json
 ```
 
-The script writes one `{record,signature}` document through `os.replace`, so an
-image or checkpoint change cannot expose a mixed old/new pair. Publish that
-entire document as `MUSIC_PROVIDER_ACE_STEP_PROMOTION_BUNDLE` in the API
+The script first sends the worker token only to the provider's independently
+configured trusted origin. It retries only the exact authenticated `starting`
+contract with matching deployment identity and runtime pins. All redirects,
+ordinary runtime failures, malformed responses, and identity drift fail before
+signing. It then writes one `{record,signature}` document through `os.replace`,
+so an image or checkpoint change cannot expose a mixed old/new pair. Publish
+that entire document as `MUSIC_PROVIDER_ACE_STEP_PROMOTION_BUNDLE` in the API
 environment, and provide the corresponding PEM public key to the API as
 `MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY`. The API verifies the signature and
 derives its expected image, checkpoint, and source-image pins from that one

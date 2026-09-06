@@ -66,13 +66,11 @@ def record(args: argparse.Namespace) -> dict:
         "runtime": {key: runtime[key] for key in RUNTIME_KEYS},
     }
 
-def verify_live_health(payload: object, expected: dict) -> None:
+def _verify_live_identity(payload: object, expected: dict) -> dict:
     if not isinstance(payload, dict):
         raise ValueError("authenticated health payload must be an object")
     exact = {
         "provider": expected["provider"],
-        "status": "ready",
-        "ready": True,
         "modalAppId": expected["modalAppId"],
         "modalDeploymentId": expected["modalDeploymentId"],
         "modalFunctionId": expected["modalFunctionId"],
@@ -100,6 +98,18 @@ def verify_live_health(payload: object, expected: dict) -> None:
     }
     if runtime_pairs != expected["runtime"]:
         raise ValueError("authenticated live health runtime does not match promotion identity")
+    return payload
+
+def verify_live_health(payload: object, expected: dict) -> None:
+    checked = _verify_live_identity(payload, expected)
+    if (
+        checked.get("status") != "ready"
+        or checked.get("ready") is not True
+        or checked.get("healthy") is not True
+        or checked.get("retryable") is not False
+        or checked.get("retryAfterSeconds") is not None
+    ):
+        raise ValueError("authenticated live health is not ready")
 
 def verify_live_health_with_retries(
     fetch_health,
@@ -111,11 +121,12 @@ def verify_live_health_with_retries(
     if attempts < 1:
         raise ValueError("health verification attempts must be positive")
     for attempt in range(attempts):
-        payload = fetch_health()
-        if (isinstance(payload, dict) and payload.get("provider") == "BEAT_THIS"
-                and payload.get("status") == "starting"
+        payload = _verify_live_identity(fetch_health(), expected)
+        if (payload.get("status") == "starting"
                 and payload.get("ready") is False
-                and payload.get("retryable") is True):
+                and payload.get("healthy") is False
+                and payload.get("retryable") is True
+                and payload.get("retryAfterSeconds") == 5):
             if attempt + 1 == attempts:
                 raise TimeoutError("authenticated health remained in startup state")
             time.sleep(delay_seconds)

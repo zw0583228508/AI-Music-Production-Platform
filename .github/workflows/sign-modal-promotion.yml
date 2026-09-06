@@ -85,6 +85,11 @@ jobs:
           CHECKPOINT_SHA256: ${{ inputs.checkpoint_sha256 }}
           SOURCE_REVISION: ${{ inputs.source_revision }}
           MUSIC_GPU_PROMOTION_PRIVATE_KEY_FILE: ${{ runner.temp }}/promotion-ed25519.pem
+          MUSIC_AI_WORKER_TOKEN: ${{ secrets.MUSIC_AI_WORKER_TOKEN }}
+          MUSIC_GPU_TRUSTED_ENDPOINT_ORIGIN_ACE_STEP: ${{ vars.MUSIC_GPU_PUBLIC_ORIGIN_ACE_STEP }}
+          MUSIC_GPU_TRUSTED_ENDPOINT_ORIGIN_BS_ROFORMER: ${{ vars.MUSIC_GPU_PUBLIC_ORIGIN_BS_ROFORMER }}
+          MUSIC_GPU_TRUSTED_ENDPOINT_ORIGIN_MT3: ${{ vars.MUSIC_GPU_PUBLIC_ORIGIN_MT3 }}
+          MUSIC_GPU_TRUSTED_ENDPOINT_ORIGIN_ALL_IN_ONE: ${{ vars.MUSIC_GPU_PUBLIC_ORIGIN_ALL_IN_ONE }}
         run: |
           set -euo pipefail
           mkdir -p promotion

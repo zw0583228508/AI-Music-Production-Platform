@@ -72,6 +72,9 @@ def matching_health(record):
         "provider": "BEAT_THIS",
         "status": "ready",
         "ready": True,
+        "healthy": True,
+        "retryable": False,
+        "retryAfterSeconds": None,
         "modalAppId": record["modalAppId"],
         "modalDeploymentId": record["modalDeploymentId"],
         "modalFunctionId": record["modalFunctionId"],
@@ -174,10 +177,12 @@ class BeatThisReleaseTests(unittest.TestCase):
         evidence = release_evidence()
         ready = matching_health(promotion_record(evidence))
         starting = {
-            "provider": "BEAT_THIS",
+            **ready,
             "status": "starting",
             "ready": False,
+            "healthy": False,
             "retryable": True,
+            "retryAfterSeconds": 5,
         }
         with patch.object(
             release_modal, "read_health", side_effect=[starting, ready]

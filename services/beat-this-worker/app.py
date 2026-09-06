@@ -152,6 +152,7 @@ def health(provider: str = "BEAT_THIS") -> dict:
     runtime = MANIFEST["runtime"]
     status = "ready" if ready else ("starting" if initializing else "not_ready")
     return {"provider": "BEAT_THIS", "status": status, "ready": ready,
+            "healthy": ready,
             "retryable": initializing, "retryAfterSeconds": 5 if initializing else None,
             "modelVersion": MANIFEST["version"], "checksum": MANIFEST["checkpointSha256"],
             "checkpointSha256": MANIFEST["checkpointSha256"],

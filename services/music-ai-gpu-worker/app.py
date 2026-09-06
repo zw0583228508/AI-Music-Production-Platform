@@ -59,6 +59,28 @@ TASKS: dict[str, asyncio.Task[None]] = {}
 PROCESSES: dict[str, asyncio.subprocess.Process] = {}
 SMOKE_ATTESTATIONS: dict[str, str] = {}
 SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_JOBS)
+STARTUP_RETRY_SECONDS = 5
+COLD_START_PROVIDERS = {"ACE_STEP", "BS_ROFORMER", "MT3", "ALL_IN_ONE"}
+
+
+class RuntimeInitializing(RuntimeError):
+    """A CUDA probe has not finished initializing the process runtime."""
+
+
+def _cuda_initialization_incomplete(exc: RuntimeError) -> bool:
+    message = re.sub(r"\s+", " ", str(exc)).strip().lower()
+    return message in {
+        "cuda error: initialization error",
+        "cuda initialization error",
+        "cuda runtime initialization is incomplete",
+        "cuda runtime is not yet initialized",
+    }
+
+
+def _cuda_probe_failure(exc: RuntimeError) -> tuple[bool, str]:
+    if _cuda_initialization_incomplete(exc):
+        raise RuntimeInitializing("CUDA runtime initialization is incomplete") from exc
+    return False, "CUDA readiness probe failed"
 
 
 def _auth(request: Request) -> None:
@@ -189,11 +211,18 @@ def _gpu_runtime(details: dict[str, Any]) -> tuple[bool, str]:
         return False, (
             f"PyTorch CUDA {torch.version.cuda or 'unknown'} does not match {wheel_cuda}"
         )
-    if not torch.cuda.is_available():
+    try:
+        torch.cuda.init()
+        cuda_available = torch.cuda.is_available()
+    except RuntimeError as exc:
+        return _cuda_probe_failure(exc)
+    if not cuda_available:
         return False, "CUDA GPU is not available"
     try:
         torch.zeros(1, device="cuda").sum().item()
     except Exception as exc:
+        if isinstance(exc, RuntimeError):
+            return _cuda_probe_failure(exc)
         return False, f"CUDA smoke allocation failed: {type(exc).__name__}"
     return True, f"CUDA {torch.version.cuda or 'unknown'} GPU ready"
 
@@ -254,7 +283,16 @@ def _provider_health(
         )
     )
     expected_runtime = _expected_runtime(details)
-    runtime_ready, runtime_message = _gpu_runtime(details)
+    runtime_initializing = False
+    try:
+        runtime_ready, runtime_message = _gpu_runtime(details)
+    except RuntimeInitializing:
+        runtime_ready = False
+        runtime_initializing = True
+        runtime_message = "CUDA runtime initialization is still in progress"
+    except Exception:
+        runtime_ready = False
+        runtime_message = "GPU runtime readiness check failed"
     try:
         import torch
         pytorch_version = str(torch.__version__)
@@ -366,8 +404,22 @@ def _provider_health(
     if not smoke_tested:
         reasons.append(smoke_message)
     ready = not reasons
+    startup_prerequisites_ready = (
+        provider in COLD_START_PROVIDERS
+        and configured
+        and checksum_ready
+        and bool(runner)
+        and immutable_container
+        and immutable_modal_image
+        and bool(modal_app_id and modal_deployment_id and modal_function_id)
+        and bool(source_revision)
+    )
+    starting = runtime_initializing and startup_prerequisites_ready
     return {
-        "status": "ready" if ready else ("configured" if configured else "unavailable"),
+        "status": "ready" if ready else ("starting" if starting else "not_ready"),
+        "ready": ready,
+        "retryable": starting,
+        "retryAfterSeconds": STARTUP_RETRY_SECONDS if starting else None,
         "healthy": ready,
         "provider": provider,
         "runtimeReady": runtime_ready,

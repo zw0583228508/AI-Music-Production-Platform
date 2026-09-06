@@ -31,6 +31,12 @@ const MODAL_PROMOTED_PROVIDER_IDS = new Set([
   "BEAT_THIS",
 ]);
 
+const GPU_STARTUP_PROVIDER_IDS = new Set([
+  "ACE_STEP",
+  "BS_ROFORMER",
+  "MT3",
+  "ALL_IN_ONE",
+]);
 export const GPU_PROMOTION_SCHEMA_VERSION = 1;
 
 export type GpuPromotionRuntimePins = {
@@ -251,6 +257,24 @@ export function gpuPromotionAttestationFailure(
   return null;
 }
 
+/**
+ * Recognize the only cold-start response callers may retry. Identity is
+ * attested first so a spoofed or drifted worker can never gain retry status.
+ */
+export function isAttestedGpuProviderStartup(
+  providerId: string,
+  endpoint: string,
+  payload: Record<string, unknown>,
+): boolean {
+  return GPU_STARTUP_PROVIDER_IDS.has(providerId) &&
+    gpuPromotionAttestationFailure(providerId, endpoint, payload) === null &&
+    payload["provider"] === providerId &&
+    payload["status"] === "starting" &&
+    payload["ready"] === false &&
+    payload["healthy"] === false &&
+    payload["retryable"] === true &&
+    payload["retryAfterSeconds"] === 5;
+}
 export function isGpuAttestedProvider(providerId: string): boolean {
   return GPU_ATTESTED_PROVIDER_IDS.has(providerId);
 }

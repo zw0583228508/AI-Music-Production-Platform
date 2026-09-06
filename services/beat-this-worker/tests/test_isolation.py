@@ -82,6 +82,7 @@ class BeatThisIsolationTests(unittest.TestCase):
             health = worker_app.health()
         self.assertEqual(health["status"], "starting")
         self.assertFalse(health["ready"])
+        self.assertFalse(health["healthy"])
         self.assertTrue(health["retryable"])
         self.assertEqual(health["retryAfterSeconds"], 5)
         self.assertNotIn("CUDA", health["reason"])
@@ -107,8 +108,23 @@ class BeatThisIsolationTests(unittest.TestCase):
                 "accelerate": "accelerate",
             },
         }
-        starting = {"provider": "BEAT_THIS", "status": "starting", "ready": False,
-                    "retryable": True}
+        ready = {
+            **{key: value for key, value in expected.items() if key != "runtime"},
+            "status": "ready", "ready": True, "healthy": True,
+            "retryable": False, "retryAfterSeconds": None,
+            "revision": expected["checkpointRevision"],
+            "runtime": {"pythonVersion": "3.11"},
+            "framework": {
+                "cuda_image": "cuda", "cuda": "12", "pytorch": "torch",
+                "torchvision": "vision", "torchaudio": "audio",
+                "torch_index_url": "index", "transformers": "transformers",
+                "accelerate": "accelerate",
+            },
+        }
+        starting = {
+            **ready, "status": "starting", "ready": False, "healthy": False,
+            "retryable": True, "retryAfterSeconds": 5,
+        }
         with patch.object(promote_modal.time, "sleep"), self.assertRaises(TimeoutError):
             promote_modal.verify_live_health_with_retries(
                 lambda: starting, expected, attempts=2, delay_seconds=0
@@ -120,18 +136,23 @@ class BeatThisIsolationTests(unittest.TestCase):
                 expected, attempts=2, delay_seconds=0,
             )
 
-        ready = {
-            **{key: value for key, value in expected.items() if key != "runtime"},
-            "status": "ready", "ready": True,
-            "revision": expected["checkpointRevision"],
-            "runtime": {"pythonVersion": "3.11"},
-            "framework": {
-                "cuda_image": "cuda", "cuda": "12", "pytorch": "torch",
-                "torchvision": "vision", "torchaudio": "audio",
-                "torch_index_url": "index", "transformers": "transformers",
-                "accelerate": "accelerate",
-            },
-        }
+        rejected_startups = (
+            {key: value for key, value in starting.items() if key != "runtime"},
+            {key: value for key, value in starting.items() if key != "healthy"},
+            {**starting, "retryAfterSeconds": 10},
+            {**starting, "modalImageId": "im-other"},
+        )
+        for payload in rejected_startups:
+            with self.subTest(payload=payload), patch.object(
+                promote_modal.time, "sleep"
+            ) as sleep, self.assertRaises(ValueError):
+                fetch = unittest.mock.Mock(return_value=payload)
+                promote_modal.verify_live_health_with_retries(
+                    fetch, expected, attempts=2, delay_seconds=0
+                )
+            fetch.assert_called_once()
+            sleep.assert_not_called()
+
         trusted_origin = promote_modal.INSTALLATION_STATUS["providers"]["BEAT_THIS"][
             "evidence"
         ]["liveHealthEndpointOrigin"]
@@ -205,7 +226,8 @@ class BeatThisIsolationTests(unittest.TestCase):
         }
         health = {
             **{key: value for key, value in expected.items() if key != "runtime"},
-            "status": "ready", "ready": True,
+            "status": "ready", "ready": True, "healthy": True,
+            "retryable": False, "retryAfterSeconds": None,
             "revision": expected["checkpointRevision"],
             "runtime": {"pythonVersion": "3.11"},
             "framework": {

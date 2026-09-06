@@ -72,6 +72,82 @@ class GpuWorkerContractTests(unittest.TestCase):
         self.assertFalse(result["checkpointReady"])
         self.assertFalse(result["smokeTested"])
         self.assertIn("CUDA GPU is not available", result["message"])
+        self.assertEqual(result["status"], "not_ready")
+        self.assertFalse(result["retryable"])
+
+    def test_cuda_initialization_has_exact_retryable_startup_contract(self):
+        checkpoint = worker.CHECKPOINT_ROOT / "startup-ace-step.ckpt"
+        checkpoint.write_bytes(b"checkpoint")
+        checkpoint_hash = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+        details = {
+            **worker.PROVIDERS["ACE_STEP"],
+            "checkpoint_path": checkpoint.name,
+            "checkpoint_sha256": checkpoint_hash,
+            "config_path": "",
+            "config_sha256": "",
+        }
+        with mock.patch.dict(
+            worker.PROVIDERS, {"ACE_STEP": details}
+        ), mock.patch.object(
+            worker, "ENABLED", {"ACE_STEP"}
+        ), mock.patch.object(
+            worker, "_gpu_runtime", side_effect=worker.RuntimeInitializing()
+        ), mock.patch.dict(
+            os.environ,
+            {
+                details["runner_env"]: "python -m runners.ace_step",
+                "MUSIC_PROVIDER_ACE_STEP_CHECKPOINT_SHA256": checkpoint_hash,
+                "MUSIC_GPU_CONTAINER_DIGEST": "sha256:" + "a" * 64,
+                "MODAL_IMAGE_ID": "im-TestImage123",
+                "MUSIC_GPU_MODAL_APP_ID": "ap-Test",
+                "MUSIC_GPU_MODAL_DEPLOYMENT_ID": "v1",
+                "MUSIC_GPU_MODAL_FUNCTION_ID": "fu-Test",
+                "MUSIC_GPU_SOURCE_REVISION": "b" * 40,
+            },
+        ):
+            result = worker._provider_health("ACE_STEP", run_smoke=False)
+        self.assertEqual(result["status"], "starting")
+        self.assertFalse(result["ready"])
+        self.assertFalse(result["healthy"])
+        self.assertTrue(result["retryable"])
+        self.assertEqual(result["retryAfterSeconds"], 5)
+
+    def test_identity_gap_remains_non_retryable_during_cuda_initialization(self):
+        with mock.patch.object(worker, "ENABLED", {"ALL_IN_ONE"}), mock.patch.object(
+            worker, "_gpu_runtime", side_effect=worker.RuntimeInitializing()
+        ):
+            result = worker._provider_health("ALL_IN_ONE", run_smoke=False)
+        self.assertEqual(result["status"], "not_ready")
+        self.assertFalse(result["retryable"])
+
+    def test_unexpected_runtime_probe_failure_is_sanitized_and_not_retryable(self):
+        with mock.patch.object(worker, "ENABLED", {"MT3"}), mock.patch.object(
+            worker, "_gpu_runtime", side_effect=RuntimeError("private runtime detail")
+        ):
+            result = worker._provider_health("MT3")
+        self.assertEqual(result["status"], "not_ready")
+        self.assertFalse(result["retryable"])
+        self.assertNotIn("private runtime detail", result["message"])
+
+    def test_only_recognized_cuda_initialization_errors_are_retryable(self):
+        with self.assertRaises(worker.RuntimeInitializing):
+            worker._cuda_probe_failure(
+                RuntimeError("CUDA error: initialization error")
+            )
+        ready, message = worker._cuda_probe_failure(
+            RuntimeError("CUDA out of memory at /private/model/path")
+        )
+        self.assertFalse(ready)
+        self.assertEqual(message, "CUDA readiness probe failed")
+        self.assertNotIn("private", message)
+        for error in (
+            "provider failed after CUDA error: initialization error",
+            "CUDA error: initialization error while loading an unverified kernel",
+        ):
+            with self.subTest(error=error):
+                ready, message = worker._cuda_probe_failure(RuntimeError(error))
+                self.assertFalse(ready)
+                self.assertEqual(message, "CUDA readiness probe failed")
 
     def test_bs_roformer_config_change_invalidates_checkpoint_and_smoke(self):
         checkpoint = worker.CHECKPOINT_ROOT / "test-bs-roformer.ckpt"
