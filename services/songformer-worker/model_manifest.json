@@ -1,18 +1,108 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "provider": "SONGFORMER",
-  "status": "NOT_READY_PENDING_BOOTSTRAP_AND_REAL_AUDIO_SMOKE",
-  "runtime": {"python": "3.10", "baseImage": "ubuntu:22.04", "gpuRequired": true},
+  "status": "BLOCKED_LICENSE",
+  "runtime": {
+    "python": "3.10",
+    "gpuRequired": true,
+    "built": false
+  },
   "source": {
     "repository": "https://github.com/ASLP-lab/SongFormer.git",
     "commit": "139b2aa3b14bd1c6d961d0994e9fc975f1ef7fd5",
-    "submodules": true
+    "submodules": [
+      {
+        "path": "src/third_party/MuQ",
+        "repository": "https://github.com/tencent-ailab/MuQ.git",
+        "commit": "28847ea50cd31ac4b8b6a7dacc051ad7d1c7606a"
+      },
+      {
+        "path": "src/third_party/musicfm",
+        "repository": "https://github.com/minzwon/musicfm.git",
+        "commit": "b83ebedb401bcef639b26b05c0c8bee1dc2dfe71"
+      }
+    ]
   },
-  "huggingFace": {"repository": "ASLP-lab/SongFormer", "revision": "a75880ed1b7375ac71860ec6c4fc9c899cf99515"},
+  "modelSources": {
+    "songformer": {
+      "repository": "ASLP-lab/SongFormer",
+      "revision": "a75880ed1b7375ac71860ec6c4fc9c899cf99515"
+    },
+    "musicfm": {
+      "repository": "minzwon/MusicFM",
+      "revision": "4513b38bc25ad1d227b1980819b9691ba97f4d87"
+    },
+    "muq": {
+      "repository": "OpenMuQ/MuQ-large-msd-iter",
+      "revision": "0562a57814f6f8bbd9fdea0a25921a2fce1a841a"
+    }
+  },
   "assets": [
-    {"path": "SongFormer.safetensors", "md5": "5a24800e12ab357744f8b47e523ba3e6"},
-    {"path": "SongFormer.pt", "md5": "2c66c0bb91364e318e90dbc2d9a79ee2"},
-    {"path": "MusicFM/pretrained_msd.pt", "md5": "df930aceac8209818556c4a656a0714c"},
-    {"path": "MusicFM/msd_stats.json", "md5": "75ab2e47b093e07378f7f703bdb82c14"}
-  ]
+    {
+      "component": "SONGFORMER",
+      "repository": "ASLP-lab/SongFormer",
+      "revision": "a75880ed1b7375ac71860ec6c4fc9c899cf99515",
+      "path": "SongFormer.safetensors",
+      "remoteBytes": 104468437,
+      "remoteSha256": "87f17bfbed37014c6af4314abd9eb6971a94e3a95e9fc70f9e5ee33bdacb487b",
+      "upstreamMd5": "5a24800e12ab357744f8b47e523ba3e6",
+      "locallyVerified": false
+    },
+    {
+      "component": "SONGFORMER",
+      "repository": "ASLP-lab/SongFormer",
+      "revision": "a75880ed1b7375ac71860ec6c4fc9c899cf99515",
+      "path": "SongFormer.pt",
+      "remoteBytes": 104493286,
+      "remoteSha256": "25d749cc9a51dc0a999ea61c5c7ff42df7ed8ba95295a0530a82430f9483c14c",
+      "upstreamMd5": "2c66c0bb91364e318e90dbc2d9a79ee2",
+      "locallyVerified": false
+    },
+    {
+      "component": "MUSICFM",
+      "repository": "minzwon/MusicFM",
+      "revision": "4513b38bc25ad1d227b1980819b9691ba97f4d87",
+      "path": "pretrained_msd.pt",
+      "remoteBytes": 1316802088,
+      "remoteSha256": "218b483a0256ddef736267425fabb166fd97008983696bb9270def464b47bded",
+      "upstreamMd5": "df930aceac8209818556c4a656a0714c",
+      "locallyVerified": false
+    },
+    {
+      "component": "MUSICFM",
+      "repository": "minzwon/MusicFM",
+      "revision": "4513b38bc25ad1d227b1980819b9691ba97f4d87",
+      "path": "msd_stats.json",
+      "remoteBytes": 2277,
+      "remoteSha256": "c36c61ab10ca4d2e7fdfefc3fcc15205316bec276a06a47baa3641a62c546f22",
+      "upstreamMd5": "75ab2e47b093e07378f7f703bdb82c14",
+      "locallyVerified": false
+    },
+    {
+      "component": "MUQ",
+      "repository": "OpenMuQ/MuQ-large-msd-iter",
+      "revision": "0562a57814f6f8bbd9fdea0a25921a2fce1a841a",
+      "path": "model.safetensors",
+      "remoteBytes": 1333825096,
+      "remoteSha256": "273febab2be02872c37d2c37e48a9d6c52c1c9392f3eeeabd498efa281ccb7a6",
+      "locallyVerified": false
+    },
+    {
+      "component": "MUQ",
+      "repository": "OpenMuQ/MuQ-large-msd-iter",
+      "revision": "0562a57814f6f8bbd9fdea0a25921a2fce1a841a",
+      "path": "config.json",
+      "remoteBytes": 3133,
+      "remoteSha256": "237335ee27d8fb951ce778701a12a79e06c51ae636dd786f97e45f51ce532543",
+      "locallyVerified": false
+    }
+  ],
+  "licenseGate": {
+    "status": "BLOCKED_LICENSE",
+    "provisioningAllowed": false,
+    "deploymentAllowed": false,
+    "researchDeploymentAllowed": false,
+    "commercialDeploymentAllowed": false,
+    "reason": "MusicFM pretrained_msd.pt has no retained checkpoint-specific license grant; MuQ-large-msd-iter weights are CC-BY-NC-4.0. Code licenses do not authorize externally hosted checkpoint bytes."
+  }
 }

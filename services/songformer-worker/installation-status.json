@@ -2,19 +2,31 @@
   "schemaVersion": 1,
   "providers": {
     "SONGFORMER": {
-      "classification": "BLOCKED_NO_WEIGHTS",
+      "classification": "BLOCKED_LICENSE",
       "evidence": {
         "modelManifest": "model_manifest.json",
-        "sourceRevisionPinned": true,
-        "upstreamMd5Recorded": true,
+        "licenseManifest": "license_manifest.json",
+        "licenseReview": "release-evidence/license-review-v1.json",
+        "modalStopObservation": "release-evidence/modal-app-stopped-v1.json",
+        "modalStopObservationSha256": "a4f1070637935c24d2cb099e727d4a427aaf083a81fe8cdd201dcb41a708f3a4",
+        "sourceAndSubmoduleRevisionsPinned": true,
+        "remoteAssetByteAndSha256InventoryPresent": true,
         "localAssetSha256InventoryPresent": false,
+        "assetsDownloaded": false,
+        "volumeProvisioned": false,
+        "bootstrapBlockedBeforeNetwork": true,
+        "modalDeploymentFunctionsPresent": false,
+        "stoppedModalAppId": "ap-pba79GQ5ZnixHhtMx9lEmF",
+        "stoppedAt": "2026-09-06T19:14:07Z",
         "realFullSongSmokeProofPresent": false,
         "canonicalEndpointEnvironment": "SONGFORMER_API_URL",
-        "endpointConfigured": false
+        "endpointConfigured": false,
+        "apiConnected": false
       },
       "blockers": [
-        "Required SongFormer and MusicFM assets have upstream MD5 declarations only; no provisioned byte counts and SHA-256 inventory is present.",
-        "No real full-song section-boundary smoke proof or deployment evidence is present."
+        "MusicFM pretrained_msd.pt has no retained checkpoint-specific research, redistribution, or commercial-use grant; the source-code license does not authorize externally hosted weight bytes.",
+        "MuQ-large-msd-iter weights are CC-BY-NC-4.0 and independently prohibit commercial deployment.",
+        "Provisioning, inference, smoke, promotion, endpoint deployment, and API routing remain disabled until every required checkpoint has an affirmative retained grant."
       ]
     }
   }
