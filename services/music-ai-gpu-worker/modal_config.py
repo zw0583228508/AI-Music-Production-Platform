@@ -185,6 +185,7 @@ def _deployment(provider: str) -> ProviderDeployment:
         provider=provider,
         endpoint_label={
             "ACE_STEP": "ace-step-isolated",
+            "BS_ROFORMER": "bs-roformer-isolated",
             "MT3": "mt3-isolated",
             "ALL_IN_ONE": "all-in-one-isolated",
         }.get(provider, provider.lower().replace("_", "-")),

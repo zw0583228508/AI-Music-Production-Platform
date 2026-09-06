@@ -125,6 +125,14 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             bs_environment["MUSIC_PROVIDER_BS_ROFORMER_SMOKE_INPUT_SHA256"],
             "b2626121f7f2987843d7212c82b8f1222f2f023fc3d4b07c07ede1b24535feb9",
         )
+        self.assertEqual(
+            modal_config.DEPLOYMENTS["BS_ROFORMER"].endpoint_label,
+            "bs-roformer-isolated",
+        )
+        self.assertIn(
+            '@modal.asgi_app(label="bs-roformer-isolated")',
+            (ROOT / "modal_app.py").read_text(),
+        )
 
     def test_image_build_args_inject_wave_two_host_identity_only(self):
         for deployment in modal_config.DEPLOYMENTS.values():
