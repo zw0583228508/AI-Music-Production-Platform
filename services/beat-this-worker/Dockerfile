@@ -9,7 +9,7 @@ RUN uv pip install --python /opt/beat-this/bin/python \
     torch==2.5.1+cu124 torchvision==0.20.1+cu124 torchaudio==2.5.1+cu124 \
     --index-url https://download.pytorch.org/whl/cu124
 WORKDIR /app
-COPY attached_assets/0_שמוליק_סוכות_-_הילד_הזה_1788660426522.mp3 /tmp/beat-this-smoke-source.mp3
+COPY services/beat-this-worker/fixtures/real-audio-source.mp3 /tmp/beat-this-smoke-source.mp3
 RUN echo "ae58781b9d3ac4b6e57aaf94a146cb04565ea1b4cc58cc99cdc41cb507274749  /tmp/beat-this-smoke-source.mp3" | sha256sum -c - && \
     mkdir -p /app/_smoke && \
     ffmpeg -v error -ss 30 -t 30 -i /tmp/beat-this-smoke-source.mp3 \

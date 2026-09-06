@@ -1,5 +1,6 @@
 import argparse
 import base64
+import copy
 import json
 import subprocess
 import sys
@@ -14,6 +15,7 @@ sys.path.insert(0, str(ROOT))
 import activate_promotion
 import promote_modal
 import release_modal
+import resume_activation_pr
 
 
 def release_evidence():
@@ -149,6 +151,39 @@ class BeatThisReleaseTests(unittest.TestCase):
         self.assertIn("deploy.py --candidate", workflow)
         self.assertIn("verify-candidate-refresh", workflow)
         self.assertIn("promotion/candidate-refresh-health.json", workflow)
+        self.assertIn("--verify-existing", workflow)
+        self.assertIn("--public-key promotion/public-key.pem", workflow)
+        self.assertIn(
+            '--expected-source-revision "$SOURCE_REVISION"', workflow
+        )
+        self.assertIn('--base "$BASE_BRANCH"', workflow)
+        self.assertNotIn("--base main", workflow)
+        self.assertIn("--release-branch", workflow)
+        retained_step = workflow.split(
+            "Authenticate retained evidence and verify the activation branch",
+            1,
+        )[1].split(
+            "Reopen the protected-branch activation proposal",
+            1,
+        )[0]
+        self.assertIn("GH_TOKEN: ${{ github.token }}", retained_step)
+        self.assertIn('gh run view "$RELEASE_RUN_ID"', retained_step)
+        self.assertIn("resume_activation_pr.py", workflow)
+        candidate_deploy = workflow.index(
+            "deploy.py --candidate"
+        )
+        production_deploy = workflow.index(
+            "Deploy the exact production worker revision"
+        )
+        self.assertLess(candidate_deploy, production_deploy)
+        self.assertIn(
+            "--app-name beat-this-candidate", workflow
+        )
+        self.assertIn("--app-name beat-this-worker", workflow)
+        self.assertNotIn(
+            "modal secret create beat-this-deployment-identity-v1",
+            workflow,
+        )
 
     def test_modal_metadata_requires_one_deployed_app_and_latest_version(self):
         self.assertEqual(
@@ -264,11 +299,14 @@ class BeatThisReleaseTests(unittest.TestCase):
 
     def test_candidate_refresh_uses_trusted_derived_origin_and_evidence(self):
         evidence = release_evidence()
+        evidence["endpointOrigin"] = (
+            "https://workspace--beat-this-candidate.modal.run"
+        )
         expected = release_modal.expected_health(evidence)
         report = {"provider": "BEAT_THIS", "finalStatus": "ready"}
         with patch.object(
             promote_modal,
-            "candidate_origin_from_production",
+            "trusted_candidate_origin",
             return_value="https://workspace--beat-this-candidate.modal.run",
         ) as derive, patch.object(
             promote_modal,
@@ -289,6 +327,216 @@ class BeatThisReleaseTests(unittest.TestCase):
             attempts=4,
             delay_seconds=10,
         )
+
+    def test_candidate_and_production_identity_flow_stays_isolated(self):
+        candidate_metadata = {
+            "modalAppId": "ap-Candidate",
+            "modalDeploymentId": "v3",
+            "modalFunctionId": "fu-Candidate",
+            "endpointOrigin": (
+                "https://workspace--beat-this-candidate.modal.run"
+            ),
+        }
+        production_metadata = {
+            "modalAppId": "ap-Production",
+            "modalDeploymentId": "v8",
+            "modalFunctionId": "fu-Production",
+            "endpointOrigin": "https://workspace--beat-this.modal.run",
+        }
+        self.assertNotEqual(
+            release_modal.identity(candidate_metadata),
+            release_modal.identity(production_metadata),
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate_identity = root / "candidate-identity.json"
+            candidate_refresh = root / "candidate-refresh.json"
+            production_identity = root / "production-identity.json"
+            production_refresh = root / "production-refresh.json"
+            with patch.object(
+                release_modal.subprocess, "run"
+            ) as run, patch.object(
+                release_modal, "running_container_ids", return_value=[]
+            ), patch.object(release_modal, "wait_for_stopped_containers"):
+                release_modal.install_identity(
+                    candidate_metadata,
+                    candidate_identity,
+                    candidate_refresh,
+                    release_modal.CANDIDATE_APP_NAME,
+                )
+                release_modal.install_identity(
+                    production_metadata,
+                    production_identity,
+                    production_refresh,
+                    release_modal.APP_NAME,
+                )
+            secret_names = [
+                call.args[0][5]
+                for call in run.call_args_list
+                if call.args[0][3:5] == ["secret", "create"]
+            ]
+            self.assertEqual(
+                secret_names,
+                [
+                    "beat-this-candidate-deployment-identity-v1",
+                    "beat-this-deployment-identity-v1",
+                ],
+            )
+            self.assertEqual(
+                json.loads(candidate_identity.read_text())[
+                    "BEAT_THIS_MODAL_APP_ID"
+                ],
+                "ap-Candidate",
+            )
+            self.assertEqual(
+                json.loads(production_identity.read_text())[
+                    "BEAT_THIS_MODAL_APP_ID"
+                ],
+                "ap-Production",
+            )
+
+            candidate_evidence = release_evidence()
+            candidate_evidence.update(candidate_metadata)
+            production_evidence = release_evidence()
+            production_evidence.update(production_metadata)
+            production_evidence["releaseBranch"] = "release/beat-this"
+            with patch.object(
+                promote_modal,
+                "trusted_candidate_origin",
+                return_value=candidate_evidence["endpointOrigin"],
+            ), patch.object(
+                promote_modal,
+                "refresh_candidate_and_verify",
+                return_value={
+                    "provider": "BEAT_THIS",
+                    "finalStatus": "ready",
+                },
+            ) as refresh_candidate:
+                release_modal.verified_candidate_refresh(
+                    candidate_evidence, "token", attempts=1
+                )
+            candidate_expected = refresh_candidate.call_args.args[2]
+            self.assertEqual(
+                candidate_expected["modalAppId"], "ap-Candidate"
+            )
+            self.assertEqual(
+                candidate_expected["modalDeploymentId"], "v3"
+            )
+
+            production_record = promotion_record(production_evidence)
+            private_key = root / "private.pem"
+            subprocess.run(
+                [
+                    "openssl", "genpkey", "-algorithm", "Ed25519",
+                    "-out", str(private_key),
+                ],
+                check=True,
+            )
+            production_bundle = {
+                "record": production_record,
+                "signature": promote_modal.sign(
+                    production_record, private_key
+                ),
+            }
+            api_output = root / "promotion.generated.ts"
+            release_output = root / "release.json"
+            activate_promotion.activate(
+                production_bundle,
+                promote_modal.public_key(private_key),
+                production_evidence,
+                json.loads(production_refresh.read_text()),
+                matching_health(production_record),
+                api_output,
+                release_output,
+            )
+            activated = json.loads(release_output.read_text())
+            self.assertEqual(
+                activated["record"]["modalAppId"], "ap-Production"
+            )
+            self.assertNotIn(
+                "ap-Candidate", api_output.read_text()
+            )
+
+    def test_resume_requires_the_original_one_commit_activation_branch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            subprocess.run(["git", "init"], cwd=repository, check=True)
+            subprocess.run(
+                ["git", "config", "user.email", "test@example.invalid"],
+                cwd=repository,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Release Test"],
+                cwd=repository,
+                check=True,
+            )
+            for relative in activate_promotion.ACTIVATION_PATHS:
+                path = repository / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("unpromoted\n")
+            subprocess.run(
+                ["git", "add", "."], cwd=repository, check=True
+            )
+            subprocess.run(
+                ["git", "commit", "-m", "source"],
+                cwd=repository,
+                check=True,
+                capture_output=True,
+            )
+            source = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"],
+                cwd=repository,
+                text=True,
+            ).strip()
+            for relative in activate_promotion.ACTIVATION_PATHS:
+                (repository / relative).write_text("activated\n")
+            subprocess.run(
+                ["git", "commit", "-am", "activation"],
+                cwd=repository,
+                check=True,
+                capture_output=True,
+            )
+            activate_promotion.verify_activation_commit(
+                repository, source
+            )
+            (repository / "unexpected.txt").write_text("tampered\n")
+            subprocess.run(
+                ["git", "add", "unexpected.txt"],
+                cwd=repository,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "commit", "-m", "append tamper"],
+                cwd=repository,
+                check=True,
+                capture_output=True,
+            )
+            with self.assertRaisesRegex(ValueError, "original source child"):
+                activate_promotion.verify_activation_commit(
+                    repository, source
+                )
+
+    def test_resume_authenticates_new_and_legacy_release_branches(self):
+        evidence = release_evidence()
+        self.assertEqual(
+            activate_promotion.authenticated_release_branch(
+                evidence, "main"
+            ),
+            "main",
+        )
+        evidence["releaseBranch"] = "release/beat-this"
+        self.assertEqual(
+            activate_promotion.authenticated_release_branch(
+                evidence, "release/beat-this"
+            ),
+            "release/beat-this",
+        )
+        with self.assertRaisesRegex(ValueError, "differs"):
+            activate_promotion.authenticated_release_branch(
+                evidence, "main"
+            )
 
     def test_validation_precedes_canonical_record_replacement(self):
         evidence = release_evidence()
@@ -350,6 +598,199 @@ class BeatThisReleaseTests(unittest.TestCase):
                 )
             self.assertEqual(api_output.read_text(), original_api)
             self.assertEqual(release_output.read_text(), original_release)
+
+    def test_resume_authenticates_every_retained_release_input(self):
+        evidence = release_evidence()
+        record = promotion_record(evidence)
+        health = matching_health(record)
+        refresh = container_refresh(evidence)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            private_key = root / "private.pem"
+            other_private_key = root / "other-private.pem"
+            api_output = root / "promotion.generated.ts"
+            release_output = root / "release.json"
+            for key in (private_key, other_private_key):
+                subprocess.run(
+                    [
+                        "openssl", "genpkey", "-algorithm", "Ed25519",
+                        "-out", str(key),
+                    ],
+                    check=True,
+                )
+            public_key = promote_modal.public_key(private_key)
+            bundle = {
+                "record": record,
+                "signature": promote_modal.sign(record, private_key),
+            }
+            activate_promotion.activate(
+                bundle,
+                public_key,
+                evidence,
+                refresh,
+                health,
+                api_output,
+                release_output,
+            )
+
+            def verify(**changes):
+                activate_promotion.verify_retained_activation(
+                    changes.get("bundle", bundle),
+                    changes.get("public_key", public_key),
+                    changes.get("evidence", evidence),
+                    changes.get("refresh", refresh),
+                    changes.get("health", health),
+                    changes.get("api_output", api_output),
+                    changes.get("release_output", release_output),
+                    changes.get("source_revision", record["sourceRevision"]),
+                )
+
+            verify()
+
+            calls = []
+
+            def closed_pr_run(command, **kwargs):
+                calls.append(command)
+                if command[1:3] == ["pr", "list"]:
+                    self.assertNotIn("--base", command)
+                    return subprocess.CompletedProcess(
+                        command,
+                        0,
+                        stdout=json.dumps([{
+                            "number": 2,
+                            "state": "CLOSED",
+                            "headRefOid": "c" * 40,
+                            "baseRefName": "main",
+                            "url": "https://github.com/example/repo/pull/2",
+                        }]),
+                        stderr="",
+                    )
+                if command[1:3] == ["pr", "reopen"]:
+                    return subprocess.CompletedProcess(
+                        command, 0, stdout="", stderr=""
+                    )
+                raise AssertionError(command)
+
+            body = root / "proposal.md"
+            body.write_text("retained release")
+            self.assertEqual(
+                resume_activation_pr.recover_proposal(
+                    repository="example/repo",
+                    base_branch="main",
+                    head_branch="beat-this-activation/" + "b" * 40,
+                    expected_head_oid="c" * 40,
+                    title="retained activation",
+                    body_file=body,
+                    run=closed_pr_run,
+                ),
+                "https://github.com/example/repo/pull/2",
+            )
+            self.assertEqual(calls[-1][1:3], ["pr", "reopen"])
+            self.assertFalse(
+                any(call[1:3] == ["pr", "create"] for call in calls)
+            )
+
+            mismatch_calls = []
+
+            def mismatched_base_run(command, **kwargs):
+                mismatch_calls.append(command)
+                if command[1:3] != ["pr", "list"]:
+                    raise AssertionError(command)
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    stdout=json.dumps([{
+                        "number": 2,
+                        "state": "CLOSED",
+                        "headRefOid": "c" * 40,
+                        "baseRefName": "release/other",
+                        "url": "https://github.com/example/repo/pull/2",
+                    }]),
+                    stderr="",
+                )
+
+            with self.assertRaisesRegex(ValueError, "identity changed"):
+                resume_activation_pr.recover_proposal(
+                    repository="example/repo",
+                    base_branch="main",
+                    head_branch="beat-this-activation/" + "b" * 40,
+                    expected_head_oid="c" * 40,
+                    title="retained activation",
+                    body_file=body,
+                    run=mismatched_base_run,
+                )
+            self.assertEqual(len(mismatch_calls), 1)
+
+            altered_signature = copy.deepcopy(bundle)
+            first = altered_signature["signature"][0]
+            altered_signature["signature"] = (
+                ("B" if first == "A" else "A")
+                + altered_signature["signature"][1:]
+            )
+            with self.assertRaisesRegex(ValueError, "signature"):
+                verify(bundle=altered_signature)
+
+            with self.assertRaisesRegex(ValueError, "signature"):
+                verify(
+                    public_key=promote_modal.public_key(other_private_key)
+                )
+
+            altered_evidence = copy.deepcopy(evidence)
+            altered_evidence["smokeEvidence"]["fixture"]["sha256"] = "f" * 64
+            with self.assertRaisesRegex(ValueError, "release evidence"):
+                verify(evidence=altered_evidence)
+
+            altered_refresh = copy.deepcopy(refresh)
+            altered_refresh["staleContainerIds"] = ["ta-Stale"]
+            with self.assertRaisesRegex(ValueError, "container refresh"):
+                verify(refresh=altered_refresh)
+
+            altered_health = copy.deepcopy(health)
+            altered_health["modalFunctionId"] = "fu-Altered"
+            with self.assertRaisesRegex(ValueError, "live health"):
+                verify(health=altered_health)
+
+            original_generated = api_output.read_text()
+            api_output.write_text(
+                original_generated.replace(
+                    record["modalAppId"], "ap-Altered", 1
+                )
+            )
+            with self.assertRaisesRegex(ValueError, "generated bundle"):
+                verify()
+            api_output.write_text(original_generated)
+
+            other_public_key = promote_modal.public_key(other_private_key)
+            api_output.write_text(
+                original_generated.replace(
+                    json.dumps(public_key),
+                    json.dumps(other_public_key),
+                    1,
+                )
+            )
+            with self.assertRaisesRegex(ValueError, "public key"):
+                verify()
+            api_output.write_text(original_generated)
+
+            release_output.write_text(
+                release_output.read_text().replace(
+                    '"beatCount":4', '"beatCount":5'
+                )
+            )
+            with self.assertRaisesRegex(ValueError, "release attestation"):
+                verify()
+            activate_promotion.activate(
+                bundle,
+                public_key,
+                evidence,
+                refresh,
+                health,
+                api_output,
+                release_output,
+            )
+
+            with self.assertRaisesRegex(ValueError, "source revision"):
+                verify(source_revision="a" * 40)
 
     def test_legacy_key_material_produces_verifiable_ed25519_signature(self):
         normalized, key_format = promote_modal.private_key_bytes(
