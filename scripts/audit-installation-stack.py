@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Validate the authoritative installation matrix without treating code as proof."""
 import hashlib
+import base64
 import json
+import math
 import re
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 STATUSES = {"READY", "RESEARCH_READY", "BLOCKED_LICENSE", "BLOCKED_NO_WEIGHTS",
@@ -34,12 +38,78 @@ def canonical_sha256(value):
     encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
     return hashlib.sha256(encoded).hexdigest()
 
+def mt3_note_evidence_valid(output):
+    if not isinstance(output, dict):
+        return False
+    events = output.get("noteEvents")
+    if (
+        not isinstance(events, list)
+        or not 1 <= len(events) <= 4096
+        or output.get("notes") != len(events)
+        or output.get("terminatedNotes") != len(events)
+        or output.get("allNotesTerminated") is not True
+        or output.get("noteEventsSha256") != canonical_sha256(events)
+    ):
+        return False
+    previous = None
+    for event in events:
+        if not isinstance(event, dict):
+            return False
+        start, end = event.get("start"), event.get("end")
+        pitch, velocity = event.get("pitch"), event.get("velocity")
+        confidence = event.get("confidence")
+        if (
+            isinstance(start, bool) or not isinstance(start, (int, float))
+            or isinstance(end, bool) or not isinstance(end, (int, float))
+            or not math.isfinite(start) or not math.isfinite(end)
+            or start < 0 or end <= start
+            or isinstance(pitch, bool) or not isinstance(pitch, int)
+            or not 0 <= pitch <= 127
+            or isinstance(velocity, bool) or not isinstance(velocity, int)
+            or not 1 <= velocity <= 127
+            or isinstance(confidence, bool)
+            or not isinstance(confidence, (int, float))
+            or not math.isfinite(confidence) or not 0 <= confidence <= 1
+        ):
+            return False
+        ordering = (start, end, pitch)
+        if previous is not None and ordering < previous:
+            return False
+        previous = ordering
+    return True
+
+def ed25519_signature_valid(record, signature, public_key):
+    try:
+        decoded = base64.b64decode(signature, validate=True)
+    except (ValueError, TypeError):
+        return False
+    if len(decoded) != 64:
+        return False
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        message = root / "record.json"
+        key = root / "public.pem"
+        sig = root / "signature.bin"
+        message.write_text(json.dumps(
+            record, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        ))
+        key.write_text(public_key)
+        sig.write_bytes(decoded)
+        result = subprocess.run(
+            ["openssl", "pkeyutl", "-verify", "-rawin", "-pubin",
+             "-inkey", str(key), "-in", str(message), "-sigfile", str(sig)],
+            capture_output=True,
+            check=False,
+        )
+    return result.returncode == 0
+
 def effective(data):
     defaults = data.get("defaults", {})
     return [{**defaults, **row} for row in data.get("providers", [])]
 
 ENDPOINT_KEYS = {
     "ACE_STEP": "ACE_STEP_API_URL", "ALL_IN_ONE": "ALL_IN_ONE_API_URL",
+    "BS_ROFORMER": "MUSIC_PROVIDER_BS_ROFORMER_ENDPOINT",
     "BEAT_THIS": "MUSIC_PROVIDER_BEAT_THIS_URL", "MT3": "MT3_API_URL",
     "MR_MT3": "MR_MT3_API_URL", "SHEETSAGE": "SHEETSAGE_API_URL",
     "DEMUCS": "DEMUCS_API_URL", "BASIC_PITCH": "BASIC_PITCH_API_URL",
@@ -76,6 +146,622 @@ def evidence_errors(rows, root):
         except (OSError, json.JSONDecodeError) as exc:
             errors.append(f"evidence missing or invalid: {relative}: {exc}")
             return {}
+    ace = by_name.get("ACE_STEP", {})
+    if ace.get("finalStatus") == "READY":
+        base = Path("services/music-ai-gpu-worker/release-evidence/ace-step")
+        status = read_json("services/music-ai-gpu-worker/installation-status.json")
+        local = status.get("providers", {}).get("ACE_STEP", {}).get("evidence", {})
+        manifest = read_json("services/music-ai-gpu-worker/model_manifest.json").get(
+            "providers", {}
+        ).get("ACE_STEP", {})
+        release = read_json(base / "release-evidence.json")
+        health = read_json(base / "live-health.json")
+        observed = read_json(base / "observed-deployment.json")
+        worker = read_json(base / "worker-identity.json")
+        refresh = read_json(base / "identity-refresh.json")
+        bundle = read_json(base / "promotion-bundle.json")
+        license_evidence = read_json(base / "license-evidence.json")
+        public_key_path = root / base / "promotion-public-key.pem"
+        try:
+            public_key = public_key_path.read_text()
+            canonical_text = (
+                root / "artifacts/api-server/src/lib/gpuPromotions.generated.ts"
+            ).read_text()
+            match = re.fullmatch(
+                r"/\* Generated by the fail-closed generic Modal release workflow\. \*/\n"
+                r"export const committedGpuPromotionsJson = (.+);\n",
+                canonical_text,
+            )
+            canonical = json.loads(json.loads(match.group(1))) if match else {}
+        except (OSError, json.JSONDecodeError):
+            public_key, canonical = "", {}
+        record = bundle.get("record", {})
+        smoke = release.get("smokeEvidence", {})
+        artifact = smoke.get("output", {}).get("artifact", {})
+        retained_smoke = root / base / str(artifact.get("retainedEvidenceFile", ""))
+        source_license = license_evidence.get("source", {})
+        models = license_evidence.get("models", [])
+        identity_fields = (
+            "modalAppId", "modalDeploymentId", "modalFunctionId",
+            "modalImageId", "sourceRevision", "sourceImageDigest",
+            "checkpointSha256",
+        )
+        required = [
+            manifest.get("checkpoint_sha256") == release.get("checkpointSha256"),
+            manifest.get("source_license") == "MIT",
+            manifest.get("model_license") == "MIT",
+            manifest.get("commercial_use_permitted") is True,
+            source_license.get("spdx") == "MIT",
+            source_license.get("revision") == ace.get("codeRevision"),
+            len(models) == 2 and all(
+                model.get("spdx") == "MIT"
+                and model.get("commercialUsePermitted") is True
+                and re.fullmatch(r"[a-f0-9]{64}", model.get("evidenceSha256", ""))
+                and (root / base / model.get("evidenceFile", "")).is_file()
+                for model in models
+            ),
+            health.get("status") == "ready" and health.get("healthy") is True,
+            health.get("smokeTested") is True,
+            smoke.get("smokeTested") is True,
+            artifact.get("format") == "wav",
+            artifact.get("durationSeconds", 0) > 0,
+            artifact.get("sampleRate", 0) > 0,
+            artifact.get("channels", 0) > 0,
+            artifact.get("bytes", 0) > 44,
+            re.fullmatch(r"[a-f0-9]{64}", artifact.get("sha256", "")),
+            artifact.get("peakAmplitude", 0) >= 1e-5,
+            artifact.get("rmsAmplitude", 0) >= 1e-7,
+            retained_smoke.is_file(),
+            retained_smoke.stat().st_size == artifact.get("bytes")
+            if retained_smoke.is_file() else False,
+            hashlib.sha256(retained_smoke.read_bytes()).hexdigest() == artifact.get("sha256")
+            if retained_smoke.is_file() else False,
+            "@sha256:17e2934e1fa96152b14f78078bfbafd0f00f391df995dc6c641a720fce1202bb"
+            in (root / "services/music-ai-gpu-worker/Dockerfile.ace-step").read_text(),
+            "@sha256:90daa0b4d74ea55c7b8e06d25d3826b1eac66e7994387248e6173dd2b66668e2"
+            in (root / "services/music-ai-gpu-worker/Dockerfile.ace-step").read_text(),
+            all(release.get(field) == health.get(field) == record.get(field)
+                for field in identity_fields),
+            all(observed.get(field) == record.get(field)
+                for field in ("modalAppId", "modalDeploymentId", "modalFunctionId")),
+            worker.get("MUSIC_GPU_MODAL_APP_ID") == record.get("modalAppId"),
+            worker.get("MUSIC_GPU_MODAL_DEPLOYMENT_ID") == record.get("modalDeploymentId"),
+            worker.get("MUSIC_GPU_MODAL_FUNCTION_ID") == record.get("modalFunctionId"),
+            refresh.get("staleContainerIds") == [],
+            record.get("releaseEvidenceSha256") == canonical_sha256(release),
+            ed25519_signature_valid(record, bundle.get("signature"), public_key),
+            canonical.get("bundles", {}).get("ACE_STEP") == bundle,
+            canonical.get("publicKey", "").strip() == public_key.strip(),
+            local.get("promotionSignatureValidated") is True,
+            local.get("apiAttestationValidated") is True,
+            local.get("apiZeroPostMismatchRegression") is True,
+            local.get("endpointOrigin") == record.get("endpointOrigin"),
+        ]
+        if not all(required):
+            errors.append(
+                "ACE_STEP: READY lacks exact license/checkpoint/live WAV/"
+                "identity/signature/canonical API evidence"
+            )
+    bs_roformer = by_name.get("BS_ROFORMER", {})
+    if bs_roformer.get("finalStatus") in {"READY", "BLOCKED_LICENSE"}:
+        base = Path("services/music-ai-gpu-worker/release-evidence/bs-roformer")
+        status = read_json("services/music-ai-gpu-worker/installation-status.json")
+        local_provider = status.get("providers", {}).get("BS_ROFORMER", {})
+        local = local_provider.get("evidence", {})
+        manifest = read_json("services/music-ai-gpu-worker/model_manifest.json").get(
+            "providers", {}
+        ).get("BS_ROFORMER", {})
+        release = read_json(base / "bs-roformer-release-evidence-v1.json")
+        health = read_json(base / "bs-roformer-live-health-v1.json")
+        observed = read_json(base / "observed-deployment.json")
+        worker = read_json(base / "promotion-worker-identity-v1.json")
+        refresh = read_json(base / "worker-refresh.json")
+        bundle = read_json(base / "bs-roformer-promotion-v1.json")
+        source_license = read_json(base / "source-license-evidence-v1.json")
+        deployment_stop = read_json(base / "deployment-stopped-v1.json")
+        try:
+            public_key = (root / base / "promotion-public-key.pem").read_text()
+            canonical_text = (
+                root / "artifacts/api-server/src/lib/gpuPromotions.generated.ts"
+            ).read_text()
+            match = re.fullmatch(
+                r"/\* Generated by the fail-closed generic Modal release workflow\. \*/\n"
+                r"export const committedGpuPromotionsJson = (.+);\n",
+                canonical_text,
+            )
+            canonical = json.loads(json.loads(match.group(1))) if match else {}
+        except (OSError, json.JSONDecodeError):
+            public_key, canonical = "", {}
+        record = bundle.get("record", {})
+        smoke = release.get("smokeEvidence", {})
+        output = smoke.get("output", {})
+        input_evidence = output.get("input", {})
+        stems = output.get("stems", [])
+        if not isinstance(stems, list):
+            stems = []
+        stems_by_role = {
+            stem.get("stem"): stem for stem in stems if isinstance(stem, dict)
+        }
+        backend = source_license.get("backend", {})
+        model = source_license.get("model", {})
+        smoke_input = source_license.get("smokeInput", {})
+        backend_license = root / base / str(backend.get("licenseFile", ""))
+        model_license = root / base / str(model.get("licenseFile", ""))
+        retained_input = root / str(smoke_input.get("repositoryPath", ""))
+        try:
+            dockerfile = (
+                root / "services/music-ai-gpu-worker/Dockerfile.bs-roformer"
+            ).read_text()
+            requirements = (
+                root
+                / "services/music-ai-gpu-worker/runners/requirements-bs-roformer.txt"
+            ).read_text()
+            modal_app_source = (
+                root / "services/music-ai-gpu-worker/modal_app.py"
+            ).read_text()
+            worker_app_source = (
+                root / "services/music-ai-gpu-worker/app.py"
+            ).read_text()
+            bootstrap_source = (
+                root / "services/music-ai-gpu-worker/checkpoint_bootstrap.py"
+            ).read_text()
+            catalog_source = (
+                root / "artifacts/api-server/src/lib/musicProviders.ts"
+            ).read_text()
+            catalog_test_source = (
+                root / "artifacts/api-server/tests/gpu-provider-attestation.test.mjs"
+            ).read_text()
+            dot_replit = (root / ".replit").read_text()
+        except OSError:
+            dockerfile = requirements = modal_app_source = worker_app_source = ""
+            bootstrap_source = catalog_source = dot_replit = ""
+            catalog_test_source = ""
+        identity_fields = (
+            "modalAppId", "modalDeploymentId", "modalFunctionId",
+            "modalImageId", "sourceRevision", "sourceImageDigest",
+            "checkpointSha256",
+        )
+        runtime_fields = {
+            "python": ("runtime", "pythonVersion"),
+            "cudaImage": ("framework", "cuda_image"),
+            "cuda": ("framework", "cuda"),
+            "pytorch": ("framework", "pytorch"),
+            "torchvision": ("framework", "torchvision"),
+            "torchaudio": ("framework", "torchaudio"),
+            "torchIndexUrl": ("framework", "torch_index_url"),
+            "transformers": ("framework", "transformers"),
+            "accelerate": ("framework", "accelerate"),
+        }
+        expected_roles = {"vocals", "instrumental"}
+        stem_hashes = {stem.get("sha256") for stem in stems}
+        required = [
+            manifest.get("model_version") == record.get("modelVersion"),
+            manifest.get("checkpoint_sha256") == release.get("checkpointSha256"),
+            manifest.get("config_sha256") == smoke.get("configSha256"),
+            manifest.get("backend_revision") == backend.get("revision"),
+            manifest.get("backend_package_artifact_sha256")
+            == backend.get("wheelSha256")
+            == smoke.get("backendPackageArtifactSha256"),
+            manifest.get("backend_license") == "MIT",
+            backend.get("gitTree") == "b0c7a8c6bfdd685afe6ef461fb0ebcded209d4b3",
+            backend.get("licenseGitBlobOid")
+            == "d21918f6309fadd4c1d1b43bae604fd313aa6630",
+            backend.get("observedInstalledTreeSha256")
+            == smoke.get("backendPackageTreeSha256"),
+            model.get("revision") == "b1361b816daca507f079d85e935c291bcb0a5351",
+            model.get("checkpointSha256") == manifest.get("checkpoint_sha256"),
+            model.get("configSha256") == manifest.get("config_sha256"),
+            backend.get("license") == "MIT",
+            model.get("wrapperModelCardDeclaredLicense") == "MIT",
+            model.get("readmeGitOid")
+            == "c6a2867781b519834774c9769fa0ae46d04fcc9a",
+            model.get("checkpointOrigin", {}).get("assetRepository")
+            == "https://github.com/TRvlvr/model_repo",
+            model.get("checkpointOrigin", {}).get("assetReleaseTag")
+            == "all_public_uvr_models",
+            model.get("checkpointOrigin", {}).get("assetFilename")
+            == "model_bs_roformer_ep_317_sdr_12.9755.ckpt",
+            backend_license.is_file(),
+            hashlib.sha256(backend_license.read_bytes()).hexdigest()
+            == backend.get("licenseFileSha256")
+            if backend_license.is_file() else False,
+            model_license.is_file(),
+            hashlib.sha256(model_license.read_bytes()).hexdigest()
+            == model.get("licenseFileSha256")
+            if model_license.is_file() else False,
+            retained_input.is_file(),
+            retained_input.stat().st_size == smoke_input.get("bytes")
+            if retained_input.is_file() else False,
+            hashlib.sha256(retained_input.read_bytes()).hexdigest()
+            == smoke_input.get("sha256")
+            if retained_input.is_file() else False,
+            smoke_input.get("sha256")
+            == manifest.get("smoke_input_sha256")
+            == input_evidence.get("sha256"),
+            smoke.get("device") == "cuda",
+            smoke.get("gpu") == "NVIDIA L4",
+            smoke.get("smokeTested") is True,
+            health.get("status") == "ready" and health.get("healthy") is True,
+            health.get("smokeTested") is True,
+            output.get("stemCount") == 2,
+            len(stems) == 2,
+            set(stems_by_role) == expected_roles,
+            output.get("allStemsNonSilent") is True,
+            output.get("distinctStemSha256") is True,
+            len(stem_hashes) == 2,
+            input_evidence.get("sha256") not in stem_hashes,
+            all(
+                stem.get("format") == "wav"
+                and stem.get("bytes", 0) > 44
+                and stem.get("durationSeconds") == input_evidence.get("durationSeconds")
+                and stem.get("channels") == input_evidence.get("channels")
+                and stem.get("sampleRate") == input_evidence.get("sampleRate")
+                and stem.get("peakAmplitude", 0) >= 1e-5
+                and stem.get("rmsAmplitude", 0) >= 1e-7
+                and re.fullmatch(r"[a-f0-9]{64}", stem.get("sha256", ""))
+                for stem in stems
+            ),
+            manifest.get("runtime", {}).get("cuda_image", "").startswith(
+                "nvidia/cuda@sha256:"
+            ),
+            "nvidia/cuda@sha256:2fcc4280646484290cc50dce5e65f388dd04352b07cbe89a635703bd1f9aedb6"
+            in dockerfile,
+            "46f3d5eb4b666a54adcb67524258c3cb6f96e185db97a3e1e1ef7efaea4e1848"
+            in requirements,
+            all(release.get(field) == health.get(field) == record.get(field)
+                for field in identity_fields),
+            all(
+                record.get("runtime", {}).get(field)
+                == health.get(section, {}).get(key)
+                for field, (section, key) in runtime_fields.items()
+            ),
+            observed.get("endpointOrigin") == record.get("endpointOrigin")
+            == "https://windot100--bs-roformer-isolated.modal.run",
+            all(observed.get(field) == record.get(field)
+                for field in ("modalAppId", "modalDeploymentId", "modalFunctionId")),
+            worker.get("MUSIC_GPU_MODAL_APP_ID") == record.get("modalAppId"),
+            worker.get("MUSIC_GPU_MODAL_DEPLOYMENT_ID")
+            == record.get("modalDeploymentId"),
+            worker.get("MUSIC_GPU_MODAL_FUNCTION_ID") == record.get("modalFunctionId"),
+            refresh.get("provider") == "BS_ROFORMER",
+            refresh.get("staleContainerIds") == [],
+            record.get("releaseEvidenceSha256") == canonical_sha256(release),
+            ed25519_signature_valid(record, bundle.get("signature"), public_key),
+            canonical.get("publicKey", "").strip() == public_key.strip(),
+            local.get("promotionSignatureValidated") is True,
+            local.get("apiAttestationValidated") is True,
+            local.get("apiZeroPostMismatchRegression") is True,
+            local.get("allStemsNonSilent") is True,
+            local.get("allStemsDistinctFromInputAndEachOther") is True,
+            local.get("realGpuSmokeVocalsSha256")
+            == stems_by_role.get("vocals", {}).get("sha256"),
+            local.get("realGpuSmokeInstrumentalSha256")
+            == stems_by_role.get("instrumental", {}).get("sha256"),
+            local.get("endpointOrigin") == record.get("endpointOrigin"),
+        ]
+        if bs_roformer.get("finalStatus") == "BLOCKED_LICENSE":
+            required.extend([
+                local_provider.get("classification") == "BLOCKED_LICENSE",
+                manifest.get("routing_status") == "BLOCKED_LICENSE",
+                manifest.get("license") == "UNVERIFIED",
+                manifest.get("license_status") == "UNVERIFIED",
+                manifest.get("checkpoint_license") == "UNVERIFIED",
+                manifest.get("wrapper_license") == "MIT",
+                manifest.get("commercial_use_permitted") is False,
+                model.get("checkpointLicenseStatus") == "UNVERIFIED",
+                model.get("checkpointLicenseSpdx") is None,
+                model.get("commercialUsePermitted") is False,
+                model.get("checkpointOrigin", {}).get(
+                    "explicitCheckpointLicenseGrantRetained"
+                ) is False,
+                local.get("checkpointLicenseStatus") == "UNVERIFIED",
+                local.get("upstreamCheckpointOriginGrantRetained") is False,
+                local.get("commercialUsePermitted") is False,
+                local.get("checkpointBootstrapBlocked") is True,
+                local.get("modalDeploymentBlocked") is True,
+                local.get("workerLicenseGateEnforced") is True,
+                local.get("apiRegistryLicenseGateEnforced") is True,
+                local.get("endpointDeployed") is False,
+                local.get("endpointConfigured") is False,
+                local.get("apiConnected") is False,
+                local.get("promotionActiveForRouting") is False,
+                local.get("liveHealthStatus") == "stopped",
+                local.get("deploymentStoppedAt") == deployment_stop.get("stoppedAt"),
+                bs_roformer.get("endpointDeployed") is False,
+                bs_roformer.get("endpointConfigured") is False,
+                bs_roformer.get("healthReady") is False,
+                bs_roformer.get("apiConnected") is False,
+                deployment_stop.get("modalAppId") == record.get("modalAppId"),
+                deployment_stop.get("modalAppState") == "stopped",
+                deployment_stop.get("stoppedAt") == "2026-09-06T18:49:44Z",
+                deployment_stop.get("historicalEndpointOrigin")
+                == record.get("endpointOrigin"),
+                deployment_stop.get("postStopEndpointHttpStatus") == 404,
+                deployment_stop.get("postStopResponseBytes") == 34,
+                deployment_stop.get("postStopResponseSha256")
+                == "140b2f05397afc9e90c6c7e1143a13a78ab60ca5a035022e2fade1edacccc8a0",
+                '"ACE_STEP,MT3,ALL_IN_ONE"' in modal_app_source,
+                'LICENSE_BLOCKED_PROVIDERS = {"BS_ROFORMER"}'
+                in modal_app_source,
+                "release_providers & LICENSE_BLOCKED_PROVIDERS"
+                in modal_app_source,
+                '"BS_ROFORMER": (' in bootstrap_source,
+                "_assert_provider_license_allows_execution(request.provider)"
+                in worker_app_source,
+                bool(re.search(
+                    r'id: "BS_ROFORMER".*?status: "unavailable".*?'
+                    r'license: "UNVERIFIED checkpoint rights"',
+                    catalog_source,
+                    re.DOTALL,
+                )),
+                'LICENSE_BLOCKED_PROVIDER_IDS = new Set<string>(["BS_ROFORMER"])'
+                in catalog_source,
+                "if (!providerRoutingAuthorized(providerId)) return undefined;"
+                in catalog_source,
+                'routingStatus: "BLOCKED_LICENSE"' in catalog_source,
+                "providerRoutingAuthorized(provider.definition.id)"
+                in catalog_source,
+                "assertProviderCommercialUseAuthorized(request.requestedProvider)"
+                in catalog_source,
+                '"MUSIC_PROVIDER_GATEWAY_URL"' in catalog_test_source,
+                '"MUSIC_PROVIDER_GATEWAY_TOKEN"' in catalog_test_source,
+                "blockedProvider.generate({})" in catalog_test_source,
+                "MUSIC_PROVIDER_BS_ROFORMER_" not in dot_replit,
+                "MUSIC_GPU_PUBLIC_ORIGIN_BS_ROFORMER" not in dot_replit,
+                "BS_ROFORMER" not in canonical.get("bundles", {}),
+                bool(bs_roformer.get("blockers")),
+            ])
+        else:
+            required.extend([
+                local_provider.get("classification") == "READY",
+                model.get("checkpointLicenseStatus") == "VERIFIED",
+                isinstance(model.get("checkpointLicenseSpdx"), str),
+                bool(model.get("checkpointLicenseSpdx")),
+                model.get("commercialUsePermitted") is True,
+                model.get("checkpointOrigin", {}).get(
+                    "explicitCheckpointLicenseGrantRetained"
+                ) is True,
+                local.get("checkpointLicenseStatus") == "VERIFIED",
+                local.get("upstreamCheckpointOriginGrantRetained") is True,
+                local.get("commercialUsePermitted") is True,
+                local.get("endpointConfigured") is True,
+                local.get("apiConnected") is True,
+                local.get("promotionActiveForRouting") is True,
+                bs_roformer.get("endpointConfigured") is True,
+                bs_roformer.get("apiConnected") is True,
+                canonical.get("bundles", {}).get("BS_ROFORMER") == bundle,
+            ])
+        if not all(required):
+            errors.append(
+                "BS_ROFORMER: status lacks exact checkpoint-license state and "
+                "source/checkpoint/config/real-stem/identity/signature/API evidence"
+            )
+    all_in_one = by_name.get("ALL_IN_ONE", {})
+    if all_in_one.get("finalStatus") == "RESEARCH_READY":
+        base = Path("services/music-ai-gpu-worker/release-evidence/all-in-one")
+        status = read_json("services/music-ai-gpu-worker/installation-status.json")
+        local = status.get("providers", {}).get("ALL_IN_ONE", {}).get("evidence", {})
+        manifest = read_json("services/music-ai-gpu-worker/model_manifest.json").get(
+            "providers", {}
+        ).get("ALL_IN_ONE", {})
+        release = read_json(base / "release-evidence.json")
+        health = read_json(base / "live-health.json")
+        observed = read_json(base / "observed-deployment.json")
+        worker = read_json(base / "worker-identity.json")
+        refresh = read_json(base / "identity-refresh.json")
+        bundle = read_json(base / "promotion-bundle.json")
+        inventory = read_json(base / "asset-inventory.json")
+        license_evidence = read_json(base / "license-evidence.json")
+        public_key_path = root / base / "promotion-public-key.pem"
+        try:
+            public_key = public_key_path.read_text()
+            canonical_text = (
+                root / "artifacts/api-server/src/lib/gpuPromotions.generated.ts"
+            ).read_text()
+            match = re.fullmatch(
+                r"/\* Generated by the fail-closed generic Modal release workflow\. \*/\n"
+                r"export const committedGpuPromotionsJson = (.+);\n",
+                canonical_text,
+            )
+            canonical = json.loads(json.loads(match.group(1))) if match else {}
+        except (OSError, json.JSONDecodeError):
+            public_key, canonical = "", {}
+        record = bundle.get("record", {})
+        smoke = release.get("smokeEvidence", {})
+        output = smoke.get("output", {})
+        provenance = smoke.get("provenance", {})
+        manifest_assets = [
+            {key: asset.get(key) for key in (
+                "kind", "path", "size", "sha256", "license", "repository", "revision"
+            )}
+            for asset in manifest.get("assets", [])
+        ]
+        source_evidence = license_evidence.get("sourceEvidence", {})
+        identity_fields = (
+            "modalAppId", "modalDeploymentId", "modalFunctionId",
+            "modalImageId", "sourceRevision", "sourceImageDigest",
+            "checkpointSha256",
+        )
+        evidence_files_valid = True
+        for name, evidence in source_evidence.items():
+            path = root / base / name
+            evidence_files_valid = evidence_files_valid and path.is_file()
+            if path.is_file():
+                evidence_files_valid = (
+                    evidence_files_valid
+                    and hashlib.sha256(path.read_bytes()).hexdigest()
+                    == evidence.get("sha256")
+                )
+        required = [
+            manifest.get("checkpoint_sha256") == release.get("checkpointSha256"),
+            len(manifest_assets) == 9,
+            sum(asset.get("license") == "CC-BY-NC-SA-4.0"
+                for asset in manifest_assets) == 8,
+            sum(asset.get("license") == "MIT"
+                for asset in manifest_assets) == 1,
+            inventory.get("assetCount") == 9,
+            inventory.get("assets") == manifest_assets,
+            inventory.get("aggregateCheckpointSha256")
+            == manifest.get("checkpoint_sha256"),
+            license_evidence.get("licenseStatus") == "RESEARCH_ONLY",
+            license_evidence.get("commercialUsePermitted") is False,
+            license_evidence.get("harmonixFoldCount") == 8,
+            license_evidence.get("harmonixFoldLicense") == "CC-BY-NC-SA-4.0",
+            license_evidence.get("demucsAssetCount") == 1,
+            license_evidence.get("demucsLicense") == "MIT",
+            license_evidence.get("assetInventorySha256")
+            == hashlib.sha256(
+                (root / base / "asset-inventory.json").read_bytes()
+            ).hexdigest(),
+            evidence_files_valid,
+            "@sha256:2fcc4280646484290cc50dce5e65f388dd04352b07cbe89a635703bd1f9aedb6"
+            in (root / "services/music-ai-gpu-worker/Dockerfile.all-in-one").read_text(),
+            "@sha256:90daa0b4d74ea55c7b8e06d25d3826b1eac66e7994387248e6173dd2b66668e2"
+            in (root / "services/music-ai-gpu-worker/Dockerfile.all-in-one").read_text(),
+            health.get("status") == "ready" and health.get("healthy") is True,
+            health.get("smokeTested") is True,
+            smoke.get("smokeTested") is True,
+            output.get("bpm", 0) > 0,
+            output.get("beats", 0) > 0,
+            output.get("bars", 0) > 0,
+            output.get("sections", 0) > 0,
+            provenance.get("backend") == "all-in-one-infer",
+            provenance.get("sourceRevision")
+            == "openmirlab/all-in-one-infer@3c93b4ae389328544dd5955af7497030cb1bca3a",
+            provenance.get("upstreamSourceRevision")
+            == "mir-aidj/all-in-one@18e78903c0365147a2c5d4e5e57ebf88cb7d800e",
+            all(release.get(field) == health.get(field) == record.get(field)
+                for field in identity_fields),
+            all(observed.get(field) == record.get(field)
+                for field in ("modalAppId", "modalDeploymentId", "modalFunctionId")),
+            worker.get("MUSIC_GPU_MODAL_APP_ID") == record.get("modalAppId"),
+            worker.get("MUSIC_GPU_MODAL_DEPLOYMENT_ID") == record.get("modalDeploymentId"),
+            worker.get("MUSIC_GPU_MODAL_FUNCTION_ID") == record.get("modalFunctionId"),
+            refresh.get("staleContainerIds") == [],
+            record.get("releaseEvidenceSha256") == canonical_sha256(release),
+            ed25519_signature_valid(record, bundle.get("signature"), public_key),
+            canonical.get("bundles", {}).get("ALL_IN_ONE") == bundle,
+            canonical.get("publicKey", "").strip() == public_key.strip(),
+            local.get("promotionSignatureValidated") is True,
+            local.get("apiAttestationValidated") is True,
+            local.get("apiZeroPostMismatchRegression") is True,
+            local.get("commercialUsePermitted") is False,
+            local.get("endpointOrigin") == record.get("endpointOrigin"),
+        ]
+        if not all(required):
+            errors.append(
+                "ALL_IN_ONE: RESEARCH_READY lacks exact nine-asset/license/live "
+                "structure/identity/signature/canonical API evidence"
+            )
+    mt3 = by_name.get("MT3", {})
+    if mt3.get("finalStatus") == "READY":
+        base = Path("services/music-ai-gpu-worker/release-evidence/mt3")
+        status = read_json("services/music-ai-gpu-worker/installation-status.json")
+        local = status.get("providers", {}).get("MT3", {}).get("evidence", {})
+        manifest = read_json("services/music-ai-gpu-worker/model_manifest.json").get(
+            "providers", {}
+        ).get("MT3", {})
+        release = read_json(base / "release-evidence.json")
+        health = read_json(base / "live-health.json")
+        observed = read_json(base / "observed-deployment.json")
+        worker = read_json(base / "worker-identity.json")
+        refresh = read_json(base / "identity-refresh.json")
+        bundle = read_json(base / "promotion-bundle.json")
+        license_evidence = read_json(base / "license-evidence.json")
+        checkpoint = read_json(base / "checkpoint-provenance.json")
+        try:
+            public_key = (root / base / "promotion-public-key.pem").read_text()
+            canonical_text = (
+                root / "artifacts/api-server/src/lib/gpuPromotions.generated.ts"
+            ).read_text()
+            match = re.fullmatch(
+                r"/\* Generated by the fail-closed generic Modal release workflow\. \*/\n"
+                r"export const committedGpuPromotionsJson = (.+);\n",
+                canonical_text,
+            )
+            canonical = json.loads(json.loads(match.group(1))) if match else {}
+        except (OSError, json.JSONDecodeError):
+            public_key, canonical = "", {}
+        record = bundle.get("record", {})
+        smoke = release.get("smokeEvidence", {})
+        output = smoke.get("output", {})
+        provenance = smoke.get("provenance", {})
+        conversion = checkpoint.get("conversion", {})
+        negative = checkpoint.get("negativeControl", {})
+        aggregate = checkpoint.get("aggregateCheckpoint", {})
+        aggregate_files = aggregate.get("files", [])
+        if not isinstance(aggregate_files, list):
+            aggregate_files = []
+        aggregate_by_path = {
+            item.get("path"): item
+            for item in aggregate_files
+            if isinstance(item, dict)
+        }
+        identity_fields = (
+            "modalAppId", "modalDeploymentId", "modalFunctionId",
+            "modalImageId", "sourceRevision", "sourceImageDigest",
+            "checkpointSha256",
+        )
+        required = [
+            manifest.get("model_version") == "mt3-pytorch-multitrack",
+            manifest.get("checkpoint_sha256") == release.get("checkpointSha256"),
+            manifest.get("checkpoint_sha256") == aggregate.get("sha256"),
+            manifest.get("checkpoint_asset_sha256")
+            == aggregate_by_path.get("mt3.pth", {}).get("sha256"),
+            manifest.get("checkpoint_config_sha256")
+            == aggregate_by_path.get("config.json", {}).get("sha256"),
+            manifest.get("checkpoint_license") == "Apache-2.0",
+            manifest.get("upstream_license") == "Apache-2.0",
+            conversion.get("mappedAssignmentCount") == 191,
+            conversion.get("exactMappedAssignmentCount") == 191,
+            conversion.get("allMappedAssignmentsExact") is True,
+            conversion.get("maxAbsDelta") == 0,
+            negative.get("mappedAssignmentCount") == 191,
+            negative.get("exactMappedAssignmentCount") == 0,
+            negative.get("allMappedAssignmentsExact") is False,
+            license_evidence.get("classification") == "READY",
+            license_evidence.get("commercialUsePermitted") is True,
+            license_evidence.get("adapter", {}).get("licenseFile", {}).get("spdx")
+            == "MIT",
+            health.get("status") == "ready" and health.get("healthy") is True,
+            health.get("smokeTested") is True,
+            smoke.get("smokeTested") is True,
+            smoke.get("device") == "cuda",
+            output.get("notes", 0) > 0,
+            mt3_note_evidence_valid(output),
+            smoke.get("checkpointLicense") == "Apache-2.0",
+            provenance.get("provider") == "MT3",
+            provenance.get("modelVersion") == "mt3-pytorch-multitrack",
+            provenance.get("checkpointSha256") == manifest.get("checkpoint_sha256"),
+            all(release.get(field) == health.get(field) == record.get(field)
+                for field in identity_fields),
+            all(observed.get(field) == record.get(field)
+                for field in ("modalAppId", "modalDeploymentId", "modalFunctionId")),
+            observed.get("endpointOrigin") == record.get("endpointOrigin"),
+            worker.get("MUSIC_GPU_MODAL_APP_ID") == record.get("modalAppId"),
+            worker.get("MUSIC_GPU_MODAL_DEPLOYMENT_ID") == record.get("modalDeploymentId"),
+            worker.get("MUSIC_GPU_MODAL_FUNCTION_ID") == record.get("modalFunctionId"),
+            refresh.get("staleContainerIds") == [],
+            refresh.get("provider") == "MT3",
+            record.get("releaseEvidenceSha256") == canonical_sha256(release),
+            ed25519_signature_valid(record, bundle.get("signature"), public_key),
+            canonical.get("bundles", {}).get("MT3") == bundle,
+            canonical.get("publicKey", "").strip() == public_key.strip(),
+            local.get("promotionSignatureValidated") is True,
+            local.get("apiAttestationValidated") is True,
+            local.get("apiZeroPostMismatchRegression") is True,
+            local.get("realGpuSmokeNoteCount") == output.get("notes"),
+            local.get("retainedNoteEventsCount") == len(output.get("noteEvents", [])),
+            local.get("retainedNoteEventsSha256") == output.get("noteEventsSha256"),
+            local.get("allRetainedNotesTerminated")
+            == output.get("allNotesTerminated"),
+            local.get("endpointOrigin") == record.get("endpointOrigin"),
+        ]
+        if not all(required):
+            errors.append(
+                "MT3: READY lacks exact official-checkpoint conversion/license/live "
+                "notes/identity/signature/canonical API evidence"
+            )
     sheet = by_name.get("SHEETSAGE", {})
     if sheet.get("finalStatus") == "RESEARCH_READY":
         att = read_json("services/sheetsage-worker/release-attestation.json")

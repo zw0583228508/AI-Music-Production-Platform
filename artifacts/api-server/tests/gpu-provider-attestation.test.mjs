@@ -30,6 +30,7 @@ await build({
         selectMusicProvider,
         verifyProviderRegistry,
       } from "./src/lib/musicProviders";
+       export { runAnalysisProviders } from "./src/lib/analysisProviders";
     `,
     resolveDir: apiDirectory,
     sourcefile: "gpu-provider-attestation-harness.ts",
@@ -43,6 +44,23 @@ await build({
     js: `import { createRequire as __createRequire } from "node:module";
 globalThis.require = __createRequire(import.meta.url);`,
   },
+  plugins: [{
+    name: "empty-committed-gpu-promotions",
+    setup(build) {
+      build.onResolve(
+        { filter: /gpuPromotions\.generated$/ },
+        () => ({ path: "gpuPromotions.generated", namespace: "test" }),
+      );
+      build.onLoad(
+        { filter: /.*/, namespace: "test" },
+        () => ({
+          contents: `export const committedGpuPromotionsJson =
+            "{\\"bundles\\":{},\\"publicKey\\":\\"\\",\\"schemaVersion\\":1}";`,
+          loader: "js",
+        }),
+      );
+    },
+  }],
 });
 
 const {
@@ -54,6 +72,7 @@ const {
   expectedGpuPromotionRecord,
   gpuPromotionAttestationFailure,
   providerCatalog,
+  runAnalysisProviders,
   runArrangementProvider,
   selectMusicProvider,
   verifyProviderRegistry,
@@ -76,6 +95,19 @@ after(async () => {
   delete process.env.MUSIC_PROVIDER_ACE_STEP_MODAL_IMAGE_ID;
   delete process.env.MUSIC_PROVIDER_ACE_STEP_PROMOTION_BUNDLE;
   delete process.env.MUSIC_PROVIDER_ACE_STEP_PROMOTION_PUBLIC_KEY;
+  delete process.env.MUSIC_PROVIDER_MT3_PROMOTION_BUNDLE;
+  delete process.env.MUSIC_PROVIDER_MT3_PROMOTION_PUBLIC_KEY;
+  delete process.env.MT3_API_URL;
+  delete process.env.MUSIC_PROVIDER_MT3_URL;
+  delete process.env.MUSIC_PROVIDER_BS_ROFORMER_ENDPOINT;
+  delete process.env.MUSIC_PROVIDER_BS_ROFORMER_PROMOTION_BUNDLE;
+  delete process.env.MUSIC_PROVIDER_BS_ROFORMER_PROMOTION_PUBLIC_KEY;
+  delete process.env.BS_ROFORMER_API_URL;
+  delete process.env.MUSIC_PROVIDER_BS_ROFORMER_URL;
+  delete process.env.MUSIC_PROVIDER_BS_ROFORMER_TOKEN;
+  delete process.env.MUSIC_PROVIDER_BS_ROFORMER_HEALTH_URL;
+  delete process.env.MUSIC_PROVIDER_GATEWAY_URL;
+  delete process.env.MUSIC_PROVIDER_GATEWAY_TOKEN;
   delete process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY;
   delete process.env.MUSIC_PROVIDER_ACE_STEP_TOKEN;
   delete process.env.MUSIC_AI_WORKER_TOKEN;
@@ -193,6 +225,7 @@ function configureAcePromotion(endpointOrigin) {
     checkpointRevision: "ace-step-1.5-base-r42",
     sourceRevision: "git-test-revision-42",
     sourceImageDigest: `sha256:${"c".repeat(64)}`,
+    releaseEvidenceSha256: "e".repeat(64),
     runtime: aceRuntimePins,
   };
   process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY = promotionPublicKey;
@@ -519,6 +552,556 @@ test("ACE-Step identity and signature drift block every generation POST", async 
       },
       mismatch.options,
     );
+  }
+});
+
+test("MT3 requires exact signed deployment identity before every analysis POST", async () => {
+  const mt3RuntimePins = {
+    python: "3.11.11",
+    cudaImage: "nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04",
+    cuda: "12.1.1",
+    pytorch: "2.5.1+cu121",
+    torchvision: "0.20.1+cu121",
+    torchaudio: "2.5.1+cu121",
+    torchIndexUrl: "https://download.pytorch.org/whl/cu121",
+    transformers: "4.41.2",
+    accelerate: "0.31.0",
+  };
+  let health = {};
+  let analysisPosts = 0;
+  const server = createServer((request, response) => {
+    response.setHeader("Content-Type", "application/json");
+    if (request.method === "GET" && request.url === "/health?provider=MT3") {
+      response.end(JSON.stringify(health));
+      return;
+    }
+    if (request.method === "POST" && request.url === "/analyze") {
+      analysisPosts += 1;
+      response.end(JSON.stringify({
+        version: "mt3-pytorch-multitrack",
+        confidence: 1,
+        notes: [{
+          start: 0,
+          end: 0.5,
+          pitch: 60,
+          velocity: 100,
+          confidence: 1,
+        }],
+      }));
+      return;
+    }
+    response.writeHead(404);
+    response.end(JSON.stringify({ error: "not found" }));
+  });
+  await listen(server);
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const endpointOrigin = `http://127.0.0.1:${address.port}`;
+  const record = {
+    schemaVersion: 1,
+    provider: "MT3",
+    modalAppId: "ap-Mt3Promoted42",
+    modalDeploymentId: "v42",
+    modalFunctionId: "fu-Mt3Promoted42",
+    modalImageId: "im-Mt3Promoted42",
+    endpointOrigin,
+    modelVersion: "mt3-pytorch-multitrack",
+    checkpointSha256: "a".repeat(64),
+    checkpointRevision: "mt3-official-multitrack-r42",
+    sourceRevision: "git-mt3-test-revision-42",
+    sourceImageDigest: `sha256:${"c".repeat(64)}`,
+    releaseEvidenceSha256: "e".repeat(64),
+    runtime: mt3RuntimePins,
+  };
+  const signedBundle = (candidate = record) => ({
+    record: candidate,
+    signature: signBytes(
+      null,
+      Buffer.from(canonicalGpuPromotionJson(candidate)),
+      promotionKeys.privateKey,
+    ).toString("base64"),
+  });
+  const exactHealth = () => ({
+    provider: "MT3",
+    status: "ready",
+    ready: true,
+    healthy: true,
+    checkpointReady: true,
+    runtimeReady: true,
+    smokeTested: true,
+    gpuReady: true,
+    modelVersion: record.modelVersion,
+    checksum: record.checkpointSha256,
+    checkpointSha256: record.checkpointSha256,
+    revision: record.checkpointRevision,
+    sourceRevision: record.sourceRevision,
+    sourceImageDigest: record.sourceImageDigest,
+    containerDigest: record.sourceImageDigest,
+    modalAppId: record.modalAppId,
+    modalDeploymentId: record.modalDeploymentId,
+    modalFunctionId: record.modalFunctionId,
+    modalImageId: record.modalImageId,
+    runtime: { pythonVersion: record.runtime.python },
+    framework: {
+      cuda_image: record.runtime.cudaImage,
+      cuda: record.runtime.cuda,
+      pytorch: record.runtime.pytorch,
+      torchvision: record.runtime.torchvision,
+      torchaudio: record.runtime.torchaudio,
+      torch_index_url: record.runtime.torchIndexUrl,
+      transformers: record.runtime.transformers,
+      accelerate: record.runtime.accelerate,
+    },
+  });
+  const endpointKeys = [
+    "MUSIC_PROVIDER_MT3_URL",
+    "MT3_API_URL",
+    "MUSIC_PROVIDER_MT3_PROMOTION_BUNDLE",
+    "MUSIC_PROVIDER_MT3_PROMOTION_PUBLIC_KEY",
+    "MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY",
+    "MUSIC_GPU_PROMOTION_PUBLIC_KEY",
+    "MUSIC_PROVIDER_BASIC_PITCH_URL",
+    "BASIC_PITCH_API_URL",
+    "MUSIC_PROVIDER_DEMUCS_URL",
+    "ALL_IN_ONE_API_URL",
+    "MUSIC_PROVIDER_ALL_IN_ONE_URL",
+    "DEMUCS_API_URL",
+    "MUSIC_PROVIDER_BS_ROFORMER_ENDPOINT",
+    "MUSIC_PROVIDER_BS_ROFORMER_URL",
+    "MUSIC_PROVIDER_BS_ROFORMER_TOKEN",
+    "MUSIC_PROVIDER_BS_ROFORMER_HEALTH_URL",
+    "BS_ROFORMER_API_URL",
+    "BS_ROFORMER_SW_API_URL",
+    "MUSIC_PROVIDER_GATEWAY_URL",
+    "MUSIC_PROVIDER_GATEWAY_TOKEN",
+    "MUSIC_PROVIDER_MR_MT3_URL",
+    "MR_MT3_API_URL",
+    "MUSIC_PROVIDER_YOUR_MT3_URL",
+    "YOUR_MT3_API_URL",
+    "SHEETSAGE_API_URL",
+    "SHEET_SAGE_API_URL",
+    "MUSIC_PROVIDER_CHROMA_URL",
+    "CHROMA_API_URL",
+    "BASS_API_URL",
+    "MUSIC_PROVIDER_MADMOM_URL",
+    "MADMOM_API_URL",
+    "MUSIC_PROVIDER_BEAT_THIS_URL",
+    "BEAT_THIS_API_URL",
+    "MUSIC_PROVIDER_TORCHCREPE_URL",
+    "TORCHCREPE_API_URL",
+    "MUSIC_PROVIDER_ESSENTIA_URL",
+    "ESSENTIA_API_URL",
+    "MUSIC_PROVIDER_PYLOUDNORM_URL",
+    "PYLOUDNORM_API_URL",
+    "MUSIC_MIR_API_URL",
+    "MUSIC_MIR_ESSENTIA_API_URL",
+  ];
+  const previous = new Map(endpointKeys.map((key) => [key, process.env[key]]));
+  const run = () => runAnalysisProviders({
+    sourceUrl: "https://storage.invalid/signed-source",
+    sourceType: "FULL_SONG",
+    durationSeconds: 2,
+  });
+  try {
+    for (const key of endpointKeys) delete process.env[key];
+    process.env.MT3_API_URL = endpointOrigin;
+    process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY = promotionPublicKey;
+    process.env.MUSIC_PROVIDER_MT3_PROMOTION_BUNDLE =
+      JSON.stringify(signedBundle());
+    health = exactHealth();
+    const accepted = await run();
+    assert.equal(accepted.transcriptions[0]?.providerId, "MT3");
+    assert.equal(analysisPosts, 1);
+
+    const wrongKeys = generateKeyPairSync("ed25519");
+    const cases = [
+      {
+        name: "missing signature",
+        bundle: { record },
+      },
+      {
+        name: "bad signature",
+        bundle: {
+          record,
+          signature: signBytes(
+            null,
+            Buffer.from(canonicalGpuPromotionJson(record)),
+            wrongKeys.privateKey,
+          ).toString("base64"),
+        },
+      },
+      {
+        name: "endpoint origin",
+        bundle: signedBundle({ ...record, endpointOrigin: "https://drift.invalid" }),
+      },
+      {
+        name: "checkpoint",
+        mutateHealth: (value) => ({ ...value, checksum: "b".repeat(64), checkpointSha256: "b".repeat(64) }),
+      },
+      {
+        name: "source revision",
+        mutateHealth: (value) => ({ ...value, sourceRevision: "different-source-revision" }),
+      },
+      {
+        name: "source image",
+        mutateHealth: (value) => ({ ...value, sourceImageDigest: `sha256:${"f".repeat(64)}` }),
+      },
+      {
+        name: "Modal app",
+        mutateHealth: (value) => ({ ...value, modalAppId: "ap-Mt3Drift" }),
+      },
+      {
+        name: "Modal deployment",
+        mutateHealth: (value) => ({ ...value, modalDeploymentId: "v99" }),
+      },
+      {
+        name: "Modal function",
+        mutateHealth: (value) => ({ ...value, modalFunctionId: "fu-Mt3Drift" }),
+      },
+      {
+        name: "Modal image",
+        mutateHealth: (value) => ({ ...value, modalImageId: "im-Mt3Drift" }),
+      },
+      {
+        name: "runtime pin",
+        mutateHealth: (value) => ({
+          ...value,
+          framework: { ...value.framework, pytorch: "2.5.0+cu121" },
+        }),
+      },
+    ];
+    for (const mismatch of cases) {
+      health = mismatch.mutateHealth
+        ? mismatch.mutateHealth(exactHealth())
+        : exactHealth();
+      process.env.MUSIC_PROVIDER_MT3_PROMOTION_BUNDLE =
+        JSON.stringify(mismatch.bundle ?? signedBundle());
+      const rejected = await run();
+      assert.equal(
+        rejected.transcriptions.some((item) => item.providerId === "MT3"),
+        false,
+        mismatch.name,
+      );
+      assert.equal(analysisPosts, 1, mismatch.name);
+      assert.equal(
+        rejected.provenance.find((item) => item.provider === "MT3")?.errorCode,
+        "health-attestation-failed",
+        mismatch.name,
+      );
+    }
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("BS-RoFormer retains signed candidate validation but is unroutable while license-blocked", async () => {
+  const runtimePins = {
+    python: "3.11.11",
+    cudaImage: "nvidia/cuda@sha256:test",
+    cuda: "12.4.1",
+    pytorch: "2.5.1+cu124",
+    torchvision: "0.20.1+cu124",
+    torchaudio: "2.5.1+cu124",
+    torchIndexUrl: "https://download.pytorch.org/whl/cu124",
+    transformers: "4.48.3",
+    accelerate: "1.3.0",
+  };
+  let health = {};
+  let healthRequests = 0;
+  let separationPosts = 0;
+  const server = createServer((request, response) => {
+    response.setHeader("Content-Type", "application/json");
+    if (
+      request.method === "GET"
+      && request.url === "/health?provider=BS_ROFORMER"
+    ) {
+      healthRequests += 1;
+      response.end(JSON.stringify(health));
+      return;
+    }
+    if (request.method === "POST" && request.url === "/separate") {
+      separationPosts += 1;
+      response.end(JSON.stringify({
+        version: "bs-roformer-viperx-v1",
+        confidence: 0.95,
+        stems: [
+          { role: "vocals", contentBase64: "UklGRg==", confidence: 0.95 },
+          { role: "instrumental", contentBase64: "UklGRg==", confidence: 0.94 },
+        ],
+      }));
+      return;
+    }
+    response.writeHead(404);
+    response.end(JSON.stringify({ error: "not found" }));
+  });
+  await listen(server);
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const endpointOrigin = `http://127.0.0.1:${address.port}`;
+  const record = {
+    schemaVersion: 1,
+    provider: "BS_ROFORMER",
+    modalAppId: "ap-BsRoformerPromoted42",
+    modalDeploymentId: "v42",
+    modalFunctionId: "fu-BsRoformerPromoted42",
+    modalImageId: "im-BsRoformerPromoted42",
+    endpointOrigin,
+    modelVersion: "bs-roformer-viperx-v1",
+    checkpointSha256: "a".repeat(64),
+    checkpointRevision: "puar-playground/bs-roformer@immutable",
+    sourceRevision: "git-bs-roformer-test-revision-42",
+    sourceImageDigest: `sha256:${"c".repeat(64)}`,
+    releaseEvidenceSha256: "e".repeat(64),
+    runtime: runtimePins,
+  };
+  const signedBundle = (candidate = record) => ({
+    record: candidate,
+    signature: signBytes(
+      null,
+      Buffer.from(canonicalGpuPromotionJson(candidate)),
+      promotionKeys.privateKey,
+    ).toString("base64"),
+  });
+  const exactHealth = () => ({
+    provider: record.provider,
+    status: "ready",
+    ready: true,
+    healthy: true,
+    checkpointReady: true,
+    runtimeReady: true,
+    smokeTested: true,
+    gpuReady: true,
+    modelVersion: record.modelVersion,
+    checksum: record.checkpointSha256,
+    checkpointSha256: record.checkpointSha256,
+    revision: record.checkpointRevision,
+    sourceRevision: record.sourceRevision,
+    sourceImageDigest: record.sourceImageDigest,
+    containerDigest: record.sourceImageDigest,
+    modalAppId: record.modalAppId,
+    modalDeploymentId: record.modalDeploymentId,
+    modalFunctionId: record.modalFunctionId,
+    modalImageId: record.modalImageId,
+    runtime: { pythonVersion: record.runtime.python },
+    framework: {
+      cuda_image: record.runtime.cudaImage,
+      cuda: record.runtime.cuda,
+      pytorch: record.runtime.pytorch,
+      torchvision: record.runtime.torchvision,
+      torchaudio: record.runtime.torchaudio,
+      torch_index_url: record.runtime.torchIndexUrl,
+      transformers: record.runtime.transformers,
+      accelerate: record.runtime.accelerate,
+    },
+  });
+  const endpointKeys = [
+    "MUSIC_PROVIDER_BS_ROFORMER_ENDPOINT",
+    "MUSIC_PROVIDER_BS_ROFORMER_URL",
+    "BS_ROFORMER_API_URL",
+    "BS_ROFORMER_SW_API_URL",
+    "MUSIC_PROVIDER_BS_ROFORMER_PROMOTION_BUNDLE",
+    "MUSIC_PROVIDER_BS_ROFORMER_PROMOTION_PUBLIC_KEY",
+    "MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY",
+    "MUSIC_GPU_PROMOTION_PUBLIC_KEY",
+    "BS_ROFORMER_API_TOKEN",
+    "BS_ROFORMER_SW_API_TOKEN",
+    "MUSIC_AI_WORKER_TOKEN",
+    "MUSIC_PROVIDER_DEMUCS_URL",
+    "DEMUCS_API_URL",
+  ];
+  const previous = new Map(endpointKeys.map((key) => [key, process.env[key]]));
+  const run = () => runAnalysisProviders({
+    sourceUrl: "https://storage.invalid/signed-source",
+    sourceType: "FULL_SONG",
+    durationSeconds: 5.12,
+  });
+  try {
+    for (const key of endpointKeys) delete process.env[key];
+    process.env.MUSIC_PROVIDER_BS_ROFORMER_ENDPOINT = endpointOrigin;
+    process.env.MUSIC_PROVIDER_BS_ROFORMER_URL = endpointOrigin;
+    process.env.MUSIC_PROVIDER_BS_ROFORMER_TOKEN = "blocked-provider-token";
+    process.env.MUSIC_PROVIDER_BS_ROFORMER_HEALTH_URL =
+      `${endpointOrigin}/health?provider=BS_ROFORMER`;
+    process.env.BS_ROFORMER_API_URL = endpointOrigin;
+    process.env.BS_ROFORMER_SW_API_URL = endpointOrigin;
+    process.env.MUSIC_PROVIDER_GATEWAY_URL = endpointOrigin;
+    process.env.MUSIC_PROVIDER_GATEWAY_TOKEN = "blocked-gateway-token";
+    process.env.BS_ROFORMER_API_TOKEN = "blocked-api-token";
+    process.env.BS_ROFORMER_SW_API_TOKEN = "blocked-sw-token";
+    process.env.MUSIC_AI_WORKER_TOKEN = "blocked-shared-token";
+    process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY = promotionPublicKey;
+    process.env.MUSIC_PROVIDER_BS_ROFORMER_PROMOTION_PUBLIC_KEY =
+      promotionPublicKey;
+    process.env.MUSIC_PROVIDER_BS_ROFORMER_PROMOTION_BUNDLE =
+      JSON.stringify(signedBundle());
+    health = exactHealth();
+    const blockedDescriptor = MUSIC_PROVIDERS.find(
+      (provider) => provider.id === "BS_ROFORMER",
+    );
+    assert.ok(blockedDescriptor);
+    assert.equal(blockedDescriptor.status, "unavailable");
+    assert.equal(blockedDescriptor.license, "UNVERIFIED checkpoint rights");
+    assert.match(blockedDescriptor.notes, /BLOCKED_LICENSE/);
+    const registry = createProviderRegistry();
+    const blockedProvider = registry.find(
+      (provider) => provider.definition.id === "BS_ROFORMER",
+    );
+    // Registry construction above observes every exact, legacy, shared-token,
+    // and gateway alias. Remove process-global fallbacks before the first await
+    // so concurrently running provider tests cannot inherit the BS fixture.
+    for (const key of [
+      "MUSIC_PROVIDER_BS_ROFORMER_URL",
+      "MUSIC_PROVIDER_BS_ROFORMER_TOKEN",
+      "MUSIC_PROVIDER_BS_ROFORMER_HEALTH_URL",
+      "BS_ROFORMER_API_URL",
+      "MUSIC_PROVIDER_GATEWAY_URL",
+      "MUSIC_PROVIDER_GATEWAY_TOKEN",
+      "MUSIC_AI_WORKER_TOKEN",
+      "MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY",
+    ]) {
+      delete process.env[key];
+    }
+    assert.ok(blockedProvider);
+    assert.equal(blockedProvider.available, false);
+    assert.equal(blockedProvider.readiness.availability, "unavailable");
+    assert.equal(blockedProvider.readiness.configurationReady, false);
+    assert.equal(blockedProvider.readiness.healthStatus, "unhealthy");
+    assert.match(blockedProvider.readiness.message, /BLOCKED_LICENSE/);
+    await verifyProviderRegistry([blockedProvider], true);
+    const blockedCatalogEntry = providerCatalog([blockedProvider])[0];
+    assert.equal(blockedCatalogEntry.routingStatus, "BLOCKED_LICENSE");
+    assert.equal(blockedCatalogEntry.available, false);
+    assert.equal(blockedCatalogEntry.status, "unavailable");
+    assert.equal(blockedCatalogEntry.configured, false);
+    assert.equal(blockedCatalogEntry.checkpointReady, false);
+    assert.equal(blockedCatalogEntry.runtimeReady, false);
+    assert.equal(blockedCatalogEntry.lastHealth.status, "unhealthy");
+    assert.throws(() => selectMusicProvider([blockedProvider], {
+      task: "SEPARATION",
+      requestedProvider: "BS_ROFORMER",
+      hardware: "GPU",
+      speed: "BALANCED",
+    }), /BLOCKED_LICENSE|checkpoint-owner rights/);
+    await assert.rejects(
+      () => blockedProvider.generate({}),
+      /BLOCKED_LICENSE|checkpoint-owner rights/,
+    );
+    await assert.rejects(
+      () => cancelRemoteProviderJob(
+        "BS_ROFORMER",
+        `${endpointOrigin}/jobs/blocked`,
+      ),
+      /BLOCKED_LICENSE|checkpoint-owner rights/,
+    );
+    await assert.rejects(
+      () => runArrangementProvider(blockedDescriptor, {}),
+      /BLOCKED_LICENSE|checkpoint-owner rights/,
+    );
+    assert.equal(
+      gpuPromotionAttestationFailure("BS_ROFORMER", endpointOrigin, health),
+      null,
+    );
+    const accepted = await run();
+    assert.equal(accepted.separation, null);
+    assert.equal(
+      accepted.provenance.find(
+        (item) => item.provider === "BS_ROFORMER",
+      )?.errorCode,
+      "not-configured",
+    );
+    assert.equal(healthRequests, 0);
+    assert.equal(separationPosts, 0);
+
+    const wrongKeys = generateKeyPairSync("ed25519");
+    const cases = [
+      {
+        name: "missing signature",
+        bundle: { record },
+      },
+      {
+        name: "bad signature",
+        bundle: {
+          record,
+          signature: signBytes(
+            null,
+            Buffer.from(canonicalGpuPromotionJson(record)),
+            wrongKeys.privateKey,
+          ).toString("base64"),
+        },
+      },
+      {
+        name: "endpoint origin",
+        bundle: signedBundle({ ...record, endpointOrigin: "https://drift.invalid" }),
+      },
+      {
+        name: "checkpoint",
+        mutateHealth: (value) => ({
+          ...value,
+          checksum: "b".repeat(64),
+          checkpointSha256: "b".repeat(64),
+        }),
+      },
+      {
+        name: "source revision",
+        mutateHealth: (value) => ({
+          ...value,
+          sourceRevision: "different-source-revision",
+        }),
+      },
+      {
+        name: "source image",
+        mutateHealth: (value) => ({
+          ...value,
+          sourceImageDigest: `sha256:${"f".repeat(64)}`,
+        }),
+      },
+      {
+        name: "Modal app",
+        mutateHealth: (value) => ({ ...value, modalAppId: "ap-BsDrift" }),
+      },
+      {
+        name: "Modal deployment",
+        mutateHealth: (value) => ({ ...value, modalDeploymentId: "v99" }),
+      },
+      {
+        name: "Modal function",
+        mutateHealth: (value) => ({ ...value, modalFunctionId: "fu-BsDrift" }),
+      },
+      {
+        name: "Modal image",
+        mutateHealth: (value) => ({ ...value, modalImageId: "im-BsDrift" }),
+      },
+      {
+        name: "runtime pin",
+        mutateHealth: (value) => ({
+          ...value,
+          framework: { ...value.framework, pytorch: "2.5.0+cu124" },
+        }),
+      },
+    ];
+    for (const mismatch of cases) {
+      health = mismatch.mutateHealth
+        ? mismatch.mutateHealth(exactHealth())
+        : exactHealth();
+      process.env.MUSIC_PROVIDER_BS_ROFORMER_PROMOTION_BUNDLE =
+        JSON.stringify(mismatch.bundle ?? signedBundle());
+      assert.ok(
+        gpuPromotionAttestationFailure("BS_ROFORMER", endpointOrigin, health),
+        mismatch.name,
+      );
+      assert.equal(healthRequests, 0, mismatch.name);
+      assert.equal(separationPosts, 0, mismatch.name);
+    }
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await new Promise((resolve) => server.close(resolve));
   }
 });
 

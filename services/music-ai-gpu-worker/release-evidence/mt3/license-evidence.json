@@ -1,0 +1,46 @@
+{
+  "adapter": {
+    "commercialUsePermitted": true,
+    "licenseFile": {
+      "bytes": 1889,
+      "path": "LICENSE",
+      "sha256": "945bbc12984a6f3dd515e8905338feed57efd811e20d4b31206f4eeb47478f1e",
+      "spdx": "MIT"
+    },
+    "repository": "openmirlab/mt3-infer",
+    "revision": "280a95817a67da0ae46987ddbb18c946963afffe",
+    "runtimeModelSource": {
+      "bytes": 21684,
+      "declaredOrigin": "Hugging Face Transformers modeling_t5.py",
+      "path": "mt3_infer/models/mt3_pytorch/t5.py",
+      "sha256": "1f2995184ed7f7a9a003ead135dc7effb784b0ddf68e88f6bd1474ff9c633cd8",
+      "sourceHeaderSpdx": "Apache-2.0"
+    }
+  },
+  "checkpoint": {
+    "commercialUsePermitted": true,
+    "conversionRepositoryRightsBasis": "No rights are inferred from kunato/mt3-pytorch, which has no license declaration. Its revision identifies only the serialized file and converter. The retained all-tensor exact comparison binds every learned value to the official Apache-2.0 Google MT3 checkpoint; the only additional state entries are exactly reproduced deterministic constructor buffers.",
+    "officialDistributionEvidence": {
+      "checkpointPrefix": "gs://mt3/checkpoints/mt3/",
+      "colabCopyCommand": "gsutil -q -m cp -r gs://mt3/checkpoints .",
+      "notebookBytes": 22534,
+      "notebookPath": "mt3/colab/music_transcription_with_transformers.ipynb",
+      "notebookSha256": "79c5ee373bb02a86e1edcc36c99b00f42da2b671796c1b5d17f82c24ea62df11"
+    },
+    "provenanceFile": "checkpoint-provenance.json",
+    "repository": "magenta/mt3",
+    "revision": "63e58268d9279cf91d9902bbdc166ab6d3c20c97",
+    "sourceLicense": {
+      "bytes": 11357,
+      "path": "LICENSE",
+      "sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd",
+      "spdx": "Apache-2.0"
+    }
+  },
+  "classification": "READY",
+  "commercialUsePermitted": true,
+  "modelVersion": "mt3-pytorch-multitrack",
+  "provider": "MT3",
+  "schemaVersion": 1,
+  "verifiedAt": "2026-09-06T16:49:21Z"
+}

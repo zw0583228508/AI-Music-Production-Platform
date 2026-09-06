@@ -29,6 +29,7 @@ RUNTIME_SECRET_NAME = "music-ai-worker-runtime"
 PROMOTION_SECRET_PREFIX = "music-ai-gpu-promotion"
 PROMOTION_SCHEMA_VERSION = 1
 MODEL_VOLUME_NAME = "music-ai-models-v1"
+MT3_MODEL_VOLUME_NAME = "music-ai-mt3-models-v1"
 MR_MT3_MODEL_VOLUME_NAME = "music-ai-mr-mt3-models-v1"
 YOUR_MT3_MODEL_VOLUME_NAME = "music-ai-your-mt3-models-v2"
 JOB_VOLUME_NAME = "music-ai-jobs-v1"
@@ -145,6 +146,18 @@ def provider_app_name(provider: str) -> str:
     family = "music-ai-mt3-family-worker" if provider in {"MR_MT3", "YOUR_MT3"} else "music-ai-gpu-worker"
     return f"{family}-{provider.lower().replace('_', '-')}"
 
+def provider_model_volume_name(provider: str) -> str:
+    """Return the provider-private model volume used by production workers."""
+    if provider not in MANIFEST["providers"]:
+        raise ValueError(f"unknown Modal model provider: {provider}")
+    if provider == "MT3":
+        return MT3_MODEL_VOLUME_NAME
+    if provider == "MR_MT3":
+        return MR_MT3_MODEL_VOLUME_NAME
+    if provider == "YOUR_MT3":
+        return YOUR_MT3_MODEL_VOLUME_NAME
+    return MODEL_VOLUME_NAME
+
 # SQLite recovery and the in-process task registry are intentionally
 # single-container only. Scaling these HTTP workers horizontally would allow two
 # process-local schedulers to resume the same durable queue.
@@ -170,7 +183,12 @@ def _deployment(provider: str) -> ProviderDeployment:
     details = MANIFEST["providers"][provider]
     return ProviderDeployment(
         provider=provider,
-        endpoint_label=provider.lower().replace("_", "-"),
+        endpoint_label={
+            "ACE_STEP": "ace-step-isolated",
+            "BS_ROFORMER": "bs-roformer-isolated",
+            "MT3": "mt3-isolated",
+            "ALL_IN_ONE": "all-in-one-isolated",
+        }.get(provider, provider.lower().replace("_", "-")),
         gpu=_CAPACITY[provider][0],
         max_containers=_CAPACITY[provider][1],
         timeout_seconds=_CAPACITY[provider][2],
@@ -213,9 +231,13 @@ def worker_environment(deployment: ProviderDeployment) -> dict[str, str]:
     """Return runtime identity and non-secret environment for one provider."""
     module = deployment.provider.lower()
     command = f"python -m runners.{module}"
+    details = MANIFEST["providers"][deployment.provider]
     model_mount = (
         MT3_FAMILY_MODEL_MOUNT
         if deployment.provider in {"MR_MT3", "YOUR_MT3"} else MODEL_MOUNT
+    )
+    smoke_relative_path = str(
+        details.get("smoke_input_path", "_smoke/structured-click-track-32s.wav")
     )
     environment = {
         "MUSIC_GPU_CHECKPOINT_ROOT": model_mount,
@@ -225,17 +247,18 @@ def worker_environment(deployment: ProviderDeployment) -> dict[str, str]:
         "MUSIC_GPU_JOB_OUTPUT_ROOT": OUTPUT_MOUNT,
         "MUSIC_GPU_ENABLED_PROVIDERS": deployment.enabled_providers,
         "MUSIC_GPU_CUDA_VERSION": deployment.cuda_runtime,
-        "MUSIC_GPU_CONTAINER_DIGEST": deployment.source_image_digest,
         "MUSIC_GPU_MODAL_JOB_VOLUME_NAME": JOB_VOLUME_NAME,
         "MUSIC_GPU_MODAL_OUTPUT_VOLUME_NAME": OUTPUT_VOLUME_NAME,
         "MUSIC_GPU_MAX_CONCURRENT_JOBS": "1",
         "MUSIC_GPU_JOB_TIMEOUT_SECONDS": str(deployment.timeout_seconds),
         "MUSIC_GPU_HEALTH_TIMEOUT_SECONDS": "180",
-        "MUSIC_GPU_SMOKE_INPUT_PATH": f"{model_mount}/_smoke/structured-click-track-32s.wav",
+        "MUSIC_GPU_SMOKE_INPUT_PATH": f"{model_mount}/{smoke_relative_path}",
         f"MUSIC_GPU_RUNNER_{deployment.provider}": command,
         f"MUSIC_GPU_SMOKE_{deployment.provider}": command,
         "PYTHONUNBUFFERED": "1",
     }
+    if deployment.provider not in {"MT3", "BS_ROFORMER"}:
+        environment["MUSIC_GPU_CONTAINER_DIGEST"] = deployment.source_image_digest
     if deployment.provider in {"MR_MT3", "YOUR_MT3"}:
         # mt3-infer uses this path directly. It is a provider-private Modal
         # volume, not the established promoted MT3 storage.
@@ -243,7 +266,6 @@ def worker_environment(deployment: ProviderDeployment) -> dict[str, str]:
         environment["MUSIC_GPU_COMPATIBILITY_PATCH_SHA256"] = MANIFEST["providers"][
             deployment.provider
         ]["adapter_patch_sha256"]
-    details = MANIFEST["providers"][deployment.provider]
     checkpoint_sha256 = details.get("checkpoint_sha256")
     if isinstance(checkpoint_sha256, str) and re.fullmatch(
         r"[a-f0-9]{64}", checkpoint_sha256
@@ -260,8 +282,16 @@ def worker_environment(deployment: ProviderDeployment) -> dict[str, str]:
         environment[
             f"MUSIC_PROVIDER_{deployment.provider}_CONFIG_SHA256"
         ] = details["config_sha256"]
+    if details.get("smoke_input_sha256"):
+        environment[
+            f"MUSIC_PROVIDER_{deployment.provider}_SMOKE_INPUT_SHA256"
+        ] = details["smoke_input_sha256"]
+    if details.get("smoke_input_kind"):
+        environment[
+            f"MUSIC_PROVIDER_{deployment.provider}_SMOKE_INPUT_KIND"
+        ] = details["smoke_input_kind"]
     source_revision = os.getenv("MUSIC_GPU_SOURCE_REVISION", "").strip()
-    if source_revision:
+    if source_revision and deployment.provider not in {"MT3", "BS_ROFORMER"}:
         environment["MUSIC_GPU_SOURCE_REVISION"] = source_revision
     public_origin = os.getenv(
         f"MUSIC_GPU_PUBLIC_ORIGIN_{deployment.provider}", ""
@@ -284,12 +314,7 @@ def worker_environment(deployment: ProviderDeployment) -> dict[str, str]:
 
 
 def provider_image_build_args(deployment: ProviderDeployment) -> dict[str, str]:
-    """Return only dependency inputs that are allowed to affect image layers.
-
-    The source-build digest is deliberately absent. It changes whenever worker
-    application code changes and is injected through ``worker_environment`` at
-    runtime instead, so unchanged dependency layers remain cacheable.
-    """
+    """Return dependency inputs plus provider-specific immutable build identity."""
     build_args = {
         "PROVIDER_REQUIREMENTS": deployment.requirements_file,
         "CUDA_IMAGE": deployment.cuda_image,
@@ -305,6 +330,14 @@ def provider_image_build_args(deployment: ProviderDeployment) -> dict[str, str]:
         # Materialized in the isolated image as MUSIC_GPU_CONTAINER_DIGEST.
         # The runtime never recomputes a digest from host-only Dockerfiles.
         build_args["SOURCE_IMAGE_DIGEST"] = deployment.source_image_digest
+    if deployment.provider in {"MT3", "BS_ROFORMER"}:
+        source_revision = os.getenv("MUSIC_GPU_SOURCE_REVISION", "").strip()
+        build_args["SOURCE_IMAGE_DIGEST"] = deployment.source_image_digest
+        build_args["SOURCE_REVISION"] = (
+            source_revision
+            if re.fullmatch(r"[a-f0-9]{40}", source_revision)
+            else "UNSET"
+        )
     return build_args
 
 def _https_origin(value: str) -> str:

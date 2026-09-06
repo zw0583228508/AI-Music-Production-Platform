@@ -2,22 +2,28 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import importlib.metadata
 import json
 import os
 import sys
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 from .common import (RunnerError, artifact_descriptor, attest_checkpoint, cached_result,
                      download_source, durable_job_dir, emit, move_artifact, request_value,
                      materialize_source, require_cuda, require_distribution_version,
-                     runtime_provenance, save_result, file_sha256)
+                     runtime_provenance, save_result, file_sha256, validate_audio)
 
 PROVIDER = "BS_ROFORMER"
 MODEL_VERSION = "bs-roformer-viperx-v1"
 BACKEND_DISTRIBUTION = "bs-roformer-infer"
 BACKEND_VERSION = "0.1.5"
 BACKEND_SOURCE_REVISION = "openmirlab/bs-roformer-infer@b0f1386fcced25f559f3e61c9f08a73cd9bddf80"
+BACKEND_PACKAGE_ARTIFACT_SHA256 = (
+    "46f3d5eb4b666a54adcb67524258c3cb6f96e185db97a3e1e1ef7efaea4e1848"
+)
 CHECKPOINT_SOURCE_REVISION = (
     "puar-playground/bs-roformer@b1361b816daca507f079d85e935c291bcb0a5351"
 )
@@ -63,6 +69,34 @@ class BSRoformerInferBackend:
         return [vocals, instrumental]
 
 
+@lru_cache(maxsize=1)
+def backend_package_tree_sha256() -> str:
+    distribution = importlib.metadata.distribution(BACKEND_DISTRIBUTION)
+    files = distribution.files
+    if not files:
+        raise RunnerError("BS-RoFormer installed package tree is unavailable")
+    digest = hashlib.sha256()
+    file_count = 0
+    for relative in sorted(files, key=lambda item: str(item)):
+        path = Path(distribution.locate_file(relative))
+        if not path.is_file():
+            continue
+        digest.update(str(relative).encode() + b"\0")
+        digest.update(file_sha256(path).encode() + b"\0")
+        file_count += 1
+    if file_count == 0:
+        raise RunnerError("BS-RoFormer installed package tree is empty")
+    return digest.hexdigest()
+
+
+def retained_audio_descriptor(value: dict[str, Any]) -> dict[str, Any]:
+    fields = (
+        "stem", "format", "sampleRate", "channels", "durationSeconds",
+        "bytes", "sha256", "peakAmplitude", "rmsAmplitude",
+    )
+    return {field: value[field] for field in fields if field in value}
+
+
 def run_job(request: dict[str, Any], checkpoint: Path, backend_cls=BSRoformerInferBackend,
             *, smoke: bool = False) -> dict[str, Any]:
     if not checkpoint.is_file():
@@ -74,6 +108,17 @@ def run_job(request: dict[str, Any], checkpoint: Path, backend_cls=BSRoformerInf
         return prior
     require_cuda()
     source = materialize_source(request, work / "source.wav", checkpoint, smoke)
+    source_evidence = validate_audio(source)
+    source_evidence.pop("path", None)
+    if smoke:
+        expected_input = os.getenv(
+            "MUSIC_PROVIDER_BS_ROFORMER_SMOKE_INPUT_SHA256", ""
+        ).strip().lower()
+        if source_evidence.get("sha256") != expected_input:
+            raise RunnerError("BS-RoFormer smoke input SHA-256 is missing or mismatched")
+        source_evidence["fixtureKind"] = os.getenv(
+            "MUSIC_PROVIDER_BS_ROFORMER_SMOKE_INPUT_KIND", ""
+        ).strip()
     outputs = backend_cls(checkpoint, work).separate(source)
     if len(outputs) != 2:
         raise RunnerError("BS-RoFormer must produce exactly two stems")
@@ -92,15 +137,31 @@ def run_job(request: dict[str, Any], checkpoint: Path, backend_cls=BSRoformerInf
         artifact = artifact_descriptor(final, PROVIDER, work.name)
         artifact["stem"] = stem
         artifacts.append(artifact)
-    result = {"artifacts": artifacts, "stems": artifacts, "provenance": provenance(digest)}
+    if {item["stem"] for item in artifacts} != {"vocals", "instrumental"}:
+        raise RunnerError("BS-RoFormer must produce vocals and instrumental stems")
+    stem_hashes = {item["sha256"] for item in artifacts}
+    if len(stem_hashes) != 2 or source_evidence["sha256"] in stem_hashes:
+        raise RunnerError("BS-RoFormer stems must be distinct from each other and input")
+    result = {
+        "artifacts": artifacts,
+        "stems": artifacts,
+        "inputEvidence": source_evidence,
+        "provenance": provenance(digest),
+    }
     save_result(work, result)
     return result
 
 
 def provenance(digest: str) -> dict[str, str]:
+    config_sha256 = os.getenv(
+        "MUSIC_PROVIDER_BS_ROFORMER_CONFIG_SHA256", ""
+    ).strip().lower()
     return {"provider": PROVIDER, "modelVersion": MODEL_VERSION,
             "checkpointSha256": digest,
+            "configSha256": config_sha256,
             "backend": BACKEND_DISTRIBUTION, "backendVersion": BACKEND_VERSION,
+            "backendPackageArtifactSha256": BACKEND_PACKAGE_ARTIFACT_SHA256,
+            "backendPackageTreeSha256": backend_package_tree_sha256(),
             "revision": CHECKPOINT_SOURCE_REVISION,
             "backendSourceRevision": BACKEND_SOURCE_REVISION,
             "model": MODEL_VERSION, "device": "cuda", **runtime_provenance()}
@@ -122,7 +183,22 @@ def main(argv: list[str] | None = None) -> int:
         if args.smoke:
             result = run_job({"requestId": f"smoke-bs-roformer-{os.urandom(8).hex()}"},
                              checkpoint, smoke=True)
-            emit({"smokeTested": True, **result["provenance"], "output": {"stems": len(result["stems"])}})
+            stems = [
+                retained_audio_descriptor(item) for item in result["stems"]
+            ]
+            emit({
+                "smokeTested": True,
+                **result["provenance"],
+                "output": {
+                    "input": result["inputEvidence"],
+                    "stems": stems,
+                    "stemCount": len(stems),
+                    "allStemsNonSilent": True,
+                    "distinctStemSha256": len(
+                        {item["sha256"] for item in stems}
+                    ) == len(stems),
+                },
+            })
         else:
             payload = json.load(sys.stdin)
             emit(run_job(payload, checkpoint))

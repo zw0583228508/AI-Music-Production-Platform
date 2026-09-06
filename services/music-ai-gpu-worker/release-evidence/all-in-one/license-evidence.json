@@ -1,0 +1,40 @@
+{
+  "assetInventoryFile": "asset-inventory.json",
+  "assetInventorySha256": "50b2f5fc9ad150cde5d3bff2dbde4900d387a7c4a120dd34f429d42391b6fe9e",
+  "classification": "RESEARCH_READY",
+  "commercialUsePermitted": false,
+  "demucsAssetCount": 1,
+  "demucsLicense": "MIT",
+  "harmonixFoldCount": 8,
+  "harmonixFoldLicense": "CC-BY-NC-SA-4.0",
+  "licenseStatus": "RESEARCH_ONLY",
+  "provider": "ALL_IN_ONE",
+  "reason": "The approved per-asset review classifies all eight Harmonix fold weights as CC-BY-NC-SA-4.0. The repository-level model card declares MIT, but this release conservatively preserves the stricter reviewed asset terms; the MIT HTDemucs checkpoint does not remove that restriction.",
+  "schemaVersion": 1,
+  "sourceEvidence": {
+    "demucs-LICENSE.txt": {
+      "repository": "facebookresearch/demucs",
+      "revision": "ef66d254cd6d558e207eeff2c4b8d053db2e77dd",
+      "sha256": "cf9b17822d1fcd4ff32ccbe14183386fb3adf6f2ff92dc184130823f7fc28173",
+      "spdx": "MIT"
+    },
+    "harmonix-model-card.md": {
+      "declaredSpdx": "MIT",
+      "repository": "taejunkim/allinone",
+      "revision": "379e5fd010b3fdd0ee8381ff8cbcfa51d70b5c19",
+      "sha256": "3e0e15fa0c5cc81675bd69af8eb469d128a725c1a7bfc71f03b7877b7b650567"
+    },
+    "source-LICENSE.txt": {
+      "repository": "openmirlab/all-in-one-infer",
+      "revision": "3c93b4ae389328544dd5955af7497030cb1bca3a",
+      "sha256": "d6c1f0ca3dc10b3c68113007e693039dfe5b35038993f392245a02f667cd3304",
+      "spdx": "MIT"
+    },
+    "upstream-LICENSE.txt": {
+      "repository": "mir-aidj/all-in-one",
+      "revision": "18e78903c0365147a2c5d4e5e57ebf88cb7d800e",
+      "sha256": "f75e7cd094466fd9a06b31eff35068d07f120fcd0c04e2893df75384ae1c4abf",
+      "spdx": "MIT"
+    }
+  }
+}

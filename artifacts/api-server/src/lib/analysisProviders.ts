@@ -187,6 +187,9 @@ const MIR_PROVIDER_IDS = new Set<AnalysisProviderId>([
   "TORCHCREPE",
   "PYLOUDNORM",
 ]);
+const LICENSE_BLOCKED_PROVIDER_IDS = new Set<AnalysisProviderId>([
+  "BS_ROFORMER",
+]);
 const analysisHealthCache = new Map<string, {
   expiresAt: number;
   error: ProviderRequestError | null;
@@ -194,6 +197,9 @@ const analysisHealthCache = new Map<string, {
 }>();
 
 export const configuredAnalysisProviderEndpoint = (providerId: AnalysisProviderId): string | null => {
+  if (LICENSE_BLOCKED_PROVIDER_IDS.has(providerId)) {
+    return null;
+  }
   if (
     providerId === "SHEETSAGE" &&
     process.env.SHEETSAGE_LICENSE_AUTHORIZED !== "true"
@@ -205,19 +211,13 @@ export const configuredAnalysisProviderEndpoint = (providerId: AnalysisProviderI
     : ["ESSENTIA", "CHROMA"].includes(providerId)
       ? "MUSIC_MIR_ESSENTIA"
       : null;
-  const aliases = providerId === "BS_ROFORMER"
-    ? [
-        "MUSIC_PROVIDER_BS_ROFORMER_ENDPOINT",
-        "BS_ROFORMER_API_URL",
-        "BS_ROFORMER_SW_API_URL",
-      ]
-    : providerId === "SHEETSAGE"
-      ? ["SHEETSAGE_API_URL", "SHEET_SAGE_API_URL"]
-      : [
-          `MUSIC_PROVIDER_${providerId}_URL`,
-          `${providerId}_API_URL`,
-          ...(mirGroup ? [`${mirGroup}_API_URL`] : []),
-        ];
+  const aliases = providerId === "SHEETSAGE"
+    ? ["SHEETSAGE_API_URL", "SHEET_SAGE_API_URL"]
+    : [
+        `MUSIC_PROVIDER_${providerId}_URL`,
+        `${providerId}_API_URL`,
+        ...(mirGroup ? [`${mirGroup}_API_URL`] : []),
+      ];
   return aliases
     .map((name) => process.env[name]?.trim())
     .find((value): value is string => Boolean(value)) ?? null;
@@ -225,9 +225,7 @@ export const configuredAnalysisProviderEndpoint = (providerId: AnalysisProviderI
 
 const providerToken = (providerId: AnalysisProviderId): string | undefined => {
   if (providerId === "BS_ROFORMER") {
-    return process.env.BS_ROFORMER_API_TOKEN ??
-      process.env.BS_ROFORMER_SW_API_TOKEN ??
-      process.env.MUSIC_AI_WORKER_TOKEN;
+    return undefined;
   }
   if (providerId === "SHEETSAGE") {
     return process.env.SHEETSAGE_API_TOKEN ??
@@ -511,7 +509,12 @@ async function attestProviderHealth(
       ].join(":")
     : "";
   const cacheKey = `${providerId}:${endpoint}:${promotionIdentity}`;
-  const cacheHealth = !MIR_PROVIDER_IDS.has(providerId);
+  // Signed GPU identities can drift independently of this API process.
+  // Never let a prior successful attestation authorize a later provider POST.
+  const cacheHealth = (
+    !MIR_PROVIDER_IDS.has(providerId)
+    && !requiresGpuPromotionRecord(providerId)
+  );
   if (cacheHealth) {
     const cached = analysisHealthCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
@@ -609,7 +612,10 @@ async function requestProvider(
   }
 
   const token = providerToken(providerId);
-  const reattestBeforeEveryPost = MIR_PROVIDER_IDS.has(providerId);
+  const reattestBeforeEveryPost = (
+    MIR_PROVIDER_IDS.has(providerId)
+    || requiresGpuPromotionRecord(providerId)
+  );
   const initiallyAttestedVersion = reattestBeforeEveryPost
     ? null
     : await attestProviderHealth(providerId, endpoint, token);

@@ -3,25 +3,26 @@ import { generateKeyPairSync, sign } from "node:crypto";
 import test from "node:test";
 import {
   canonicalGpuPromotionJson,
+  expectedGpuPromotionRecord,
   gpuPromotionAttestationFailure,
   isAttestedGpuProviderStartup,
   type GpuPromotionRecord,
 } from "./gpuProviderAttestation";
 import { committedBeatThisPromotionBundle } from "./beatThisPromotion.generated";
 
-test("generic promotion environment compatibility remains fail closed", () => {
+test("generic promotion environment compatibility remains fail closed for uncommitted providers", () => {
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const record: GpuPromotionRecord = {
     schemaVersion: 1,
-    provider: "BS_ROFORMER",
+    provider: "YOUR_MT3",
     modalAppId: "ap-Test",
     modalDeploymentId: "v20",
     modalFunctionId: "fu-Test",
     modalImageId: "im-Test",
     endpointOrigin: "https://bs-roformer.example.test",
-    modelVersion: "bs-roformer-viperx-v1",
+    modelVersion: "your-mt3",
     checkpointSha256: "5b84f37e8d444c8cb30c79d77f613a41c05868ff9c9ac6c7049c00aefae115aa",
-    checkpointRevision: "puar-playground/bs-roformer@b1361b816daca507f079d85e935c291bcb0a5351",
+    checkpointRevision: "your-mt3/checkpoint@immutable",
     sourceRevision: "4fb6a9ce92fe5689154c1a1af244a099f3d7af93",
     sourceImageDigest: `sha256:${"5".repeat(64)}`,
     releaseEvidenceSha256: "6".repeat(64),
@@ -42,16 +43,20 @@ test("generic promotion environment compatibility remains fail closed", () => {
     Buffer.from(canonicalGpuPromotionJson(record)),
     privateKey,
   ).toString("base64");
-  const previousBundle = process.env.MUSIC_PROVIDER_BS_ROFORMER_PROMOTION_BUNDLE;
+  const previousBundle = process.env.MUSIC_PROVIDER_YOUR_MT3_PROMOTION_BUNDLE;
   const previousPublicKey = process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY;
-  process.env.MUSIC_PROVIDER_BS_ROFORMER_PROMOTION_BUNDLE = JSON.stringify({
+  const previousProviderPublicKey =
+    process.env.MUSIC_PROVIDER_YOUR_MT3_PROMOTION_PUBLIC_KEY;
+  process.env.MUSIC_PROVIDER_YOUR_MT3_PROMOTION_BUNDLE = JSON.stringify({
     record,
     signature,
   });
-  process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY = publicKey.export({
+  const testPublicKey = publicKey.export({
     type: "spki",
     format: "pem",
   }).toString();
+  process.env.MUSIC_PROVIDER_YOUR_MT3_PROMOTION_PUBLIC_KEY = testPublicKey;
+  process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY = testPublicKey;
   const health = {
     provider: record.provider,
     modalAppId: record.modalAppId,
@@ -78,7 +83,7 @@ test("generic promotion environment compatibility remains fail closed", () => {
   try {
     assert.equal(
       gpuPromotionAttestationFailure(
-        "BS_ROFORMER",
+        "YOUR_MT3",
         `${record.endpointOrigin}/health`,
         health,
       ),
@@ -86,47 +91,15 @@ test("generic promotion environment compatibility remains fail closed", () => {
     );
     assert.match(
       gpuPromotionAttestationFailure(
-        "BS_ROFORMER",
+        "YOUR_MT3",
         `${record.endpointOrigin}/health`,
         { ...health, modalImageId: "im-Other" },
       ) ?? "",
       /runtime identity/,
     );
-    const startup = {
-      ...health,
-      status: "starting",
-      ready: false,
-      healthy: false,
-      retryable: true,
-      retryAfterSeconds: 5,
-    };
-    assert.equal(
-      isAttestedGpuProviderStartup(
-        "BS_ROFORMER",
-        `${record.endpointOrigin}/health`,
-        startup,
-      ),
-      true,
-    );
-    assert.equal(
-      isAttestedGpuProviderStartup(
-        "BS_ROFORMER",
-        `${record.endpointOrigin}/health`,
-        { ...startup, modalImageId: "im-Other" },
-      ),
-      false,
-    );
-    assert.equal(
-      isAttestedGpuProviderStartup(
-        "BS_ROFORMER",
-        `${record.endpointOrigin}/health`,
-        { ...startup, retryAfterSeconds: 10 },
-      ),
-      false,
-    );
     assert.match(
       gpuPromotionAttestationFailure(
-        "BS_ROFORMER",
+        "YOUR_MT3",
         `${record.endpointOrigin}/health`,
         { ...health, checkpointSha256: "0".repeat(64) },
       ) ?? "",
@@ -134,16 +107,59 @@ test("generic promotion environment compatibility remains fail closed", () => {
     );
   } finally {
     if (previousBundle === undefined) {
-      delete process.env.MUSIC_PROVIDER_BS_ROFORMER_PROMOTION_BUNDLE;
+      delete process.env.MUSIC_PROVIDER_YOUR_MT3_PROMOTION_BUNDLE;
     } else {
-      process.env.MUSIC_PROVIDER_BS_ROFORMER_PROMOTION_BUNDLE = previousBundle;
+      process.env.MUSIC_PROVIDER_YOUR_MT3_PROMOTION_BUNDLE = previousBundle;
     }
     if (previousPublicKey === undefined) {
       delete process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY;
     } else {
       process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY = previousPublicKey;
     }
+    if (previousProviderPublicKey === undefined) {
+      delete process.env.MUSIC_PROVIDER_YOUR_MT3_PROMOTION_PUBLIC_KEY;
+    } else {
+      process.env.MUSIC_PROVIDER_YOUR_MT3_PROMOTION_PUBLIC_KEY =
+        previousProviderPublicKey;
+    }
   }
+});
+
+test("the committed MT3 promotion attests its exact captured runtime identity", () => {
+  const record = expectedGpuPromotionRecord("MT3");
+  assert.ok(record);
+  assert.equal(record.modelVersion, "mt3-pytorch-multitrack");
+  const health = {
+    provider: record.provider,
+    modalAppId: record.modalAppId,
+    modalDeploymentId: record.modalDeploymentId,
+    modalFunctionId: record.modalFunctionId,
+    modalImageId: record.modalImageId,
+    modelVersion: record.modelVersion,
+    checkpointSha256: record.checkpointSha256,
+    revision: record.checkpointRevision,
+    sourceRevision: record.sourceRevision,
+    sourceImageDigest: record.sourceImageDigest,
+    runtime: { pythonVersion: record.runtime.python },
+    framework: {
+      cuda_image: record.runtime.cudaImage,
+      cuda: record.runtime.cuda,
+      pytorch: record.runtime.pytorch,
+      torchvision: record.runtime.torchvision,
+      torchaudio: record.runtime.torchaudio,
+      torch_index_url: record.runtime.torchIndexUrl,
+      transformers: record.runtime.transformers,
+      accelerate: record.runtime.accelerate,
+    },
+  };
+  assert.equal(
+    gpuPromotionAttestationFailure(
+      "MT3",
+      `${record.endpointOrigin}/health`,
+      health,
+    ),
+    null,
+  );
 });
 
 test("Beat This startup requires the exact promoted health schema", () => {

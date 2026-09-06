@@ -52,3 +52,7 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Files uploaded into chat are local working inputs, not source files.
+# Already tracked assets remain tracked; new uploads must not block Git Sync.
+attached_assets/

@@ -39,7 +39,7 @@ PUBLIC_SNAPSHOTS: dict[str, PublicSnapshot] = {
     ),
     "MT3": PublicSnapshot(
         "kunato/mt3-pytorch",
-        "e203122fb40eefd3f9068dc6efd1870fe54ca57b",
+        "03a06ef7f288f64e7cd25f17c3f37bcf9fe111bc",
     ),
     "BS_ROFORMER": PublicSnapshot(
         "puar-playground/bs-roformer",
@@ -66,21 +66,28 @@ MT3_FILES = {
     "config.json": {
         "url": (
             "https://raw.githubusercontent.com/kunato/mt3-pytorch/"
-            "e203122fb40eefd3f9068dc6efd1870fe54ca57b/pretrained/config.json"
+            "03a06ef7f288f64e7cd25f17c3f37bcf9fe111bc/pretrained/config.json"
         ),
         "sha256": "e1584759624ddecfeca7eaaaaf60cea58a5dbd1012957666dc685bf51b93907a",
+        "bytes": 466,
         "max_bytes": 4 * 1024,
     },
     "mt3.pth": {
         "url": (
             "https://media.githubusercontent.com/media/kunato/mt3-pytorch/"
-            "e203122fb40eefd3f9068dc6efd1870fe54ca57b/pretrained/mt3.pth"
+            "03a06ef7f288f64e7cd25f17c3f37bcf9fe111bc/pretrained/mt3.pth"
         ),
         "sha256": "b8a3807ed265059abd25ad7f68142c06c35e8f6144dcaa45bd55946a3745398f",
+        "bytes": 183_672_643,
         "max_bytes": 192 * 1024 * 1024,
     },
 }
-UNVERIFIED_SOURCES: dict[str, str] = {}
+UNVERIFIED_SOURCES: dict[str, str] = {
+    "BS_ROFORMER": (
+        "checkpoint-owner license, redistribution rights, and commercial-use "
+        "authorization are not verified"
+    ),
+}
 BS_CHECKPOINT_FILENAME = "bs_roformer.ckpt"
 BS_CHECKPOINT_SHA256 = "5b84f37e8d444c8cb30c79d77f613a41c05868ff9c9ac6c7049c00aefae115aa"
 BS_CHECKPOINT_SIZE = 639_331_213
@@ -294,7 +301,7 @@ def _validate_mt3_snapshot(path: Path) -> None:
         item = path / name
         if not item.is_file() or item.is_symlink():
             raise RuntimeError(f"MT3 checkpoint artifact {name} is missing or unsafe")
-        if item.stat().st_size <= 0 or item.stat().st_size > artifact["max_bytes"]:
+        if item.stat().st_size != artifact["bytes"]:
             raise RuntimeError(f"MT3 checkpoint artifact {name} has an invalid size")
         if _file_sha256(item) != artifact["sha256"]:
             raise RuntimeError(f"MT3 checkpoint artifact {name} failed SHA-256 verification")

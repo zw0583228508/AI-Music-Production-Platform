@@ -87,6 +87,10 @@ class RunnerContractTests(unittest.TestCase):
 
     def test_verified_provider_pins(self) -> None:
         self.assertEqual(bs_roformer.BACKEND_VERSION, "0.1.5")
+        self.assertEqual(
+            bs_roformer.BACKEND_PACKAGE_ARTIFACT_SHA256,
+            "46f3d5eb4b666a54adcb67524258c3cb6f96e185db97a3e1e1ef7efaea4e1848",
+        )
         self.assertIn("b0f1386fcced25f559f3e61c9f08a73cd9bddf80",
                       bs_roformer.BACKEND_SOURCE_REVISION)
         self.assertEqual(ace_step.MODEL_SOURCE, "ACE-Step/acestep-v15-base")
@@ -242,7 +246,10 @@ class RunnerContractTests(unittest.TestCase):
                  patch.object(bs_roformer, "attest_checkpoint", return_value="a" * 64), \
                  patch.object(bs_roformer, "require_cuda"), \
                  patch.object(bs_roformer, "durable_job_dir", return_value=work), \
-                 patch.object(bs_roformer, "materialize_source", return_value=work / "source.wav"):
+                 patch.object(bs_roformer, "materialize_source", return_value=work / "source.wav"), \
+                 patch.object(bs_roformer, "validate_audio", return_value={
+                     "path": str(work / "source.wav"), "sha256": "f" * 64,
+                 }):
                 with self.assertRaisesRegex(RunnerError, "exactly two"):
                     bs_roformer.run_job({"sourceUrl": "https://example.test/a.wav"}, checkpoint, OneStem)
 
@@ -318,7 +325,11 @@ class RunnerContractTests(unittest.TestCase):
                 "pytorchVersion": "2.5.1+cu124",
                 "gpu": "NVIDIA L4",
             },
-        ):
+        ), patch.object(
+            bs_roformer, "backend_package_tree_sha256", return_value="c" * 64,
+        ), patch.dict(os.environ, {
+            "MUSIC_PROVIDER_BS_ROFORMER_CONFIG_SHA256": "d" * 64,
+        }):
             provenance = bs_roformer.provenance("a" * 64)
         self.assertEqual(
             provenance["revision"], bs_roformer.CHECKPOINT_SOURCE_REVISION
@@ -327,6 +338,8 @@ class RunnerContractTests(unittest.TestCase):
             provenance["backendSourceRevision"],
             bs_roformer.BACKEND_SOURCE_REVISION,
         )
+        self.assertEqual(provenance["configSha256"], "d" * 64)
+        self.assertEqual(provenance["backendPackageTreeSha256"], "c" * 64)
 
     def test_ace_fails_when_fake_backend_returns_wrong_count(self) -> None:
         class OneCandidate:

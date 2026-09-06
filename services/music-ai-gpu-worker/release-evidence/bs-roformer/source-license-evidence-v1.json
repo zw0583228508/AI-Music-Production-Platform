@@ -1,0 +1,60 @@
+{
+  "backend": {
+    "gitTree": "b0c7a8c6bfdd685afe6ef461fb0ebcded209d4b3",
+    "license": "MIT",
+    "licenseFile": "backend-LICENSE.txt",
+    "licenseGitBlobOid": "d21918f6309fadd4c1d1b43bae604fd313aa6630",
+    "licenseFileSha256": "d5ca885481147d15e92e5e525ba1a024ad1e92df743a10874bcdf7494f7e26eb",
+    "licenseImmutableUrl": "https://github.com/openmirlab/bs-roformer-infer/blob/b0f1386fcced25f559f3e61c9f08a73cd9bddf80/LICENSE",
+    "observedInstalledTreeSha256": "5bb32bcf207335b80f21ba97fee037b5a4f4137dd9739bb7f232b15a1025164a",
+    "package": "bs-roformer-infer",
+    "repository": "https://github.com/openmirlab/bs-roformer-infer",
+    "revision": "b0f1386fcced25f559f3e61c9f08a73cd9bddf80",
+    "version": "0.1.5",
+    "wheelBytes": 31448,
+    "wheelFilename": "bs_roformer_infer-0.1.5-py3-none-any.whl",
+    "wheelSha256": "46f3d5eb4b666a54adcb67524258c3cb6f96e185db97a3e1e1ef7efaea4e1848"
+  },
+  "model": {
+    "checkpointBytes": 639331213,
+    "checkpointGitOid": "1d4b892da79c875b3b3028f9f4d2504ebafe72e1",
+    "checkpointRepositoryPath": "bs_roformer.ckpt",
+    "checkpointSha256": "5b84f37e8d444c8cb30c79d77f613a41c05868ff9c9ac6c7049c00aefae115aa",
+    "checkpointVolumePath": "bs-roformer-viperx-v1.ckpt",
+    "checkpointXetHash": "a5beaa981f67e3680ebec3db7947fc3ec28453a649024505ef35eed56b18cf15",
+    "checkpointLicenseSpdx": null,
+    "checkpointLicenseStatus": "UNVERIFIED",
+    "checkpointOrigin": {
+      "assetFilename": "model_bs_roformer_ep_317_sdr_12.9755.ckpt",
+      "assetReleaseTag": "all_public_uvr_models",
+      "assetRepository": "https://github.com/TRvlvr/model_repo",
+      "creditedAuthor": "playdasegunda (viperx)",
+      "explicitCheckpointLicenseGrantRetained": false,
+      "originBindingStatus": "DECLARED_NOT_HASH_VERIFIED",
+      "trainingDocumentationPath": "docs/pretrained_models.md",
+      "trainingDocumentationRepository": "https://github.com/ZFTurbo/Music-Source-Separation-Training",
+      "trainingDocumentationRevision": "0e5f1159fc5ea87fc13b957584e178b4977e5dd3"
+    },
+    "commercialUsePermitted": false,
+    "configBytes": 1677,
+    "configGitOid": "75ad087d5e85f3e6f794960e2e8dd5775874b445",
+    "configRepositoryPath": "bs_roformer.yaml",
+    "configSha256": "9df444dbc1a704e23858e0315a211ec5fa4c69f92ecefb173d05e8f721ed2b1f",
+    "configVolumePath": "bs-roformer-viperx-v1.yaml",
+    "licenseFile": "model-README.md",
+    "licenseFileSha256": "c8c6ce57c690e42628d50d8239049ddfdfecf56a963efd5be2ae6e006b436700",
+    "licenseReview": "The pinned Hugging Face wrapper declares MIT but explicitly calls itself unofficial and credits this checkpoint to ViperX via an external TRvlvr release. No checkpoint-owner license or commercial grant is retained.",
+    "readmeGitOid": "c6a2867781b519834774c9769fa0ae46d04fcc9a",
+    "repository": "puar-playground/bs-roformer",
+    "revision": "b1361b816daca507f079d85e935c291bcb0a5351",
+    "wrapperModelCardDeclaredLicense": "MIT"
+  },
+  "provider": "BS_ROFORMER",
+  "schemaVersion": 1,
+  "smokeInput": {
+    "bytes": 983084,
+    "repositoryPath": "services/music-ai-gpu-worker/release-evidence/ace-step/ace-step-smoke-v3.wav",
+    "sha256": "b2626121f7f2987843d7212c82b8f1222f2f023fc3d4b07c07ede1b24535feb9",
+    "volumePath": "_smoke/bs-roformer-real-song-v1.wav"
+  }
+}

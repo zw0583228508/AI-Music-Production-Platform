@@ -7,7 +7,7 @@ SERVICES = Path(__file__).resolve().parents[2]
 STATUS_FILES = {
     "sheetsage-worker": {"SHEETSAGE"},
     "beat-this-worker": {"BEAT_THIS"},
-    "music-ai-gpu-worker": {"MR_MT3", "YOUR_MT3"},
+    "music-ai-gpu-worker": {"ACE_STEP", "ALL_IN_ONE", "MT3", "MR_MT3", "YOUR_MT3"},
     "songformer-worker": {"SONGFORMER"},
     "moss-music-worker": {"MOSS_MUSIC_INSTRUCT", "MOSS_MUSIC_THINKING"},
     "lada-band-worker": {"LADA_BAND"},
@@ -56,6 +56,10 @@ class PhaseOneToThreeInstallationStatusTest(unittest.TestCase):
                                 key.endswith("SmokeProofPresent")
                                 and value is True
                                 for key, value in record["evidence"].items()
+                            )
+                            or (
+                                isinstance(record["evidence"].get("realSmoke"), dict)
+                                and bool(record["evidence"]["realSmoke"])
                             ),
                             f"{provider} cannot be READY without real smoke evidence",
                         )

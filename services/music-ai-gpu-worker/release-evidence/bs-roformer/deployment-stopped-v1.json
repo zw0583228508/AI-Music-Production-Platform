@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "provider": "BS_ROFORMER",
+  "modalAppId": "ap-q64PXgdTqUnxFZB6oXGyrX",
+  "modalAppDescription": "music-ai-gpu-worker-bs-roformer",
+  "modalAppState": "stopped",
+  "stoppedAt": "2026-09-06T18:49:44Z",
+  "historicalEndpointOrigin": "https://windot100--bs-roformer-isolated.modal.run",
+  "postStopEndpointHttpStatus": 404,
+  "postStopResponseBytes": 34,
+  "postStopResponseSha256": "140b2f05397afc9e90c6c7e1143a13a78ab60ca5a035022e2fade1edacccc8a0",
+  "observation": "Modal app list reported the exact app stopped; a post-stop request to the historical health path returned 404."
+}
