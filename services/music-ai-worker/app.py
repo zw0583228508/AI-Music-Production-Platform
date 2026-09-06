@@ -1168,9 +1168,37 @@ def _readiness_marker() -> dict:
 def _package_is_pinned(details: dict) -> bool:
     """Check the installed distribution, rather than trusting manifest text."""
     try:
-        return installed_version(details["package"]) == details["version"]
+        version_ready = installed_version(details["package"]) == details["version"]
     except PackageNotFoundError:
         return False
+    expected_tree = details.get("package_tree_sha256")
+    return version_ready and (
+        not expected_tree or _installed_package_tree_sha256(details["package"]) == expected_tree
+    )
+
+
+def _installed_package_tree_sha256(package: str) -> str | None:
+    """Hash every installed package file except generated interpreter caches."""
+    try:
+        root = Path(__import__(package).__file__).resolve().parent
+    except (AttributeError, ImportError, TypeError):
+        return None
+    sources = sorted(
+        path for path in root.rglob("*")
+        if path.is_file()
+        and "__pycache__" not in path.parts
+        and path.suffix not in {".pyc", ".pyo"}
+    )
+    if not sources:
+        return None
+    digest = hashlib.sha256()
+    for path in sources:
+        digest.update(path.relative_to(root).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        with path.open("rb") as handle:
+            while block := handle.read(1024 * 1024):
+                digest.update(block)
+    return digest.hexdigest()
 
 
 def _clean_expired_artifacts() -> None:
@@ -1250,6 +1278,11 @@ def health(provider: str | None = None) -> dict:
                     "PEDALBOARD_BUILTIN": "pedalboard"}[selected]
     details = MANIFEST[manifest_key]
     marker = _readiness_marker()
+    package_tree_sha256 = (
+        _installed_package_tree_sha256(details["package"])
+        if details.get("package_tree_sha256")
+        else None
+    )
     package_ready = _package_is_pinned(details)
     if selected == "BASIC_PITCH":
         checkpoint = Path(__import__("basic_pitch").__file__).resolve().parent / details["checkpoint"]
@@ -1277,6 +1310,14 @@ def health(provider: str | None = None) -> dict:
         "modelVersion": details["version"],
         "checksum": checksum,
         "smokeTested": smoke_tested,
+        **({
+            "sourceRepository": details["source_repository"],
+            "sourceRevision": details["source_revision"],
+            "license": details["source_license"],
+            "licenseSha256": details["license_sha256"],
+            "packageArtifactSha256": details["package_artifact_sha256"],
+            "packageTreeSha256": package_tree_sha256,
+        } if selected == "DEMUCS" else {}),
         "runtime": {"ready": ready, "python": "3.11", "device": "cpu"},
         "checkpoint": {
             "ready": checkpoint_ready,
@@ -1319,6 +1360,8 @@ def analyze(payload: SourceRequest) -> dict:
 def separate(payload: SourceRequest, request: FastAPIRequest) -> dict:
     if payload.provider != "DEMUCS":
         raise HTTPException(422, "separate supports DEMUCS only")
+    if not health("DEMUCS")["healthy"]:
+        raise HTTPException(503, "Demucs runtime identity is not ready")
     with tempfile.TemporaryDirectory(prefix="music-ai-") as tmp:
         root = Path(tmp)
         source = download_source(str(payload.source_url), root)

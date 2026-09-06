@@ -57,3 +57,13 @@ class AuditFixtures(unittest.TestCase):
         r=next(x for x in m["providers"] if x["provider"]=="MUSICGEN_LARGE")
         r.update({"sourcePinned":True,"finalStatus":"BLOCKED_UPSTREAM","assetsDownloaded":True})
         self.assertTrue(any("pinned" in x for x in audit.audit(m)))
+
+    def test_demucs_ready_requires_retained_release_attestation(self):
+        m=self.matrix(self.row())
+        r=next(x for x in m["providers"] if x["provider"]=="DEMUCS")
+        r.update({"finalStatus":"READY","licenseStatus":"COMMERCIAL",
+                  "codeRepository":"https://github.com/facebookresearch/demucs",
+                  "codeRevision":"ef66d254cd6d558e207eeff2c4b8d053db2e77dd",
+                  "modelRevision":"sha256:"+"8"*64,"blockers":[]})
+        errors=audit.audit(m, root=Path("/definitely/missing"))
+        self.assertTrue(any("DEMUCS: READY lacks" in x for x in errors))

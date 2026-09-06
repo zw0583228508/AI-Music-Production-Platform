@@ -34,6 +34,15 @@ export const VERIFIED_LOCAL_ANALYSIS_PROVIDERS: Readonly<
   },
 };
 
+const VERIFIED_DEMUCS_SOURCE = {
+  repository: "https://github.com/facebookresearch/demucs",
+  revision: "ef66d254cd6d558e207eeff2c4b8d053db2e77dd",
+  license: "MIT",
+  licenseSha256: "cf9b17822d1fcd4ff32ccbe14183386fb3adf6f2ff92dc184130823f7fc28173",
+  packageArtifactSha256: "e45a5a788bae79767c37bbf6e69aae03862ddcca05550fb79b926346a177d713",
+  packageTreeSha256: "75d9c33232395acb77124da9d163084db4c10f08f0475160a36dece847fcc4cd",
+} as const;
+
 export const VERIFIED_GPU_ANALYSIS_PROVIDERS: Readonly<
   Record<VerifiedGpuAnalysisProviderId, Pick<AnalysisProviderManifestEntry, "version">>
 > = {
@@ -166,6 +175,19 @@ export function attestAnalysisProviderHealth(
   ];
   if (expected && (version !== expected.version || checksum !== expected.checksum)) {
     throw new Error(`health response does not match the verified ${requestedProvider} identity`);
+  }
+  if (
+    requestedProvider === "DEMUCS" &&
+    (
+      payload.sourceRepository !== VERIFIED_DEMUCS_SOURCE.repository ||
+      payload.sourceRevision !== VERIFIED_DEMUCS_SOURCE.revision ||
+      payload.license !== VERIFIED_DEMUCS_SOURCE.license ||
+      payload.licenseSha256 !== VERIFIED_DEMUCS_SOURCE.licenseSha256 ||
+      payload.packageArtifactSha256 !== VERIFIED_DEMUCS_SOURCE.packageArtifactSha256 ||
+      payload.packageTreeSha256 !== VERIFIED_DEMUCS_SOURCE.packageTreeSha256
+    )
+  ) {
+    throw new Error("health response does not match the verified DEMUCS source and license identity");
   }
   const gpuExpected = VERIFIED_GPU_ANALYSIS_PROVIDERS[
     requestedProvider as VerifiedGpuAnalysisProviderId

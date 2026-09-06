@@ -37,6 +37,7 @@ ENDPOINT_KEYS = {
     "ACE_STEP": "ACE_STEP_API_URL", "ALL_IN_ONE": "ALL_IN_ONE_API_URL",
     "BEAT_THIS": "MUSIC_PROVIDER_BEAT_THIS_URL", "MT3": "MT3_API_URL",
     "MR_MT3": "MR_MT3_API_URL", "SHEETSAGE": "SHEETSAGE_API_URL",
+    "DEMUCS": "DEMUCS_API_URL",
 }
 
 def report_errors(rows, report_text):
@@ -115,6 +116,50 @@ def evidence_errors(rows, root):
         ]
         if not all(required):
             errors.append("BEAT_THIS: READY lacks exact live identity, signed promotion, API attestation, or non-empty beat/downbeat smoke evidence")
+    demucs = by_name.get("DEMUCS", {})
+    if demucs.get("finalStatus") == "READY":
+        att = read_json("services/music-ai-worker/demucs-release-attestation.json")
+        manifest = read_json("services/music-ai-worker/model_manifest.json").get("demucs", {})
+        source = att.get("source", {})
+        license_evidence = att.get("license", {})
+        model = att.get("model", {})
+        smoke = att.get("realAudioSmoke", {})
+        outputs = smoke.get("outputs", {})
+        health = att.get("liveHealth", {})
+        api_path = att.get("apiPath", {})
+        required = [
+            source.get("repository") == demucs.get("codeRepository"),
+            source.get("revision") == demucs.get("codeRevision"),
+            source.get("packageArtifactSha256") == manifest.get("package_artifact_sha256"),
+            source.get("installedPackageTreeSha256") == manifest.get("package_tree_sha256"),
+            source.get("sourceBinding", {}).get("comparedFileCount") == 37,
+            source.get("sourceBinding", {}).get("differentFileCount") == 0,
+            manifest.get("source_repository") == demucs.get("codeRepository"),
+            manifest.get("source_revision") == demucs.get("codeRevision"),
+            license_evidence.get("spdx") == "MIT",
+            license_evidence.get("sha256") == manifest.get("license_sha256"),
+            model.get("checkpointSha256") == demucs.get("modelRevision", "").removeprefix("sha256:"),
+            model.get("checkpointSha256") == manifest.get("checkpoint_sha256"),
+            smoke.get("realInference") is True,
+            smoke.get("fixtureRetained") is False,
+            smoke.get("stemsDistinct") is True,
+            smoke.get("durationPlausible") is True,
+            outputs.get("vocals", {}).get("nonSilent") is True,
+            outputs.get("instrumental", {}).get("nonSilent") is True,
+            outputs.get("vocals", {}).get("finite") is True,
+            outputs.get("instrumental", {}).get("finite") is True,
+            health.get("authenticated") is True,
+            health.get("healthy") is True,
+            health.get("checkpointSha256") == model.get("checkpointSha256"),
+            health.get("packageArtifactSha256") == manifest.get("package_artifact_sha256"),
+            health.get("packageTreeSha256") == manifest.get("package_tree_sha256"),
+            api_path.get("endpointConfigured") is True,
+            api_path.get("healthAttestationRequiredBeforeSourceTransfer") is True,
+            api_path.get("sourceRevisionAndLicenseAttested") is True,
+            api_path.get("separationResponseValidated") is True,
+        ]
+        if not all(required):
+            errors.append("DEMUCS: READY lacks exact source/license/checkpoint, real-song separation, live health, or API-path evidence")
     for name in ("MUSICGEN_LARGE", "MUSICGEN_MELODY_LARGE"):
         row = by_name.get(name, {})
         if row.get("sourcePinned") and row.get("finalStatus") != "BLOCKED_NO_WEIGHTS":

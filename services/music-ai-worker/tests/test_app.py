@@ -1,10 +1,12 @@
 import base64
 import asyncio
+import copy
 import io
 import json
 import hashlib
 import sys
 import tempfile
+import types
 import unittest
 import unittest.mock
 from pathlib import Path
@@ -1039,6 +1041,40 @@ class WorkerTests(unittest.TestCase):
             self.assertRegex(artifact_id, app.ARTIFACT_ID)
             self.assertEqual({stem["name"] for stem in stems}, {"vocals.flac", "instrumental.flac"})
             self.assertTrue((app.ARTIFACTS / artifact_id / "vocals.flac").is_file())
+
+    def test_demucs_non_python_package_data_drift_blocks_health_and_inference(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            package_root = Path(tmp) / "demucs"
+            (package_root / "remote").mkdir(parents=True)
+            package_file = package_root / "__init__.py"
+            package_file.write_text("__version__ = '4.0.1'\n")
+            runtime_data = package_root / "remote" / "files.txt"
+            runtime_data.write_text("htdemucs=955717e8-8726e21a.th\n")
+            fake_module = types.SimpleNamespace(__file__=str(package_file))
+            fake_torch = types.SimpleNamespace(
+                hub=types.SimpleNamespace(get_dir=lambda: str(Path.home() / ".cache" / "torch" / "hub")),
+            )
+            with unittest.mock.patch.dict(
+                sys.modules,
+                {"demucs": fake_module, "torch": fake_torch},
+            ):
+                expected = app._installed_package_tree_sha256("demucs")
+                self.assertIsNotNone(expected)
+                details = copy.deepcopy(app.MANIFEST["demucs"])
+                details["package_tree_sha256"] = expected
+                with unittest.mock.patch.dict(app.MANIFEST, {"demucs": details}):
+                    self.assertTrue(app.health("DEMUCS")["packageReady"])
+                    runtime_data.write_text("htdemucs=substituted-checkpoint.th\n")
+                    drifted = app.health("DEMUCS")
+                    self.assertFalse(drifted["packageReady"])
+                    self.assertFalse(drifted["healthy"])
+                    payload = app.SourceRequest(
+                        provider="DEMUCS",
+                        sourceUrl="https://example.com/song.wav",
+                    )
+                    with self.assertRaises(HTTPException) as error:
+                        app.separate(payload, None)
+                    self.assertEqual(error.exception.status_code, 503)
 
     def test_both_stem_artifacts_can_be_downloaded_sequentially(self):
         with tempfile.TemporaryDirectory() as tmp, unittest.mock.patch.object(

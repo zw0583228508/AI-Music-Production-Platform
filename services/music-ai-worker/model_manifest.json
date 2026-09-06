@@ -8,7 +8,15 @@
   "demucs": {
     "package": "demucs",
     "version": "4.0.1",
+    "source_repository": "https://github.com/facebookresearch/demucs",
+    "source_revision": "ef66d254cd6d558e207eeff2c4b8d053db2e77dd",
+    "source_license": "MIT",
+    "license_sha256": "cf9b17822d1fcd4ff32ccbe14183386fb3adf6f2ff92dc184130823f7fc28173",
+    "package_artifact": "https://files.pythonhosted.org/packages/87/38/55f835ebd9f443465087a6954ede19d4a41aebdf5e28567e89b99d6d2f57/demucs-4.0.1.tar.gz",
+    "package_artifact_sha256": "e45a5a788bae79767c37bbf6e69aae03862ddcca05550fb79b926346a177d713",
+    "package_tree_sha256": "75d9c33232395acb77124da9d163084db4c10f08f0475160a36dece847fcc4cd",
     "checkpoint": "htdemucs",
+    "checkpoint_repository": "https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/955717e8-8726e21a.th",
     "checkpoint_file": "955717e8-8726e21a.th",
     "checkpoint_sha256": "8726e21a993978c7ba086d3872e7608d7d5bfca646ca4aca459ffda844faa8b4"
   },

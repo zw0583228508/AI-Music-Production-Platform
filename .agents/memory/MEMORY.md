@@ -26,3 +26,4 @@
 - [Deployment attestation gates](deployment-attestation-gates.md) — couple deploy and live validation; never send credentials to caller-selected endpoints or redirects.
 - [Private recovery drills](private-recovery-drills.md) — verify owner archives in disposable storage with no production volume mount, and suppress URL-bearing exception chains.
 - [Crash-safe private temp storage](crash-safe-private-temp-storage.md) — isolate uploads per process and use OS-held locks to distinguish active data from crash remnants.
+- [Runtime package identity](runtime-package-identity.md) — provider health must bind the executing package bytes to pinned source and artifact provenance, not echo manifest metadata.

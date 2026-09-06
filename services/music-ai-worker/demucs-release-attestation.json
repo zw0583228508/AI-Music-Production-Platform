@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "provider": "DEMUCS",
+  "checkedAt": "2026-09-06",
+  "source": {
+    "repository": "https://github.com/facebookresearch/demucs",
+    "revision": "ef66d254cd6d558e207eeff2c4b8d053db2e77dd",
+    "tag": "v4.0.1",
+    "package": "demucs",
+    "packageVersion": "4.0.1",
+    "packageArtifact": "https://files.pythonhosted.org/packages/87/38/55f835ebd9f443465087a6954ede19d4a41aebdf5e28567e89b99d6d2f57/demucs-4.0.1.tar.gz",
+    "packageArtifactSha256": "e45a5a788bae79767c37bbf6e69aae03862ddcca05550fb79b926346a177d713",
+    "installedPackageTreeSha256": "75d9c33232395acb77124da9d163084db4c10f08f0475160a36dece847fcc4cd",
+    "sourceBinding": {
+      "method": "All 37 installed distribution files, including Python, YAML, text, and typing data, match the PyPI sdist byte-for-byte; all 37 sdist paths were byte-compared with the same paths at the pinned Git source revision.",
+      "comparedFileCount": 37,
+      "differentFileCount": 0
+    }
+  },
+  "license": {
+    "spdx": "MIT",
+    "source": "https://github.com/facebookresearch/demucs/blob/ef66d254cd6d558e207eeff2c4b8d053db2e77dd/LICENSE",
+    "sha256": "cf9b17822d1fcd4ff32ccbe14183386fb3adf6f2ff92dc184130823f7fc28173"
+  },
+  "model": {
+    "name": "htdemucs",
+    "checkpointFile": "955717e8-8726e21a.th",
+    "checkpointSource": "https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/955717e8-8726e21a.th",
+    "checkpointBytes": 84141911,
+    "checkpointSha256": "8726e21a993978c7ba086d3872e7608d7d5bfca646ca4aca459ffda844faa8b4"
+  },
+  "runtime": {
+    "python": "3.11",
+    "device": "cpu",
+    "requestTimeDownloadsAllowed": false
+  },
+  "realAudioSmoke": {
+    "realInference": true,
+    "fixtureKind": "user-supplied real music excerpt",
+    "fixtureRetained": false,
+    "fixtureOffsetSeconds": 15,
+    "fixtureDurationSeconds": 15,
+    "fixtureSha256": "4f0bceb84b52059ec2d6e54068867b0e1f00ca819db1701cd5e2f381b3ba9dc5",
+    "sampleRate": 44100,
+    "channels": 2,
+    "inputRms": 0.208015949,
+    "outputs": {
+      "vocals": {
+        "sha256": "2b0c55789e6e208cb8a9e75f6d973066ea340b0916cac8d1692c966aa2c7f87a",
+        "bytes": 2646078,
+        "durationSeconds": 15,
+        "rms": 0.14639622,
+        "peak": 0.703308105,
+        "finite": true,
+        "nonSilent": true
+      },
+      "instrumental": {
+        "sha256": "f4b1d243c53ec0e0e3ddc78334e8c996e4313d92e87813bf08b7148532b200cc",
+        "bytes": 2646078,
+        "durationSeconds": 15,
+        "rms": 0.134493098,
+        "peak": 0.97644043,
+        "finite": true,
+        "nonSilent": true
+      }
+    },
+    "stemsDistinct": true,
+    "durationPlausible": true
+  },
+  "liveHealth": {
+    "authenticated": true,
+    "provider": "DEMUCS",
+    "status": "ok",
+    "healthy": true,
+    "runtimeReady": true,
+    "checkpointReady": true,
+    "packageReady": true,
+    "smokeTested": true,
+    "modelVersion": "4.0.1",
+    "checkpointSha256": "8726e21a993978c7ba086d3872e7608d7d5bfca646ca4aca459ffda844faa8b4",
+    "packageArtifactSha256": "e45a5a788bae79767c37bbf6e69aae03862ddcca05550fb79b926346a177d713",
+    "packageTreeSha256": "75d9c33232395acb77124da9d163084db4c10f08f0475160a36dece847fcc4cd"
+  },
+  "apiPath": {
+    "endpointConfigured": true,
+    "healthAttestationRequiredBeforeSourceTransfer": true,
+    "sourceRevisionAndLicenseAttested": true,
+    "separationResponseValidated": true,
+    "privateStemArtifactsUsed": true,
+    "providerPreferenceTested": true
+  },
+  "promotion": {
+    "required": false,
+    "reason": "The bounded CPU worker uses exact package, checkpoint and live health attestation; it is not a promoted GPU deployment."
+  }
+}

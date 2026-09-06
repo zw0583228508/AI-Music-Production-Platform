@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "provider": "DEMUCS",
+  "finalStatus": "READY",
+  "checkedAt": "2026-09-06",
+  "readiness": {
+    "runtimeInstalled": true,
+    "sourcePinned": true,
+    "licenseVerified": true,
+    "checkpointVerified": true,
+    "persistedRealSmokeEvidence": true,
+    "healthEndpointIntegrated": true,
+    "apiClientValidatesHealth": true,
+    "separationApiIntegrated": true,
+    "promotionNotRequired": true
+  },
+  "evidence": [
+    "services/music-ai-worker/model_manifest.json pins Demucs v4.0.1 source revision ef66d254cd6d558e207eeff2c4b8d053db2e77dd, PyPI artifact and installed source-tree hashes, MIT license hash, htdemucs checkpoint source, and checkpoint SHA-256",
+    "services/music-ai-worker/demucs-release-attestation.json retains real-song input and distinct non-silent vocal/instrumental output hashes without retaining private audio",
+    "services/music-ai-worker/app.py authenticates health and separation, verifies the installed package source tree and checkpoint before health and immediately before inference, and exposes exact source and license identity",
+    "artifacts/api-server/src/lib/analysisProviderManifest.ts rejects Demucs health unless package artifact/tree, checkpoint, source revision and license identities all match",
+    "artifacts/api-server/src/lib/analysisProviders.ts health-attests Demucs before source transfer and validates private stem responses"
+  ],
+  "blockers": []
+}

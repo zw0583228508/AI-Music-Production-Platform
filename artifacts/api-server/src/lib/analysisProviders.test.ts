@@ -229,6 +229,16 @@ test("prefers configured DEMUCS and rejects an unsigned GPU fallback", async () 
         checksum: provider === "DEMUCS"
           ? "8726e21a993978c7ba086d3872e7608d7d5bfca646ca4aca459ffda844faa8b4"
           : "a".repeat(64),
+        ...(provider === "DEMUCS"
+          ? {
+              sourceRepository: "https://github.com/facebookresearch/demucs",
+              sourceRevision: "ef66d254cd6d558e207eeff2c4b8d053db2e77dd",
+              license: "MIT",
+              licenseSha256: "cf9b17822d1fcd4ff32ccbe14183386fb3adf6f2ff92dc184130823f7fc28173",
+              packageArtifactSha256: "e45a5a788bae79767c37bbf6e69aae03862ddcca05550fb79b926346a177d713",
+              packageTreeSha256: "75d9c33232395acb77124da9d163084db4c10f08f0475160a36dece847fcc4cd",
+            }
+          : {}),
       }));
       return;
     }
