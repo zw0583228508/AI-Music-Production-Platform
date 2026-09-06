@@ -37,7 +37,7 @@ ENDPOINT_KEYS = {
     "ACE_STEP": "ACE_STEP_API_URL", "ALL_IN_ONE": "ALL_IN_ONE_API_URL",
     "BEAT_THIS": "MUSIC_PROVIDER_BEAT_THIS_URL", "MT3": "MT3_API_URL",
     "MR_MT3": "MR_MT3_API_URL", "SHEETSAGE": "SHEETSAGE_API_URL",
-    "DEMUCS": "DEMUCS_API_URL",
+    "DEMUCS": "DEMUCS_API_URL", "BASIC_PITCH": "BASIC_PITCH_API_URL",
 }
 
 def report_errors(rows, report_text):
@@ -160,6 +160,64 @@ def evidence_errors(rows, root):
         ]
         if not all(required):
             errors.append("DEMUCS: READY lacks exact source/license/checkpoint, real-song separation, live health, or API-path evidence")
+    basic_pitch = by_name.get("BASIC_PITCH", {})
+    if basic_pitch.get("finalStatus") == "READY":
+        att = read_json("services/music-ai-worker/basic-pitch-release-attestation.json")
+        manifest = read_json("services/music-ai-worker/model_manifest.json").get("basic_pitch", {})
+        source = att.get("source", {})
+        license_evidence = att.get("license", {})
+        model = att.get("model", {})
+        runtime = att.get("runtime", {})
+        smoke = att.get("realAudioSmoke", {})
+        health = att.get("liveHealth", {})
+        api_path = att.get("apiPath", {})
+        required = [
+            source.get("repository") == basic_pitch.get("codeRepository"),
+            source.get("revision") == basic_pitch.get("codeRevision"),
+            source.get("packageArtifactSha256") == manifest.get("package_artifact_sha256"),
+            source.get("installedPackageTreeSha256") == manifest.get("package_tree_sha256"),
+            source.get("sourceBinding", {}).get("comparedFileCount") == 36,
+            source.get("sourceBinding", {}).get("differentFileCount") == 0,
+            manifest.get("source_repository") == basic_pitch.get("codeRepository"),
+            manifest.get("source_revision") == basic_pitch.get("codeRevision"),
+            license_evidence.get("spdx") == "Apache-2.0",
+            license_evidence.get("sha256") == manifest.get("license_sha256"),
+            license_evidence.get("noticeSha256") == manifest.get("notice_sha256"),
+            license_evidence.get("commercialUsePermitted") is True,
+            model.get("checkpointKind") == manifest.get("checkpoint_kind"),
+            model.get("checkpointTreeSha256") == manifest.get("checkpoint_tree_sha256"),
+            model.get("checkpointTreeSha256") == basic_pitch.get("modelRevision", "").removeprefix("sha256:"),
+            model.get("requestTimeDownloads") is False,
+            runtime.get("inferenceBackend") == manifest.get("inference_backend"),
+            runtime.get("packages") == manifest.get("runtime_packages"),
+            smoke.get("realInference") is True,
+            smoke.get("fixtureDerivativeRetained") is False,
+            smoke.get("midiRetained") is False,
+            smoke.get("finiteModelOutputs") is True,
+            smoke.get("midiNoteCount", 0) > 0,
+            smoke.get("eventCount") == smoke.get("midiNoteCount"),
+            smoke.get("allNotesTerminated") is True,
+            smoke.get("distinctPitchCount", 0) > 1,
+            bool(smoke.get("normalizedNotesSha256")),
+            bool(smoke.get("midiSha256")),
+            health.get("authenticated") is True,
+            health.get("healthy") is True,
+            health.get("packageReady") is True,
+            health.get("checkpointReady") is True,
+            health.get("checkpointTreeSha256") == model.get("checkpointTreeSha256"),
+            health.get("packageArtifactSha256") == manifest.get("package_artifact_sha256"),
+            health.get("packageTreeSha256") == manifest.get("package_tree_sha256"),
+            health.get("sourceRevision") == manifest.get("source_revision"),
+            health.get("licenseSha256") == manifest.get("license_sha256"),
+            health.get("inferenceBackend") == manifest.get("inference_backend"),
+            api_path.get("endpointConfigured") is True,
+            api_path.get("healthAttestationRequiredBeforeSourceTransfer") is True,
+            api_path.get("sourceLicensePackageRuntimeAndCheckpointAttested") is True,
+            api_path.get("terminatedNoteResponseValidated") is True,
+            api_path.get("identityDriftBlocksSourceTransfer") is True,
+        ]
+        if not all(required):
+            errors.append("BASIC_PITCH: READY lacks exact source/license/package/runtime/checkpoint, real-note, live-health, or API-path evidence")
     for name in ("MUSICGEN_LARGE", "MUSICGEN_MELODY_LARGE"):
         row = by_name.get(name, {})
         if row.get("sourcePinned") and row.get("finalStatus") != "BLOCKED_NO_WEIGHTS":

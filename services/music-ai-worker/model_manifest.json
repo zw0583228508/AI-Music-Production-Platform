@@ -1,8 +1,28 @@
 {
   "basic_pitch": {
     "package": "basic-pitch",
+    "module": "basic_pitch",
     "version": "0.4.0",
-    "checkpoint": "saved_models/icassp_2022/nmp.onnx",
+    "source_repository": "https://github.com/spotify/basic-pitch",
+    "source_revision": "9991303bba609a3b93089d13ec80d1d495083596",
+    "source_license": "Apache-2.0",
+    "license_sha256": "929c910bae2152fa87199a5d0660e09263419b7eee6d4b301d05ee2aaf211c37",
+    "notice_sha256": "b810e55c0e3b520fabb45fc2ccc74880187bf84e309971968541cc812dcde905",
+    "package_artifact": "https://files.pythonhosted.org/packages/99/0e/3a36d22562daeb0ae3c78ac78da3f8dba96543c5576ed57d4acb8ddbab5b/basic_pitch-0.4.0-py2.py3-none-any.whl",
+    "package_artifact_sha256": "738adb503aae7fdfc7d1e1511aa0ce35052315f260a19531ef4c356708425db0",
+    "package_tree_sha256": "89cfb8516927e3bc536da99139ddb4ad7ce79dc833e29df33e5bca27ccef116c",
+    "checkpoint": "saved_models/icassp_2022/nmp",
+    "checkpoint_kind": "tensorflow-saved-model",
+    "checkpoint_tree_sha256": "b74344cd0c58261dae0cd52050d85ab6f901a5e219f27046ab4640673bba1046",
+    "inference_backend": "tensorflow-saved-model",
+    "runtime_packages": {
+      "tensorflow": "2.14.0",
+      "numpy": "1.26.4",
+      "librosa": "0.11.0",
+      "resampy": "0.4.2",
+      "pretty-midi": "0.2.11.post0"
+    },
+    "onnx_checkpoint": "saved_models/icassp_2022/nmp.onnx",
     "onnx_sha256": "2c3c1d144bfa61ad236e92e169c13535c880469a12a047d4e73451f2c059a0ec"
   },
   "demucs": {
@@ -21,5 +41,5 @@
     "checkpoint_sha256": "8726e21a993978c7ba086d3872e7608d7d5bfca646ca4aca459ffda844faa8b4"
   },
   "pedalboard": {"package": "pedalboard", "version": "0.9.24"},
-  "readiness_key": "basic-pitch-0.4.0-2c3c1d144bfa61ad236e92e169c13535c880469a12a047d4e73451f2c059a0ec-demucs-4.0.1-pedalboard-0.9.24"
+  "readiness_key": "basic-pitch-0.4.0-b74344cd0c58261dae0cd52050d85ab6f901a5e219f27046ab4640673bba1046-demucs-4.0.1-pedalboard-0.9.24"
 }

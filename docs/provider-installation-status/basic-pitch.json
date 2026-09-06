@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "provider": "BASIC_PITCH",
+  "finalStatus": "READY",
+  "evidence": [
+    "services/music-ai-worker/model_manifest.json pins Basic Pitch v0.4.0, Git revision 9991303bba609a3b93089d13ec80d1d495083596, Apache-2.0 license and NOTICE hashes, wheel and complete installed package-tree hashes, exact TensorFlow runtime versions, and the runtime SavedModel tree hash.",
+    "services/music-ai-worker/basic-pitch-release-attestation.json retains the byte-for-byte source/package/model binding and real-song evidence for 112 terminated MIDI notes without retaining the temporary audio derivative or MIDI output.",
+    "services/music-ai-worker/app.py verifies the package tree, runtime packages and SavedModel immediately before source download and inference.",
+    "artifacts/api-server/src/lib/analysisProviderManifest.ts rejects Basic Pitch health unless source, license, package, runtime backend and checkpoint identities match exactly.",
+    "BASIC_PITCH_API_URL targets the authenticated Music AI Worker and the API provider path has fail-closed identity-drift coverage."
+  ],
+  "blockers": []
+}

@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "provider": "BASIC_PITCH",
+  "checkedAt": "2026-09-06T11:07:30Z",
+  "source": {
+    "repository": "https://github.com/spotify/basic-pitch",
+    "tag": "v0.4.0",
+    "revision": "9991303bba609a3b93089d13ec80d1d495083596",
+    "package": "basic-pitch",
+    "packageVersion": "0.4.0",
+    "packageArtifact": "https://files.pythonhosted.org/packages/99/0e/3a36d22562daeb0ae3c78ac78da3f8dba96543c5576ed57d4acb8ddbab5b/basic_pitch-0.4.0-py2.py3-none-any.whl",
+    "packageArtifactSha256": "738adb503aae7fdfc7d1e1511aa0ce35052315f260a19531ef4c356708425db0",
+    "installedPackageTreeSha256": "89cfb8516927e3bc536da99139ddb4ad7ce79dc833e29df33e5bca27ccef116c",
+    "sourceBinding": {
+      "method": "All 36 installed package files, including Python and every bundled model asset, match the pinned wheel, PyPI sdist, and pinned Git source revision byte-for-byte.",
+      "comparedFileCount": 36,
+      "differentFileCount": 0
+    }
+  },
+  "license": {
+    "spdx": "Apache-2.0",
+    "sha256": "929c910bae2152fa87199a5d0660e09263419b7eee6d4b301d05ee2aaf211c37",
+    "noticeSha256": "b810e55c0e3b520fabb45fc2ccc74880187bf84e309971968541cc812dcde905",
+    "appliesToSourceAndBundledModel": true,
+    "commercialUsePermitted": true
+  },
+  "model": {
+    "checkpoint": "saved_models/icassp_2022/nmp",
+    "checkpointKind": "tensorflow-saved-model",
+    "checkpointTreeSha256": "b74344cd0c58261dae0cd52050d85ab6f901a5e219f27046ab4640673bba1046",
+    "checkpointFiles": [
+      {
+        "path": "saved_model.pb",
+        "sha256": "eaa25c91c431c91100c416a2c018663f4c635f28fa19529c4ff5e14c18aa29c9",
+        "bytes": 1084140
+      },
+      {
+        "path": "variables/variables.data-00000-of-00001",
+        "sha256": "f5d12cd7245fecea0c956c963751f3519c263615ea954b5948d5e8c9c3376f9b",
+        "bytes": 219309
+      },
+      {
+        "path": "variables/variables.index",
+        "sha256": "356aa1a00095cf2dba17386144e8b289cb04195ae090aa7f324312b08220115e",
+        "bytes": 4794
+      }
+    ],
+    "supplementaryOnnxSha256": "2c3c1d144bfa61ad236e92e169c13535c880469a12a047d4e73451f2c059a0ec",
+    "requestTimeDownloads": false
+  },
+  "runtime": {
+    "python": "3.11.14",
+    "device": "cpu",
+    "inferenceBackend": "tensorflow-saved-model",
+    "packages": {
+      "tensorflow": "2.14.0",
+      "numpy": "1.26.4",
+      "librosa": "0.11.0",
+      "resampy": "0.4.2",
+      "pretty-midi": "0.2.11.post0"
+    }
+  },
+  "realAudioSmoke": {
+    "fixtureKind": "15-second PCM derivative of user-supplied real musical audio",
+    "fixtureSha256": "c5f2ccb958ecd98783dabe4e5059fe95e5f10f96ca2c018f009d357aca12a9a4",
+    "fixtureBytes": 661698,
+    "fixtureDurationSeconds": 15.0,
+    "fixtureDerivativeRetained": false,
+    "realInference": true,
+    "modelOutputKeys": [
+      "contour",
+      "note",
+      "onset"
+    ],
+    "finiteModelOutputs": true,
+    "eventCount": 112,
+    "midiNoteCount": 112,
+    "allNotesTerminated": true,
+    "distinctPitchCount": 27,
+    "pitchRange": [
+      38,
+      86
+    ],
+    "durationRangeSeconds": [
+      0.13932,
+      1.92854
+    ],
+    "lastNoteEndSeconds": 14.892978,
+    "normalizedNotesSha256": "d5405d60a7bd8def7ce1eec6ed95c09082e2552d3d79676c9248967ca92b4a43",
+    "midiSha256": "122e1310653fb4e0c050f5afffd2d53bfc90eb123423f80f20fcc0ec105571e9",
+    "midiBytes": 740,
+    "midiRetained": false
+  },
+  "liveHealth": {
+    "authenticated": true,
+    "status": "ok",
+    "healthy": true,
+    "runtimeReady": true,
+    "checkpointReady": true,
+    "packageReady": true,
+    "smokeTested": true,
+    "modelVersion": "0.4.0",
+    "checkpointTreeSha256": "b74344cd0c58261dae0cd52050d85ab6f901a5e219f27046ab4640673bba1046",
+    "packageArtifactSha256": "738adb503aae7fdfc7d1e1511aa0ce35052315f260a19531ef4c356708425db0",
+    "packageTreeSha256": "89cfb8516927e3bc536da99139ddb4ad7ce79dc833e29df33e5bca27ccef116c",
+    "sourceRevision": "9991303bba609a3b93089d13ec80d1d495083596",
+    "licenseSha256": "929c910bae2152fa87199a5d0660e09263419b7eee6d4b301d05ee2aaf211c37",
+    "inferenceBackend": "tensorflow-saved-model"
+  },
+  "apiPath": {
+    "endpointConfigured": true,
+    "healthAttestationRequiredBeforeSourceTransfer": true,
+    "sourceLicensePackageRuntimeAndCheckpointAttested": true,
+    "terminatedNoteResponseValidated": true,
+    "identityDriftBlocksSourceTransfer": true,
+    "providerPreferenceTested": true
+  },
+  "promotion": {
+    "required": false,
+    "reason": "The bounded CPU provider runs inside the authenticated Music AI Worker and is re-attested before inference."
+  }
+}

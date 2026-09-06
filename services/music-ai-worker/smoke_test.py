@@ -22,13 +22,22 @@ with tempfile.TemporaryDirectory() as tmp:
     assert pedalboard_evidence["frames"] == 128
     audio = Path(tmp) / "tone.wav"
     sf.write(audio, np.sin(np.arange(22050, dtype=np.float32) * 440 * 2 * np.pi / 22050), 22050)
-    from basic_pitch.inference import ICASSP_2022_MODEL_PATH, Model, predict
-    assert hashlib.sha256(Path(f"{ICASSP_2022_MODEL_PATH}.onnx").read_bytes()).hexdigest() == MANIFEST["basic_pitch"]["onnx_sha256"]
-    _, _, notes = predict(audio, ICASSP_2022_MODEL_PATH)
+    from basic_pitch.inference import Model, predict
+    basic_pitch_details = MANIFEST["basic_pitch"]
+    basic_pitch_root = Path(__import__(basic_pitch_details["module"]).__file__).resolve().parent
+    checkpoint = basic_pitch_root / basic_pitch_details["checkpoint"]
+    assert worker_app._sha256_tree(checkpoint) == basic_pitch_details["checkpoint_tree_sha256"]
+    assert worker_app._installed_package_tree_sha256(
+        basic_pitch_details["module"]
+    ) == basic_pitch_details["package_tree_sha256"]
+    assert worker_app._runtime_packages_are_pinned(basic_pitch_details)
+    _, _, notes = predict(audio, checkpoint)
     assert isinstance(notes, list)
     # Explicit .onnx selects Basic Pitch's ONNXRuntime backend rather than its
     # default TensorFlow SavedModel backend used by predict() above.
-    assert Model(f"{ICASSP_2022_MODEL_PATH}.onnx").predict(
+    onnx_checkpoint = basic_pitch_root / basic_pitch_details["onnx_checkpoint"]
+    assert hashlib.sha256(onnx_checkpoint.read_bytes()).hexdigest() == basic_pitch_details["onnx_sha256"]
+    assert Model(onnx_checkpoint).predict(
         np.zeros((1, 43844, 1), dtype=np.float32)
     )
     import torch
@@ -80,6 +89,8 @@ ready = ROOT / ".readiness"
 ready.mkdir(exist_ok=True)
 (ready / f"{MANIFEST['readiness_key']}.json").write_text(json.dumps({
     "basic_pitch": True,
+    "basic_pitch_backend": MANIFEST["basic_pitch"]["inference_backend"],
+    "basic_pitch_checkpoint_sha256": MANIFEST["basic_pitch"]["checkpoint_tree_sha256"],
     "onnx": True,
     "midi": midi_evidence,
     "pedalboard": True,

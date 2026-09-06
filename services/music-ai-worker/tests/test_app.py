@@ -1076,6 +1076,45 @@ class WorkerTests(unittest.TestCase):
                         app.separate(payload, None)
                     self.assertEqual(error.exception.status_code, 503)
 
+    def test_basic_pitch_checkpoint_drift_blocks_health_and_inference(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            package_root = Path(tmp) / "basic_pitch"
+            checkpoint = package_root / "saved_models" / "icassp_2022" / "nmp"
+            checkpoint.mkdir(parents=True)
+            package_file = package_root / "__init__.py"
+            package_file.write_text("__version__ = '0.4.0'\n")
+            model_file = checkpoint / "saved_model.pb"
+            model_file.write_bytes(b"verified-basic-pitch-model")
+            fake_module = types.SimpleNamespace(__file__=str(package_file))
+            details = copy.deepcopy(app.MANIFEST["basic_pitch"])
+            with unittest.mock.patch.dict(sys.modules, {"basic_pitch": fake_module}):
+                details["package_tree_sha256"] = app._installed_package_tree_sha256(
+                    "basic_pitch"
+                )
+                details["checkpoint_tree_sha256"] = app._sha256_tree(checkpoint)
+                marker = {
+                    "basic_pitch": True,
+                    "basic_pitch_backend": details["inference_backend"],
+                    "basic_pitch_checkpoint_sha256": details["checkpoint_tree_sha256"],
+                }
+                with (
+                    unittest.mock.patch.dict(app.MANIFEST, {"basic_pitch": details}),
+                    unittest.mock.patch.object(app, "_readiness_marker", return_value=marker),
+                ):
+                    self.assertTrue(app.health("BASIC_PITCH")["healthy"])
+                    model_file.write_bytes(b"substituted-basic-pitch-model")
+                    drifted = app.health("BASIC_PITCH")
+                    self.assertFalse(drifted["packageReady"])
+                    self.assertFalse(drifted["checkpointReady"])
+                    self.assertFalse(drifted["healthy"])
+                    payload = app.SourceRequest(
+                        provider="BASIC_PITCH",
+                        sourceUrl="https://example.com/song.wav",
+                    )
+                    with self.assertRaises(HTTPException) as error:
+                        app.analyze(payload)
+                    self.assertEqual(error.exception.status_code, 503)
+
     def test_both_stem_artifacts_can_be_downloaded_sequentially(self):
         with tempfile.TemporaryDirectory() as tmp, unittest.mock.patch.object(
             app, "ARTIFACTS", Path(tmp) / "artifacts"

@@ -455,6 +455,7 @@ test("does not claim DEMUCS readiness without every verified health signal", asy
     response.end(JSON.stringify({
       provider: "DEMUCS",
       status: "healthy",
+      packageReady: true,
       checkpointReady: true,
       runtimeReady: true,
       modelVersion: "4.0.1",

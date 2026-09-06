@@ -1172,8 +1172,9 @@ def _package_is_pinned(details: dict) -> bool:
     except PackageNotFoundError:
         return False
     expected_tree = details.get("package_tree_sha256")
+    module = details.get("module", details["package"].replace("-", "_"))
     return version_ready and (
-        not expected_tree or _installed_package_tree_sha256(details["package"]) == expected_tree
+        not expected_tree or _installed_package_tree_sha256(module) == expected_tree
     )
 
 
@@ -1199,6 +1200,20 @@ def _installed_package_tree_sha256(package: str) -> str | None:
             while block := handle.read(1024 * 1024):
                 digest.update(block)
     return digest.hexdigest()
+
+
+def _installed_runtime_packages(details: dict) -> dict[str, str | None]:
+    installed = {}
+    for package in details.get("runtime_packages", {}):
+        try:
+            installed[package] = installed_version(package)
+        except PackageNotFoundError:
+            installed[package] = None
+    return installed
+
+
+def _runtime_packages_are_pinned(details: dict) -> bool:
+    return _installed_runtime_packages(details) == details.get("runtime_packages", {})
 
 
 def _clean_expired_artifacts() -> None:
@@ -1278,17 +1293,23 @@ def health(provider: str | None = None) -> dict:
                     "PEDALBOARD_BUILTIN": "pedalboard"}[selected]
     details = MANIFEST[manifest_key]
     marker = _readiness_marker()
+    package_module = details.get("module", details["package"].replace("-", "_"))
     package_tree_sha256 = (
-        _installed_package_tree_sha256(details["package"])
+        _installed_package_tree_sha256(package_module)
         if details.get("package_tree_sha256")
         else None
     )
-    package_ready = _package_is_pinned(details)
+    runtime_packages = _installed_runtime_packages(details)
+    package_ready = _package_is_pinned(details) and _runtime_packages_are_pinned(details)
     if selected == "BASIC_PITCH":
-        checkpoint = Path(__import__("basic_pitch").__file__).resolve().parent / details["checkpoint"]
-        checksum = _sha256(checkpoint)
-        checkpoint_ready = checksum == details["onnx_sha256"]
-        smoke_tested = marker.get("basic_pitch") is True and marker.get("onnx") is True
+        checkpoint = Path(__import__(package_module).__file__).resolve().parent / details["checkpoint"]
+        checksum = _sha256_tree(checkpoint)
+        checkpoint_ready = checksum == details["checkpoint_tree_sha256"]
+        smoke_tested = (
+            marker.get("basic_pitch") is True
+            and marker.get("basic_pitch_backend") == details["inference_backend"]
+            and marker.get("basic_pitch_checkpoint_sha256") == checksum
+        )
     elif selected == "DEMUCS":
         import torch
         checkpoint = Path(torch.hub.get_dir()) / "checkpoints" / details["checkpoint_file"]
@@ -1317,8 +1338,18 @@ def health(provider: str | None = None) -> dict:
             "licenseSha256": details["license_sha256"],
             "packageArtifactSha256": details["package_artifact_sha256"],
             "packageTreeSha256": package_tree_sha256,
-        } if selected == "DEMUCS" else {}),
-        "runtime": {"ready": ready, "python": "3.11", "device": "cpu"},
+            **({
+                "noticeSha256": details["notice_sha256"],
+                "inferenceBackend": details["inference_backend"],
+                "runtimePackages": runtime_packages,
+            } if selected == "BASIC_PITCH" else {}),
+        } if selected in {"BASIC_PITCH", "DEMUCS"} else {}),
+        "runtime": {
+            "ready": ready,
+            "python": f"{sys.version_info.major}.{sys.version_info.minor}",
+            "device": "cpu",
+            **({"engine": details["inference_backend"]} if selected == "BASIC_PITCH" else {}),
+        },
         "checkpoint": {
             "ready": checkpoint_ready,
             "name": details.get("checkpoint", "builtin"),
@@ -1331,11 +1362,18 @@ def health(provider: str | None = None) -> dict:
 def analyze(payload: SourceRequest) -> dict:
     if payload.provider != "BASIC_PITCH":
         raise HTTPException(422, "analyze supports BASIC_PITCH only")
-    from basic_pitch.inference import ICASSP_2022_MODEL_PATH, predict
+    if not health("BASIC_PITCH")["healthy"]:
+        raise HTTPException(503, "Basic Pitch runtime identity is not ready")
+    from basic_pitch.inference import predict
+    details = MANIFEST["basic_pitch"]
+    checkpoint = (
+        Path(__import__(details["module"]).__file__).resolve().parent
+        / details["checkpoint"]
+    )
     with tempfile.TemporaryDirectory(prefix="music-ai-") as tmp:
         source = download_source(str(payload.source_url), Path(tmp))
         validate_audio(source)
-        _, _, events = predict(source, ICASSP_2022_MODEL_PATH)
+        _, _, events = predict(source, checkpoint)
     notes = []
     for start, end, pitch, amplitude, _ in events:
         item_confidence = float(max(0, min(1, amplitude)))

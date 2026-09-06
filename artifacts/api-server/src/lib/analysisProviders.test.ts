@@ -12,6 +12,42 @@ import {
   analyzeVerifiedBassStem,
 } from "./analysisProviders";
 
+test("pins Basic Pitch health to exact source, package, runtime, and checkpoint identity", () => {
+  const health = {
+    provider: "BASIC_PITCH",
+    status: "ready",
+    packageReady: true,
+    checkpointReady: true,
+    runtimeReady: true,
+    smokeTested: true,
+    modelVersion: "0.4.0",
+    checksum: "b74344cd0c58261dae0cd52050d85ab6f901a5e219f27046ab4640673bba1046",
+    sourceRepository: "https://github.com/spotify/basic-pitch",
+    sourceRevision: "9991303bba609a3b93089d13ec80d1d495083596",
+    license: "Apache-2.0",
+    licenseSha256: "929c910bae2152fa87199a5d0660e09263419b7eee6d4b301d05ee2aaf211c37",
+    noticeSha256: "b810e55c0e3b520fabb45fc2ccc74880187bf84e309971968541cc812dcde905",
+    packageArtifactSha256: "738adb503aae7fdfc7d1e1511aa0ce35052315f260a19531ef4c356708425db0",
+    packageTreeSha256: "89cfb8516927e3bc536da99139ddb4ad7ce79dc833e29df33e5bca27ccef116c",
+    inferenceBackend: "tensorflow-saved-model",
+    runtimePackages: {
+      tensorflow: "2.14.0",
+      numpy: "1.26.4",
+      librosa: "0.11.0",
+      resampy: "0.4.2",
+      "pretty-midi": "0.2.11.post0",
+    },
+  };
+  assert.equal(attestAnalysisProviderHealth("BASIC_PITCH", health).version, "0.4.0");
+  assert.throws(
+    () => attestAnalysisProviderHealth("BASIC_PITCH", {
+      ...health,
+      packageTreeSha256: "0".repeat(64),
+    }),
+    /verified BASIC_PITCH/,
+  );
+});
+
 test("pins SheetSage health to its exact source and signed smoke identity", () => {
   const health = {
     provider: "SHEETSAGE",
@@ -887,11 +923,27 @@ test("polls an asynchronous provider job and returns its completed result", asyn
       response.end(JSON.stringify({
         provider: "BASIC_PITCH",
         status: "ready",
+        packageReady: true,
         checkpointReady: true,
         runtimeReady: true,
         smokeTested: true,
         modelVersion: "0.4.0",
-        checksum: "2c3c1d144bfa61ad236e92e169c13535c880469a12a047d4e73451f2c059a0ec",
+        checksum: "b74344cd0c58261dae0cd52050d85ab6f901a5e219f27046ab4640673bba1046",
+        sourceRepository: "https://github.com/spotify/basic-pitch",
+        sourceRevision: "9991303bba609a3b93089d13ec80d1d495083596",
+        license: "Apache-2.0",
+        licenseSha256: "929c910bae2152fa87199a5d0660e09263419b7eee6d4b301d05ee2aaf211c37",
+        noticeSha256: "b810e55c0e3b520fabb45fc2ccc74880187bf84e309971968541cc812dcde905",
+        packageArtifactSha256: "738adb503aae7fdfc7d1e1511aa0ce35052315f260a19531ef4c356708425db0",
+        packageTreeSha256: "89cfb8516927e3bc536da99139ddb4ad7ce79dc833e29df33e5bca27ccef116c",
+        inferenceBackend: "tensorflow-saved-model",
+        runtimePackages: {
+          tensorflow: "2.14.0",
+          numpy: "1.26.4",
+          librosa: "0.11.0",
+          resampy: "0.4.2",
+          "pretty-midi": "0.2.11.post0",
+        },
       }));
       return;
     }
@@ -950,19 +1002,35 @@ test("polls an asynchronous provider job and returns its completed result", asyn
   }
 });
 
-test("does not execute or record ready provenance after a failed local attestation", async () => {
+test("does not transfer source after Basic Pitch package readiness drift", async () => {
   let analysisRequests = 0;
   const server = createServer((request, response) => {
     response.setHeader("Content-Type", "application/json");
     if (request.method === "GET") {
       response.end(JSON.stringify({
-        provider: "IMPOSTER",
-        status: "healthy",
+        provider: "BASIC_PITCH",
+        status: "ready",
+        packageReady: false,
         checkpointReady: true,
         runtimeReady: true,
         smokeTested: true,
         modelVersion: "0.4.0",
-        checksum: "wrong-checksum",
+        checksum: "b74344cd0c58261dae0cd52050d85ab6f901a5e219f27046ab4640673bba1046",
+        sourceRepository: "https://github.com/spotify/basic-pitch",
+        sourceRevision: "9991303bba609a3b93089d13ec80d1d495083596",
+        license: "Apache-2.0",
+        licenseSha256: "929c910bae2152fa87199a5d0660e09263419b7eee6d4b301d05ee2aaf211c37",
+        noticeSha256: "b810e55c0e3b520fabb45fc2ccc74880187bf84e309971968541cc812dcde905",
+        packageArtifactSha256: "738adb503aae7fdfc7d1e1511aa0ce35052315f260a19531ef4c356708425db0",
+        packageTreeSha256: "89cfb8516927e3bc536da99139ddb4ad7ce79dc833e29df33e5bca27ccef116c",
+        inferenceBackend: "tensorflow-saved-model",
+        runtimePackages: {
+          tensorflow: "2.14.0",
+          numpy: "1.26.4",
+          librosa: "0.11.0",
+          resampy: "0.4.2",
+          "pretty-midi": "0.2.11.post0",
+        },
       }));
       return;
     }

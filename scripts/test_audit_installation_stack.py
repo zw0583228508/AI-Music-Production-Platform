@@ -67,3 +67,13 @@ class AuditFixtures(unittest.TestCase):
                   "modelRevision":"sha256:"+"8"*64,"blockers":[]})
         errors=audit.audit(m, root=Path("/definitely/missing"))
         self.assertTrue(any("DEMUCS: READY lacks" in x for x in errors))
+
+    def test_basic_pitch_ready_requires_retained_real_note_attestation(self):
+        m=self.matrix(self.row())
+        r=next(x for x in m["providers"] if x["provider"]=="BASIC_PITCH")
+        r.update({"finalStatus":"READY","licenseStatus":"COMMERCIAL",
+                  "codeRepository":"https://github.com/spotify/basic-pitch",
+                  "codeRevision":"9991303bba609a3b93089d13ec80d1d495083596",
+                  "modelRevision":"sha256:"+"b"*64,"blockers":[]})
+        errors=audit.audit(m, root=Path("/definitely/missing"))
+        self.assertTrue(any("BASIC_PITCH: READY lacks" in x for x in errors))

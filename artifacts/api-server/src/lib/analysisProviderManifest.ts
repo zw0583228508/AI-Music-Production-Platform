@@ -26,13 +26,31 @@ export const VERIFIED_LOCAL_ANALYSIS_PROVIDERS: Readonly<
 > = {
   BASIC_PITCH: {
     version: "0.4.0",
-    checksum: "2c3c1d144bfa61ad236e92e169c13535c880469a12a047d4e73451f2c059a0ec",
+    checksum: "b74344cd0c58261dae0cd52050d85ab6f901a5e219f27046ab4640673bba1046",
   },
   DEMUCS: {
     version: "4.0.1",
     checksum: "8726e21a993978c7ba086d3872e7608d7d5bfca646ca4aca459ffda844faa8b4",
   },
 };
+
+const VERIFIED_BASIC_PITCH_SOURCE = {
+  repository: "https://github.com/spotify/basic-pitch",
+  revision: "9991303bba609a3b93089d13ec80d1d495083596",
+  license: "Apache-2.0",
+  licenseSha256: "929c910bae2152fa87199a5d0660e09263419b7eee6d4b301d05ee2aaf211c37",
+  noticeSha256: "b810e55c0e3b520fabb45fc2ccc74880187bf84e309971968541cc812dcde905",
+  packageArtifactSha256: "738adb503aae7fdfc7d1e1511aa0ce35052315f260a19531ef4c356708425db0",
+  packageTreeSha256: "89cfb8516927e3bc536da99139ddb4ad7ce79dc833e29df33e5bca27ccef116c",
+  inferenceBackend: "tensorflow-saved-model",
+  runtimePackages: {
+    tensorflow: "2.14.0",
+    numpy: "1.26.4",
+    librosa: "0.11.0",
+    resampy: "0.4.2",
+    "pretty-midi": "0.2.11.post0",
+  },
+} as const;
 
 const VERIFIED_DEMUCS_SOURCE = {
   repository: "https://github.com/facebookresearch/demucs",
@@ -163,9 +181,15 @@ export function attestAnalysisProviderHealth(
   if (
     payload.runtimeReady !== true ||
     payload.checkpointReady !== true ||
+    (
+      (requestedProvider === "BASIC_PITCH" || requestedProvider === "DEMUCS") &&
+      payload.packageReady !== true
+    ) ||
     payload.smokeTested !== true
   ) {
-    throw new Error("health response did not verify runtime, checkpoint, and smoke test");
+    throw new Error(
+      "health response did not verify runtime, package, checkpoint, and smoke test",
+    );
   }
   if (!version || !checksum) {
     throw new Error("health response is missing version or checksum");
@@ -175,6 +199,25 @@ export function attestAnalysisProviderHealth(
   ];
   if (expected && (version !== expected.version || checksum !== expected.checksum)) {
     throw new Error(`health response does not match the verified ${requestedProvider} identity`);
+  }
+  if (
+    requestedProvider === "BASIC_PITCH" &&
+    (
+      payload.sourceRepository !== VERIFIED_BASIC_PITCH_SOURCE.repository ||
+      payload.sourceRevision !== VERIFIED_BASIC_PITCH_SOURCE.revision ||
+      payload.license !== VERIFIED_BASIC_PITCH_SOURCE.license ||
+      payload.licenseSha256 !== VERIFIED_BASIC_PITCH_SOURCE.licenseSha256 ||
+      payload.noticeSha256 !== VERIFIED_BASIC_PITCH_SOURCE.noticeSha256 ||
+      payload.packageArtifactSha256 !== VERIFIED_BASIC_PITCH_SOURCE.packageArtifactSha256 ||
+      payload.packageTreeSha256 !== VERIFIED_BASIC_PITCH_SOURCE.packageTreeSha256 ||
+      payload.inferenceBackend !== VERIFIED_BASIC_PITCH_SOURCE.inferenceBackend ||
+      JSON.stringify(payload.runtimePackages) !==
+        JSON.stringify(VERIFIED_BASIC_PITCH_SOURCE.runtimePackages)
+    )
+  ) {
+    throw new Error(
+      "health response does not match the verified BASIC_PITCH source, license, package, and runtime identity",
+    );
   }
   if (
     requestedProvider === "DEMUCS" &&
