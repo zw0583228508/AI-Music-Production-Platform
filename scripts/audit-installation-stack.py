@@ -308,10 +308,14 @@ def evidence_errors(rows, root):
             catalog_source = (
                 root / "artifacts/api-server/src/lib/musicProviders.ts"
             ).read_text()
+            catalog_test_source = (
+                root / "artifacts/api-server/tests/gpu-provider-attestation.test.mjs"
+            ).read_text()
             dot_replit = (root / ".replit").read_text()
         except OSError:
             dockerfile = requirements = modal_app_source = worker_app_source = ""
             bootstrap_source = catalog_source = dot_replit = ""
+            catalog_test_source = ""
         identity_fields = (
             "modalAppId", "modalDeploymentId", "modalFunctionId",
             "modalImageId", "sourceRevision", "sourceImageDigest",
@@ -456,6 +460,7 @@ def evidence_errors(rows, root):
                 local.get("checkpointBootstrapBlocked") is True,
                 local.get("modalDeploymentBlocked") is True,
                 local.get("workerLicenseGateEnforced") is True,
+                local.get("apiRegistryLicenseGateEnforced") is True,
                 local.get("endpointDeployed") is False,
                 local.get("endpointConfigured") is False,
                 local.get("apiConnected") is False,
@@ -489,6 +494,18 @@ def evidence_errors(rows, root):
                     catalog_source,
                     re.DOTALL,
                 )),
+                'LICENSE_BLOCKED_PROVIDER_IDS = new Set<string>(["BS_ROFORMER"])'
+                in catalog_source,
+                "if (!providerRoutingAuthorized(providerId)) return undefined;"
+                in catalog_source,
+                'routingStatus: "BLOCKED_LICENSE"' in catalog_source,
+                "providerRoutingAuthorized(provider.definition.id)"
+                in catalog_source,
+                "assertProviderCommercialUseAuthorized(request.requestedProvider)"
+                in catalog_source,
+                '"MUSIC_PROVIDER_GATEWAY_URL"' in catalog_test_source,
+                '"MUSIC_PROVIDER_GATEWAY_TOKEN"' in catalog_test_source,
+                "blockedProvider.generate({})" in catalog_test_source,
                 "MUSIC_PROVIDER_BS_ROFORMER_" not in dot_replit,
                 "MUSIC_GPU_PUBLIC_ORIGIN_BS_ROFORMER" not in dot_replit,
                 "BS_ROFORMER" not in canonical.get("bundles", {}),
