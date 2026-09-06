@@ -14,9 +14,10 @@ import modal
 from modal.runner import deploy_app
 
 from modal_config import (
-    APP_NAME, ENDPOINT_LABEL, LICENSE_SECRET_NAME, MODEL_MOUNT, MODEL_VOLUME_NAME, REPOSITORY_ROOT,
-    RUNTIME_SECRET_NAME, SMOKE_MOUNT, SMOKE_VOLUME_NAME, WORKER_ROOT,
-    image_build_args, worker_environment,
+    APP_NAME, ENDPOINT_LABEL, EPHEMERAL_DISK_MIB, LICENSE_SECRET_NAME, MAX_CONCURRENT_INPUTS,
+    MODEL_MOUNT, MODEL_VOLUME_NAME, REPOSITORY_ROOT, RUNTIME_SECRET_NAME, SMOKE_MOUNT,
+    SMOKE_VOLUME_NAME, WORKER_ROOT, image_build_args, validate_worker_capacity,
+    worker_environment,
 )
 
 app = modal.App(APP_NAME)
@@ -28,6 +29,12 @@ model_volume = modal.Volume.from_name(MODEL_VOLUME_NAME, create_if_missing=False
 smoke_volume = modal.Volume.from_name(SMOKE_VOLUME_NAME, create_if_missing=False)
 runtime_secret = modal.Secret.from_name(RUNTIME_SECRET_NAME)
 license_secret = modal.Secret.from_name(LICENSE_SECRET_NAME)
+WORKER_ENVIRONMENT = worker_environment()
+validate_worker_capacity(
+    WORKER_ENVIRONMENT,
+    ephemeral_disk_mib=EPHEMERAL_DISK_MIB,
+    max_concurrent_inputs=MAX_CONCURRENT_INPUTS,
+)
 
 
 @app.cls(
@@ -37,11 +44,11 @@ license_secret = modal.Secret.from_name(LICENSE_SECRET_NAME)
     timeout=600,
     scaledown_window=300,
     max_containers=1,
-    ephemeral_disk=2048,
+    ephemeral_disk=EPHEMERAL_DISK_MIB,
     # Intentionally no min_containers / scale floor.
-    env=worker_environment(),
+    env=WORKER_ENVIRONMENT,
 )
-@modal.concurrent(max_inputs=2)
+@modal.concurrent(max_inputs=MAX_CONCURRENT_INPUTS)
 class SheetSageWorker:
     @modal.asgi_app(label=ENDPOINT_LABEL)
     def endpoint(self):

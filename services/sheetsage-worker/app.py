@@ -195,7 +195,9 @@ def _environment_integer(name: str, default: int, minimum: int) -> int:
 
 
 app = FastAPI(title="SheetSage 0.2.1")
-MAX_AUDIO_BYTES = 512 * 1024 * 1024
+MAX_AUDIO_BYTES = _environment_integer(
+    "SHEETSAGE_MAX_AUDIO_BYTES", 512 * 1024 * 1024, 1
+)
 TEMP_DIRECTORY = Path(os.getenv("SHEETSAGE_TEMP_DIR", tempfile.gettempdir()))
 TEMP_DISK_HEADROOM_BYTES = _environment_integer(
     "SHEETSAGE_TEMP_DISK_HEADROOM_BYTES", 256 * 1024 * 1024, 0

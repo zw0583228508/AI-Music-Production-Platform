@@ -22,6 +22,37 @@ class ModalConfigTests(unittest.TestCase):
         self.assertEqual(config.image_build_args(), {"SHEETSAGE_ACCEPT_MODEL_LICENSE": "1"})
         self.assertEqual(config.worker_environment()["HF_HUB_OFFLINE"], "1")
         self.assertEqual(config.worker_environment()["SHEETSAGE_MAX_SPOOLED_ANALYSES"], "1")
+        self.assertEqual(
+            config.worker_environment()["SHEETSAGE_MAX_AUDIO_BYTES"],
+            str(config.MAX_AUDIO_BYTES),
+        )
+
+    def test_modal_worker_capacity_is_safe(self):
+        config.validate_worker_capacity(
+            config.worker_environment(),
+            ephemeral_disk_mib=config.EPHEMERAL_DISK_MIB,
+            max_concurrent_inputs=config.MAX_CONCURRENT_INPUTS,
+        )
+
+    def test_rejects_upload_and_headroom_larger_than_ephemeral_disk(self):
+        environment = config.worker_environment()
+        environment["SHEETSAGE_MAX_AUDIO_BYTES"] = str(1800 * config.MIB)
+        with self.assertRaisesRegex(ValueError, "exceeds Modal ephemeral disk"):
+            config.validate_worker_capacity(
+                environment,
+                ephemeral_disk_mib=config.EPHEMERAL_DISK_MIB,
+                max_concurrent_inputs=config.MAX_CONCURRENT_INPUTS,
+            )
+
+    def test_rejects_spooling_above_modal_input_concurrency(self):
+        environment = config.worker_environment()
+        environment["SHEETSAGE_MAX_SPOOLED_ANALYSES"] = "3"
+        with self.assertRaisesRegex(ValueError, "exceed Modal input concurrency"):
+            config.validate_worker_capacity(
+                environment,
+                ephemeral_disk_mib=config.EPHEMERAL_DISK_MIB,
+                max_concurrent_inputs=config.MAX_CONCURRENT_INPUTS,
+            )
 
 
 if __name__ == "__main__":
