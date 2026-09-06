@@ -243,12 +243,19 @@ def validate_audio(path: Path) -> dict[str, Any]:
             raise RunnerError("audio artifact duration is invalid or exceeds limit")
         # Reading in blocks prevents a maliciously huge decoded allocation.
         peak = 0.0
+        square_sum = 0.0
+        sample_count = 0
         for block in sf.blocks(str(path), blocksize=65536, always_2d=True):
             if not np.isfinite(block).all():
                 raise RunnerError("audio artifact contains non-finite samples")
             peak = max(peak, float(np.max(np.abs(block))))
+            square_sum += float(np.sum(np.square(block, dtype=np.float64)))
+            sample_count += int(block.size)
         if peak < 1e-5:
             raise RunnerError("audio artifact is silent")
+        rms = math.sqrt(square_sum / sample_count) if sample_count else 0.0
+        if rms < 1e-7:
+            raise RunnerError("audio artifact has no measurable signal energy")
     except RunnerError:
         raise
     except ImportError as exc:
@@ -263,6 +270,8 @@ def validate_audio(path: Path) -> dict[str, Any]:
         "durationSeconds": round(duration, 6),
         "bytes": path.stat().st_size,
         "sha256": file_sha256(path),
+        "peakAmplitude": peak,
+        "rmsAmplitude": rms,
     }
 
 def artifact_descriptor(path: Path, provider: str, job_id: str) -> dict[str, Any]:
