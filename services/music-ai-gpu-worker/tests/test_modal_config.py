@@ -85,7 +85,7 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             self.assertNotIn("MUSIC_GPU_OUTPUT_ROOT", environment)
             self.assertEqual(environment["MUSIC_GPU_MAX_CONCURRENT_JOBS"], "1")
             self.assertNotIn("MUSIC_AI_WORKER_TOKEN", environment)
-            if deployment.provider == "MT3":
+            if deployment.provider in {"MT3", "BS_ROFORMER"}:
                 self.assertNotIn("MUSIC_GPU_CONTAINER_DIGEST", environment)
                 self.assertNotIn("MUSIC_GPU_SOURCE_REVISION", environment)
             else:
@@ -117,6 +117,14 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             bs_environment["MUSIC_PROVIDER_BS_ROFORMER_CONFIG_PATH"],
             f"{modal_config.MODEL_MOUNT}/bs-roformer-viperx-v1.yaml",
         )
+        self.assertEqual(
+            bs_environment["MUSIC_GPU_SMOKE_INPUT_PATH"],
+            f"{modal_config.MODEL_MOUNT}/_smoke/bs-roformer-real-song-v1.wav",
+        )
+        self.assertEqual(
+            bs_environment["MUSIC_PROVIDER_BS_ROFORMER_SMOKE_INPUT_SHA256"],
+            "b2626121f7f2987843d7212c82b8f1222f2f023fc3d4b07c07ede1b24535feb9",
+        )
 
     def test_image_build_args_inject_wave_two_host_identity_only(self):
         for deployment in modal_config.DEPLOYMENTS.values():
@@ -132,10 +140,12 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
                     "TRANSFORMERS_SPEC",
                     "ACCELERATE_SPEC",
             }
-            if deployment.provider in {"MT3", "MR_MT3", "YOUR_MT3"}:
+            if deployment.provider in {
+                "MT3", "BS_ROFORMER", "MR_MT3", "YOUR_MT3",
+            }:
                 expected.add("SOURCE_IMAGE_DIGEST")
                 self.assertEqual(build_args["SOURCE_IMAGE_DIGEST"], deployment.source_image_digest)
-            if deployment.provider == "MT3":
+            if deployment.provider in {"MT3", "BS_ROFORMER"}:
                 expected.add("SOURCE_REVISION")
                 self.assertRegex(
                     build_args["SOURCE_REVISION"],
@@ -158,6 +168,17 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
         self.assertIn(
             "ghcr.io/astral-sh/uv@sha256:",
             dockerfile,
+        )
+        bs_dockerfile = (ROOT / "Dockerfile.bs-roformer").read_text()
+        self.assertRegex(
+            modal_config.DEPLOYMENTS["BS_ROFORMER"].cuda_image,
+            r"^nvidia/cuda@sha256:[0-9a-f]{64}$",
+        )
+        self.assertIn("ghcr.io/astral-sh/uv@sha256:", bs_dockerfile)
+        self.assertIn("ARG SOURCE_IMAGE_DIGEST", bs_dockerfile)
+        self.assertIn(
+            "MUSIC_GPU_CONTAINER_DIGEST=${SOURCE_IMAGE_DIGEST}",
+            bs_dockerfile,
         )
         self.assertIn(
             "ghcr.io/astral-sh/uv@sha256:"
@@ -266,7 +287,7 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             self.assertNotIn("/provenance/runners/", dockerfile.read_text())
         self.assertNotIn("SOURCE_IMAGE_DIGEST", modal_app)
         for deployment in modal_config.DEPLOYMENTS.values():
-            if deployment.provider == "MT3":
+            if deployment.provider in {"MT3", "BS_ROFORMER"}:
                 observed = modal_config.provider_image_build_args(deployment)[
                     "SOURCE_IMAGE_DIGEST"
                 ]

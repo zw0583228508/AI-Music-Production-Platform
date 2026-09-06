@@ -230,9 +230,13 @@ def worker_environment(deployment: ProviderDeployment) -> dict[str, str]:
     """Return runtime identity and non-secret environment for one provider."""
     module = deployment.provider.lower()
     command = f"python -m runners.{module}"
+    details = MANIFEST["providers"][deployment.provider]
     model_mount = (
         MT3_FAMILY_MODEL_MOUNT
         if deployment.provider in {"MR_MT3", "YOUR_MT3"} else MODEL_MOUNT
+    )
+    smoke_relative_path = str(
+        details.get("smoke_input_path", "_smoke/structured-click-track-32s.wav")
     )
     environment = {
         "MUSIC_GPU_CHECKPOINT_ROOT": model_mount,
@@ -247,12 +251,12 @@ def worker_environment(deployment: ProviderDeployment) -> dict[str, str]:
         "MUSIC_GPU_MAX_CONCURRENT_JOBS": "1",
         "MUSIC_GPU_JOB_TIMEOUT_SECONDS": str(deployment.timeout_seconds),
         "MUSIC_GPU_HEALTH_TIMEOUT_SECONDS": "180",
-        "MUSIC_GPU_SMOKE_INPUT_PATH": f"{model_mount}/_smoke/structured-click-track-32s.wav",
+        "MUSIC_GPU_SMOKE_INPUT_PATH": f"{model_mount}/{smoke_relative_path}",
         f"MUSIC_GPU_RUNNER_{deployment.provider}": command,
         f"MUSIC_GPU_SMOKE_{deployment.provider}": command,
         "PYTHONUNBUFFERED": "1",
     }
-    if deployment.provider != "MT3":
+    if deployment.provider not in {"MT3", "BS_ROFORMER"}:
         environment["MUSIC_GPU_CONTAINER_DIGEST"] = deployment.source_image_digest
     if deployment.provider in {"MR_MT3", "YOUR_MT3"}:
         # mt3-infer uses this path directly. It is a provider-private Modal
@@ -261,7 +265,6 @@ def worker_environment(deployment: ProviderDeployment) -> dict[str, str]:
         environment["MUSIC_GPU_COMPATIBILITY_PATCH_SHA256"] = MANIFEST["providers"][
             deployment.provider
         ]["adapter_patch_sha256"]
-    details = MANIFEST["providers"][deployment.provider]
     checkpoint_sha256 = details.get("checkpoint_sha256")
     if isinstance(checkpoint_sha256, str) and re.fullmatch(
         r"[a-f0-9]{64}", checkpoint_sha256
@@ -278,8 +281,16 @@ def worker_environment(deployment: ProviderDeployment) -> dict[str, str]:
         environment[
             f"MUSIC_PROVIDER_{deployment.provider}_CONFIG_SHA256"
         ] = details["config_sha256"]
+    if details.get("smoke_input_sha256"):
+        environment[
+            f"MUSIC_PROVIDER_{deployment.provider}_SMOKE_INPUT_SHA256"
+        ] = details["smoke_input_sha256"]
+    if details.get("smoke_input_kind"):
+        environment[
+            f"MUSIC_PROVIDER_{deployment.provider}_SMOKE_INPUT_KIND"
+        ] = details["smoke_input_kind"]
     source_revision = os.getenv("MUSIC_GPU_SOURCE_REVISION", "").strip()
-    if source_revision and deployment.provider != "MT3":
+    if source_revision and deployment.provider not in {"MT3", "BS_ROFORMER"}:
         environment["MUSIC_GPU_SOURCE_REVISION"] = source_revision
     public_origin = os.getenv(
         f"MUSIC_GPU_PUBLIC_ORIGIN_{deployment.provider}", ""
@@ -318,7 +329,7 @@ def provider_image_build_args(deployment: ProviderDeployment) -> dict[str, str]:
         # Materialized in the isolated image as MUSIC_GPU_CONTAINER_DIGEST.
         # The runtime never recomputes a digest from host-only Dockerfiles.
         build_args["SOURCE_IMAGE_DIGEST"] = deployment.source_image_digest
-    if deployment.provider == "MT3":
+    if deployment.provider in {"MT3", "BS_ROFORMER"}:
         source_revision = os.getenv("MUSIC_GPU_SOURCE_REVISION", "").strip()
         build_args["SOURCE_IMAGE_DIGEST"] = deployment.source_image_digest
         build_args["SOURCE_REVISION"] = (

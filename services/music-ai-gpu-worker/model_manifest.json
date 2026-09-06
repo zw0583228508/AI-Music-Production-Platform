@@ -48,13 +48,26 @@
     },
     "BS_ROFORMER": {
       "model_version": "bs-roformer-viperx-v1",
+      "runtime": {
+        "cuda_image": "nvidia/cuda@sha256:2fcc4280646484290cc50dce5e65f388dd04352b07cbe89a635703bd1f9aedb6"
+      },
       "revision": "puar-playground/bs-roformer@b1361b816daca507f079d85e935c291bcb0a5351",
+      "backend_repository": "https://github.com/openmirlab/bs-roformer-infer",
+      "backend_revision": "b0f1386fcced25f559f3e61c9f08a73cd9bddf80",
+      "backend_package_version": "0.1.5",
+      "backend_package_artifact_sha256": "46f3d5eb4b666a54adcb67524258c3cb6f96e185db97a3e1e1ef7efaea4e1848",
       "checkpoint_path": "bs-roformer-viperx-v1.ckpt",
       "checkpoint_sha256": "5b84f37e8d444c8cb30c79d77f613a41c05868ff9c9ac6c7049c00aefae115aa",
       "config_path": "bs-roformer-viperx-v1.yaml",
       "config_sha256": "9df444dbc1a704e23858e0315a211ec5fa4c69f92ecefb173d05e8f721ed2b1f",
       "license": "MIT",
       "license_reference": "https://huggingface.co/puar-playground/bs-roformer/blob/b1361b816daca507f079d85e935c291bcb0a5351/README.md",
+      "backend_license": "MIT",
+      "backend_license_reference": "https://github.com/openmirlab/bs-roformer-infer/blob/b0f1386fcced25f559f3e61c9f08a73cd9bddf80/LICENSE",
+      "commercial_use_permitted": true,
+      "smoke_input_path": "_smoke/bs-roformer-real-song-v1.wav",
+      "smoke_input_sha256": "b2626121f7f2987843d7212c82b8f1222f2f023fc3d4b07c07ede1b24535feb9",
+      "smoke_input_kind": "retained ACE-Step v3 real music excerpt",
       "runner_env": "MUSIC_GPU_RUNNER_BS_ROFORMER",
       "smoke_env": "MUSIC_GPU_SMOKE_BS_ROFORMER"
     },
