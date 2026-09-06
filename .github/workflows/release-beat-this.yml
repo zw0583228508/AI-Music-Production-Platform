@@ -33,6 +33,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+          python-version: "3.11"
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -176,6 +177,7 @@ jobs:
             --health promotion/live-health.json \
             --api-output artifacts/api-server/src/lib/beatThisPromotion.generated.ts \
             --release-output services/beat-this-worker/release-attestation.json
+          pnpm run typecheck:libs
           pnpm --filter @workspace/api-server run typecheck
           pnpm --filter @workspace/api-server run test:gpu-promotion
 

@@ -202,6 +202,23 @@ def running_container_ids(app_id: str) -> list[str]:
     return result
 
 
+def wait_for_stopped_containers(
+    app_id: str,
+    stopped_container_ids: list[str],
+    *,
+    attempts: int = 30,
+    delay_seconds: float = 1,
+) -> None:
+    stopped = set(stopped_container_ids)
+    for attempt in range(attempts):
+        remaining = set(running_container_ids(app_id))
+        if not remaining.intersection(stopped):
+            return
+        if attempt + 1 < attempts:
+            time.sleep(delay_seconds)
+    raise RuntimeError("old Beat This containers remained after identity rotation")
+
+
 def install_identity(
     metadata: dict,
     identity_path: Path,
@@ -227,10 +244,7 @@ def install_identity(
             cwd=ROOT.parents[1],
             check=True,
         )
-    remaining = set(running_container_ids(metadata["modalAppId"]))
-    stale = remaining.intersection(previous_containers)
-    if stale:
-        raise RuntimeError("old Beat This containers remained after identity rotation")
+    wait_for_stopped_containers(metadata["modalAppId"], previous_containers)
     atomic_json(refresh_output, {
         "schemaVersion": 1,
         "provider": "BEAT_THIS",
