@@ -22,3 +22,4 @@
 - [MIR runtime isolation](mir-runtime-isolation.md) — exact MIR pins require separate Python 3.11 and 3.14 images; SheetSage weights are noncommercial/share-alike licensed.
 - [MusicGen native runtime](musicgen-native-runtime.md) — exact AudioCraft builds native PyAV/PESQ; FFmpeg 4.4 satisfies PyAV 11 while remaining below version 5.
 - [MOSS media-runtime conflict](moss-media-runtime-conflict.md) — pinned MOSS and moss-audio revisions require incompatible TorchCodec lines; block rather than silently overriding either upstream.
+- [Modal container path portability](modal-container-path-portability.md) — Dockerfile-backed modules must resolve paths under both the repo tree and Modal’s flat `/app` layout.
