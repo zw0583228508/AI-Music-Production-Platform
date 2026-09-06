@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "provider": "HAFM",
+  "classification": "BLOCKED_UPSTREAM",
+  "modal": {
+    "runAppId": "ap-UTS20Z77lonwYTc1Lfm2m4",
+    "imageBuildId": "im-v4jr4FcbxxsmVoKCoIUGyn",
+    "functionImageId": "im-Nzb0k10OAWvlHqEqCysx6x",
+    "expectedImageEvidence": "sha256:bb3ea7679fab888113d42c252fe9497960961214dd176bde4848efb3fa34e23e"
+  },
+  "execution": {
+    "imageBuilt": true,
+    "verifyFunctionCreated": true,
+    "verifyFunctionExecuted": true,
+    "pipCheckPassed": true,
+    "pipCheckOutput": "No broken requirements found.",
+    "compatibilityPassed": false,
+    "inferenceAttempted": false
+  },
+  "source": {
+    "repository": "HackerHyper/HAFM",
+    "revision": "d9aa19a5820a4c1563ab405d437933480f71d5b9",
+    "revisionMatched": true,
+    "publishedFileHashesMatched": true,
+    "documentedEntrypoint": "infer_simple.py",
+    "publishedEntrypoint": "infer.py",
+    "missingRuntimeFiles": [
+      "configs/ar.yaml",
+      "models/ar_singsong.py",
+      "data/retokenize.py",
+      "utils/audio_utils.py"
+    ]
+  },
+  "model": {
+    "repository": "zhuqijian/HAFM",
+    "revision": "1653c3c7bffdc9b4b2d57d8b6e4f5bb3002a64fe",
+    "treeSha256": "79d4812169b7e71196f0d03babcffcf956a628b9cbde02eb75ec9bfc2074b6c8",
+    "assetManifestSha256": "999b7dd6990ec71cb24764c95279dc2d3efef7fa86aad6c584f75d93e873e8d5",
+    "requiredAssetCount": 7,
+    "assetsReady": true
+  },
+  "fixture": {
+    "authorizationConfirmed": true,
+    "authorizationEvidenceSha256": "385d975b945886f1ad2e6661a0588213b3ecf84165f40fda6932a995ce6ae197",
+    "audioCommittedToGit": false,
+    "fixtureSha256": "3358e43121bf2c22ebd9dc0c424f2a4e071df932ed90d405f9095cac68232265",
+    "durationSeconds": 15.0,
+    "sampleRate": 16000,
+    "channels": 1,
+    "sampleWidthBits": 16,
+    "bytes": 480078,
+    "finite": true,
+    "nonSilent": true,
+    "identityMatched": true
+  },
+  "retainedEvidence": {
+    "compatibilityEvidencePath": "release-evidence/compatibility-evidence.json",
+    "compatibilityEvidenceSha256": "219eaf085989b6241b4e63eed65271f4cc88074c8484382835175b1e968c33f1",
+    "modelAssetsPath": "release-evidence/model-assets.json",
+    "modelAssetsSha256": "999b7dd6990ec71cb24764c95279dc2d3efef7fa86aad6c584f75d93e873e8d5",
+    "normalizedProbePath": "release-evidence/modal-probe.txt",
+    "normalizedProbeSha256": "240b96052368f3adad57f04ac458c074fe6d6512f3349d708c6b8204e7167e8d",
+    "transcriptSha256": "3c098e18ac2d9d03edc16c879019fa19aeb3d5c1bd77bcebad03209e29972f75",
+    "fullModalRunLogSha256": "f8f43d2478fe3ea6a4d5192e374c5fc44a9dfed02465e1a34e4ef37715d8ff39"
+  },
+  "downstream": {
+    "modelInferenceAttempted": false,
+    "realSmokePassed": false,
+    "nonSilentOutputVerified": false,
+    "promotionSigned": false,
+    "endpointDeployed": false,
+    "endpointConfigured": false,
+    "healthReady": false,
+    "apiConnected": false
+  }
+}

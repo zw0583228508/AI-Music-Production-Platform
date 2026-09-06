@@ -1,0 +1,75 @@
+{
+  "classification": "BLOCKED_UPSTREAM",
+  "compatible": false,
+  "downstream": {
+    "apiConnected": false,
+    "endpointDeployed": false,
+    "healthReady": false,
+    "promotionCreated": false,
+    "smokeAttempted": false
+  },
+  "fixture": {
+    "audioCommittedToGit": false,
+    "authorizationConfirmed": true,
+    "authorizationEvidenceSha256": "385d975b945886f1ad2e6661a0588213b3ecf84165f40fda6932a995ce6ae197",
+    "finite": true,
+    "identityMatches": true,
+    "nonSilent": true,
+    "observed": {
+      "bytes": 480078,
+      "channels": 1,
+      "durationSeconds": 15.0,
+      "path": "/var/lib/hafm/smoke/real-vocal.wav",
+      "sampleRate": 16000,
+      "sampleWidthBits": 16,
+      "sha256": "3358e43121bf2c22ebd9dc0c424f2a4e071df932ed90d405f9095cac68232265"
+    }
+  },
+  "imageEvidence": "sha256:bb3ea7679fab888113d42c252fe9497960961214dd176bde4848efb3fa34e23e",
+  "inferenceAttempted": false,
+  "inferenceDependenciesPublished": false,
+  "model": {
+    "assetsReady": true,
+    "identityMatches": true,
+    "manifestSha256": "999b7dd6990ec71cb24764c95279dc2d3efef7fa86aad6c584f75d93e873e8d5",
+    "requiredAssetCount": 7,
+    "requiredAssetMismatches": [],
+    "treeSha256": "79d4812169b7e71196f0d03babcffcf956a628b9cbde02eb75ec9bfc2074b6c8"
+  },
+  "pipCheck": {
+    "output": "No broken requirements found.",
+    "passed": true
+  },
+  "provider": "HAFM",
+  "runtime": {
+    "cuda": "12.1",
+    "cudaImage": "nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04",
+    "gpu": "L40S",
+    "inferenceDependencyStatus": "UNPUBLISHED_UPSTREAM",
+    "python": "3.10"
+  },
+  "schemaVersion": 1,
+  "source": {
+    "documentedEntrypoint": "infer_simple.py",
+    "expectedRevision": "d9aa19a5820a4c1563ab405d437933480f71d5b9",
+    "missingRuntimeFiles": [
+      "configs/ar.yaml",
+      "models/ar_singsong.py",
+      "data/retokenize.py",
+      "utils/audio_utils.py"
+    ],
+    "observedFileHashesMatch": true,
+    "observedFiles": {
+      "ARCH.jpg": "eea18290edc83bd4b00116ee1fedc44cf28e1c2a6f761657803ec842f0c215eb",
+      "README.md": "8703ecc0d79ad2df3e795b0114d1608797660a05ba4101a5d0ed0480b100c9c9",
+      "accomp_3s_instrumental.wav": "b54f7561b42eb0c288080e7beef1314c0b0e6bdc2afe081563a2e484164d4295",
+      "infer.py": "0ee7f60d3a3399e1dd050df88353cf2effa1d2dce81be833d4c246af5e5c0a03"
+    },
+    "observedRevision": "d9aa19a5820a4c1563ab405d437933480f71d5b9",
+    "publishedEntrypoint": "infer.py",
+    "repository": "HackerHyper/HAFM",
+    "revisionMatches": true,
+    "runtimeContractComplete": false
+  },
+  "sourceOnly": false
+}

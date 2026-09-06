@@ -1,12 +1,55 @@
 {
+  "schemaVersion": 2,
   "provider": "HAFM",
   "asset_root": "/var/lib/hafm/models",
   "asset_manifest": "model-assets.json",
+  "compatibility_evidence": "compatibility-evidence.json",
   "smoke_proof": "smoke-proof.json",
   "smoke_fixture": "real-vocal.wav",
-  "source": {"repository": "HackerHyper/HAFM", "revision": "d9aa19a5820a4c1563ab405d437933480f71d5b9"},
-  "model": {"repository": "zhuqijian/HAFM", "revision": "1653c3c7bffdc9b4b2d57d8b6e4f5bb3002a64fe"},
-  "runtime": {"python": "3.10", "cuda": "12.1", "gpu": "L40S"},
-  "inference": {"command": "python infer_simple.py --vocal_path <vocal> --output_path <output> --config configs/ar.yaml"},
+  "fixture_authorization": "fixture-authorization.json",
+  "source": {
+    "repository": "HackerHyper/HAFM",
+    "revision": "d9aa19a5820a4c1563ab405d437933480f71d5b9",
+    "observedFiles": {
+      "ARCH.jpg": "eea18290edc83bd4b00116ee1fedc44cf28e1c2a6f761657803ec842f0c215eb",
+      "README.md": "8703ecc0d79ad2df3e795b0114d1608797660a05ba4101a5d0ed0480b100c9c9",
+      "accomp_3s_instrumental.wav": "b54f7561b42eb0c288080e7beef1314c0b0e6bdc2afe081563a2e484164d4295",
+      "infer.py": "0ee7f60d3a3399e1dd050df88353cf2effa1d2dce81be833d4c246af5e5c0a03"
+    },
+    "documentedEntrypoint": "infer_simple.py",
+    "publishedEntrypoint": "infer.py",
+    "requiredRuntimeFiles": [
+      "infer.py",
+      "configs/ar.yaml",
+      "models/ar_singsong.py",
+      "data/retokenize.py",
+      "utils/audio_utils.py"
+    ]
+  },
+  "model": {
+    "repository": "zhuqijian/HAFM",
+    "revision": "1653c3c7bffdc9b4b2d57d8b6e4f5bb3002a64fe",
+    "treeSha256": "79d4812169b7e71196f0d03babcffcf956a628b9cbde02eb75ec9bfc2074b6c8",
+    "requiredAssets": {
+      ".gitattributes": "11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
+      "README.md": "7826b40929af740f3a9f01d3490272544b07d0a05418879afa69df542a5d7b70",
+      "ar_coarse/ckpt_best.pt": "584ba739758b73ba25cafef17978919efe3e124f6e6a5161c3ff34a6b9353cca",
+      "ar_fine/ckpt_best.pt": "20f58ed265c0888668c8ab5798dde9e5c599cfe75a97653b4eebc7102109a72f",
+      "ar_semantic/ckpt_best.pt": "672e4d212023b83704f5630cb96e2693bc1d4a89286a02c764e5ca5750b54f8d",
+      "hubert_kmeans_500.pt": "1f42c8beac9500c212cf9ef74801c5fc6e6bfd3cbc0d1de2db7e404bb347b638",
+      "infer.py": "35b238303407856f1dd987276cd68c393ac991decac42acaa746e2f139e9024c"
+    }
+  },
+  "runtime": {
+    "python": "3.10",
+    "cudaImage": "nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04",
+    "cuda": "12.1",
+    "gpu": "L40S",
+    "inferenceDependencyStatus": "UNPUBLISHED_UPSTREAM"
+  },
+  "inference": {
+    "command": "python infer.py --vocal_path <vocal> --output_path <output> --config configs/ar.yaml",
+    "outputRole": "instrumental"
+  },
   "role": "V2A_ALTERNATIVE"
 }

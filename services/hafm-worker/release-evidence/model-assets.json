@@ -1,0 +1,125 @@
+{
+  "files": [
+    {
+      "bytes": 1,
+      "path": ".cache/huggingface/.gitignore",
+      "sha256": "684888c0ebb17f374298b65ee2807526c066094c701bcc7ebbe1c1095f494fc1"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/.gitattributes.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 101,
+      "path": ".cache/huggingface/download/.gitattributes.metadata",
+      "sha256": "ed6ee4222125eb2dce49d7e5f403184d805618668d54f532fdc89e2274d50caa"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/README.md.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 101,
+      "path": ".cache/huggingface/download/README.md.metadata",
+      "sha256": "b033f91e0dac8b4398de4d16db2ac60259fe8945c09b5b5e68627824351a04f3"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/ar_coarse/ckpt_best.pt.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/ar_coarse/ckpt_best.pt.metadata",
+      "sha256": "fee05ae7dd98b12989ea39800fdf4da3381bd054893286514d2b6be4a7c372e9"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/ar_fine/ckpt_best.pt.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/ar_fine/ckpt_best.pt.metadata",
+      "sha256": "f93caeac7d77e08858a2d8a49572e77afe9d90026bbcf0245a3af69b9a5a1bbd"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/ar_semantic/ckpt_best.pt.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/ar_semantic/ckpt_best.pt.metadata",
+      "sha256": "239afc8475b7f7ef882792ca4b452538d151e8406dd27cf0bd2f89aec696fea8"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/hubert_kmeans_500.pt.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 124,
+      "path": ".cache/huggingface/download/hubert_kmeans_500.pt.metadata",
+      "sha256": "584085f6f43d6d9be76c0128d64d76b139203d98e38e0ef52d0ccb724a5a233c"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/infer.py.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 101,
+      "path": ".cache/huggingface/download/infer.py.metadata",
+      "sha256": "ed0fdea5e60ece0361f91d36acc1baa8f4848530315c7a9593395ac211be1307"
+    },
+    {
+      "bytes": 1519,
+      "path": ".gitattributes",
+      "sha256": "11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361"
+    },
+    {
+      "bytes": 1896,
+      "path": "README.md",
+      "sha256": "7826b40929af740f3a9f01d3490272544b07d0a05418879afa69df542a5d7b70"
+    },
+    {
+      "bytes": 510330746,
+      "path": "ar_coarse/ckpt_best.pt",
+      "sha256": "584ba739758b73ba25cafef17978919efe3e124f6e6a5161c3ff34a6b9353cca"
+    },
+    {
+      "bytes": 529361274,
+      "path": "ar_fine/ckpt_best.pt",
+      "sha256": "20f58ed265c0888668c8ab5798dde9e5c599cfe75a97653b4eebc7102109a72f"
+    },
+    {
+      "bytes": 462959482,
+      "path": "ar_semantic/ckpt_best.pt",
+      "sha256": "672e4d212023b83704f5630cb96e2693bc1d4a89286a02c764e5ca5750b54f8d"
+    },
+    {
+      "bytes": 1658731,
+      "path": "hubert_kmeans_500.pt",
+      "sha256": "1f42c8beac9500c212cf9ef74801c5fc6e6bfd3cbc0d1de2db7e404bb347b638"
+    },
+    {
+      "bytes": 7574,
+      "path": "infer.py",
+      "sha256": "35b238303407856f1dd987276cd68c393ac991decac42acaa746e2f139e9024c"
+    }
+  ],
+  "model": {
+    "repository": "zhuqijian/HAFM",
+    "revision": "1653c3c7bffdc9b4b2d57d8b6e4f5bb3002a64fe"
+  },
+  "path": "snapshot",
+  "provider": "HAFM",
+  "source": {
+    "repository": "HackerHyper/HAFM",
+    "revision": "d9aa19a5820a4c1563ab405d437933480f71d5b9"
+  },
+  "treeSha256": "79d4812169b7e71196f0d03babcffcf956a628b9cbde02eb75ec9bfc2074b6c8"
+}

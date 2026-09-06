@@ -1,0 +1,45 @@
+HAFM licensed-fixture compatibility validation
+Observed UTC date: 2026-09-06
+Operator session local date: 2026-09-07
+Operator session timezone: Asia/Jerusalem (UTC+03:00)
+Modal run app: ap-UTS20Z77lonwYTc1Lfm2m4
+Docker image build: im-v4jr4FcbxxsmVoKCoIUGyn
+Function image: im-Nzb0k10OAWvlHqEqCysx6x
+Image evidence: sha256:bb3ea7679fab888113d42c252fe9497960961214dd176bde4848efb3fa34e23e
+Full Modal run log SHA-256: f8f43d2478fe3ea6a4d5192e374c5fc44a9dfed02465e1a34e4ef37715d8ff39
+
+Licensed fixture:
+- User confirmed owner-or-authorized rights for private HAFM validation.
+- Audio is retained only in hafm-smoke-private-v1, never in Git.
+- Derived fixture SHA-256: 3358e43121bf2c22ebd9dc0c424f2a4e071df932ed90d405f9095cac68232265
+- 15.0 seconds, 16,000 Hz, mono, PCM16, 480,078 bytes.
+- Finite and non-silent metadata validation passed.
+
+Immutable model assets:
+- zhuqijian/HAFM@1653c3c7bffdc9b4b2d57d8b6e4f5bb3002a64fe
+- Seven required asset identities matched.
+- Model tree SHA-256: 79d4812169b7e71196f0d03babcffcf956a628b9cbde02eb75ec9bfc2074b6c8
+- Asset manifest SHA-256: 999b7dd6990ec71cb24764c95279dc2d3efef7fa86aad6c584f75d93e873e8d5
+- Exact retained manifest: release-evidence/model-assets.json
+
+Executable compatibility result:
+- Docker image built: true
+- Verify function created and executed: true
+- pip check: No broken requirements found.
+- Source revision matched d9aa19a5820a4c1563ab405d437933480f71d5b9.
+- Published source hashes matched.
+- Compatibility evidence SHA-256: 219eaf085989b6241b4e63eed65271f4cc88074c8484382835175b1e968c33f1
+- Exact retained evidence: release-evidence/compatibility-evidence.json
+- Normalized raw probe excerpt SHA-256: 240b96052368f3adad57f04ac458c074fe6d6512f3349d708c6b8204e7167e8d
+- Retained probe excerpt: release-evidence/modal-probe.txt
+- Classification: BLOCKED_UPSTREAM
+
+The published source is not runnable. README names infer_simple.py, while the
+repository publishes infer.py. That script imports four absent runtime files:
+configs/ar.yaml, models/ar_singsong.py, data/retokenize.py, and
+utils/audio_utils.py. The latest GitHub main and Hugging Face main revisions are
+the pinned revisions and do not publish those files or an inference dependency
+manifest.
+
+No model inference, smoke output, promotion, endpoint deployment, health-ready
+claim, API connection, or request-time download was attempted.
