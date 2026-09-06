@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "provider": "ANYACCOMP",
+  "observation": {
+    "observedUtcDate": "2026-09-06",
+    "operatorLocalDate": "2026-09-07",
+    "operatorTimezone": "Asia/Jerusalem"
+  },
+  "source": {
+    "repository": "https://github.com/AmphionTeam/AnyAccomp.git",
+    "revision": "82604b5e3107944ad4c49fc64900b86118ae2c62",
+    "gitTree": "854de7d216d134878c442b461e0bb97196f51c5b",
+    "license": "MIT",
+    "commercialUsePermitted": true,
+    "licenseGitBlobOid": "af57e1da69c3f28eac74e89cf192fda2d19043da",
+    "licenseBytes": 1069,
+    "licenseSha256": "4f5f5cc99165e8a606579265c89f49c005bfd7f5dfde4049cd8d99a282c3dd3d",
+    "retainedLicenseFile": "source-license.txt",
+    "sourceFileInventorySha256": "65f7ac6a2bbe83149ff997239c48f79b2c21ef35f21c934419d7949a0fa0fc03"
+  },
+  "model": {
+    "repository": "amphion/anyaccomp",
+    "revision": "9aa9e62427337bf1df4caa3c4f3e6ad934522e71",
+    "gated": false,
+    "disabled": false,
+    "license": "CC-BY-4.0",
+    "commercialUsePermitted": true,
+    "usedStorageBytes": 2078199136,
+    "modelCardGitBlobOid": "3e045cd4dcaf8fbb34925b3aaf80b445e43a6dcd",
+    "modelCardBytes": 4036,
+    "modelCardSha256": "ed7c63161c432d95618e1292f7e39dd5525550ba48fdf7740985ea944dbbae9a",
+    "retainedModelCardFile": "model-card.md",
+    "selectedMetadata": {
+      "sha": "9aa9e62427337bf1df4caa3c4f3e6ad934522e71",
+      "lastModified": "2025-12-22T11:52:36.000Z",
+      "gated": false,
+      "disabled": false,
+      "usedStorage": 2078199136,
+      "cardData": {"license": "cc-by-4.0"},
+      "siblings": [
+        "README.md",
+        "config.json",
+        "pretrained/flow_matching/pytorch_model.bin",
+        "pretrained/vocoder/model.safetensors",
+        "pretrained/vq/pytorch_model.bin"
+      ]
+    },
+    "selectedMetadataSha256": "bf0877cce8a77cab7b6e61809a08d3d3ef22f0fe1b7ad45339b0d138ce20ec3e",
+    "checkpointFiles": [
+      {"component": "Flow Matching", "path": "pretrained/flow_matching/pytorch_model.bin", "bytes": 880790586, "lfsOidSha256": "e6802bd1123935a54e990cb8d3897a18190df6c53f73db021baa28c420721129"},
+      {"component": "Vocoder", "path": "pretrained/vocoder/model.safetensors", "bytes": 1020206416, "lfsOidSha256": "1b7efd04c71c058cd00b4e9a91c761b31da745f878b7d7ee839e157104d3a7da"},
+      {"component": "VQ", "path": "pretrained/vq/pytorch_model.bin", "bytes": 177202134, "lfsOidSha256": "9d7f48cefea30602b2148c057faf14ecad168184e8063c8377dd57f208dc65fc"}
+    ]
+  },
+  "decision": {
+    "licenseStatus": "COMMERCIAL",
+    "sourceProvisioningAuthorized": true,
+    "modelProvisioningAuthorized": true,
+    "commercialDeploymentAuthorized": true,
+    "environmentValuesAreAuthorizationEvidence": false,
+    "requiredAttribution": "AnyAccomp model by Amphion Team, CC-BY-4.0; source MIT."
+  }
+}

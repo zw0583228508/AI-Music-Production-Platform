@@ -7,4 +7,5 @@ ARTIFACT_VOLUME_NAME = "anyaccomp-artifacts-private-v1"
 MODEL_MOUNT = "/var/lib/anyaccomp/models"
 ARTIFACT_MOUNT = "/var/lib/anyaccomp/artifacts"
 RUNTIME_SECRET_NAME = "anyaccomp-runtime-v1"
+PROMOTION_SECRET_NAME = "anyaccomp-promotion-identity-v1"
 WORKER_ROOT = Path(__file__).resolve().parent
