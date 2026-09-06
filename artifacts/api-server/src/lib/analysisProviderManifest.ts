@@ -71,7 +71,7 @@ export const VERIFIED_GPU_ANALYSIS_PROVIDERS: Readonly<
     version: "all-in-one-infer-3.1.0",
   },
   MT3: {
-    version: "mt3-ismir2021",
+    version: "mt3-pytorch-multitrack",
   },
   MR_MT3: {
     version: "mr-mt3",

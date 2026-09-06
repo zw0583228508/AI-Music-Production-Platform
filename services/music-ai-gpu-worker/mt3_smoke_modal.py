@@ -10,7 +10,7 @@ import modal
 from modal_config import (
     DEPLOYMENTS,
     MODEL_MOUNT,
-    MODEL_VOLUME_NAME,
+    MT3_MODEL_VOLUME_NAME,
     provider_image_build_args,
     worker_environment,
 )
@@ -50,7 +50,7 @@ else:
         context_dir=repository_root,
         build_args=provider_image_build_args(DEPLOYMENT),
     )
-model_volume = modal.Volume.from_name(MODEL_VOLUME_NAME, create_if_missing=False)
+model_volume = modal.Volume.from_name(MT3_MODEL_VOLUME_NAME, create_if_missing=False)
 
 
 @app.function(

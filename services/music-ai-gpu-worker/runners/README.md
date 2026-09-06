@@ -60,7 +60,7 @@ ${MUSIC_GPU_CHECKPOINT_ROOT}/
   smoke/smoke.wav
   bs-roformer-viperx-v1.ckpt
   bs-roformer-viperx-v1.yaml
-  mt3-ismir2021/                 # mt3-infer mt3_pytorch pretrained directory
+  mt3-official-multitrack/       # exact official gs://mt3/checkpoints/mt3 serialization
   all-in-one/
     harmonix-fold0-0vra4ys2.pth
   all-in-one-demucs/             # populated torch-hub/demucs-infer cache
