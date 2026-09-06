@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "provider": "REMI_Z",
+  "finalStatus": "BLOCKED_UPSTREAM",
+  "checkedAt": "2026-09-06",
+  "source": {
+    "repository": "https://github.com/Sonata165/REMI-z",
+    "revision": "a95f746ed44df62a0b5ce698b94b4ae21a558603",
+    "license": "MIT"
+  },
+  "evidence": [
+    "REMI-z is a tokenizer/library and has no standalone inference checkpoint.",
+    "Its intended worker integration is blocked with Music2Music because the Music2Music code and checkpoint licenses are undeclared."
+  ],
+  "workerCreated": false,
+  "reason": "The tokenizer source is pinned, but no complete endpoint, API, smoke, and promotion evidence chain is retained.",
+  "blockers": ["The provider-local RESEARCH_READY claim is superseded by the authoritative installation matrix until complete evidence is retained."]
+}

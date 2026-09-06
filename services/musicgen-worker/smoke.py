@@ -9,7 +9,7 @@ from pathlib import Path
 
 import soundfile as sf
 
-from app import ASSET_ROOT, SPEC, _generate, _generate_jasco, _sha256
+from app import ASSET_ROOT, SPEC, _generate, _sha256
 
 
 def _non_silent(wav_bytes: bytes) -> tuple[bool, float]:
@@ -29,17 +29,8 @@ def main(fixture: Path) -> dict:
     source = fixture.read_bytes()
     text, text_rate = _generate("text", "warm acoustic instrumental music", 4, 101, 1.0, 250, 0.0, 3.0)
     melody, melody_rate = _generate("melody", "gentle piano accompaniment following the melody", 4, 202, 1.0, 250, 0.0, 3.0, source)
-    drum_fixture = Path(os.environ["MUSICGEN_JASCO_DRUM_SMOKE_AUDIO"])
-    if not drum_fixture.is_file():
-        raise RuntimeError("uploaded real drum smoke fixture is missing")
-    jasco, jasco_rate = _generate_jasco(
-        "short rhythmic transition", 4, 303, 3.0,
-        [[1.0 if bin_ in (0, 4, 7) else 0.0 for bin_ in range(12)]],
-        drum_fixture.read_bytes(), source,
-    )
     text_ok, text_rms = _non_silent(text)
     melody_ok, melody_rms = _non_silent(melody)
-    jasco_ok, jasco_rms = _non_silent(jasco)
     # A byte identity check catches the direct-copy failure mode, while the
     # correlation guard catches a copied source re-encoded as WAV.
     source_audio, _ = sf.read(str(fixture), always_2d=True)
@@ -53,8 +44,7 @@ def main(fixture: Path) -> dict:
             correlation = float(np.corrcoef(left, right)[0, 1])
     not_copy = hashlib.sha256(source).hexdigest() != hashlib.sha256(melody).hexdigest() and abs(correlation) < 0.995
     ffmpeg = subprocess.check_output(["ffmpeg", "-version"], text=True).splitlines()[0]
-    jasco_not_copy = hashlib.sha256(source).hexdigest() != hashlib.sha256(jasco).hexdigest()
-    if not (text_ok and melody_ok and jasco_ok and not_copy and jasco_not_copy):
+    if not (text_ok and melody_ok and not_copy):
         raise RuntimeError("MusicGen smoke rejected silent or copied-source output")
     proof = {
         "provider": "MUSICGEN", "realInference": True,
@@ -66,9 +56,6 @@ def main(fixture: Path) -> dict:
         "melody": {"sampleRate": melody_rate, "artifactSha256": hashlib.sha256(melody).hexdigest(),
                    "nonSilent": melody_ok, "rms": melody_rms, "notSourceCopy": not_copy,
                    "sourceSha256": hashlib.sha256(source).hexdigest(), "correlation": correlation},
-        "jasco": {"sampleRate": jasco_rate, "artifactSha256": hashlib.sha256(jasco).hexdigest(),
-                  "nonSilent": jasco_ok, "rms": jasco_rms, "notSourceCopy": jasco_not_copy,
-                  "drumFixtureSha256": _sha256(drum_fixture)},
     }
     (ASSET_ROOT / SPEC["smoke_proof"]).write_text(json.dumps(proof, indent=2, sort_keys=True), encoding="utf-8")
     return proof

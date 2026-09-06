@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "provider": "SONG_AESTHETICS",
+  "finalStatus": "BLOCKED_NO_WEIGHTS",
+  "checkedAt": "2026-09-06",
+  "evidence": [
+    "Source and checkpoint pointer: https://github.com/yisan33/song-aesthetics-evaluation/tree/b7091dd0b4bedac45668cc7c9caa5e056a054244 (MIT).",
+    "The pinned repository's Git LFS object for ckpt/model.pt is SHA-256 8e0788c2e71d5bb37a2fba13f71401ba07ca4266826b4d196dab3f9f19085f97 (264 MB)."
+  ],
+  "reason": "The model is publicly referenced under MIT but the LFS checkpoint has not been provisioned, inventoried, or smoke-tested with aligned mixture/vocal/accompaniment segments.",
+  "blockers": [
+    "No verified local LFS checkpoint or bootstrap hash inventory exists.",
+    "No real five-dimension 0-100 inference smoke or deployed endpoint exists."
+  ]
+}

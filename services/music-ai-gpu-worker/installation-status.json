@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "providers": {
+    "MR_MT3": {
+      "classification": "READY",
+      "evidence": {
+        "modelManifestSource": "services/music-ai-gpu-worker/model_manifest.json#providers.MR_MT3",
+        "bootstrapImplementationSource": "services/music-ai-gpu-worker/mt3_family_bootstrap.py",
+        "adapterAndPatchSha256PinnedInManifest": true,
+        "checkpointDownloaded": true,
+        "checkpointDownloadedEvidenceSource": "operator-verified phase 1 evidence referenced by the re-audit request",
+        "observedCheckpointSha256": "b8a3807ed265059abd25ad7f68142c06c35e8f6144dcaa45bd55946a3745398f",
+        "checkpointSha256IdentitySource": "services/music-ai-gpu-worker/runners/README.md",
+        "realCudaSmokeObserved": true,
+        "realCudaSmokeProofPresent": true,
+        "realCudaSmokeEvidenceSource": "matching persisted provisioning attestation and live NVIDIA L4 health smoke",
+        "realCudaSmokeNoteCount": 63,
+        "immutableCheckpointRevisionPinnedInManifest": true,
+        "immutableCheckpointRevision": "gudgud1014/MR-MT3@539c08b0fe551076db6108a5f5b2a57d774881ed",
+        "checkpointSha256PinnedInManifest": true,
+        "upstreamVerificationSource": "Hugging Face model revision and expanded tree APIs for gudgud1014/MR-MT3 revision 539c08b0fe551076db6108a5f5b2a57d774881ed",
+        "signedPromotionRecordPresent": true,
+        "promotionSignatureValidated": true,
+        "modalAppId": "ap-GT4db0tsUM3p0u4NpG5oQT",
+        "modalDeploymentId": "v3",
+        "modalFunctionId": "fu-pq3Mc7FukPWhPeIrj8570a",
+        "modalImageId": "im-5BRAEpxipryMioacoQevz7",
+        "sourceImageDigest": "sha256:ebd20d7f195123326d50d8d1f08078f145f2384465f5087aee68af24910b20cb",
+        "canonicalEndpointEnvironment": "MR_MT3_API_URL",
+        "endpointConfigured": true,
+        "endpointOrigin": "https://windot100--mr-mt3.modal.run",
+        "liveHealthStatus": "ready"
+      }
+    },
+    "YOUR_MT3": {
+      "classification": "BLOCKED_UPSTREAM",
+      "evidence": {
+        "modelManifestSource": "services/music-ai-gpu-worker/model_manifest.json#providers.YOUR_MT3",
+        "bootstrapImplementationSource": "services/music-ai-gpu-worker/mt3_family_bootstrap.py",
+        "checkpointDownloaded": true,
+        "checkpointDownloadedEvidenceSource": "operator-verified phase 1 evidence referenced by the re-audit request",
+        "realGpuInferenceObserved": true,
+        "realGpuInferenceEvidenceSource": "operator-verified phase 1 evidence referenced by the re-audit request",
+        "realGpuSmokeNoteCount": 0,
+        "immutableCheckpointRevisionPinnedInManifest": false,
+        "checkpointSha256PinnedInManifest": false,
+        "signedPromotionRecordPresent": false,
+        "canonicalEndpointEnvironment": "YOUR_MT3_API_URL",
+        "endpointConfigured": false
+      },
+      "blockers": [
+        "The downloaded checkpoint comes from mutable upstream main and is not bound to an immutable checkpoint revision or SHA-256 in the current manifest.",
+        "The real GPU smoke produced zero notes, which fails the required at-least-one-terminated-note acceptance criterion.",
+        "No signed YOUR_MT3 promotion or deployed endpoint evidence is present."
+      ]
+    }
+  }
+}

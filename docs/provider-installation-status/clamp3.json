@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "provider": "CLAMP3",
+  "finalStatus": "BLOCKED_NO_WEIGHTS",
+  "checkedAt": "2026-09-06",
+  "evidence": [
+    "Source: https://github.com/sanderwood/clamp3/tree/9016d2b0c8d12d1aa79c2e0ab201e6822bdc83a8 (MIT).",
+    "CLaMP3 weights: https://huggingface.co/sander-wood/clamp3/tree/355625cc1c6f73726bbcd0eb9276ac7152d56426 (MIT).",
+    "Raw-audio dependency: https://huggingface.co/m-a-p/MERT-v1-95M/tree/12af15fef9d0ac838c3f475bfbbf26d2060dd4f5 (CC-BY-NC-4.0)."
+  ],
+  "reason": "The worker scaffold is installable but no asset inventory, real smoke proof, or configured deployed endpoint exists.",
+  "blockers": [
+    "Do not classify as RESEARCH_READY or READY until bootstrap has created its hash inventory and the real semantic smoke succeeds.",
+    "Raw-audio mode remains non-commercial because it requires MERT-v1-95M under CC-BY-NC-4.0."
+  ]
+}

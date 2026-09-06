@@ -14,7 +14,7 @@ import modal
 from modal.runner import deploy_app
 
 from modal_config import (
-    APP_NAME, ENDPOINT_LABEL, EPHEMERAL_DISK_MIB, LICENSE_SECRET_NAME, MAX_CONCURRENT_INPUTS,
+    APP_NAME, CANDIDATE_ENDPOINT_LABEL, ENDPOINT_LABEL, EPHEMERAL_DISK_KIB, EPHEMERAL_DISK_MIB, LICENSE_SECRET_NAME, MAX_CONCURRENT_INPUTS,
     MODEL_MOUNT, MODEL_VOLUME_NAME, REPOSITORY_ROOT, RUNTIME_SECRET_NAME, SMOKE_MOUNT,
     SMOKE_VOLUME_NAME, WORKER_ROOT, image_build_args, validate_worker_capacity,
     worker_environment,
@@ -22,6 +22,7 @@ from modal_config import (
 
 app = modal.App(APP_NAME)
 CANDIDATE_APP_NAME = f"{APP_NAME}-candidate"
+candidate_app = modal.App(CANDIDATE_APP_NAME)
 image = modal.Image.from_dockerfile(
     WORKER_ROOT / "Dockerfile", context_dir=REPOSITORY_ROOT, build_args=image_build_args()
 )
@@ -44,7 +45,7 @@ validate_worker_capacity(
     timeout=600,
     scaledown_window=300,
     max_containers=1,
-    ephemeral_disk=EPHEMERAL_DISK_MIB,
+    ephemeral_disk=EPHEMERAL_DISK_KIB,
     # Intentionally no min_containers / scale floor.
     env=WORKER_ENVIRONMENT,
 )
@@ -56,9 +57,27 @@ class SheetSageWorker:
         return fastapi_app
 
 
+@candidate_app.cls(
+    image=image,
+    secrets=[runtime_secret, license_secret],
+    volumes={MODEL_MOUNT: model_volume, SMOKE_MOUNT: smoke_volume},
+    timeout=600,
+    scaledown_window=300,
+    max_containers=1,
+    ephemeral_disk=EPHEMERAL_DISK_KIB,
+    env=WORKER_ENVIRONMENT,
+)
+@modal.concurrent(max_inputs=MAX_CONCURRENT_INPUTS)
+class SheetSageCandidateWorker:
+    @modal.asgi_app(label=CANDIDATE_ENDPOINT_LABEL)
+    def endpoint(self):
+        from app import app as fastapi_app
+        return fastapi_app
+
+
 def deployed_candidate_endpoint_url() -> str | None:
     """Resolve the isolated candidate endpoint from Modal metadata."""
-    return SheetSageWorker().endpoint.get_web_url()
+    return SheetSageCandidateWorker().endpoint.get_web_url()
 
 
 def deploy_and_validate(fixture_name: str) -> dict:
@@ -75,7 +94,7 @@ def deploy_and_validate(fixture_name: str) -> dict:
         raise RuntimeError(
             "deployment validation failed: provisioning_manifest_checksum"
         )
-    deploy_app(app, name=CANDIDATE_APP_NAME, deployment_strategy="recreate")
+    deploy_app(candidate_app, name=CANDIDATE_APP_NAME, deployment_strategy="recreate")
     endpoint_url = deployed_candidate_endpoint_url()
     if not endpoint_url:
         raise RuntimeError("deployment validation failed: modal_endpoint")

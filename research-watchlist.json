@@ -1,0 +1,47 @@
+[
+  {
+    "provider": "S2Accompanist",
+    "paper": null,
+    "repository": null,
+    "weightsAvailable": false,
+    "licenseKnown": false,
+    "status": "BLOCKED_NO_WEIGHTS",
+    "lastReviewed": "2026-09-06"
+  },
+  {
+    "provider": "BeatEdit",
+    "paper": null,
+    "repository": "https://github.com/Haoyu-Gu/BeatEdit-code",
+    "weightsAvailable": false,
+    "licenseKnown": false,
+    "status": "BLOCKED_NO_WEIGHTS",
+    "lastReviewed": "2026-09-06"
+  },
+  {
+    "provider": "Live Music Diffusion Models",
+    "paper": null,
+    "repository": "https://github.com/ZacharyNovack/live-music-diffusion-models",
+    "weightsAvailable": false,
+    "licenseKnown": false,
+    "status": "BLOCKED_NO_WEIGHTS",
+    "lastReviewed": "2026-09-06"
+  },
+  {
+    "provider": "Diff-A-Riff",
+    "paper": null,
+    "repository": "https://github.com/SonyCSLParis/diffariff-companion",
+    "weightsAvailable": false,
+    "licenseKnown": false,
+    "status": "BLOCKED_NO_WEIGHTS",
+    "lastReviewed": "2026-09-06"
+  },
+  {
+    "provider": "Break-the-Beat",
+    "paper": null,
+    "repository": null,
+    "weightsAvailable": false,
+    "licenseKnown": false,
+    "status": "BLOCKED_NO_WEIGHTS",
+    "lastReviewed": "2026-09-06"
+  }
+]

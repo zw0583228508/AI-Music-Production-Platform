@@ -38,6 +38,8 @@ def main() -> None:
     api = HfApi()
     models: dict[str, dict[str, object]] = {}
     for mode, details in SPEC["models"].items():
+        if details.get("status") == "BLOCKED_NO_WEIGHTS":
+            continue
         if not isinstance(details.get("requested_revision"), str):
             raise RuntimeError(
                 f"{mode} has no reviewed immutable checkpoint pin; "
@@ -49,6 +51,11 @@ def main() -> None:
         revision = str(info.sha)
         if not re.fullmatch(r"[0-9a-f]{40}", revision):
             raise RuntimeError(f"{mode} Hub revision did not resolve to an immutable 40-character SHA")
+        if revision != details.get("resolved_revision"):
+            raise RuntimeError(
+                f"{mode} Hub revision resolved to {revision}, expected reviewed "
+                f"{details.get('resolved_revision')}"
+            )
         destination = ASSET_ROOT / mode
         snapshot_download(
             repo_id=details["repository"], revision=revision, local_dir=str(destination),
@@ -61,9 +68,27 @@ def main() -> None:
             "repository": details["repository"], "requestedRevision": details["requested_revision"],
             "resolvedRevision": revision, "path": mode, "files": entries,
         }
+    dependencies: dict[str, dict[str, object]] = {}
+    cache = ASSET_ROOT / "hf-cache" / "hub"
+    for name, details in SPEC.get("dependencies", {}).items():
+        revision = details["resolved_revision"]
+        snapshot = Path(snapshot_download(
+            repo_id=details["repository"], revision=revision, cache_dir=str(cache),
+        ))
+        if snapshot.name != revision:
+            raise RuntimeError(f"{name} dependency resolved to an unexpected revision")
+        refs = snapshot.parent.parent / "refs"
+        refs.mkdir(parents=True, exist_ok=True)
+        (refs / "main").write_text(revision, encoding="utf-8")
+        dependencies[name] = {
+            "repository": details["repository"],
+            "resolvedRevision": revision,
+            "path": str(snapshot.relative_to(ASSET_ROOT)),
+            "files": _files(snapshot),
+        }
     payload = {
         "provider": SPEC["provider"], "source": SPEC["source"], "runtime": SPEC["runtime"],
-        "license": SPEC["license"]["name"], "models": models,
+        "license": SPEC["license"]["name"], "models": models, "dependencies": dependencies,
     }
     temporary = ASSET_ROOT / ".model-assets.json.tmp"
     temporary.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")

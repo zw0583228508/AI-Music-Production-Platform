@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "provider": "MUQ_EVAL",
+  "finalStatus": "BLOCKED_NO_WEIGHTS",
+  "checkedAt": "2026-09-06",
+  "evidence": [
+    "Source: https://github.com/dgtql/MuQ-Eval/tree/60a88f8ac0909ca1fd1a78af3660f1fc376977a1 (MIT).",
+    "Official A1 checkpoint snapshot: https://huggingface.co/zhudi2825/MuQ-Eval-A1/tree/b082e238827df51d99ac66bdd1b6f0d2406bc90e (MIT), including model_state_dict.pt and config.yaml."
+  ],
+  "reason": "Public MIT source and checkpoint are identified, but neither is provisioned or hash-inventoried in an isolated worker.",
+  "blockers": [
+    "No real clean-versus-degraded audio quality smoke has run.",
+    "No configured/deployed endpoint exists."
+  ]
+}

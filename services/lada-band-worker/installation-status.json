@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "providers": {
+    "LADA_BAND": {
+      "classification": "BLOCKED_LICENSE",
+      "evidence": {
+        "modelManifest": "model_manifest.json",
+        "licenseManifest": "license_manifest.json",
+        "sourceRevisionPinned": true,
+        "license": "NONCOMMERCIAL_RESEARCH_ONLY",
+        "licenseAcceptancePresent": false,
+        "licensedAccessTokenPresent": false,
+        "assetInventoryPresent": false,
+        "realSmokeProofPresent": false
+      },
+      "blockers": [
+        "Non-commercial research terms have not been explicitly accepted in the current environment.",
+        "No licensed Hugging Face access token is available, so the exact snapshot cannot be provisioned."
+      ]
+    }
+  }
+}

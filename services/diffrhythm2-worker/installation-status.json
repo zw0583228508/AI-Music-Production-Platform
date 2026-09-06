@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "providers": {
+    "DIFFRHYTHM_2": {
+      "classification": "BLOCKED_UPSTREAM",
+      "evidence": {
+        "modelManifestSource": "services/diffrhythm2-worker/model_manifest.json",
+        "sourceRevisionPinnedInManifest": true,
+        "requestedModelRevisionsPinnedInManifest": true,
+        "provisionedAssetsObserved": true,
+        "provisionedAssetsEvidenceSource": "operator-verified phase 3 evidence referenced by the re-audit request",
+        "realGpuAttemptObserved": true,
+        "realGpuAttemptEvidenceSource": "operator-verified phase 3 evidence referenced by the re-audit request",
+        "generatedArtifactProduced": false,
+        "smokeImplementationSource": "services/diffrhythm2-worker/smoke.py and modal_provision.py",
+        "endpointConfigured": false
+      },
+      "blockers": [
+        "The provisioned real GPU attempt did not generate an artifact, so it cannot satisfy the real lyrics-and-rhythm-conditioned non-silent/non-copy smoke gate.",
+        "No persisted successful smoke proof, signed promotion, or deployed endpoint evidence is present."
+      ]
+    }
+  }
+}

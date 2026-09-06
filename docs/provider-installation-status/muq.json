@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "provider": "MUQ",
+  "finalStatus": "BLOCKED_LICENSE",
+  "checkedAt": "2026-09-06",
+  "evidence": [
+    "Source: https://github.com/tencent-ailab/MuQ/tree/28847ea50cd31ac4b8b6a7dacc051ad7d1c7606a (MIT).",
+    "Official MuQ weight snapshot: https://huggingface.co/OpenMuQ/MuQ-large-msd-iter/tree/0562a57814f6f8bbd9fdea0a25921a2fce1a841a (CC-BY-NC-4.0)."
+  ],
+  "reason": "The required MuQ weights are explicitly non-commercial and no accepted research-only deployment boundary exists.",
+  "blockers": [
+    "Do not expose a commercial production embedding endpoint using CC-BY-NC-4.0 weights.",
+    "No immutable local weight inventory or real audio embedding smoke exists."
+  ]
+}

@@ -22,12 +22,12 @@
     "text": {
       "repository": "facebook/musicgen-large",
       "requested_revision": "15ccdc9",
-      "resolved_revision": null
+      "resolved_revision": "15ccdc92099879e47b6da12c350cdb71d4eab3ca"
     },
     "melody": {
       "repository": "facebook/musicgen-melody-large",
       "requested_revision": "6fdf8d3",
-      "resolved_revision": null
+      "resolved_revision": "6fdf8d3d815995108c9bdb5183414ff464b171ac"
     },
     "jasco": {
       "provider_id": "JASCO_CHORDS_DRUMS_MELODY",
@@ -36,6 +36,12 @@
       "resolved_revision": null,
       "status": "BLOCKED_NO_WEIGHTS",
       "blocker": "No reviewed immutable Hugging Face revision/checkpoint SHA was supplied for facebook/jasco; never resolve or download main."
+    }
+  },
+  "dependencies": {
+    "t5-base": {
+      "repository": "t5-base",
+      "resolved_revision": "a9723ea7f1b39c1eae772870f3b547bf6ef7e6c1"
     }
   },
   "provider_registry": {

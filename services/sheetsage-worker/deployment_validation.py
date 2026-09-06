@@ -8,7 +8,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-TRUSTED_ENDPOINT_SUFFIX = "--sheetsage-worker-candidate-sheetsage.modal.run"
+TRUSTED_ENDPOINT_SUFFIX = "--sheetsage-candidate.modal.run"
 
 
 class DeploymentValidationError(RuntimeError):

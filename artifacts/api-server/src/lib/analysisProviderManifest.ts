@@ -74,6 +74,11 @@ export type AnalysisProviderHealthAttestation = {
   checksum: string;
 };
 
+const SHEETSAGE_IDENTITY = {
+  version: "0.2.1",
+  sourceRevision: "openmirlab/sheetsage-infer@ee7c2aeeb8084840a4f938ae6913f566afdaebdc",
+} as const;
+
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -128,6 +133,23 @@ export function attestAnalysisProviderHealth(
       version: packageVersion,
       checksum: /^[a-f0-9]{64}$/i.test(checksum) ? checksum : "runtime-smoke-attested",
     };
+  }
+  if (requestedProvider === "SHEETSAGE") {
+    if (
+      version !== SHEETSAGE_IDENTITY.version ||
+      payload.sourceRevision !== SHEETSAGE_IDENTITY.sourceRevision ||
+      payload.assetsVerified !== true ||
+      payload.runtimeReady !== true ||
+      payload.checkpointReady !== true ||
+      payload.smokeTested !== true ||
+      payload.smokeProofVerified !== true ||
+      !/^[a-f0-9]{64}$/i.test(checksum)
+    ) {
+      throw new Error(
+        "health response does not match the verified SheetSage source, asset, runtime, and signed-smoke identity",
+      );
+    }
+    return { provider, version, checksum };
   }
   if (
     payload.runtimeReady !== true ||

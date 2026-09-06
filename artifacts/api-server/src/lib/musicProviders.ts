@@ -436,10 +436,10 @@ export const MUSIC_PROVIDERS: MusicProviderDescriptor[] = [
     capabilities: ["transcription"],
     inputTypes: ["FULL_SONG", "INSTRUMENTAL", "VIDEO"],
     execution: "remote",
-    status: "unavailable",
+    status: remoteConfigured("MR_MT3") ? "configured" : "unavailable",
     license: "MIT",
     priority: 81,
-    notes: "Speed-optimized transcription adapter. Unavailable until the mutable upstream artifact hash and immutable revision are independently reviewed and signed promotion evidence succeeds.",
+    notes: "Speed-optimized transcription adapter. Installed from OpenMIRLab mt3-infer revision 280a95817a67da0ae46987ddbb18c946963afffe with the MIT-licensed gudgud1014/MR-MT3 checkpoint pinned at 539c08b0fe551076db6108a5f5b2a57d774881ed (SHA-256 b8a3807ed265059abd25ad7f68142c06c35e8f6144dcaa45bd55946a3745398f); requires MR_MT3_API_URL. Catalog configuration never implies readiness: live health and signed promotion verification are required.",
   },
   {
     id: "YOUR_MT3",
@@ -499,17 +499,17 @@ export const MUSIC_PROVIDERS: MusicProviderDescriptor[] = [
     id: "SHEETSAGE",
     name: "SheetSage",
     provider: "Research model",
-    version: "configured-endpoint",
-    capabilities: ["harmony"],
+    version: "0.2.1",
+    capabilities: ["transcription", "harmony", "structure"],
     inputTypes: ["FULL_SONG", "INSTRUMENTAL", "VIDEO"],
     execution: "remote",
     status: process.env.SHEETSAGE_LICENSE_AUTHORIZED === "true" &&
       (remoteConfigured("SHEETSAGE") || remoteConfigured("SHEET_SAGE"))
       ? "configured"
       : "unavailable",
-    license: "Model-specific",
+    license: "CC-BY-NC-SA-3.0 weights; CC-BY-NC-SA-4.0 downbeat weights",
     priority: 110,
-    notes: "BLOCKED unless SHEETSAGE_LICENSE_AUTHORIZED=true and a real licensed endpoint is configured.",
+    notes: "RESEARCH_READY only: exact source and asset identities, persistent signed real-audio smoke, live health, and the Node melody/harmony/timing path were verified. Non-commercial/share-alike weights prohibit commercial routing.",
   },
   ...[
     ["MOSS_MUSIC_INSTRUCT", "MOSS-Music 8B Instruct", "Direct musical semantic reasoning"],
@@ -578,6 +578,19 @@ export const MUSIC_PROVIDERS: MusicProviderDescriptor[] = [
     priority: 130,
     notes: "Requires BASS_API_URL; supplies bass-note evidence used to score chord roots.",
   },
+  {
+    id: "CLAMP3",
+    name: "CLaMP 3 Cross-Modal Similarity",
+    provider: "Sander Wood / research model",
+    version: "355625cc1c6f73726bbcd0eb9276ac7152d56426",
+    capabilities: ["structure"],
+    inputTypes: ["FULL_SONG", "INSTRUMENTAL", "MIDI"],
+    execution: "remote",
+    status: remoteConfigured("CLAMP3") ? "configured" : "unavailable",
+    license: "MIT model; CC-BY-NC-4.0 raw-audio dependency",
+    priority: 140,
+    notes: "Non-commercial research-only cross-modal similarity. Requires CLAMP3_API_URL, exact immutable assets, and persisted real GPU smoke evidence.",
+  },
 ];
 
 export function providerDescriptorCatalog(): ProviderDescriptorCatalogEntry[] {
@@ -618,18 +631,20 @@ async function verifyAnalysisProviderHealth(
   if (
     !provider.configured ||
     !["BASIC_PITCH", "DEMUCS", "MADMOM", "TORCHCREPE", "ESSENTIA", "CHROMA", "PYLOUDNORM",
-      "MOSS_MUSIC_INSTRUCT", "MOSS_MUSIC_THINKING"].includes(provider.id)
+      "MR_MT3", "MOSS_MUSIC_INSTRUCT", "MOSS_MUSIC_THINKING"].includes(provider.id)
   ) {
     return provider;
   }
-    const endpoint = process.env[`MUSIC_PROVIDER_${provider.id}_URL`] ??
-    process.env[`${provider.id}_API_URL`] ??
-      (provider.id.startsWith("MOSS_MUSIC_") ? process.env.MOSS_MUSIC_API_URL : undefined) ??
-    process.env[
-      ["ESSENTIA", "CHROMA"].includes(provider.id)
-        ? "MUSIC_MIR_ESSENTIA_API_URL"
-        : "MUSIC_MIR_API_URL"
-    ];
+  const endpoint = provider.id === "MR_MT3"
+    ? process.env.MR_MT3_API_URL
+    : process.env[`MUSIC_PROVIDER_${provider.id}_URL`] ??
+      process.env[`${provider.id}_API_URL`] ??
+        (provider.id.startsWith("MOSS_MUSIC_") ? process.env.MOSS_MUSIC_API_URL : undefined) ??
+      process.env[
+        ["ESSENTIA", "CHROMA"].includes(provider.id)
+          ? "MUSIC_MIR_ESSENTIA_API_URL"
+          : "MUSIC_MIR_API_URL"
+      ];
   if (!endpoint) return provider;
   const checkedAt = new Date().toISOString();
   const startedAt = Date.now();
@@ -657,7 +672,7 @@ async function verifyAnalysisProviderHealth(
       : null;
     let ready = false;
     try {
-      attestAnalysisProviderHealth(provider.id, payload);
+      attestAnalysisProviderHealth(provider.id, payload, endpoint);
       ready = true;
     } catch {
       // The descriptor remains configured until the full attestation passes.

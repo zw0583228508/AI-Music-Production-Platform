@@ -143,6 +143,26 @@ The local workflow exposes:
 Heavy neural generation uses the separate contract documented in
 `docs/music-ai-gpu-worker-contract.md`.
 
+## Native renderer provisioning
+
+`bootstrap_sfizz_vsco2.py` provisions the exact public sfizz `1.2.3` source and
+the CC0 VSCO2 CE SFZ branch under `/var/lib/music-ai/assets/sfz`. It records the
+source revisions plus deterministic file count, byte count, and tree hashes.
+It does not claim readiness or activate the bytes. Set
+`MUSIC_AI_SFIZZ_INSTRUMENT` to an reviewed library-relative SFZ, approve the
+exact host identity/checksum, and use the normal stage/activate lifecycle. The
+three-render smoke remains the only route to `SFIZZ_VSCO2_CE` readiness.
+
+`native_hosts/pedalboard_vst3_host.py` is the offline VST3 TrackModel host and
+`native_hosts/sfizz_track_model_host.py` adapts TrackModel MIDI events to the
+pinned `sfizz_render` executable. Both emit the exact attestation consumed by
+the existing worker. Build the staged single-file executable with
+`python native_hosts/build_host.py vst3 /private/path/vst3-host` (or `sfz`);
+the resulting zipapp binds the entry point and shared protocol code into the
+one checksum approved by the worker. Neither is a substitute instrument. VST3 remains blocked
+until a separately licensed, approved plugin is supplied and passes its real
+native smoke renders.
+
 Remote source fetching resolves the hostname exactly once, rejects any
 non-global DNS answer, and connects directly to the vetted address while HTTPS
 continues certificate and SNI validation for the original hostname. Redirects

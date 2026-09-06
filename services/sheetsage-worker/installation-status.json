@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "providers": {
+    "SHEETSAGE": {
+      "classification": "RESEARCH_READY",
+      "evidence": {
+        "modelManifestSource": "services/sheetsage-worker/model_manifest.json",
+        "sourceRevisionPinnedInManifest": true,
+        "requiredAssetSha256PinnedInManifest": true,
+        "licenseTermsSource": "services/sheetsage-worker/model_manifest.json#license and explicit user non-commercial approval",
+        "canonicalEndpointEnvironmentSource": "shared environment:SHEETSAGE_API_URL",
+        "endpointConfigured": true,
+        "deploymentGateImplementationSource": "services/sheetsage-worker/modal_app.py and deployment_validation.py",
+        "liveHealthEvidencePresent": true,
+        "persistentRealSmokeProofEvidencePresent": true,
+        "currentEnvironmentLicenseAcceptancePresent": true,
+        "releaseAttestationSource": "services/sheetsage-worker/release-attestation.json",
+        "liveHealthObservedAt": "2026-09-06T07:37:53Z",
+        "liveHealthEndpointOrigin": "https://windot100--sheetsage.modal.run",
+        "modalAppId": "ap-O2XJ9oafmw55jD38VdbKjN",
+        "modalDeploymentVersion": "v9",
+        "candidateAppId": "ap-pVFrEgztKvEekZV4RETdKg",
+        "candidateDeploymentVersion": "v1",
+        "nodeAnalysisPathVerified": true
+      },
+      "blockers": [
+        "Commercial READY is prohibited by the CC-BY-NC-SA-3.0 SheetSage weights and CC-BY-NC-SA-4.0 downbeat weights; this installation is authorized only for non-commercial research."
+      ]
+    }
+  }
+}

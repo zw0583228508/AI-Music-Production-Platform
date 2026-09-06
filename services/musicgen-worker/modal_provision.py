@@ -24,20 +24,19 @@ runtime_secret = modal.Secret.from_name(RUNTIME_SECRET_NAME)
 license_secret = modal.Secret.from_name(LICENSE_SECRET_NAME)
 
 
-def _workload_json(action: str, *, fixture: Path | None = None, drum_fixture: Path | None = None,
+def _workload_json(action: str, *, fixture: Path | None = None,
                    online: bool = False) -> dict:
     """Run the isolated Python 3.9 workload without a shell or imports here."""
     environment = {**os.environ, **workload_environment(online=online), "MUSICGEN_WORKLOAD_ACTION": action}
     if fixture is not None:
         environment["MUSICGEN_SMOKE_AUDIO"] = str(fixture)
-    if drum_fixture is not None:
-        environment["MUSICGEN_JASCO_DRUM_SMOKE_AUDIO"] = str(drum_fixture)
     result = subprocess.run(
         ["/opt/musicgen-venv/bin/python", "/app/workload_entrypoint.py"],
         cwd="/app", env=environment, capture_output=True, text=True, timeout=86_000, check=False,
     )
     if result.returncode:
-        raise RuntimeError("MusicGen Python 3.9 workload failed")
+        detail = "\n".join(result.stderr.strip().splitlines()[-20:])
+        raise RuntimeError(f"MusicGen Python 3.9 workload failed:\n{detail}")
     if len(result.stdout.encode("utf-8")) > 65_536:
         raise RuntimeError("MusicGen workload proof exceeds the JSON boundary")
     try:
@@ -62,24 +61,23 @@ def provision_assets() -> dict:
 @app.function(image=image, gpu="L40S", secrets=[runtime_secret, license_secret],
               volumes={MODEL_MOUNT: model_volume, SMOKE_MOUNT: smoke_volume},
               env=worker_environment(), timeout=1_800, max_containers=1)
-def smoke_remote(fixture_name: str, drum_fixture_name: str) -> dict:
+def smoke_remote(fixture_name: str) -> dict:
     fixture = Path(SMOKE_MOUNT) / Path(fixture_name).name
-    drum_fixture = Path(SMOKE_MOUNT) / Path(drum_fixture_name).name
-    if not fixture.is_file() or not drum_fixture.is_file():
-        raise RuntimeError("uploaded real vocal/melody and drum smoke fixtures are required")
+    if not fixture.is_file():
+        raise RuntimeError("uploaded real vocal/melody smoke fixture is required")
     try:
-        return _workload_json("smoke", fixture=fixture, drum_fixture=drum_fixture)
+        return _workload_json("smoke", fixture=fixture)
     finally:
         model_volume.commit()
 
 
 @app.local_entrypoint()
-def main(action: str = "provision", fixture: str = "", drum_fixture: str = "") -> None:
+def main(action: str = "provision", fixture: str = "") -> None:
     if action == "provision":
         print(provision_assets.remote())
     elif action == "smoke":
-        if not fixture or not drum_fixture:
-            raise ValueError("fixture and drum_fixture must name uploaded smoke-volume files")
-        print(smoke_remote.remote(fixture, drum_fixture))
+        if not fixture:
+            raise ValueError("fixture must name an uploaded smoke-volume file")
+        print(smoke_remote.remote(fixture))
     else:
         raise ValueError("action must be provision or smoke")

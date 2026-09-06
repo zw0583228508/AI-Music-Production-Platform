@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "provider": "SAM_AUDIO",
+  "finalStatus": "BLOCKED_LICENSE",
+  "checkedAt": "2026-09-06",
+  "evidence": [
+    "Source: https://github.com/facebookresearch/sam-audio/tree/bb4c6999d2677c7402360e426afc01ddfad6dce0; its LICENSE is Meta SAM License, not an OSI license.",
+    "Base checkpoint: https://huggingface.co/facebook/sam-audio-base/tree/81f64008f9f957c2b57a45923fb5299c66e9d186; manual gated access and sam-license.",
+    "Large checkpoint: https://huggingface.co/facebook/sam-audio-large/tree/5f2cd3a9471a08c7282c06036be6893e18de8b70; manual gated access and sam-license."
+  ],
+  "reason": "The required checkpoints require manual gated acceptance and are governed by a provider-specific SAM License.",
+  "blockers": [
+    "No evidence of accepted SAM License terms, required contact-information gating consent, or authorized HF token is present.",
+    "No checkpoint hash inventory or real separation smoke exists."
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "providers": {
+    "SONGFORMER": {
+      "classification": "BLOCKED_NO_WEIGHTS",
+      "evidence": {
+        "modelManifest": "model_manifest.json",
+        "sourceRevisionPinned": true,
+        "upstreamMd5Recorded": true,
+        "localAssetSha256InventoryPresent": false,
+        "realFullSongSmokeProofPresent": false,
+        "canonicalEndpointEnvironment": "SONGFORMER_API_URL",
+        "endpointConfigured": false
+      },
+      "blockers": [
+        "Required SongFormer and MusicFM assets have upstream MD5 declarations only; no provisioned byte counts and SHA-256 inventory is present.",
+        "No real full-song section-boundary smoke proof or deployment evidence is present."
+      ]
+    }
+  }
+}

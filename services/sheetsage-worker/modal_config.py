@@ -5,6 +5,7 @@ from pathlib import Path
 
 APP_NAME = "sheetsage-worker"
 ENDPOINT_LABEL = "sheetsage"
+CANDIDATE_ENDPOINT_LABEL = "sheetsage-candidate"
 RUNTIME_SECRET_NAME = "music-ai-worker-runtime"
 LICENSE_SECRET_NAME = "sheetsage-noncommercial-license-v1"
 MODEL_VOLUME_NAME = "sheetsage-models-v1"
@@ -15,6 +16,9 @@ MIB = 1024 * 1024
 MAX_AUDIO_BYTES = 512 * MIB
 TEMP_DISK_HEADROOM_BYTES = 256 * MIB
 EPHEMERAL_DISK_MIB = 2048
+# Modal 1.5 serializes this resource request in KiB even though capacity policy
+# is easier to reason about in MiB. Keep both units explicit.
+EPHEMERAL_DISK_KIB = EPHEMERAL_DISK_MIB * 1024
 MAX_SPOOLED_ANALYSES = 1
 MAX_CONCURRENT_INPUTS = 2
 WORKER_ROOT = Path(__file__).resolve().parent

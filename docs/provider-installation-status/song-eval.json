@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "provider": "SONG_EVAL",
+  "finalStatus": "BLOCKED_LICENSE",
+  "checkedAt": "2026-09-06",
+  "evidence": [
+    "Source: https://github.com/ASLP-lab/SongEval/tree/848fb2ff3a2a9d64dcb20d46f07238c28abd7add; the repository LICENSE file is Apache-2.0.",
+    "The same pinned repository README states that the trained toolkit is CC-BY-NC-SA-4.0: https://github.com/ASLP-lab/SongEval/blob/848fb2ff3a2a9d64dcb20d46f07238c28abd7add/README.md#license.",
+    "The checkpoint is committed at ckpt/model.safetensors in the same immutable source revision."
+  ],
+  "reason": "The authoritative repository contains contradictory licensing statements; the explicit trained-toolkit CC-BY-NC-SA-4.0 statement also precludes commercial use.",
+  "blockers": [
+    "Obtain written clarification reconciling Apache-2.0 LICENSE with the README's CC-BY-NC-SA-4.0 trained-toolkit terms.",
+    "No license-approved asset inventory, real inference smoke, or endpoint exists."
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "providers": {
+    "ANYACCOMP": {
+      "classification": "BLOCKED_UPSTREAM",
+      "evidence": {
+        "modelManifest": "model_manifest.json",
+        "sourceRevisionPinned": false,
+        "modelRevisionPinned": false,
+        "checkpointSha256InventoryPresent": false,
+        "commercialAuthorizationPresent": false,
+        "realSmokeProofPresent": false,
+        "endpointConfigured": false
+      },
+      "blockers": [
+        "The Amphion source revision and AnyAccomp model revision are null; mutable upstream identity cannot be installed.",
+        "Commercial-use authorization and exact checkpoint SHA-256 evidence are unavailable."
+      ]
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "provider": "VST3_INSTRUMENT",
+  "finalStatus": "BLOCKED_MISSING_LICENSED_ASSET",
+  "checkedAt": "2026-09-06",
+  "readiness": {
+    "licensedAssetSupplied": false,
+    "approvedAssetChecksum": false,
+    "realNativeSmokeEvidence": false
+  },
+  "evidence": [
+    "no licensed VST3 instrument binary or license record was supplied",
+    "current native readiness evidence explicitly records VST3 unavailable",
+    "the worker requires approved plugin identity and checksum, private license evidence, and three real sensitivity renders before activation"
+  ],
+  "reason": "A user-supplied licensed VST3 instrument is required; no unlicensed or synthetic substitute may be downloaded."
+}

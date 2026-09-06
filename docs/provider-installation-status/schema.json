@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "provider-installation-status",
+  "type": "object",
+  "required": ["schemaVersion", "provider", "finalStatus", "checkedAt"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "provider": {"type": "string", "minLength": 1},
+    "finalStatus": {
+      "enum": [
+        "READY",
+        "RESEARCH_READY",
+        "BLOCKED_LICENSE",
+        "BLOCKED_NO_WEIGHTS",
+        "BLOCKED_UPSTREAM",
+        "BLOCKED_MISSING_LICENSED_ASSET"
+      ]
+    },
+    "checkedAt": {"type": "string", "format": "date"},
+    "evidence": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "reason": {"type": "string", "minLength": 1},
+    "blockers": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "readiness": {
+      "type": "object",
+      "additionalProperties": {"type": "boolean"}
+    }
+  },
+  "anyOf": [{"required": ["evidence"]}, {"required": ["blockers"]}],
+  "additionalProperties": true
+}

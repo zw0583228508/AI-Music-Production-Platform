@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "provider": "PEDALBOARD",
+  "finalStatus": "BLOCKED_UPSTREAM",
+  "checkedAt": "2026-09-06",
+  "readiness": {
+    "runtimeInstalled": true,
+    "exactVersionPinned": true,
+    "persistedRealSmokeEvidence": true,
+    "healthEndpointIntegrated": true,
+    "apiClientValidatesHealth": true,
+    "processApiIntegrated": true,
+    "completePdfEvidenceChain": false
+  },
+  "reason": "The built-in effects smoke does not retain every applicable PDF installation field: immutable source revision, durable asset record, promotion decision, and canonical endpoint configuration.",
+  "blockers": ["The provider-local READY claim is superseded by the authoritative installation matrix until the complete evidence chain is retained."],
+  "evidence": [
+    "services/music-ai-worker/model_manifest.json pins pedalboard 0.9.24",
+    "services/music-ai-worker/.readiness/basic-pitch-0.4.0-2c3c1d144bfa61ad236e92e169c13535c880469a12a047d4e73451f2c059a0ec-demucs-4.0.1-pedalboard-0.9.24.json records a real 128-frame built-in effects smoke with finite nonzero peak",
+    "services/music-ai-worker/smoke_test.py performs the real built-in effects smoke",
+    "services/music-ai-worker/app.py health requires the pinned installed package and persisted smoke marker before reporting PEDALBOARD_BUILTIN healthy",
+    "artifacts/api-server/src/lib/pedalboardBuiltin.ts authenticates to health, requires all health readiness flags, then calls /process and validates the returned WAV"
+  ]
+}

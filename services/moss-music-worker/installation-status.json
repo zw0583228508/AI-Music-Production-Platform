@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "providers": {
+    "MOSS_MUSIC_INSTRUCT": {
+      "classification": "BLOCKED_UPSTREAM",
+      "evidence": {
+        "modelManifest": "model_manifest.json",
+        "licenseManifest": "license_manifest.json",
+        "sourceRevisionPinned": true,
+        "modelRevisionPinned": true,
+        "realSmokeProofPresent": false,
+        "endpointConfigured": false
+      },
+      "blockers": [
+        "Pinned MOSS-Music requires the TorchCodec 0.9 line while the pinned moss-audio SGLang integration requires the TorchCodec 0.8 line; overriding either upstream contract is not accepted."
+      ]
+    },
+    "MOSS_MUSIC_THINKING": {
+      "classification": "BLOCKED_UPSTREAM",
+      "evidence": {
+        "modelManifest": "model_manifest.json",
+        "licenseManifest": "license_manifest.json",
+        "sourceRevisionPinned": true,
+        "modelRevisionPinned": true,
+        "realSmokeProofPresent": false,
+        "endpointConfigured": false
+      },
+      "blockers": [
+        "Pinned MOSS-Music requires the TorchCodec 0.9 line while the pinned moss-audio SGLang integration requires the TorchCodec 0.8 line; overriding either upstream contract is not accepted."
+      ]
+    }
+  }
+}

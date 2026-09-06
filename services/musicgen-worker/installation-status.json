@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "providers": {
+    "MUSICGEN_LARGE": {
+      "classification": "BLOCKED_NO_WEIGHTS",
+      "evidence": {
+        "modelManifest": "model_manifest.json",
+        "audioCraftSourceRevisionPinned": true,
+        "requestedModelRevision": "15ccdc9",
+        "resolvedModelRevision": "15ccdc92099879e47b6da12c350cdb71d4eab3ca",
+        "immutableRevisionPinned": true,
+        "license": "CC-BY-NC-4.0",
+        "assetInventoryPresent": false,
+        "assetsRetainedOrProvisioned": false,
+        "realSmokeProofPresent": false,
+        "deploymentCompleted": false,
+        "healthCompleted": false,
+        "promotionCompleted": false,
+        "endpointOrApiCompleted": false
+      },
+      "blockers": [
+        "A reviewed immutable model revision is pinned in model_manifest.json, but its assets were not retained or provisioned and no asset inventory exists.",
+        "No real inference smoke, deployment, health verification, promotion, endpoint, or API completion exists.",
+        "The non-commercial model license limits any eventual successful installation to RESEARCH_READY."
+      ]
+    },
+    "MUSICGEN_MELODY_LARGE": {
+      "classification": "BLOCKED_NO_WEIGHTS",
+      "evidence": {
+        "modelManifest": "model_manifest.json",
+        "audioCraftSourceRevisionPinned": true,
+        "requestedModelRevision": "6fdf8d3",
+        "resolvedModelRevision": "6fdf8d3d815995108c9bdb5183414ff464b171ac",
+        "immutableRevisionPinned": true,
+        "license": "CC-BY-NC-4.0",
+        "assetInventoryPresent": false,
+        "assetsRetainedOrProvisioned": false,
+        "realSmokeProofPresent": false,
+        "deploymentCompleted": false,
+        "healthCompleted": false,
+        "promotionCompleted": false,
+        "endpointOrApiCompleted": false
+      },
+      "blockers": [
+        "A reviewed immutable model revision is pinned in model_manifest.json, but its assets were not retained or provisioned and no asset inventory exists.",
+        "No real inference smoke, deployment, health verification, promotion, endpoint, or API completion exists.",
+        "The non-commercial model license limits any eventual successful installation to RESEARCH_READY."
+      ]
+    },
+    "JASCO_CHORDS_DRUMS_MELODY": {
+      "classification": "BLOCKED_NO_WEIGHTS",
+      "evidence": {
+        "modelManifest": "model_manifest.json",
+        "audioCraftSourceRevisionPinned": true,
+        "requestedModelRevision": null,
+        "resolvedModelRevision": null,
+        "immutableRevisionPinned": false,
+        "checkpointSha256Pinned": false,
+        "assetInventoryPresent": false,
+        "assetsRetainedOrProvisioned": false,
+        "realSmokeProofPresent": false,
+        "deploymentCompleted": false,
+        "healthCompleted": false,
+        "promotionCompleted": false,
+        "endpointOrApiCompleted": false,
+        "executionDisabled": true
+      },
+      "blockers": [
+        "No reviewed immutable facebook/jasco revision or checkpoint SHA-256 has been supplied; mutable main must not be downloaded.",
+        "No assets were retained or provisioned, and no real smoke, deployment, health verification, promotion, endpoint, or API completion exists.",
+        "Executable JASCO is disabled unconditionally while its manifest status is BLOCKED_NO_WEIGHTS."
+      ]
+    }
+  }
+}

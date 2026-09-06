@@ -6,7 +6,6 @@ import hashlib
 import hmac
 import io
 import json
-import math
 import os
 import subprocess
 import sys
@@ -71,6 +70,8 @@ def asset_state() -> tuple[bool, str, dict[str, Any] | None]:
     except (OSError, KeyError, TypeError, json.JSONDecodeError):
         return False, "MusicGen immutable model inventory is unavailable", None
     for mode, wanted in SPEC["models"].items():
+        if wanted.get("status") == "BLOCKED_NO_WEIGHTS":
+            continue
         item = models.get(mode)
         if not isinstance(item, dict) or item.get("repository") != wanted["repository"]:
             return False, f"MusicGen {mode} inventory identity is invalid", None
@@ -86,6 +87,19 @@ def asset_state() -> tuple[bool, str, dict[str, Any] | None]:
             path = ASSET_ROOT / str(item["path"]) / entry["path"]
             if not path.is_file() or path.stat().st_size != entry.get("bytes") or _sha256(path) != entry.get("sha256"):
                 return False, f"MusicGen {mode} checkpoint file verification failed", None
+    for name, wanted in SPEC.get("dependencies", {}).items():
+        item = inventory.get("dependencies", {}).get(name)
+        if (
+            not isinstance(item, dict)
+            or item.get("repository") != wanted["repository"]
+            or item.get("resolvedRevision") != wanted["resolved_revision"]
+            or not item.get("files")
+        ):
+            return False, f"MusicGen {name} dependency inventory is invalid", None
+        for entry in item["files"]:
+            path = ASSET_ROOT / item["path"] / entry["path"]
+            if not path.is_file() or path.stat().st_size != entry.get("bytes") or _sha256(path) != entry.get("sha256"):
+                return False, f"MusicGen {name} dependency verification failed", None
     return True, "MusicGen assets verified", inventory
 
 
@@ -97,7 +111,6 @@ def smoke_state() -> tuple[bool, str]:
         proof = json.loads((ASSET_ROOT / SPEC["smoke_proof"]).read_text(encoding="utf-8"))
         valid = (proof["realInference"] is True and proof["text"]["nonSilent"] is True
                  and proof["melody"]["nonSilent"] is True and proof["melody"]["notSourceCopy"] is True
-                 and proof["jasco"]["nonSilent"] is True and proof["jasco"]["notSourceCopy"] is True
                  and proof["assetManifestSha256"] == _sha256(ASSET_ROOT / SPEC["asset_manifest"]))
     except (OSError, KeyError, TypeError, json.JSONDecodeError):
         valid = False
@@ -105,9 +118,6 @@ def smoke_state() -> tuple[bool, str]:
 
 
 def _load_model(mode: str):
-    if mode == "jasco":
-        from audiocraft.models import JASCO
-        return JASCO.get_pretrained(str(ASSET_ROOT / mode), device="cuda")
     from audiocraft.models import MusicGen
     # The directory was retrieved under a verified immutable SHA during
     # provisioning; this call cannot select main or an alternate model.
@@ -145,30 +155,6 @@ def _generate(mode: str, prompt: str, duration: float, seed: int, temperature: f
     return _wave_bytes(output[0], model.sample_rate), model.sample_rate
 
 
-def _generate_jasco(prompt: str, duration: float, seed: int, guidance: float,
-                    chroma: list[list[float]], drums_wav: Optional[bytes],
-                    melody_wav: Optional[bytes]) -> tuple[bytes, int]:
-    """Invoke AudioCraft JASCO with its actual three conditioning arguments."""
-    import torch
-    import torchaudio
-    model = _load_model("jasco")
-    model.set_generation_params(duration=duration, cfg_coef=guidance)
-    torch.manual_seed(seed)
-    drums = melody = None
-    for value, name in ((drums_wav, "drums"), (melody_wav, "melody")):
-        if value is not None:
-            waveform, rate = torchaudio.load(io.BytesIO(value))
-            if name == "drums":
-                drums = (waveform[None].cuda(), rate)
-            else:
-                melody = (waveform[None].cuda(), rate)
-    # The chroma frame matrix is preserved verbatim as JASCO's chord/chroma
-    # progression conditioning, never converted to fabricated MIDI notes.
-    output = model.generate([prompt], drums_wav=drums, melody_salience=melody,
-                            chord_progressions=[chroma])
-    return _wave_bytes(output[0], model.sample_rate), model.sample_rate
-
-
 class GenerateRequest(BaseModel):
     mode: Literal["text", "melody"]
     providerId: Optional[Literal["MUSICGEN_LARGE", "MUSICGEN_MELODY_LARGE", "JASCO_CHORDS_DRUMS_MELODY"]] = None
@@ -190,7 +176,11 @@ app = FastAPI(title="MusicGen isolated provider")
 @app.get("/providers")
 def providers(request: Request) -> dict[str, Any]:
     _auth(request)
-    return {"providerFamily": "AUDIOCRAFT_GENERATION", "providers": SPEC["provider_registry"]}
+    registry = {
+        provider_id: {**details, "status": SPEC["models"][details["model_key"]].get("status", "AVAILABLE")}
+        for provider_id, details in SPEC["provider_registry"].items()
+    }
+    return {"providerFamily": "AUDIOCRAFT_GENERATION", "providers": registry}
 
 
 @app.get("/health")
@@ -244,38 +234,14 @@ def generate(payload: GenerateRequest, request: Request) -> dict[str, Any]:
 
 @app.post("/jasco")
 def jasco(payload: GenerateRequest, request: Request) -> dict[str, Any]:
-    """JASCO's isolated contract is intentionally not a full-song endpoint."""
+    """Reject JASCO until a reviewed immutable checkpoint is provisioned."""
     _auth(request)
-    assets, _, inventory = asset_state()
-    smoke, _ = smoke_state()
-    if not assets or not smoke or inventory is None:
-        raise HTTPException(503, "JASCO is BLOCKED until its immutable checkpoint, runtime, assets, and real smoke verify")
-    if payload.providerId != "JASCO_CHORDS_DRUMS_MELODY":
-        raise HTTPException(422, "providerId must be JASCO_CHORDS_DRUMS_MELODY")
-    if not payload.chroma or any(len(frame) != 12 or any(not math.isfinite(value) for value in frame) for frame in payload.chroma):
-        raise HTTPException(422, "JASCO requires finite 12-bin chroma conditioning frames")
-    def decode(value: Optional[str], field: str) -> Optional[bytes]:
-        if value is None:
-            return None
-        try:
-            return base64.b64decode(value, validate=True)
-        except ValueError as exc:
-            raise HTTPException(422, f"{field} is invalid") from exc
-    drums, melody = decode(payload.drumsWavBase64, "drumsWavBase64"), decode(payload.melodyWavBase64, "melodyWavBase64")
-    if drums is None and melody is None:
-        raise HTTPException(422, "JASCO requires drum or melody audio conditioning")
-    wav, sample_rate = _generate_jasco(payload.prompt, payload.duration, payload.seed, payload.guidance,
-                                        payload.chroma, drums, melody)
-    artifact_id = uuid.uuid4().hex
-    ARTIFACT_ROOT.mkdir(mode=0o750, parents=True, exist_ok=True)
-    path = ARTIFACT_ROOT / f"{artifact_id}.wav"
-    path.write_bytes(wav)
-    return {"provider": "JASCO_CHORDS_DRUMS_MELODY", "wavBase64": base64.b64encode(wav).decode("ascii"),
-            "artifactUrl": f"/artifacts/{artifact_id}", "sampleRate": sample_rate, "duration": _wav_duration(wav),
-            "seed": payload.seed, "guidance": payload.guidance,
-            "checkpointSha": inventory["models"]["jasco"]["resolvedRevision"], "artifactSha256": _sha256(path),
-            "conditioning": {"chromaFrames": len(payload.chroma), "drums": drums is not None, "melody": melody is not None},
-            "runtime": SPEC["runtime"], "imageEvidence": os.getenv("MUSICGEN_IMAGE_EVIDENCE", "unavailable")}
+    if SPEC["models"]["jasco"].get("status") == "BLOCKED_NO_WEIGHTS":
+        raise HTTPException(
+            503,
+            "JASCO is BLOCKED_NO_WEIGHTS: no reviewed immutable checkpoint is provisioned; execution is disabled",
+        )
+    raise HTTPException(503, "JASCO execution is not implemented")
 
 
 @app.get("/artifacts/{artifact_id}")

@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "provider": "CLAMP3",
+  "classification": "BLOCKED_NO_WEIGHTS",
+  "source": {
+    "repository": "https://github.com/sanderwood/clamp3.git",
+    "revision": "9016d2b0c8d12d1aa79c2e0ab201e6822bdc83a8",
+    "license": "MIT"
+  },
+  "models": [
+    {
+      "repository": "sander-wood/clamp3",
+      "revision": "355625cc1c6f73726bbcd0eb9276ac7152d56426",
+      "license": "MIT",
+      "requiredFiles": [
+        "weights_clamp3_saas_h_size_768_t_model_FacebookAI_xlm-roberta-base_t_length_128_a_size_768_a_layers_12_a_length_128_s_size_768_s_layers_12_p_size_64_p_length_512.pth"
+      ]
+    },
+    {
+      "repository": "m-a-p/MERT-v1-95M",
+      "revision": "12af15fef9d0ac838c3f475bfbbf26d2060dd4f5",
+      "license": "CC-BY-NC-4.0",
+      "purpose": "Required by upstream for raw-audio feature extraction"
+    },
+    {
+      "repository": "FacebookAI/xlm-roberta-base",
+      "revision": "e73636d4f797dec63c3081bb6ed5c7b0bb3f2089",
+      "license": "MIT",
+      "purpose": "Text encoder and tokenizer"
+    }
+  ],
+  "runtime": {
+    "python": "3.11.11",
+    "torch": "2.4.1",
+    "transformers": "4.40.0",
+    "accelerate": "0.34.0",
+    "numpy": "1.26.4"
+  },
+  "assetInventory": "asset_inventory.json",
+  "networkAtRuntime": false
+}

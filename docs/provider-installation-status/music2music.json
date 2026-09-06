@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "provider": "MUSIC2MUSIC",
+  "finalStatus": "BLOCKED_LICENSE",
+  "checkedAt": "2026-09-06",
+  "evidence": [
+    "https://github.com/Sonata165/music2music_code/tree/8359bbdb53e4463b85f3d887af510d19952da767 has no LICENSE file or declared license.",
+    "https://huggingface.co/LongshenOu/m2m_arranger/tree/4b65245bd42b6bb53c38e9ad7f63dc163d19f729 and the other pinned checkpoints have no declared model license."
+  ],
+  "source": {
+    "repository": "https://github.com/Sonata165/music2music_code",
+    "revision": "8359bbdb53e4463b85f3d887af510d19952da767",
+    "declaredLicense": null
+  },
+  "dependency": {
+    "repository": "https://github.com/Sonata165/REMI-z",
+    "revision": "a95f746ed44df62a0b5ce698b94b4ae21a558603",
+    "license": "MIT"
+  },
+  "checkpoints": [
+    {"repository": "LongshenOu/m2m_arranger", "revision": "4b65245bd42b6bb53c38e9ad7f63dc163d19f729", "declaredLicense": null},
+    {"repository": "LongshenOu/m2m_pianist_dur", "revision": "fa1c004e95a944a5e171822fa5d28a0ad2caa49c", "declaredLicense": null},
+    {"repository": "LongshenOu/m2m_drummer", "revision": "daf698d1c9d779a48df89e5e175700d470b5c7c4", "declaredLicense": null},
+    {"repository": "LongshenOu/m2m_pt", "revision": "6c735c2aaef65874f0e5d93f8b329941ae66a6cf", "declaredLicense": null}
+  ],
+  "blockers": [
+    "The source repository exposes no license grant.",
+    "All four public Hugging Face model records omit a license.",
+    "A tokenizer license cannot grant rights to the separate model code or weights."
+  ],
+  "reason": "Neither the model code nor the required model weights carries a verifiable license grant.",
+  "workerCreated": false
+}

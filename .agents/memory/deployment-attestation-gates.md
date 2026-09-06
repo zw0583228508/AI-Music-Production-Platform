@@ -8,3 +8,9 @@ Make live attestation part of the deployment command itself: deploy to an isolat
 **Why:** An opt-in post-deploy command can be skipped, while an authenticated validator that accepts arbitrary origins can leak the worker credential before it checks any evidence.
 
 **How to apply:** Run real smoke inference on every release even when the provisioning container is reused, deploy to a non-production app, resolve its endpoint from trusted provider metadata, reject redirects and unexpected origins before attaching authorization, compare all readiness and checksum gates, and only then deploy the same blueprint to the production app.
+
+Treat the installation matrix as the sole final-status authority, but require it to agree with provider-local status records and the generated completion report. A live `ready` response is insufficient when the current promotion signature fails or any live identity field differs from the signed record.
+
+**Why:** Healthy legacy deployments can outlive signing-key rotation or report a source identity that no longer matches their promotion bundle; self-consistent matrix booleans can otherwise hide contradictions elsewhere.
+
+**How to apply:** Audit local statuses and report rows against the matrix, validate configured endpoint keys without exposing values, and verify each READY provider’s signed promotion against fresh live health and exact immutable identities.

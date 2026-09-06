@@ -120,6 +120,7 @@ def provider_source_image_digest(provider: str, requirements_file: str) -> str:
     if provider in {"MR_MT3", "YOUR_MT3"}:
         paths.extend((
             SOURCE_ROOT / "mt3_family_bootstrap.py",
+            SOURCE_ROOT / "mt3_family_modal_app.py",
             SOURCE_ROOT / "runners" / "mt3.py",
         ))
         paths.append(

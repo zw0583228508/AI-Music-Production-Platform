@@ -76,3 +76,21 @@ class BeatThisIsolationTests(unittest.TestCase):
             })())
             with self.assertRaises(Exception):
                 worker_app.auth(request)
+
+    def test_installation_status_preserves_exact_promotion_blocker(self):
+        status = json.loads((ROOT / "installation-status.json").read_text())
+        beat_this = status["providers"]["BEAT_THIS"]
+        evidence = beat_this["evidence"]
+        self.assertEqual(beat_this["classification"], "BLOCKED_UPSTREAM")
+        self.assertTrue(evidence["endpointConfigured"])
+        self.assertTrue(evidence["realSmokeAndHealthObserved"])
+        self.assertEqual(
+            evidence["modalAppId"],
+            "ap-PQ5CqhaR31JiEloxyPn8La",
+        )
+        self.assertFalse(evidence["signedPromotionRecordPresent"])
+        self.assertFalse(evidence["promotionSigningKeyPairValidated"])
+        self.assertIn("modalImageId", evidence["missingPromotionFields"])
+        self.assertIn("sourceImageDigest", evidence["missingPromotionFields"])
+        self.assertIn("runtime.accelerate", evidence["missingPromotionFields"])
+        self.assertIn("Signing guessed values", beat_this["blockers"][0])

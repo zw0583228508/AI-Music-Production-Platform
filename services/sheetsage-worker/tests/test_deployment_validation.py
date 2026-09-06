@@ -51,7 +51,7 @@ class DeploymentValidationTests(unittest.TestCase):
         opener.open.return_value = Response(self.ready_health())
         with patch.object(validation, "build_opener", return_value=opener):
             result = validation.validate_deployment(
-                "https://workspace--sheetsage-worker-candidate-sheetsage.modal.run",
+                "https://workspace--sheetsage-candidate.modal.run",
                 "a" * 64,
                 token="secret",
             )
@@ -94,7 +94,7 @@ class DeploymentValidationTests(unittest.TestCase):
         import urllib.error
         opener = MagicMock()
         opener.open.side_effect = urllib.error.HTTPError(
-            "https://workspace--sheetsage-worker-candidate-sheetsage.modal.run/health",
+            "https://workspace--sheetsage-candidate.modal.run/health",
             302,
             "redirect",
             {},
@@ -103,7 +103,7 @@ class DeploymentValidationTests(unittest.TestCase):
         with patch.object(validation, "build_opener", return_value=opener):
             with self.assertRaises(validation.DeploymentValidationError) as raised:
                 validation.validate_deployment(
-                    "https://workspace--sheetsage-worker-candidate-sheetsage.modal.run",
+                    "https://workspace--sheetsage-candidate.modal.run",
                     "a" * 64,
                     token="secret",
                 )

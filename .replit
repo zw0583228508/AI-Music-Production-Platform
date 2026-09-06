@@ -85,3 +85,9 @@ TORCHCREPE_API_URL = "https://windot100--music-mir.modal.run"
 MUSIC_PROVIDER_BEAT_THIS_URL = "https://windot100--beat-this.modal.run"
 SHEETSAGE_API_URL = "https://windot100--sheetsage.modal.run"
 SHEETSAGE_LICENSE_AUTHORIZED = "true"
+MR_MT3_API_URL = "https://windot100--mr-mt3.modal.run"
+MUSIC_PROVIDER_MR_MT3_PROMOTION_BUNDLE = "{\"record\":{\"checkpointRevision\":\"gudgud1014/MR-MT3@539c08b0fe551076db6108a5f5b2a57d774881ed#mt3.pth\",\"checkpointSha256\":\"b8a3807ed265059abd25ad7f68142c06c35e8f6144dcaa45bd55946a3745398f\",\"endpointOrigin\":\"https://windot100--mr-mt3.modal.run\",\"modalAppId\":\"ap-GT4db0tsUM3p0u4NpG5oQT\",\"modalDeploymentId\":\"v3\",\"modalFunctionId\":\"fu-pq3Mc7FukPWhPeIrj8570a\",\"modalImageId\":\"im-5BRAEpxipryMioacoQevz7\",\"modelVersion\":\"mr-mt3\",\"provider\":\"MR_MT3\",\"runtime\":{\"accelerate\":\"1.3.0\",\"cuda\":\"12.4.1\",\"cudaImage\":\"nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04\",\"python\":\"3.11.11\",\"pytorch\":\"2.5.1+cu124\",\"torchIndexUrl\":\"https://download.pytorch.org/whl/cu124\",\"torchaudio\":\"2.5.1+cu124\",\"torchvision\":\"0.20.1+cu124\",\"transformers\":\"4.48.3\"},\"schemaVersion\":1,\"sourceImageDigest\":\"sha256:ebd20d7f195123326d50d8d1f08078f145f2384465f5087aee68af24910b20cb\",\"sourceRevision\":\"workspace-tree-sha256:ebd20d7f195123326d50d8d1f08078f145f2384465f5087aee68af24910b20cb\"},\"signature\":\"2MAQ7ZPhEFj1SKpE7mO08EGr5nQVkxXKE3uz15/zIpME37NicGHDtffcsO0kP5sB504NocekL2lFM+h0PEw0Aw==\"}"
+MUSIC_PROVIDER_MR_MT3_PROMOTION_PUBLIC_KEY = """
+-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEA1nioocAKfVqHnUpF+ioHpq1QjgUxckf9Q3qwHKg0e4Q=
+-----END PUBLIC KEY-----"""

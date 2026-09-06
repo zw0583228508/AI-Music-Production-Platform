@@ -37,6 +37,7 @@ globalThis.require = __createRequire(import.meta.url);`,
   },
 });
 
+
 const {
   canonicalGpuPromotionJson,
   createProviderRegistry,
@@ -491,5 +492,110 @@ test("does not claim DEMUCS readiness without every verified health signal", asy
   } finally {
     delete process.env.DEMUCS_API_URL;
     await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("MR-MT3 derives configuration from its canonical endpoint but requires signed health promotion", async () => {
+  const keys = [
+    "MR_MT3_API_URL",
+    "MUSIC_PROVIDER_MR_MT3_URL",
+    "MUSIC_PROVIDER_MR_MT3_PROMOTION_BUNDLE",
+    "MUSIC_PROVIDER_MR_MT3_PROMOTION_PUBLIC_KEY",
+    "MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY",
+  ];
+  const previous = new Map(keys.map((key) => [key, process.env[key]]));
+  const keysForMrMt3 = generateKeyPairSync("ed25519");
+  const runtime = {
+    python: "3.11.11",
+    cudaImage: "nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04",
+    cuda: "12.8.1",
+    pytorch: "2.10.0+cu128",
+    torchvision: "0.25.0+cu128",
+    torchaudio: "2.10.0+cu128",
+    torchIndexUrl: "https://download.pytorch.org/whl/cu128",
+    transformers: "4.57.6",
+    accelerate: "1.12.0",
+  };
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({
+      provider: "MR_MT3",
+      status: "ready",
+      modelVersion: "mr-mt3",
+      checksum: "b8a3807ed265059abd25ad7f68142c06c35e8f6144dcaa45bd55946a3745398f",
+      checkpointReady: true,
+      runtimeReady: true,
+      smokeTested: true,
+      gpuReady: true,
+      modalAppId: "ap-MrMt3Promoted42",
+      modalDeploymentId: "dp-MrMt3Promoted42",
+      modalFunctionId: "fu-MrMt3Promoted42",
+      modalImageId: "im-MrMt3Promoted42",
+      revision: "gudgud1014/MR-MT3@539c08b0fe551076db6108a5f5b2a57d774881ed",
+      sourceRevision: "openmirlab/mt3-infer@280a95817a67da0ae46987ddbb18c946963afffe",
+      sourceImageDigest: `sha256:${"d".repeat(64)}`,
+      runtime: { pythonVersion: runtime.python },
+      framework: {
+        cuda_image: runtime.cudaImage,
+        cuda: runtime.cuda,
+        pytorch: runtime.pytorch,
+        torchvision: runtime.torchvision,
+        torchaudio: runtime.torchaudio,
+        torch_index_url: runtime.torchIndexUrl,
+        transformers: runtime.transformers,
+        accelerate: runtime.accelerate,
+      },
+    }));
+  });
+  await listen(server);
+  const address = server.address();
+  const endpoint = `http://127.0.0.1:${address.port}/transcribe`;
+  const promotionRecord = {
+    schemaVersion: 1,
+    provider: "MR_MT3",
+    modalAppId: "ap-MrMt3Promoted42",
+    modalDeploymentId: "dp-MrMt3Promoted42",
+    modalFunctionId: "fu-MrMt3Promoted42",
+    modalImageId: "im-MrMt3Promoted42",
+    endpointOrigin: new URL(endpoint).origin,
+    modelVersion: "mr-mt3",
+    checkpointSha256: "b8a3807ed265059abd25ad7f68142c06c35e8f6144dcaa45bd55946a3745398f",
+    checkpointRevision: "gudgud1014/MR-MT3@539c08b0fe551076db6108a5f5b2a57d774881ed",
+    sourceRevision: "openmirlab/mt3-infer@280a95817a67da0ae46987ddbb18c946963afffe",
+    sourceImageDigest: `sha256:${"d".repeat(64)}`,
+    runtime,
+  };
+  try {
+    for (const key of keys) delete process.env[key];
+    process.env.MR_MT3_API_URL = endpoint;
+    let mrMt3 = (await verifiedProviderDescriptorCatalog()).find(
+      (provider) => provider.id === "MR_MT3",
+    );
+    assert.equal(mrMt3?.status, "configured");
+    assert.equal(mrMt3?.configured, true);
+    assert.equal(mrMt3?.lastHealth.status, "unhealthy");
+
+    process.env.MUSIC_PROVIDER_MR_MT3_PROMOTION_BUNDLE = JSON.stringify({
+      record: promotionRecord,
+      signature: signBytes(
+        null,
+        Buffer.from(canonicalGpuPromotionJson(promotionRecord)),
+        keysForMrMt3.privateKey,
+      ).toString("base64"),
+    });
+    process.env.MUSIC_PROVIDER_MR_MT3_PROMOTION_PUBLIC_KEY =
+      keysForMrMt3.publicKey.export({ type: "spki", format: "pem" }).toString();
+    mrMt3 = (await verifiedProviderDescriptorCatalog()).find(
+      (provider) => provider.id === "MR_MT3",
+    );
+    assert.equal(mrMt3?.status, "ready");
+    assert.equal(mrMt3?.reportedVersion, "mr-mt3");
+    assert.equal(mrMt3?.lastHealth.status, "healthy");
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await close(server);
   }
 });

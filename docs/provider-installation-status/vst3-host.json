@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "provider": "VST3_HOST",
+  "finalStatus": "BLOCKED_UPSTREAM",
+  "checkedAt": "2026-09-06",
+  "readiness": {
+    "hostSourceImplemented": true,
+    "exactBuiltHostBinaryApproved": false,
+    "offlineNativeRenderEvidence": false,
+    "assetBoundAttestation": false,
+    "deployedConfiguration": false
+  },
+  "evidence": [
+    "services/music-ai-worker/native_hosts/pedalboard_vst3_host.py implements bounded offline MIDI/CC rendering through pedalboard 0.9.24 and build_host.py packages all host code into one approved checksum",
+    "services/music-ai-worker/app.py approves the exact native host checksum before execution and validates exact request, asset, host, event-count, and output attestations",
+    "the host rejects automation without an approved asset-specific mapping rather than silently claiming unsupported control"
+  ],
+  "reason": "A host source implementation and zipapp --help check are not readiness evidence. No exact built host binary has been approved or deployed, and no real offline native render attestation exists."
+}

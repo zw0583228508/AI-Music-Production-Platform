@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "providers": {
+    "HAFM": {
+      "classification": "BLOCKED_MISSING_LICENSED_ASSET",
+      "evidence": {
+        "modelManifest": "model_manifest.json",
+        "licenseManifest": "license_manifest.json",
+        "sourceRevisionPinned": true,
+        "modelRevisionPinned": true,
+        "operatorVerifiedSevenModelFilesProvisioned": true,
+        "requiredRealVocalFixturePresent": false,
+        "realSmokeProofPresent": false,
+        "endpointConfigured": false
+      },
+      "blockers": [
+        "The required licensed real-vocal smoke fixture /var/lib/hafm/smoke/real-vocal.wav has not been supplied.",
+        "Without that fixture, no real vocal-conditioned smoke proof, signed promotion, or live endpoint can be produced."
+      ]
+    }
+  }
+}

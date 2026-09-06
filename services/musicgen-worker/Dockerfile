@@ -24,6 +24,7 @@ COPY services/musicgen-worker/app.py services/musicgen-worker/bootstrap_assets.p
      services/musicgen-worker/smoke.py services/musicgen-worker/modal_app.py \
      services/musicgen-worker/modal_provision.py services/musicgen-worker/modal_config.py \
      services/musicgen-worker/workload_entrypoint.py services/musicgen-worker/model_manifest.json /app/
+COPY services/musicgen-worker/Dockerfile services/musicgen-worker/requirements.txt /app/
 RUN useradd --system --home /app musicgen \
     && mkdir -p /var/lib/musicgen/models /var/lib/musicgen/smoke /var/lib/musicgen/artifacts \
     && chown -R musicgen:musicgen /app /var/lib/musicgen

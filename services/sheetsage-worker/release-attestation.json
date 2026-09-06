@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "provider": "SHEETSAGE",
+  "classification": "RESEARCH_READY",
+  "observedAt": "2026-09-06T07:37:53Z",
+  "authorization": {
+    "scope": "NON_COMMERCIAL_RESEARCH_ONLY",
+    "weights": "CC-BY-NC-SA-3.0",
+    "downbeatWeights": "CC-BY-NC-SA-4.0",
+    "explicitUserApproval": true
+  },
+  "source": {
+    "repository": "openmirlab/sheetsage-infer",
+    "revision": "ee7c2aeeb8084840a4f938ae6913f566afdaebdc",
+    "packageVersion": "0.2.1",
+    "wheelSha256": "605ad15130587d548e40c3f4526aefd14748944003c462acb19d56149932bce4"
+  },
+  "deployment": {
+    "modalClientVersion": "1.5.5",
+    "candidateAppId": "ap-pVFrEgztKvEekZV4RETdKg",
+    "candidateVersion": "v1",
+    "candidateDeployedAt": "2026-09-06T07:34:35Z",
+    "productionAppId": "ap-O2XJ9oafmw55jD38VdbKjN",
+    "productionVersion": "v9",
+    "productionDeployedAt": "2026-09-06T07:34:55Z",
+    "endpointOrigin": "https://windot100--sheetsage.modal.run"
+  },
+  "signedPersistentSmokeProof": {
+    "realInference": true,
+    "package": {
+      "name": "sheetsage-infer",
+      "version": "0.2.1",
+      "wheel_sha256": "605ad15130587d548e40c3f4526aefd14748944003c462acb19d56149932bce4",
+      "source_revision": "openmirlab/sheetsage-infer@ee7c2aeeb8084840a4f938ae6913f566afdaebdc"
+    },
+    "assetManifestSha256": "419eb90a358ef868bfba449bbe87e5edc7fe8454bd4fcd6f23637cebb12315be",
+    "runtimeSha256": "e3ba6e85594a6fb1309dfa1ea9b60d04b57a348ab83472a27fb2f09f521f3a95",
+    "fixtureSha256": "beff0ae6bbf33564063297acadb064b2a76286fae1c962d7edb0fa252c313214",
+    "outputSha256": "f6a54ddce0d373766f6b7d29972cf043a5cfd71b8e009f38496ca8056c752fd4",
+    "evidence": {
+      "melodyEvents": 21,
+      "chordEvents": 4,
+      "timingEvents": 35
+    },
+    "signature": "0f884f0a39e8aef8b9b55cd7deb32aa1d9b7f5abe1429b8575bbb37d22d3a6a9"
+  },
+  "smokeProofPersistence": {
+    "signatureAlgorithm": "HMAC-SHA256",
+    "signatureCoverage": "Every signedPersistentSmokeProof field except signature, canonicalized as sorted compact JSON",
+    "persistentLocation": "Modal volume sheetsage-models-v1/smoke-proof.json"
+  },
+  "liveHealth": {
+    "provider": "SHEETSAGE",
+    "version": "0.2.1",
+    "sourceRevision": "openmirlab/sheetsage-infer@ee7c2aeeb8084840a4f938ae6913f566afdaebdc",
+    "assetsVerified": true,
+    "runtimeReady": true,
+    "checkpointReady": true,
+    "smokeTested": true,
+    "smokeProofVerified": true,
+    "healthy": true,
+    "checksum": "419eb90a358ef868bfba449bbe87e5edc7fe8454bd4fcd6f23637cebb12315be",
+    "status": "ready"
+  },
+  "realNodeAnalysisPath": {
+    "modelVersion": "0.2.1",
+    "melodyEvents": 21,
+    "chordEvents": 4,
+    "timingEvents": 35,
+    "capabilities": ["harmony", "melody", "timing"],
+    "statuses": ["ready", "ready", "ready"]
+  }
+}

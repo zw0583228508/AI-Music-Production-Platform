@@ -57,7 +57,7 @@ class ModalReleaseTests(unittest.TestCase):
         ), patch.object(
             modal_app,
             "deployed_candidate_endpoint_url",
-            return_value="https://workspace--sheetsage-worker-candidate-sheetsage.modal.run",
+            return_value="https://workspace--sheetsage-candidate.modal.run",
         ):
             result = modal_app.deploy_and_validate("licensed.wav")
         self.assertTrue(result["validated"])
@@ -72,7 +72,7 @@ class ModalReleaseTests(unittest.TestCase):
                 ),
                 (
                     "validate",
-                    "https://workspace--sheetsage-worker-candidate-sheetsage.modal.run",
+                    "https://workspace--sheetsage-candidate.modal.run",
                     "a" * 64,
                 ),
                 (
@@ -117,7 +117,7 @@ class ModalReleaseTests(unittest.TestCase):
         ), patch.object(
             modal_app,
             "deployed_candidate_endpoint_url",
-            return_value="https://workspace--sheetsage-worker-candidate-sheetsage.modal.run",
+            return_value="https://workspace--sheetsage-candidate.modal.run",
         ):
             with self.assertRaisesRegex(RuntimeError, "checkpoint_ready"):
                 modal_app.deploy_and_validate("licensed.wav")
@@ -132,7 +132,7 @@ class ModalReleaseTests(unittest.TestCase):
                 ),
                 (
                     "validate",
-                    "https://workspace--sheetsage-worker-candidate-sheetsage.modal.run",
+                    "https://workspace--sheetsage-candidate.modal.run",
                 ),
             ],
         )

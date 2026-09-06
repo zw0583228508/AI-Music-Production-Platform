@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "provider": "SYMPHONYGEN",
+  "finalStatus": "BLOCKED_LICENSE",
+  "checkedAt": "2026-09-06",
+  "evidence": [
+    "Source: https://github.com/symphonygen/symphonygen/tree/7a4e26f5b83bb7376f906b7f27bb298b3fb6bc94; no LICENSE file or declared source license is present.",
+    "Released checkpoint snapshot: https://huggingface.co/SymphonyGen/SymphonyGen/tree/e667241b7c347d89ddaa336f1b579a0fd24ce959 (MIT), containing stage_one_pretrained.pt, stage_two_pretrained.pt, grpo_clamp_epoch_10.pt and grpo_clamp+track_epoch_6.pt."
+  ],
+  "reason": "The MIT weight card does not license the separately unlicensed source code needed to generate MIDI.",
+  "blockers": [
+    "Obtain an explicit source-code license grant at the pinned revision.",
+    "The optional CLaMP3/MERT reward path would additionally introduce the non-commercial MERT-v1-95M dependency."
+  ]
+}

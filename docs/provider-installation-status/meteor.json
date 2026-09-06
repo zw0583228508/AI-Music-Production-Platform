@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "provider": "METEOR",
+  "finalStatus": "BLOCKED_LICENSE",
+  "checkedAt": "2026-09-06",
+  "evidence": [
+    "Source: https://github.com/dinhviettoanle/meteor/tree/409d5b9684ac25ed9e65ead6fa15b3ac68460033; the repository has no LICENSE file or declared license.",
+    "Official checkpoint snapshot: https://huggingface.co/dinhviettoanle/meteor/tree/caa4a8c1f1f97fc79df3ac1fab3bfcc04a70d5d1 (Apache-2.0)."
+  ],
+  "reason": "An Apache-2.0 checkpoint cannot grant permission to execute and distribute the separately unlicensed upstream inference code.",
+  "blockers": [
+    "Obtain an explicit license grant for meteor source code at the pinned revision.",
+    "After licensing, provision the checkpoint, tokenizer/vocabulary files, and preprocessing assets before a real MIDI transformation smoke."
+  ]
+}

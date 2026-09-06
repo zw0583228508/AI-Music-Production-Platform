@@ -15,6 +15,7 @@ class ModalConfigTests(unittest.TestCase):
     def test_isolated_names_and_endpoint_contract(self):
         self.assertEqual(config.APP_NAME, "sheetsage-worker")
         self.assertEqual(config.ENDPOINT_LABEL, "sheetsage")
+        self.assertEqual(config.CANDIDATE_ENDPOINT_LABEL, "sheetsage-candidate")
         self.assertEqual(config.RUNTIME_SECRET_NAME, "music-ai-worker-runtime")
         self.assertEqual(config.LICENSE_SECRET_NAME, "sheetsage-noncommercial-license-v1")
         self.assertEqual(config.MODEL_VOLUME_NAME, "sheetsage-models-v1")
@@ -25,6 +26,10 @@ class ModalConfigTests(unittest.TestCase):
         self.assertEqual(
             config.worker_environment()["SHEETSAGE_MAX_AUDIO_BYTES"],
             str(config.MAX_AUDIO_BYTES),
+        )
+        self.assertEqual(
+            config.EPHEMERAL_DISK_KIB,
+            config.EPHEMERAL_DISK_MIB * 1024,
         )
 
     def test_modal_worker_capacity_is_safe(self):

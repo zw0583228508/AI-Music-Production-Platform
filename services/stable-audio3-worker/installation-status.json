@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "providers": {
+    "STABLE_AUDIO_3_SMALL_MUSIC": {
+      "classification": "BLOCKED_LICENSE",
+      "evidence": {
+        "modelManifest": "model_manifest.json",
+        "sourceRevisionPinned": true,
+        "modelRevisionPinned": true,
+        "licenseAcceptancePresent": false,
+        "licensedAccessTokenPresent": false,
+        "assetInventoryPresent": false,
+        "realSmokeProofPresent": false
+      },
+      "blockers": [
+        "Stability AI license acceptance and a licensed Hugging Face token are unavailable.",
+        "No provisioned immutable asset inventory or real text-to-audio smoke proof exists."
+      ]
+    },
+    "STABLE_AUDIO_3_MEDIUM": {
+      "classification": "BLOCKED_LICENSE",
+      "evidence": {
+        "modelManifest": "model_manifest.json",
+        "sourceRevisionPinned": true,
+        "modelRevisionPinned": true,
+        "licenseAcceptancePresent": false,
+        "licensedAccessTokenPresent": false,
+        "assetInventoryPresent": false,
+        "realTextToAudioSmokeProofPresent": false,
+        "realAudioToAudioSmokeProofPresent": false,
+        "realInpaintingSmokeProofPresent": false,
+        "realContinuationSmokeProofPresent": false
+      },
+      "blockers": [
+        "Stability AI license acceptance and a licensed Hugging Face token are unavailable.",
+        "No provisioned immutable asset inventory or required Medium capability smoke proofs exist."
+      ]
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "provider": "MAGENTA_RT2_BASE",
+  "finalStatus": "BLOCKED_NO_WEIGHTS",
+  "checkedAt": "2026-09-06",
+  "evidence": [
+    "Source: https://github.com/magenta/magenta-realtime/tree/694a545e4ba0b88bf1150137b129582166d3e07f (Apache-2.0).",
+    "Official combined model snapshot: https://huggingface.co/google/magenta-realtime-2/tree/010aa0dcb0dfd27b24f0ad07b4dad63e8f9521cc (CC-BY-4.0); includes checkpoints/mrt2_base.safetensors."
+  ],
+  "reason": "Public, permissively usable weights are identified but have not been provisioned, hashed, or smoke-tested in an isolated JAX CUDA runtime.",
+  "blockers": [
+    "No immutable local asset inventory or deployed endpoint exists.",
+    "The required text, MIDI, and audio-context real smoke contracts have not run."
+  ]
+}

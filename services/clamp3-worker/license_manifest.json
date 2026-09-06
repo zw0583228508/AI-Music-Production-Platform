@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "provider": "CLAMP3",
+  "classification": "BLOCKED_NO_WEIGHTS",
+  "licenses": [
+    {
+      "component": "CLaMP 3 source and weights",
+      "spdx": "MIT",
+      "source": "https://github.com/sanderwood/clamp3/blob/9016d2b0c8d12d1aa79c2e0ab201e6822bdc83a8/LICENSE"
+    },
+    {
+      "component": "MERT-v1-95M dependency weights",
+      "spdx": "CC-BY-NC-4.0",
+      "source": "https://huggingface.co/m-a-p/MERT-v1-95M/tree/12af15fef9d0ac838c3f475bfbbf26d2060dd4f5"
+    }
+  ],
+  "commercialUseAllowed": false,
+  "reason": "Raw-audio CLaMP 3 inference depends on the non-commercial MERT-v1-95M checkpoint."
+}

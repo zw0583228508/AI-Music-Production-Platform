@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "providers": {
+    "BEAT_THIS": {
+      "classification": "BLOCKED_UPSTREAM",
+      "evidence": {
+        "modelManifestSource": "services/beat-this-worker/model_manifest.json",
+        "packageVersion": "1.1.0",
+        "sourceRevisionPinnedInManifest": true,
+        "checkpointSha256PinnedInManifest": true,
+        "healthAndSmokeGateImplementationSource": "services/beat-this-worker/app.py and smoke_test.py",
+        "canonicalEndpointEnvironmentSource": "shared environment:MUSIC_PROVIDER_BEAT_THIS_URL",
+        "endpointConfigured": true,
+        "realSmokeAndHealthObserved": true,
+        "liveHealthObservedAt": "2026-09-06T07:26:54Z",
+        "liveHealthEndpointOrigin": "https://windot100--beat-this.modal.run",
+        "liveHealthStatus": "ready",
+        "liveHealthChecksum": "e5bfe90992adc5347144428e76b955068cdd3e2b9d1356417e7b6bb087f633c2",
+        "liveHealthReadiness": {
+          "packageReady": true,
+          "assetReady": true,
+          "runtimeReady": true,
+          "checkpointReady": true,
+          "featureExecutionReady": true,
+          "smokeTested": true,
+          "gpuReady": true
+        },
+        "modalDeploymentMetadataObservedAt": "2026-09-06T07:26:54Z",
+        "modalAppId": "ap-PQ5CqhaR31JiEloxyPn8La",
+        "modalDeploymentVersion": "v1",
+        "modalDeploymentCommitReported": "5d40b79*",
+        "realSmokeAndHealthEvidenceSource": "authenticated live /health response plus modal app list/history metadata",
+        "signedPromotionRecordPresent": false,
+        "signedPromotionEvidenceSource": "not created: live health/deployment metadata does not expose every required attestation field",
+        "promotionSigningSecretConfigured": true,
+        "promotionPublicKeyConfigured": true,
+        "promotionSigningKeyPairValidated": false,
+        "promotionSigningKeyValidation": "the configured MUSIC_GPU_PROMOTION_SIGNING_KEY could not produce an Ed25519 signature accepted by MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY using supported PEM, JWK, DER, or raw-seed encodings",
+        "missingPromotionFields": [
+          "health.modalAppId (Modal CLI reports the app ID, but the worker does not bind it in health)",
+          "modalDeploymentId",
+          "modalFunctionId",
+          "modalImageId",
+          "checkpointSha256 (health checksum is the manifest hash, not the final0 checkpoint hash)",
+          "checkpointRevision",
+          "sourceRevision (live metadata reports only the non-immutable value 5d40b79*)",
+          "sourceImageDigest",
+          "runtime.python",
+          "runtime.cudaImage",
+          "runtime.cuda",
+          "runtime.pytorch",
+          "runtime.torchvision",
+          "runtime.torchaudio",
+          "runtime.torchIndexUrl",
+          "runtime.transformers",
+          "runtime.accelerate"
+        ]
+      },
+      "blockers": [
+        "BLOCKED_UPSTREAM: the live worker health cannot bind the CLI-observed app ID and omits modalDeploymentId, modalFunctionId, modalImageId, the final0 checkpoint SHA/revision, an immutable sourceRevision, sourceImageDigest, and every required runtime pin; additionally, the existing signing secret does not validate against the configured promotion public key. Signing guessed values or installing an unverifiable bundle would fabricate deployment identity."
+      ]
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "providers": {
+    "CLAMP3": {
+      "classification": "BLOCKED_NO_WEIGHTS",
+      "evidence": {
+        "modelManifest": "model_manifest.json",
+        "licenseManifest": "license_manifest.json",
+        "sourceRevisionPinned": true,
+        "checkpointRevisionsPinned": true,
+        "bootstrapInventoryImplemented": true,
+        "runtimeNetworkDisabled": true,
+        "realSemanticSmokeImplemented": true,
+        "persistedRealSmokeProofPresentInRepository": false
+      },
+      "blockers": [
+        "The approximately 5 GB CLaMP 3 assets were not provisioned and no GPU smoke was run in this workspace.",
+        "No deployed endpoint has been configured; a source scaffold and bootstrap implementation are not evidence of an installed provider."
+      ]
+    }
+  }
+}

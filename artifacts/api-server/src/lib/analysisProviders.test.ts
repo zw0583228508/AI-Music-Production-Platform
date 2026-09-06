@@ -3,6 +3,7 @@ import { generateKeyPairSync, sign } from "node:crypto";
 import { createServer } from "node:http";
 import test from "node:test";
 import { canonicalGpuPromotionJson, type GpuPromotionRecord } from "./gpuProviderAttestation";
+import { attestAnalysisProviderHealth } from "./analysisProviderManifest";
 import {
   parseHarmony,
   fuseHarmonyEvidence,
@@ -10,6 +11,39 @@ import {
   runAnalysisProviders,
   analyzeVerifiedBassStem,
 } from "./analysisProviders";
+
+test("pins SheetSage health to its exact source and signed smoke identity", () => {
+  const health = {
+    provider: "SHEETSAGE",
+    version: "0.2.1",
+    sourceRevision: "openmirlab/sheetsage-infer@ee7c2aeeb8084840a4f938ae6913f566afdaebdc",
+    status: "ready",
+    assetsVerified: true,
+    runtimeReady: true,
+    checkpointReady: true,
+    smokeTested: true,
+    smokeProofVerified: true,
+    checksum: "a".repeat(64),
+  };
+  assert.equal(
+    attestAnalysisProviderHealth("SHEETSAGE", health).version,
+    "0.2.1",
+  );
+  assert.throws(
+    () => attestAnalysisProviderHealth("SHEETSAGE", {
+      ...health,
+      sourceRevision: "openmirlab/sheetsage-infer@main",
+    }),
+    /verified SheetSage/,
+  );
+  assert.throws(
+    () => attestAnalysisProviderHealth("SHEETSAGE", {
+      ...health,
+      smokeProofVerified: false,
+    }),
+    /verified SheetSage/,
+  );
+});
 
 test("verified bass phase fails closed when either real pitch provider is unavailable", async () => {
   const previousTorch = process.env.TORCHCREPE_API_URL;
@@ -380,6 +414,175 @@ test("routes BS-RoFormer separation only after signed deployment attestation", a
   }
 });
 
+test("parses Beat This evidence on the primary beat-analysis route", async () => {
+  let analyzeRequests = 0;
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const server = createServer((request, response) => {
+    response.setHeader("Content-Type", "application/json");
+    if (request.method === "GET" && request.url === "/health?provider=BEAT_THIS") {
+      response.end(JSON.stringify(health));
+      return;
+    }
+    if (request.method === "POST" && request.url === "/analyze") {
+      analyzeRequests += 1;
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk) => { body += chunk; });
+      request.on("end", () => {
+        assert.equal(JSON.parse(body).provider, "BEAT_THIS");
+        response.end(JSON.stringify({
+          provider: "BEAT_THIS",
+          status: "ok",
+          result: {
+            version: "1.1.0",
+            beats: [0, 0.5, 1, 1.5],
+            downbeats: [0, 1],
+            confidence: 0.98,
+          },
+        }));
+      });
+      return;
+    }
+    response.writeHead(404);
+    response.end(JSON.stringify({ error: "not found" }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const endpoint = `http://127.0.0.1:${address.port}`;
+  const record: GpuPromotionRecord = {
+    schemaVersion: 1,
+    provider: "BEAT_THIS",
+    modalAppId: "ap-BeatThis",
+    modalDeploymentId: "dp-BeatThis",
+    modalFunctionId: "fu-BeatThis",
+    modalImageId: "im-BeatThis",
+    endpointOrigin: endpoint,
+    modelVersion: "1.1.0",
+    checkpointSha256: "8c328b45f59d8dd3dff219253ff6a8d6482be57d0133a29140e2febbf8eb8331",
+    checkpointRevision: "final0@8c328b45",
+    sourceRevision: "b95c8ab0c58c2d9fcfd40508ae8dffbc05ac4f5c",
+    sourceImageDigest: `sha256:${"c".repeat(64)}`,
+    runtime: {
+      python: "3.11.11",
+      cudaImage: "nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04",
+      cuda: "12.4.1",
+      pytorch: "2.5.1+cu124",
+      torchvision: "0.20.1+cu124",
+      torchaudio: "2.5.1+cu124",
+      torchIndexUrl: "https://download.pytorch.org/whl/cu124",
+      transformers: "4.48.3",
+      accelerate: "1.3.0",
+    },
+  };
+  const health = {
+    provider: record.provider,
+    status: "ready",
+    ready: true,
+    modelVersion: record.modelVersion,
+    checksum: record.checkpointSha256,
+    checkpointSha256: record.checkpointSha256,
+    checkpointReady: true,
+    runtimeReady: true,
+    smokeTested: true,
+    gpuReady: true,
+    revision: record.checkpointRevision,
+    sourceRevision: record.sourceRevision,
+    sourceImageDigest: record.sourceImageDigest,
+    modalAppId: record.modalAppId,
+    modalDeploymentId: record.modalDeploymentId,
+    modalFunctionId: record.modalFunctionId,
+    modalImageId: record.modalImageId,
+    runtime: { pythonVersion: record.runtime.python },
+    framework: {
+      cuda_image: record.runtime.cudaImage,
+      cuda: record.runtime.cuda,
+      pytorch: record.runtime.pytorch,
+      torchvision: record.runtime.torchvision,
+      torchaudio: record.runtime.torchaudio,
+      torch_index_url: record.runtime.torchIndexUrl,
+      transformers: record.runtime.transformers,
+      accelerate: record.runtime.accelerate,
+    },
+  };
+  const keys = [
+    "MUSIC_PROVIDER_BEAT_THIS_URL",
+    "BEAT_THIS_API_URL",
+    "MUSIC_PROVIDER_BEAT_THIS_PROMOTION_BUNDLE",
+    "MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY",
+    "MUSIC_PROVIDER_DEMUCS_URL",
+    "DEMUCS_API_URL",
+    "MUSIC_PROVIDER_BS_ROFORMER_ENDPOINT",
+    "MUSIC_PROVIDER_BS_ROFORMER_URL",
+    "BS_ROFORMER_API_URL",
+    "BS_ROFORMER_SW_API_URL",
+    "MUSIC_PROVIDER_ALL_IN_ONE_URL",
+    "ALL_IN_ONE_API_URL",
+    "MUSIC_PROVIDER_MT3_URL",
+    "MT3_API_URL",
+    "MUSIC_PROVIDER_MR_MT3_URL",
+    "MR_MT3_API_URL",
+    "MUSIC_PROVIDER_YOUR_MT3_URL",
+    "YOUR_MT3_API_URL",
+    "SHEETSAGE_API_URL",
+    "SHEET_SAGE_API_URL",
+    "MUSIC_PROVIDER_CHROMA_URL",
+    "CHROMA_API_URL",
+    "MUSIC_PROVIDER_MADMOM_URL",
+    "MADMOM_API_URL",
+    "MUSIC_PROVIDER_ESSENTIA_URL",
+    "ESSENTIA_API_URL",
+    "MUSIC_PROVIDER_PYLOUDNORM_URL",
+    "PYLOUDNORM_API_URL",
+    "MUSIC_MIR_API_URL",
+    "MUSIC_MIR_ESSENTIA_API_URL",
+  ];
+  const previous = new Map(keys.map((key) => [key, process.env[key]]));
+  for (const key of keys) delete process.env[key];
+  process.env.MUSIC_PROVIDER_BEAT_THIS_URL = endpoint;
+  process.env.MUSIC_PROVIDER_BEAT_THIS_PROMOTION_BUNDLE = JSON.stringify({
+    record,
+    signature: sign(
+      null,
+      Buffer.from(canonicalGpuPromotionJson(record)),
+      privateKey,
+    ).toString("base64"),
+  });
+  process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY = publicKey.export({
+    type: "spki",
+    format: "pem",
+  }).toString();
+  try {
+    const result = await runAnalysisProviders({
+      sourceUrl: "https://storage.invalid/signed-source",
+      sourceType: "FULL_SONG",
+      durationSeconds: 2,
+    });
+    assert.equal(analyzeRequests, 1);
+    assert.deepEqual(result.rhythmEvidence.find(
+      (item) => item.provider === "BEAT_THIS",
+    ), {
+      provider: "BEAT_THIS",
+      version: "1.1.0",
+      beats: [0, 0.5, 1, 1.5],
+      downbeats: [0, 1],
+      tempoBpm: 120,
+    });
+    assert.equal(
+      result.provenance.find((item) => item.provider === "BEAT_THIS")?.capability,
+      "primary_beat_tracking",
+    );
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    });
+  }
+});
+
 test("keeps absent providers explicit without fabricating analysis results", async () => {
   const keys = [
     "ALL_IN_ONE_API_URL",
@@ -449,10 +652,13 @@ test("connects SheetSage melody, harmony, and timing provenance from real audio 
       response.end(JSON.stringify({
         provider: "SHEETSAGE",
         version: "0.2.1",
+        sourceRevision: "openmirlab/sheetsage-infer@ee7c2aeeb8084840a4f938ae6913f566afdaebdc",
         status: "ready",
+        assetsVerified: true,
         runtimeReady: true,
         checkpointReady: true,
         smokeTested: true,
+        smokeProofVerified: true,
         checksum: "a".repeat(64),
       }));
       return;
@@ -543,10 +749,13 @@ test("rejects an oversized SheetSage source before sending it to the provider", 
       response.end(JSON.stringify({
         provider: "SHEETSAGE",
         version: "0.2.1",
+        sourceRevision: "openmirlab/sheetsage-infer@ee7c2aeeb8084840a4f938ae6913f566afdaebdc",
         status: "ready",
+        assetsVerified: true,
         runtimeReady: true,
         checkpointReady: true,
         smokeTested: true,
+        smokeProofVerified: true,
         checksum: "a".repeat(64),
       }));
       return;

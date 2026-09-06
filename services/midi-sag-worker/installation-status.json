@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "providers": {
+    "MIDI_SAG": {
+      "classification": "BLOCKED_MISSING_LICENSED_ASSET",
+      "evidence": {
+        "modelManifest": "model_manifest.json",
+        "licenseManifest": "license_manifest.json",
+        "requiredAssetCount": 8,
+        "assetSpecificLicenseReviewComplete": false,
+        "assetInventoryPresent": false,
+        "realPipelineSmokeProofPresent": false
+      },
+      "blockers": [
+        "The required RMVPE, GAME, beat tracking, Accomontage2, CSLL2M, SoulX and related asset files are not provisioned with reviewed licenses and SHA-256 identities."
+      ]
+    },
+    "MUSE_CONTROL_LITE": {
+      "classification": "BLOCKED_MISSING_LICENSED_ASSET",
+      "evidence": {
+        "modelManifest": "model_manifest.json",
+        "licenseManifest": "license_manifest.json",
+        "separateProviderIdentityRecorded": true,
+        "assetSpecificLicenseReviewComplete": false,
+        "assetInventoryPresent": false,
+        "individualRealSmokeProofPresent": false
+      },
+      "blockers": [
+        "MuseControlLite weights are not provisioned with exact revision, SHA-256 inventory, and reviewed asset-specific license evidence."
+      ]
+    }
+  }
+}

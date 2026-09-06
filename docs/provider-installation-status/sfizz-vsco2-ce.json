@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "provider": "SFIZZ_VSCO2_CE",
+  "finalStatus": "BLOCKED_UPSTREAM",
+  "checkedAt": "2026-09-06",
+  "readiness": {
+    "sfizz123Built": false,
+    "vsco2CeProvisioned": false,
+    "approvedHostBinary": false,
+    "activatedAssetTree": false,
+    "threeTrackModelSmokeRenders": false,
+    "deployedConfiguration": false
+  },
+  "evidence": [
+    "sfizz tag 1.2.3 resolves to source commit 4e70dc0bef53b41f2853ed46e26f5911114c92d0",
+    "VSCO2 CE SFZ branch resolves to commit 6dd651d55dde97fd4028699be9d4481f26917891 and its repository license is CC0-1.0",
+    "services/music-ai-worker/bootstrap_sfizz_vsco2.py provisions and hashes only those real public sources",
+    "current native readiness evidence explicitly records sfizz unavailable and contains no synthetic render"
+  ],
+  "reason": "The current environment has no approved built sfizz host, activated VSCO2 CE tree, or passing three-TrackModel native smoke proof; readiness must remain blocked until provisioning and smoke complete."
+}
