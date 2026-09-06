@@ -20,6 +20,10 @@ MANIFEST = json.loads((ROOT / "model_manifest.json").read_text())
 INSTALLATION_STATUS = json.loads((ROOT / "installation-status.json").read_text())
 KEY_DERIVATION_DOMAIN = b"BEAT_THIS Ed25519 promotion v1\0"
 ED25519_PKCS8_PREFIX = bytes.fromhex("302e020100300506032b657004220420")
+RUNTIME_KEYS = (
+    "python", "cudaImage", "cuda", "pytorch", "torchvision", "torchaudio",
+    "torchIndexUrl", "transformers", "accelerate",
+)
 
 def canonical(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -34,9 +38,14 @@ def origin(value: str) -> str:
     )
 
 def record(args: argparse.Namespace) -> dict:
-    identifiers = (args.modal_app_id, args.modal_deployment_id, args.modal_function_id)
-    if any(not value.strip() for value in identifiers):
-        raise ValueError("Modal IDs must not be empty")
+    identifier_patterns = (
+        (args.modal_app_id, r"ap-[A-Za-z0-9]+", "app"),
+        (args.modal_deployment_id, r"v[1-9][0-9]*", "deployment"),
+        (args.modal_function_id, r"fu-[A-Za-z0-9]+", "function"),
+    )
+    for value, pattern, label in identifier_patterns:
+        if not re.fullmatch(pattern, value.strip()):
+            raise ValueError(f"invalid Modal {label} ID")
     if not re.fullmatch(r"im-[A-Za-z0-9]+", args.modal_image_id):
         raise ValueError("invalid Modal image ID")
     if not re.fullmatch(r"[a-f0-9]{40}", args.source_revision):
@@ -54,13 +63,7 @@ def record(args: argparse.Namespace) -> dict:
         "checkpointRevision": MANIFEST["sourceCommit"],
         "sourceRevision": args.source_revision,
         "sourceImageDigest": args.source_image_digest,
-        "runtime": {
-            "python": runtime["python"], "cudaImage": runtime["cudaImage"],
-            "cuda": runtime["cuda"], "pytorch": runtime["pytorch"],
-            "torchvision": runtime["torchvision"], "torchaudio": runtime["torchaudio"],
-            "torchIndexUrl": runtime["torchIndexUrl"],
-            "transformers": runtime["transformers"], "accelerate": runtime["accelerate"],
-        },
+        "runtime": {key: runtime[key] for key in RUNTIME_KEYS},
     }
 
 def verify_live_health(payload: object, expected: dict) -> None:
@@ -200,6 +203,26 @@ def sign(payload: dict, key_path: Path, key_format: str | None = None) -> str:
         raise RuntimeError("Ed25519 promotion signing failed")
     return base64.b64encode(result.stdout).decode()
 
+def public_key(key_path: Path, key_format: str | None = None) -> str:
+    command = ["openssl", "pkey", "-in", str(key_path), "-pubout"]
+    if key_format:
+        command.extend(["-inform", key_format])
+    result = subprocess.run(command, capture_output=True, check=False)
+    if result.returncode or not result.stdout.startswith(b"-----BEGIN PUBLIC KEY-----"):
+        raise RuntimeError("Ed25519 promotion public-key derivation failed")
+    return result.stdout.decode()
+
+def atomic_write(path: Path, value: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        mode="w", dir=path.parent, prefix=f".{path.name}.", delete=False
+    ) as temporary:
+        temporary.write(value)
+        temporary.flush()
+        os.fsync(temporary.fileno())
+        temporary_path = Path(temporary.name)
+    os.replace(temporary_path, path)
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     for name in ("modal-app-id", "modal-deployment-id", "modal-function-id",
@@ -207,6 +230,7 @@ def main() -> None:
                  "source-image-digest", "health-file", "output"):
         parser.add_argument(f"--{name}", required=True)
     parser.add_argument("--private-key-file")
+    parser.add_argument("--public-key-output", required=True)
     args = parser.parse_args()
     key_path = Path(args.private_key_file) if args.private_key_file else None
     key_format = None
@@ -233,9 +257,11 @@ def main() -> None:
             "record": payload,
             "signature": sign(payload, key_path, key_format),
         }
-        target = Path(args.output)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(canonical(bundle) + "\n")
+        atomic_write(Path(args.output), canonical(bundle) + "\n")
+        atomic_write(
+            Path(args.public_key_output),
+            public_key(key_path, key_format),
+        )
     finally:
         if temporary:
             key_path.unlink(missing_ok=True)

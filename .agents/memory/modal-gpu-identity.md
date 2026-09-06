@@ -19,7 +19,13 @@ Deliver CI-observed app, deployment, and function IDs through a provider-only Mo
 
 **Why:** Modal reserves a runtime variable for image ID but does not expose equivalent app/deployment/function variables inside containers; an independently updated Secret keeps those identities out of image configuration.
 
-**How to apply:** Precreate the Secret with fail-closed placeholders for first deploy, replace it from CI after observing final IDs, roll over containers, then activate the signed API promotion bundle last.
+**How to apply:** Precreate the Secret with fail-closed placeholders for first deploy, replace it from CI after observing final IDs, refresh existing containers without creating a new deployment version, then activate the signed API promotion bundle last.
+
+When a promotion record binds Modal's deployment-history version, do not use `modal app rollover` after capturing that version. Update the identity Secret, gracefully stop every existing container for that exact app, verify the old container IDs are gone, and start smoke/health on fresh containers under the unchanged deployment.
+
+**Why:** Modal rollover creates a new deployment-history version. Signing the pre-rollover version after rollover leaves the active version and promoted version ambiguous, while predicting IDs across a redeploy is unsafe because function IDs may change.
+
+**How to apply:** Capture authoritative app/version/function metadata once after deploy, refresh containers through container lifecycle operations only, re-query the same metadata, and fail closed if any identity changed before smoke and signing.
 
 Treat mounted model snapshots as immutable. If an upstream loader syncs code, caches, or bytecode into its model directory, build a temporary runtime view outside the attested checkpoint and link only validated model bytes into it.
 

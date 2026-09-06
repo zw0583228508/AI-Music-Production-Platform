@@ -1,0 +1,270 @@
+import argparse
+import base64
+import json
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+ROOT = Path(__file__).parents[1]
+sys.path.insert(0, str(ROOT))
+
+import activate_promotion
+import promote_modal
+import release_modal
+
+
+def release_evidence():
+    manifest = promote_modal.MANIFEST
+    return {
+        "schemaVersion": 1,
+        "provider": "BEAT_THIS",
+        "modalAppId": "ap-Test",
+        "modalDeploymentId": "v7",
+        "modalFunctionId": "fu-Test",
+        "modalImageId": "im-Test",
+        "endpointOrigin": "https://beat-this.example.test",
+        "sourceRevision": "b" * 40,
+        "sourceImageDigest": "sha256:" + "c" * 64,
+        "smokeEvidence": {
+            "provider": "BEAT_THIS",
+            "featureExecutionSucceeded": True,
+            "checkpoint": {
+                "name": "final0",
+                "sha256": manifest["checkpointSha256"],
+            },
+            "fixture": {
+                "sourceSha256": "d" * 64,
+                "sha256": "e" * 64,
+                "sampleRate": 44100,
+                "channels": 2,
+                "frames": 1000,
+                "durationSeconds": 1.0,
+            },
+            "result": {
+                "beatCount": 4,
+                "downbeatCount": 1,
+                "firstBeats": [0.0, 0.5, 1.0, 1.5],
+                "firstDownbeats": [0.0],
+                "confidence": 0.9,
+            },
+        },
+    }
+
+
+def promotion_record(evidence):
+    return promote_modal.record(argparse.Namespace(
+        modal_app_id=evidence["modalAppId"],
+        modal_deployment_id=evidence["modalDeploymentId"],
+        modal_function_id=evidence["modalFunctionId"],
+        modal_image_id=evidence["modalImageId"],
+        endpoint_origin=evidence["endpointOrigin"],
+        source_revision=evidence["sourceRevision"],
+        source_image_digest=evidence["sourceImageDigest"],
+    ))
+
+
+def matching_health(record):
+    runtime = record["runtime"]
+    return {
+        "provider": "BEAT_THIS",
+        "status": "ready",
+        "ready": True,
+        "modalAppId": record["modalAppId"],
+        "modalDeploymentId": record["modalDeploymentId"],
+        "modalFunctionId": record["modalFunctionId"],
+        "modalImageId": record["modalImageId"],
+        "modelVersion": record["modelVersion"],
+        "checkpointSha256": record["checkpointSha256"],
+        "revision": record["checkpointRevision"],
+        "sourceRevision": record["sourceRevision"],
+        "sourceImageDigest": record["sourceImageDigest"],
+        "runtime": {"pythonVersion": runtime["python"]},
+        "framework": {
+            "cuda_image": runtime["cudaImage"],
+            "cuda": runtime["cuda"],
+            "pytorch": runtime["pytorch"],
+            "torchvision": runtime["torchvision"],
+            "torchaudio": runtime["torchaudio"],
+            "torch_index_url": runtime["torchIndexUrl"],
+            "transformers": runtime["transformers"],
+            "accelerate": runtime["accelerate"],
+        },
+    }
+
+
+def container_refresh(evidence):
+    return {
+        "schemaVersion": 1,
+        "provider": "BEAT_THIS",
+        "modalAppId": evidence["modalAppId"],
+        "modalDeploymentId": evidence["modalDeploymentId"],
+        "stoppedContainerIds": ["ta-Old"],
+        "staleContainerIds": [],
+    }
+
+
+class BeatThisReleaseTests(unittest.TestCase):
+    def test_modal_metadata_requires_one_deployed_app_and_latest_version(self):
+        self.assertEqual(
+            release_modal.deployed_app_id([
+                {"app_id": "ap-Old", "description": "beat-this-worker",
+                 "state": "stopped"},
+                {"app_id": "ap-Live", "description": "beat-this-worker",
+                 "state": "deployed"},
+            ]),
+            "ap-Live",
+        )
+        self.assertEqual(
+            release_modal.deployed_version([{"version": "v12"}]),
+            "v12",
+        )
+        with self.assertRaises(ValueError):
+            release_modal.deployed_app_id([
+                {"app_id": "ap-One", "description": "beat-this-worker",
+                 "state": "deployed"},
+                {"app_id": "ap-Two", "description": "beat-this-worker",
+                 "state": "deployed"},
+            ])
+        metadata = {
+            "modalAppId": "ap-Live",
+            "modalDeploymentId": "v12",
+            "modalFunctionId": "fu-Live",
+            "endpointOrigin": "https://beat-this.example.test",
+        }
+        self.assertEqual(
+            release_modal.identity(metadata),
+            {
+                "BEAT_THIS_MODAL_APP_ID": "ap-Live",
+                "BEAT_THIS_MODAL_DEPLOYMENT_ID": "v12",
+                "BEAT_THIS_MODAL_FUNCTION_ID": "fu-Live",
+            },
+        )
+
+    def test_real_smoke_evidence_is_required(self):
+        evidence = release_evidence()
+        release_modal.validate_release_evidence(evidence)
+        evidence["smokeEvidence"]["result"]["downbeatCount"] = 0
+        with self.assertRaisesRegex(ValueError, "smoke evidence"):
+            release_modal.validate_release_evidence(evidence)
+
+    def test_release_health_retries_only_explicit_startup(self):
+        evidence = release_evidence()
+        ready = matching_health(promotion_record(evidence))
+        starting = {
+            "provider": "BEAT_THIS",
+            "status": "starting",
+            "ready": False,
+            "retryable": True,
+        }
+        with patch.object(
+            release_modal, "read_health", side_effect=[starting, ready]
+        ) as fetch, patch.object(promote_modal.time, "sleep"):
+            self.assertEqual(
+                release_modal.verified_health(evidence, "token", attempts=2),
+                ready,
+            )
+        self.assertEqual(fetch.call_count, 2)
+
+        rejected = (
+            {
+                "provider": "BEAT_THIS",
+                "status": "not_ready",
+                "ready": False,
+                "retryable": False,
+            },
+            {**ready, "modalFunctionId": "fu-Wrong"},
+            {"provider": "BEAT_THIS", "status": "ready", "ready": True},
+        )
+        for payload in rejected:
+            with self.subTest(payload=payload), patch.object(
+                release_modal, "read_health", return_value=payload
+            ) as fetch, self.assertRaises(ValueError):
+                release_modal.verified_health(evidence, "token", attempts=3)
+            fetch.assert_called_once()
+
+        with patch.object(
+            release_modal, "read_health", side_effect=OSError("network failed")
+        ) as fetch, self.assertRaises(OSError):
+            release_modal.verified_health(evidence, "token", attempts=3)
+        fetch.assert_called_once()
+
+    def test_validation_precedes_canonical_record_replacement(self):
+        evidence = release_evidence()
+        record = promotion_record(evidence)
+        health = matching_health(record)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            private_key = root / "private.pem"
+            public_key = root / "public.pem"
+            api_output = root / "promotion.generated.ts"
+            release_output = root / "release.json"
+            subprocess.run(
+                ["openssl", "genpkey", "-algorithm", "Ed25519",
+                 "-out", str(private_key)],
+                check=True,
+            )
+            public_key.write_text(promote_modal.public_key(private_key))
+            bundle = {
+                "record": record,
+                "signature": promote_modal.sign(record, private_key),
+            }
+            activate_promotion.activate(
+                bundle,
+                public_key.read_text(),
+                evidence,
+                container_refresh(evidence),
+                health,
+                api_output,
+                release_output,
+            )
+            bundle_literal = (
+                api_output.read_text().splitlines()[1].split(" = ", 1)[1][:-1]
+            )
+            self.assertEqual(
+                json.loads(bundle_literal),
+                promote_modal.canonical(bundle),
+            )
+            retained = json.loads(release_output.read_text())
+            self.assertEqual(
+                retained["smokeEvidence"]["result"]["beatCount"],
+                4,
+            )
+            self.assertEqual(
+                retained["containerRefresh"]["staleContainerIds"],
+                [],
+            )
+            original_api = api_output.read_text()
+            original_release = release_output.read_text()
+            broken_health = {**health, "modalImageId": "im-Other"}
+            with self.assertRaisesRegex(ValueError, "live health"):
+                activate_promotion.activate(
+                    bundle,
+                    public_key.read_text(),
+                    evidence,
+                    container_refresh(evidence),
+                    broken_health,
+                    api_output,
+                    release_output,
+                )
+            self.assertEqual(api_output.read_text(), original_api)
+            self.assertEqual(release_output.read_text(), original_release)
+
+    def test_legacy_key_material_produces_verifiable_ed25519_signature(self):
+        normalized, key_format = promote_modal.private_key_bytes(
+            base64.b64encode(b"legacy-provider-key-material").decode()
+        )
+        evidence = release_evidence()
+        record = promotion_record(evidence)
+        with tempfile.TemporaryDirectory() as directory:
+            key_path = Path(directory) / "private.der"
+            key_path.write_bytes(normalized)
+            signature = promote_modal.sign(record, key_path, key_format)
+            public_key = promote_modal.public_key(key_path, key_format)
+            activate_promotion.verify_signature(record, signature, public_key)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -107,8 +107,10 @@ def smoke_real_audio(fixture_path: str = IMAGE_SMOKE_FIXTURE) -> dict:
     proof = json.loads((Path(ASSET_MOUNT) / ".readiness" / "beat_this.json").read_text())
     volume.commit()
     return {"provider": "BEAT_THIS", "status": "smoke-attested",
-            "fixture": proof["fixture"], "checkpoint": proof["checkpoint"],
-            "result": proof["result"]}
+            "modalImageId": os.environ.get("MODAL_IMAGE_ID", "").strip(),
+            "sourceRevision": SOURCE_REVISION,
+            "sourceImageDigest": source_image_digest(),
+            "proof": proof}
 
 @app.local_entrypoint()
 def main(action: str = "smoke", fixture_path: str = IMAGE_SMOKE_FIXTURE) -> None:

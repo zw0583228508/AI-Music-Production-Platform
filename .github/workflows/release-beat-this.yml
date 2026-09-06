@@ -1,0 +1,197 @@
+name: Release and attest Beat This
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: beat-this-production-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Deploy, attest, and activate Beat This
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    env:
+      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+      MUSIC_AI_WORKER_TOKEN: ${{ secrets.MUSIC_AI_WORKER_TOKEN }}
+    steps:
+      - name: Check out the immutable release source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Install the pinned Python tooling
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - name: Install API dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Require a clean branch head
+        env:
+          RELEASE_BRANCH: ${{ github.ref_name }}
+          SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch origin "$RELEASE_BRANCH"
+          test "$(git rev-parse "origin/$RELEASE_BRANCH")" = "$SOURCE_REVISION"
+          git diff --quiet
+
+      - name: Install fail-closed identity placeholders
+        run: |
+          set -euo pipefail
+          mkdir -p promotion
+          cat > promotion/worker-identity.json <<'JSON'
+          {"BEAT_THIS_MODAL_APP_ID":"unpromoted","BEAT_THIS_MODAL_DEPLOYMENT_ID":"unpromoted","BEAT_THIS_MODAL_FUNCTION_ID":"unpromoted"}
+          JSON
+          uv run modal secret create beat-this-deployment-identity-v1 \
+            --from-json promotion/worker-identity.json --force
+
+      - name: Deploy the exact worker revision
+        run: uv run python services/beat-this-worker/deploy.py
+
+      - name: Observe the candidate Modal identity
+        run: |
+          set -euo pipefail
+          uv run python services/beat-this-worker/release_modal.py observe \
+            --output promotion/candidate-metadata.json
+
+      - name: Install final identity and refresh active containers
+        run: |
+          set -euo pipefail
+          uv run python services/beat-this-worker/release_modal.py install-identity \
+            --metadata promotion/candidate-metadata.json \
+            --identity-output promotion/worker-identity.json \
+            --refresh-output promotion/container-refresh.json
+
+      - name: Capture final Modal identity and real beat evidence
+        run: |
+          set -euo pipefail
+          uv run python services/beat-this-worker/release_modal.py capture \
+            --expected-identity promotion/worker-identity.json \
+            --output promotion/release-evidence.json
+
+      - name: Require final authenticated health
+        run: |
+          set -euo pipefail
+          uv run python services/beat-this-worker/release_modal.py verify-health \
+            --evidence promotion/release-evidence.json \
+            --output promotion/live-health.json
+
+      - name: Materialize or rotate the CI-only Ed25519 key
+        id: signing-key
+        env:
+          STANDARD_KEY: ${{ secrets.MUSIC_GPU_PROMOTION_PRIVATE_KEY }}
+          LEGACY_KEY: ${{ secrets.MUSIC_GPU_PROMOTION_SIGNING_KEY }}
+          GH_TOKEN: ${{ secrets.PROMOTION_SECRET_ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          key_path="$RUNNER_TEMP/beat-this-ed25519.pem"
+          if test -n "$STANDARD_KEY" || test -n "$LEGACY_KEY"; then
+            echo "key_file=" >> "$GITHUB_OUTPUT"
+          else
+            test -n "$GH_TOKEN"
+            openssl genpkey -algorithm Ed25519 -out "$key_path"
+            gh secret set MUSIC_GPU_PROMOTION_PRIVATE_KEY \
+              --repo "$GITHUB_REPOSITORY" < "$key_path"
+            echo "key_file=$key_path" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Sign only the health-bound promotion
+        env:
+          STANDARD_KEY: ${{ secrets.MUSIC_GPU_PROMOTION_PRIVATE_KEY }}
+          LEGACY_KEY: ${{ secrets.MUSIC_GPU_PROMOTION_SIGNING_KEY }}
+          KEY_FILE: ${{ steps.signing-key.outputs.key_file }}
+        run: |
+          set -euo pipefail
+          readarray -t fields < <(python - <<'PY'
+          import json
+          value = json.load(open("promotion/release-evidence.json"))
+          for key in ("modalAppId", "modalDeploymentId", "modalFunctionId",
+                      "modalImageId", "endpointOrigin", "sourceRevision",
+                      "sourceImageDigest"):
+              print(value[key])
+          PY
+          )
+          args=()
+          if test -n "$KEY_FILE"; then
+            args+=(--private-key-file "$KEY_FILE")
+          else
+            export MUSIC_GPU_PROMOTION_SIGNING_KEY="${STANDARD_KEY:-$LEGACY_KEY}"
+          fi
+          uv run python services/beat-this-worker/promote_modal.py \
+            --modal-app-id "${fields[0]}" \
+            --modal-deployment-id "${fields[1]}" \
+            --modal-function-id "${fields[2]}" \
+            --modal-image-id "${fields[3]}" \
+            --endpoint-origin "${fields[4]}" \
+            --source-revision "${fields[5]}" \
+            --source-image-digest "${fields[6]}" \
+            --health-file promotion/live-health.json \
+            --output promotion/bundle.json \
+            --public-key-output promotion/public-key.pem \
+            "${args[@]}"
+          if test -n "$KEY_FILE"; then rm -f "$KEY_FILE"; fi
+
+      - name: Validate before changing canonical API records
+        run: |
+          set -euo pipefail
+          uv run python services/beat-this-worker/activate_promotion.py \
+            --bundle promotion/bundle.json \
+            --public-key promotion/public-key.pem \
+            --evidence promotion/release-evidence.json \
+            --refresh promotion/container-refresh.json \
+            --health promotion/live-health.json \
+            --api-output artifacts/api-server/src/lib/beatThisPromotion.generated.ts \
+            --release-output services/beat-this-worker/release-attestation.json
+          pnpm --filter @workspace/api-server run typecheck
+          pnpm --filter @workspace/api-server run test:gpu-promotion
+
+      - name: Activate the verified API promotion
+        env:
+          RELEASE_BRANCH: ${{ github.ref_name }}
+          SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch origin "$RELEASE_BRANCH"
+          test "$(git rev-parse "origin/$RELEASE_BRANCH")" = "$SOURCE_REVISION"
+          git add \
+            artifacts/api-server/src/lib/beatThisPromotion.generated.ts \
+            services/beat-this-worker/release-attestation.json
+          git diff --cached --quiet && {
+            echo "The release produced no new canonical promotion record." >&2
+            exit 1
+          }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: activate verified Beat This release"
+          git push origin "HEAD:$RELEASE_BRANCH"
+
+      - name: Retain public release and smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: beat-this-release-${{ github.run_id }}
+          path: promotion
+          if-no-files-found: warn
+          retention-days: 90

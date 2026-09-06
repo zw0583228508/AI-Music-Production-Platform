@@ -1,4 +1,8 @@
 import { verify } from "node:crypto";
+import {
+  committedBeatThisPromotionBundle,
+  committedBeatThisPromotionPublicKey,
+} from "./beatThisPromotion.generated";
 
 const GPU_ATTESTED_PROVIDER_IDS = new Set([
   "ACE_STEP",
@@ -140,7 +144,11 @@ function parsePromotionRecord(value: unknown, providerId: string): GpuPromotionR
 
 function promotionBundle(providerId: string): PromotionBundle | null {
   const key = promotionEnvKey(providerId);
-  const bundleValue = process.env[`MUSIC_PROVIDER_${key}_PROMOTION_BUNDLE`]?.trim();
+  const committed = providerId === "BEAT_THIS"
+    ? committedBeatThisPromotionBundle.trim()
+    : "";
+  const bundleValue = committed ||
+    process.env[`MUSIC_PROVIDER_${key}_PROMOTION_BUNDLE`]?.trim();
   if (!bundleValue) return null;
   try {
     const bundle = JSON.parse(bundleValue) as unknown;
@@ -163,7 +171,8 @@ export function expectedGpuPromotionRecord(providerId: string): GpuPromotionReco
 function promotionPublicKey(providerId: string): string | null {
   const providerKey = promotionEnvKey(providerId);
   const publicKey = (
-    process.env[`MUSIC_PROVIDER_${providerKey}_PROMOTION_PUBLIC_KEY`] ??
+    ((providerId === "BEAT_THIS" ? committedBeatThisPromotionPublicKey : "") ||
+    process.env[`MUSIC_PROVIDER_${providerKey}_PROMOTION_PUBLIC_KEY`]) ??
     process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY ??
     process.env.MUSIC_GPU_PROMOTION_PUBLIC_KEY
   )?.trim();
