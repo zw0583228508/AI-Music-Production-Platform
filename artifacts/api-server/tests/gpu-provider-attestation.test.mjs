@@ -30,6 +30,7 @@ await build({
         selectMusicProvider,
         verifyProviderRegistry,
       } from "./src/lib/musicProviders";
+       export { runAnalysisProviders } from "./src/lib/analysisProviders";
     `,
     resolveDir: apiDirectory,
     sourcefile: "gpu-provider-attestation-harness.ts",
@@ -71,6 +72,7 @@ const {
   expectedGpuPromotionRecord,
   gpuPromotionAttestationFailure,
   providerCatalog,
+  runAnalysisProviders,
   runArrangementProvider,
   selectMusicProvider,
   verifyProviderRegistry,
@@ -93,6 +95,10 @@ after(async () => {
   delete process.env.MUSIC_PROVIDER_ACE_STEP_MODAL_IMAGE_ID;
   delete process.env.MUSIC_PROVIDER_ACE_STEP_PROMOTION_BUNDLE;
   delete process.env.MUSIC_PROVIDER_ACE_STEP_PROMOTION_PUBLIC_KEY;
+  delete process.env.MUSIC_PROVIDER_MT3_PROMOTION_BUNDLE;
+  delete process.env.MUSIC_PROVIDER_MT3_PROMOTION_PUBLIC_KEY;
+  delete process.env.MT3_API_URL;
+  delete process.env.MUSIC_PROVIDER_MT3_URL;
   delete process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY;
   delete process.env.MUSIC_PROVIDER_ACE_STEP_TOKEN;
   delete process.env.MUSIC_AI_WORKER_TOKEN;
@@ -537,6 +543,245 @@ test("ACE-Step identity and signature drift block every generation POST", async 
       },
       mismatch.options,
     );
+  }
+});
+
+test("MT3 requires exact signed deployment identity before every analysis POST", async () => {
+  const mt3RuntimePins = {
+    python: "3.11.11",
+    cudaImage: "nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04",
+    cuda: "12.1.1",
+    pytorch: "2.5.1+cu121",
+    torchvision: "0.20.1+cu121",
+    torchaudio: "2.5.1+cu121",
+    torchIndexUrl: "https://download.pytorch.org/whl/cu121",
+    transformers: "4.41.2",
+    accelerate: "0.31.0",
+  };
+  let health = {};
+  let analysisPosts = 0;
+  const server = createServer((request, response) => {
+    response.setHeader("Content-Type", "application/json");
+    if (request.method === "GET" && request.url === "/health?provider=MT3") {
+      response.end(JSON.stringify(health));
+      return;
+    }
+    if (request.method === "POST" && request.url === "/analyze") {
+      analysisPosts += 1;
+      response.end(JSON.stringify({
+        version: "mt3-pytorch-multitrack",
+        confidence: 1,
+        notes: [{
+          start: 0,
+          end: 0.5,
+          pitch: 60,
+          velocity: 100,
+          confidence: 1,
+        }],
+      }));
+      return;
+    }
+    response.writeHead(404);
+    response.end(JSON.stringify({ error: "not found" }));
+  });
+  await listen(server);
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const endpointOrigin = `http://127.0.0.1:${address.port}`;
+  const record = {
+    schemaVersion: 1,
+    provider: "MT3",
+    modalAppId: "ap-Mt3Promoted42",
+    modalDeploymentId: "v42",
+    modalFunctionId: "fu-Mt3Promoted42",
+    modalImageId: "im-Mt3Promoted42",
+    endpointOrigin,
+    modelVersion: "mt3-pytorch-multitrack",
+    checkpointSha256: "a".repeat(64),
+    checkpointRevision: "mt3-official-multitrack-r42",
+    sourceRevision: "git-mt3-test-revision-42",
+    sourceImageDigest: `sha256:${"c".repeat(64)}`,
+    releaseEvidenceSha256: "e".repeat(64),
+    runtime: mt3RuntimePins,
+  };
+  const signedBundle = (candidate = record) => ({
+    record: candidate,
+    signature: signBytes(
+      null,
+      Buffer.from(canonicalGpuPromotionJson(candidate)),
+      promotionKeys.privateKey,
+    ).toString("base64"),
+  });
+  const exactHealth = () => ({
+    provider: "MT3",
+    status: "ready",
+    ready: true,
+    healthy: true,
+    checkpointReady: true,
+    runtimeReady: true,
+    smokeTested: true,
+    gpuReady: true,
+    modelVersion: record.modelVersion,
+    checksum: record.checkpointSha256,
+    checkpointSha256: record.checkpointSha256,
+    revision: record.checkpointRevision,
+    sourceRevision: record.sourceRevision,
+    sourceImageDigest: record.sourceImageDigest,
+    containerDigest: record.sourceImageDigest,
+    modalAppId: record.modalAppId,
+    modalDeploymentId: record.modalDeploymentId,
+    modalFunctionId: record.modalFunctionId,
+    modalImageId: record.modalImageId,
+    runtime: { pythonVersion: record.runtime.python },
+    framework: {
+      cuda_image: record.runtime.cudaImage,
+      cuda: record.runtime.cuda,
+      pytorch: record.runtime.pytorch,
+      torchvision: record.runtime.torchvision,
+      torchaudio: record.runtime.torchaudio,
+      torch_index_url: record.runtime.torchIndexUrl,
+      transformers: record.runtime.transformers,
+      accelerate: record.runtime.accelerate,
+    },
+  });
+  const endpointKeys = [
+    "MUSIC_PROVIDER_MT3_URL",
+    "MT3_API_URL",
+    "MUSIC_PROVIDER_MT3_PROMOTION_BUNDLE",
+    "MUSIC_PROVIDER_MT3_PROMOTION_PUBLIC_KEY",
+    "MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY",
+    "MUSIC_GPU_PROMOTION_PUBLIC_KEY",
+    "MUSIC_PROVIDER_BASIC_PITCH_URL",
+    "BASIC_PITCH_API_URL",
+    "MUSIC_PROVIDER_DEMUCS_URL",
+    "ALL_IN_ONE_API_URL",
+    "MUSIC_PROVIDER_ALL_IN_ONE_URL",
+    "DEMUCS_API_URL",
+    "MUSIC_PROVIDER_BS_ROFORMER_ENDPOINT",
+    "MUSIC_PROVIDER_BS_ROFORMER_URL",
+    "BS_ROFORMER_API_URL",
+    "BS_ROFORMER_SW_API_URL",
+    "MUSIC_PROVIDER_MR_MT3_URL",
+    "MR_MT3_API_URL",
+    "MUSIC_PROVIDER_YOUR_MT3_URL",
+    "YOUR_MT3_API_URL",
+    "SHEETSAGE_API_URL",
+    "SHEET_SAGE_API_URL",
+    "MUSIC_PROVIDER_CHROMA_URL",
+    "CHROMA_API_URL",
+    "BASS_API_URL",
+    "MUSIC_PROVIDER_MADMOM_URL",
+    "MADMOM_API_URL",
+    "MUSIC_PROVIDER_BEAT_THIS_URL",
+    "BEAT_THIS_API_URL",
+    "MUSIC_PROVIDER_TORCHCREPE_URL",
+    "TORCHCREPE_API_URL",
+    "MUSIC_PROVIDER_ESSENTIA_URL",
+    "ESSENTIA_API_URL",
+    "MUSIC_PROVIDER_PYLOUDNORM_URL",
+    "PYLOUDNORM_API_URL",
+    "MUSIC_MIR_API_URL",
+    "MUSIC_MIR_ESSENTIA_API_URL",
+  ];
+  const previous = new Map(endpointKeys.map((key) => [key, process.env[key]]));
+  const run = () => runAnalysisProviders({
+    sourceUrl: "https://storage.invalid/signed-source",
+    sourceType: "FULL_SONG",
+    durationSeconds: 2,
+  });
+  try {
+    for (const key of endpointKeys) delete process.env[key];
+    process.env.MT3_API_URL = endpointOrigin;
+    process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY = promotionPublicKey;
+    process.env.MUSIC_PROVIDER_MT3_PROMOTION_BUNDLE =
+      JSON.stringify(signedBundle());
+    health = exactHealth();
+    const accepted = await run();
+    assert.equal(accepted.transcriptions[0]?.providerId, "MT3");
+    assert.equal(analysisPosts, 1);
+
+    const wrongKeys = generateKeyPairSync("ed25519");
+    const cases = [
+      {
+        name: "missing signature",
+        bundle: { record },
+      },
+      {
+        name: "bad signature",
+        bundle: {
+          record,
+          signature: signBytes(
+            null,
+            Buffer.from(canonicalGpuPromotionJson(record)),
+            wrongKeys.privateKey,
+          ).toString("base64"),
+        },
+      },
+      {
+        name: "endpoint origin",
+        bundle: signedBundle({ ...record, endpointOrigin: "https://drift.invalid" }),
+      },
+      {
+        name: "checkpoint",
+        mutateHealth: (value) => ({ ...value, checksum: "b".repeat(64), checkpointSha256: "b".repeat(64) }),
+      },
+      {
+        name: "source revision",
+        mutateHealth: (value) => ({ ...value, sourceRevision: "different-source-revision" }),
+      },
+      {
+        name: "source image",
+        mutateHealth: (value) => ({ ...value, sourceImageDigest: `sha256:${"f".repeat(64)}` }),
+      },
+      {
+        name: "Modal app",
+        mutateHealth: (value) => ({ ...value, modalAppId: "ap-Mt3Drift" }),
+      },
+      {
+        name: "Modal deployment",
+        mutateHealth: (value) => ({ ...value, modalDeploymentId: "v99" }),
+      },
+      {
+        name: "Modal function",
+        mutateHealth: (value) => ({ ...value, modalFunctionId: "fu-Mt3Drift" }),
+      },
+      {
+        name: "Modal image",
+        mutateHealth: (value) => ({ ...value, modalImageId: "im-Mt3Drift" }),
+      },
+      {
+        name: "runtime pin",
+        mutateHealth: (value) => ({
+          ...value,
+          framework: { ...value.framework, pytorch: "2.5.0+cu121" },
+        }),
+      },
+    ];
+    for (const mismatch of cases) {
+      health = mismatch.mutateHealth
+        ? mismatch.mutateHealth(exactHealth())
+        : exactHealth();
+      process.env.MUSIC_PROVIDER_MT3_PROMOTION_BUNDLE =
+        JSON.stringify(mismatch.bundle ?? signedBundle());
+      const rejected = await run();
+      assert.equal(
+        rejected.transcriptions.some((item) => item.providerId === "MT3"),
+        false,
+        mismatch.name,
+      );
+      assert.equal(analysisPosts, 1, mismatch.name);
+      assert.equal(
+        rejected.provenance.find((item) => item.provider === "MT3")?.errorCode,
+        "health-attestation-failed",
+        mismatch.name,
+      );
+    }
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await new Promise((resolve) => server.close(resolve));
   }
 });
 
