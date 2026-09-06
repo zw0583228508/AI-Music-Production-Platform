@@ -7,13 +7,13 @@ import json
 import math
 import os
 import platform
+import tempfile
 from pathlib import Path
 from typing import Any
 from importlib.metadata import distribution, version
 
 from fastapi import FastAPI, HTTPException, Request
-from pydantic import BaseModel, Field
-
+from starlette.concurrency import run_in_threadpool
 from inference import InferenceError, run
 
 ROOT = Path(__file__).parent
@@ -180,11 +180,18 @@ def validate_evidence(value: dict[str, Any]) -> dict[str, Any]:
             "melody": melody, "chords": chords, "timing": timing, "confidence": confidence}
 
 
-class AnalyzeRequest(BaseModel):
-    audio_base64: str = Field(alias="audioBase64", min_length=1)
-
-
 app = FastAPI(title="SheetSage 0.2.1")
+MAX_AUDIO_BYTES = 512 * 1024 * 1024
+SUPPORTED_AUDIO_SUFFIXES = {
+    "audio/aac": ".aac",
+    "audio/flac": ".flac",
+    "audio/mp4": ".m4a",
+    "audio/mpeg": ".mp3",
+    "audio/ogg": ".ogg",
+    "audio/wav": ".wav",
+    "audio/x-m4a": ".m4a",
+    "audio/x-wav": ".wav",
+}
 
 
 @app.get("/health")
@@ -208,13 +215,37 @@ def health(request: Request) -> dict[str, Any]:
 
 
 @app.post("/analyze")
-def analyze(payload: AnalyzeRequest, request: Request) -> dict[str, Any]:
+async def analyze(request: Request) -> dict[str, Any]:
     _auth(request)
     assets, _, _ = asset_state()
     smoke, _ = smoke_state()
     if not assets or not smoke:
         raise HTTPException(503, "SheetSage is not ready for real inference")
+    declared_length = request.headers.get("content-length")
+    if declared_length:
+        try:
+            if int(declared_length) > MAX_AUDIO_BYTES:
+                raise HTTPException(413, "audio payload exceeds 512 MiB")
+        except ValueError as exc:
+            raise HTTPException(400, "invalid content length") from exc
+    path: Path | None = None
     try:
-        return validate_evidence(run(payload.audio_base64, ASSET_ROOT, 300))
+        content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+        suffix = SUPPORTED_AUDIO_SUFFIXES.get(content_type, ".audio")
+        with tempfile.NamedTemporaryFile(prefix="sheetsage-", suffix=suffix, delete=False) as target:
+            path = Path(target.name)
+            size = 0
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > MAX_AUDIO_BYTES:
+                    raise HTTPException(413, "audio payload exceeds 512 MiB")
+                target.write(chunk)
+        if size == 0:
+            raise HTTPException(400, "audio payload is empty")
+        evidence = await run_in_threadpool(run, path, ASSET_ROOT, 300)
+        return validate_evidence(evidence)
     except InferenceError as exc:
         raise HTTPException(422, str(exc)) from exc
+    finally:
+        if path is not None:
+            path.unlink(missing_ok=True)

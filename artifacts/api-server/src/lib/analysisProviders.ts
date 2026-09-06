@@ -295,6 +295,17 @@ function retryableStatus(status: number): boolean {
   return status === 408 || status === 425 || status === 429 || status >= 500;
 }
 
+function nestedProviderRequestError(error: unknown): ProviderRequestError | null {
+  let current = error;
+  const visited = new Set<unknown>();
+  while (current && !visited.has(current)) {
+    if (current instanceof ProviderRequestError) return current;
+    visited.add(current);
+    current = isRecord(current) ? current["cause"] : null;
+  }
+  return null;
+}
+
 function providerRequestTimeoutMs(providerId: AnalysisProviderId): number {
   if (providerId === "PYLOUDNORM" || providerId === "ESSENTIA") return 2 * 60_000;
   if (providerId === "CHROMA" || providerId === "MADMOM" || providerId === "BEAT_THIS") return 5 * 60_000;
@@ -356,10 +367,14 @@ async function readProviderJson(
   }
 }
 
-async function readProviderAudioBase64(sourceUrl: string): Promise<string> {
-  const maxBytes = 32 * 1024 * 1024;
+const MAX_SHEETSAGE_SOURCE_BYTES = 512 * 1024 * 1024;
+
+async function openSheetSageSource(
+  sourceUrl: string,
+  signal: AbortSignal,
+): Promise<{ body: ReadableStream<Uint8Array>; contentType: string; contentLength: number | null }> {
   const response = await fetch(sourceUrl, {
-    signal: AbortSignal.timeout(2 * 60_000),
+    signal,
   });
   if (!response.ok || !response.body) {
     throw new ProviderRequestError(
@@ -370,33 +385,37 @@ async function readProviderAudioBase64(sourceUrl: string): Promise<string> {
     );
   }
   const declaredLength = Number(response.headers.get("content-length") || 0);
-  if (declaredLength > maxBytes) {
+  if (declaredLength > MAX_SHEETSAGE_SOURCE_BYTES) {
+    await response.body.cancel();
     throw new ProviderRequestError(
-      "SheetSage source exceeds the 32 MiB contract limit",
+      "SheetSage source exceeds the 512 MiB contract limit",
       "source-too-large",
       false,
       1,
     );
   }
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
   let bytes = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    bytes += value.byteLength;
-    if (bytes > maxBytes) {
-      await reader.cancel();
-      throw new ProviderRequestError(
-        "SheetSage source exceeds the 32 MiB contract limit",
-        "source-too-large",
-        false,
-        1,
-      );
-    }
-    chunks.push(value);
-  }
-  return Buffer.concat(chunks).toString("base64");
+  const boundedBody = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      bytes += chunk.byteLength;
+      if (bytes > MAX_SHEETSAGE_SOURCE_BYTES) {
+        controller.error(new ProviderRequestError(
+          "SheetSage source exceeds the 512 MiB contract limit",
+          "source-too-large",
+          false,
+          1,
+        ));
+        return;
+      }
+      controller.enqueue(chunk);
+    },
+  }));
+  return {
+    body: boundedBody,
+    contentType: response.headers.get("content-type")?.split(";")[0]?.trim() ||
+      "application/octet-stream",
+    contentLength: declaredLength > 0 ? declaredLength : null,
+  };
 }
 async function delay(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
@@ -538,30 +557,36 @@ async function requestProvider(
 
   const token = providerToken(providerId);
   const attestedVersion = await attestProviderHealth(providerId, endpoint, token);
-  const requestBody = providerId === "SHEETSAGE"
-    ? { audioBase64: await readProviderAudioBase64(input.sourceUrl) }
-    : {
+  let lastError: ProviderRequestError | null = null;
+  for (let attempt = 1; attempt <= MAX_PROVIDER_ATTEMPTS; attempt += 1) {
+    try {
+      const signal = AbortSignal.timeout(providerRequestTimeoutMs(providerId));
+      const sheetSageSource = providerId === "SHEETSAGE"
+        ? await openSheetSageSource(input.sourceUrl, signal)
+        : null;
+      const requestBody = sheetSageSource?.body ?? JSON.stringify({
         provider: providerId,
         sourceUrl: input.sourceUrl,
         sourceType: input.sourceType,
         durationSeconds: input.durationSeconds,
-      };
-  let lastError: ProviderRequestError | null = null;
-  for (let attempt = 1; attempt <= MAX_PROVIDER_ATTEMPTS; attempt += 1) {
-    try {
+      });
       const response = await fetch(
         providerRequestUrl(endpoint, providerAction(providerId)),
         {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
+            "Content-Type": sheetSageSource?.contentType ?? "application/json",
+            ...(sheetSageSource?.contentLength
+              ? { "Content-Length": String(sheetSageSource.contentLength) }
+              : {}),
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
             ...(input.idempotencyKey
               ? { "Idempotency-Key": `${input.idempotencyKey}:${providerId}` }
               : {}),
           },
-          body: JSON.stringify(requestBody),
-           signal: AbortSignal.timeout(providerRequestTimeoutMs(providerId)),
+          body: requestBody,
+          ...(sheetSageSource ? { duplex: "half" } : {}),
+          signal,
         },
       );
       if (!response.ok) {
@@ -619,6 +644,15 @@ async function requestProvider(
         }
       }
     } catch (error) {
+      const sourceError = nestedProviderRequestError(error);
+      if (sourceError && !sourceError.retryable) {
+        throw new ProviderRequestError(
+          sourceError.message,
+          sourceError.code,
+          false,
+          attempt,
+        );
+      }
       if (error instanceof ProviderRequestError && !error.retryable) throw error;
       const requestError = error instanceof ProviderRequestError
         ? error

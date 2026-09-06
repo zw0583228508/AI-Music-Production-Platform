@@ -1,7 +1,6 @@
 """Direct, offline calls into the pinned SheetSage 0.2.1 public API."""
 from __future__ import annotations
 
-import base64
 import hashlib
 import math
 import os
@@ -88,14 +87,11 @@ def _format_output(result: tuple[Any, ...]) -> dict[str, Any]:
             "timing": timing, "confidence": overall}
 
 
-def run(audio_base64: str, asset_root: Path, timeout_seconds: int) -> dict[str, Any]:
+def run(audio_source: bytes | Path, asset_root: Path, timeout_seconds: int) -> dict[str, Any]:
     del timeout_seconds  # Modal function timeout is the hard execution boundary.
-    try:
-        audio = base64.b64decode(audio_base64, validate=True)
-    except Exception as exc:
-        raise InferenceError("audioBase64 is not valid base64") from exc
-    if not audio or len(audio) > 32 * 1024 * 1024:
-        raise InferenceError("audio payload is empty or exceeds 32 MiB")
+    size = audio_source.stat().st_size if isinstance(audio_source, Path) else len(audio_source)
+    if not size or size > 512 * 1024 * 1024:
+        raise InferenceError("audio payload is empty or exceeds 512 MiB")
     if version("sheetsage-infer") != "0.2.1":
         raise InferenceError("installed SheetSage package is not pinned 0.2.1")
     if version("jukebox-infer") != "0.1.2" or version("madmom-infer") != "0.2.0":
@@ -132,7 +128,7 @@ def run(audio_base64: str, asset_root: Path, timeout_seconds: int) -> dict[str, 
         sheetsage.assets._download = forbidden_download
         madmom_infer.models.download = offline_madmom_model
         sheetsage.beat_track._librosa_fallback = forbidden_fallback
-        result = sheetsage_api(audio, use_jukebox=False, detect_melody=True,
+        result = sheetsage_api(audio_source, use_jukebox=False, detect_melody=True,
                                detect_harmony=True, return_intermediaries=True)
         return _format_output(result)
     except InferenceError:

@@ -416,6 +416,7 @@ test("keeps absent providers explicit without fabricating analysis results", asy
         "SHEETSAGE",
         "CHROMA",
         "MADMOM",
+        "BEAT_THIS",
         "ESSENTIA",
         "PYLOUDNORM",
       ]),
@@ -435,10 +436,12 @@ test("connects SheetSage melody, harmony, and timing provenance from real audio 
     ["SHEETSAGE_LICENSE_AUTHORIZED", process.env.SHEETSAGE_LICENSE_AUTHORIZED],
     ["SHEETSAGE_API_TOKEN", process.env.SHEETSAGE_API_TOKEN],
   ]);
-  let analyzePayload: Record<string, unknown> | null = null;
+  let analyzePayload: Buffer | null = null;
+  let analyzeContentType: string | undefined;
   const server = createServer((request, response) => {
     response.setHeader("Content-Type", "application/json");
     if (request.method === "GET" && request.url === "/source.wav") {
+        response.setHeader("Content-Type", "audio/wav");
       response.end(Buffer.from("real-audio-fixture"));
       return;
     }
@@ -455,12 +458,13 @@ test("connects SheetSage melody, harmony, and timing provenance from real audio 
       return;
     }
     if (request.method === "POST" && request.url === "/analyze") {
-      let body = "";
+      const chunks: Buffer[] = [];
       request.on("data", (chunk) => {
-        body += chunk;
+        chunks.push(Buffer.from(chunk));
       });
       request.on("end", () => {
-        analyzePayload = JSON.parse(body) as Record<string, unknown>;
+        analyzePayload = Buffer.concat(chunks);
+        analyzeContentType = request.headers["content-type"];
         response.end(JSON.stringify({
           provider: "SHEETSAGE",
           modelVersion: "0.2.1",
@@ -494,10 +498,8 @@ test("connects SheetSage melody, harmony, and timing provenance from real audio 
       sourceType: "FULL_SONG",
       durationSeconds: 2,
     });
-    assert.equal(
-      analyzePayload?.["audioBase64"],
-      Buffer.from("real-audio-fixture").toString("base64"),
-    );
+    assert.equal((analyzePayload as Buffer | null)?.toString(), "real-audio-fixture");
+    assert.equal(analyzeContentType, "audio/wav");
     assert.equal(result.transcriptions[0]?.providerId, "SHEETSAGE");
     assert.equal(result.transcriptions[0]?.notes[0]?.pitch, 60);
     assert.equal(result.harmony[0]?.providerId, "SHEETSAGE");
@@ -512,6 +514,67 @@ test("connects SheetSage melody, harmony, and timing provenance from real audio 
         .map((item) => item.capability)),
       new Set(["harmony", "melody", "timing"]),
     );
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    });
+  }
+});
+
+test("rejects an oversized SheetSage source before sending it to the provider", async () => {
+  const previous = new Map([
+    ["SHEETSAGE_API_URL", process.env.SHEETSAGE_API_URL],
+    ["SHEETSAGE_LICENSE_AUTHORIZED", process.env.SHEETSAGE_LICENSE_AUTHORIZED],
+    ["SHEETSAGE_API_TOKEN", process.env.SHEETSAGE_API_TOKEN],
+  ]);
+  let analyzeRequests = 0;
+  const server = createServer((request, response) => {
+    response.setHeader("Content-Type", "application/json");
+    if (request.method === "GET" && request.url === "/source.wav") {
+      response.setHeader("Content-Length", String(512 * 1024 * 1024 + 1));
+      response.end();
+      return;
+    }
+    if (request.method === "GET" && request.url === "/health?provider=SHEETSAGE") {
+      response.end(JSON.stringify({
+        provider: "SHEETSAGE",
+        version: "0.2.1",
+        status: "ready",
+        runtimeReady: true,
+        checkpointReady: true,
+        smokeTested: true,
+        checksum: "a".repeat(64),
+      }));
+      return;
+    }
+    if (request.method === "POST" && request.url === "/analyze") {
+      analyzeRequests += 1;
+    }
+    response.statusCode = 404;
+    response.end("{}");
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const endpoint = `http://127.0.0.1:${address.port}`;
+  process.env.SHEETSAGE_API_URL = endpoint;
+  process.env.SHEETSAGE_LICENSE_AUTHORIZED = "true";
+  process.env.SHEETSAGE_API_TOKEN = "test-token";
+  try {
+    const result = await runAnalysisProviders({
+      sourceUrl: `${endpoint}/source.wav`,
+      sourceType: "FULL_SONG",
+      durationSeconds: 2,
+    });
+    assert.equal(analyzeRequests, 0);
+    const sheetSage = result.provenance
+      .find((item) => item.provider === "SHEETSAGE");
+    assert.equal(sheetSage?.status, "failed");
+    assert.equal(sheetSage?.errorCode, "source-too-large");
   } finally {
     for (const [key, value] of previous) {
       if (value === undefined) delete process.env[key];

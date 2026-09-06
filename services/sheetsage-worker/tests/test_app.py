@@ -1,4 +1,4 @@
-import base64, hashlib, importlib.util, json, os, sys, tempfile, types, unittest
+import asyncio, hashlib, importlib.util, json, os, sys, tempfile, types, unittest
 from pathlib import Path
 from unittest.mock import patch
 
@@ -84,8 +84,9 @@ class SheetSageTests(unittest.TestCase):
                 "sheetsage-infer": "0.2.1", "jukebox-infer": "0.1.2",
                 "madmom-infer": "0.2.0"}[name]
         ):
-            output = inference.run(base64.b64encode(b"real audio").decode(),
-                                   Path(self.tmp.name), 1)
+            audio_path = Path(self.tmp.name) / "source.audio"
+            audio_path.write_bytes(b"real audio")
+            output = inference.run(audio_path, Path(self.tmp.name), 1)
         self.assertEqual(called["use_jukebox"], False)
         self.assertEqual(called["return_intermediaries"], True)
         self.assertEqual(output["chords"][0]["symbol"], "C")
@@ -97,8 +98,56 @@ class SheetSageTests(unittest.TestCase):
         with patch.object(self.app, "asset_state", return_value=(False, "blocked", None)), \
              patch.object(self.app, "run") as run_model:
             with self.assertRaises(self.app.HTTPException) as raised:
-                self.app.analyze(self.app.AnalyzeRequest(audioBase64="eA=="), request)
+                asyncio.run(self.app.analyze(request))
         self.assertEqual(raised.exception.status_code, 503)
+        run_model.assert_not_called()
+
+    def test_analyze_streams_audio_to_a_temporary_file(self):
+        from starlette.requests import Request
+        chunks = iter((b"long-", b"recording"))
+        async def receive():
+            try:
+                return {"type": "http.request", "body": next(chunks), "more_body": True}
+            except StopIteration:
+                return {"type": "http.request", "body": b"", "more_body": False}
+        request = Request({
+            "type": "http",
+            "method": "POST",
+            "headers": [(b"authorization", b"Bearer test")],
+        }, receive)
+        evidence = {"melody":[{"start":0,"end":1,"pitch":60,"confidence":.9}],
+                    "chords":[{"start":0,"end":1,"symbol":"C","confidence":.8}],
+                    "timing":[{"start":0,"end":1}],"confidence":.8}
+        observed = {}
+        async def fake_run_in_threadpool(function, path, *_args):
+            observed["path"] = path
+            observed["audio"] = path.read_bytes()
+            return function(path, *_args)
+        with patch.object(self.app, "asset_state", return_value=(True, "ready", {})), \
+             patch.object(self.app, "smoke_state", return_value=(True, "ready")), \
+             patch.object(self.app, "run", return_value=evidence), \
+             patch.object(self.app, "run_in_threadpool", side_effect=fake_run_in_threadpool):
+            output = asyncio.run(self.app.analyze(request))
+        self.assertEqual(observed["audio"], b"long-recording")
+        self.assertFalse(observed["path"].exists())
+        self.assertEqual(output["melody"][0]["pitch"], 60)
+
+    def test_analyze_rejects_declared_oversize_before_reading(self):
+        from starlette.requests import Request
+        request = Request({
+            "type": "http",
+            "method": "POST",
+            "headers": [
+                (b"authorization", b"Bearer test"),
+                (b"content-length", str(self.app.MAX_AUDIO_BYTES + 1).encode()),
+            ],
+        })
+        with patch.object(self.app, "asset_state", return_value=(True, "ready", {})), \
+             patch.object(self.app, "smoke_state", return_value=(True, "ready")), \
+             patch.object(self.app, "run") as run_model:
+            with self.assertRaises(self.app.HTTPException) as raised:
+                asyncio.run(self.app.analyze(request))
+        self.assertEqual(raised.exception.status_code, 413)
         run_model.assert_not_called()
 
 if __name__ == "__main__": unittest.main()

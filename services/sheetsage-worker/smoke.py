@@ -1,6 +1,6 @@
 """Run against a real licensed audio fixture and persist an attested smoke proof."""
 from __future__ import annotations
-import base64, hashlib, json, os
+import hashlib, json, os
 from pathlib import Path
 from app import (
     ASSET_MANIFEST,
@@ -19,7 +19,7 @@ if not fixture.is_file():
 ready, message, _ = asset_state()
 if not ready:
     raise SystemExit(message)
-result = validate_evidence(run(base64.b64encode(fixture.read_bytes()).decode(), ASSET_ROOT, 300))
+result = validate_evidence(run(fixture, ASSET_ROOT, 300))
 encoded = json.dumps(result, sort_keys=True).encode()
 proof = {
     "realInference": True, "package": SPEC["package"],
