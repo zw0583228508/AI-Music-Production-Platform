@@ -10,6 +10,7 @@ import platform
 import shutil
 import tempfile
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -224,8 +225,10 @@ class SpoolReservations:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._uploads: dict[str, int] = {}
+        self._capacity_rejections = 0
+        self._last_capacity_rejection_at: float | None = None
 
-    def state(self) -> dict[str, int]:
+    def state(self) -> dict[str, int | None]:
         with self._lock:
             disk = shutil.disk_usage(TEMP_DIRECTORY)
             outstanding = sum(MAX_AUDIO_BYTES - written for written in self._uploads.values())
@@ -239,6 +242,11 @@ class SpoolReservations:
                 "maxSpooledAnalyses": MAX_SPOOLED_ANALYSES,
                 "reservedUploadBytes": outstanding,
                 "maxAudioBytes": MAX_AUDIO_BYTES,
+                "capacityAdmissionRejections": self._capacity_rejections,
+                "lastCapacityAdmissionRejectionAt": (
+                    int(self._last_capacity_rejection_at)
+                    if self._last_capacity_rejection_at is not None else None
+                ),
             }
 
     def acquire(self) -> str | None:
@@ -249,6 +257,8 @@ class SpoolReservations:
                 len(self._uploads) >= MAX_SPOOLED_ANALYSES
                 or disk.free - TEMP_DISK_HEADROOM_BYTES - outstanding < MAX_AUDIO_BYTES
             ):
+                self._capacity_rejections += 1
+                self._last_capacity_rejection_at = time.time()
                 return None
             reservation = uuid.uuid4().hex
             self._uploads[reservation] = 0
@@ -308,7 +318,10 @@ async def analyze(request: Request) -> dict[str, Any]:
         raise HTTPException(
             503,
             "SheetSage temporary upload capacity is busy; retry later",
-            headers={"Retry-After": "30"},
+            headers={
+                "Retry-After": "30",
+                "X-SheetSage-Rejection": "capacity-admission",
+            },
         )
     path: Path | None = None
     try:

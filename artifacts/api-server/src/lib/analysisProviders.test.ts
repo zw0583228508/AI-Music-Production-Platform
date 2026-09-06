@@ -731,6 +731,78 @@ test("connects SheetSage melody, harmony, and timing provenance from real audio 
   }
 });
 
+test("reports one logical SheetSage capacity rejection across provider retries", async () => {
+  const keys = [
+    "SHEETSAGE_API_URL",
+    "SHEETSAGE_LICENSE_AUTHORIZED",
+    "SHEETSAGE_API_TOKEN",
+  ];
+  const previous = new Map(keys.map((key) => [key, process.env[key]]));
+  let analyzeRequests = 0;
+  const recordedAnalysisKeys: string[] = [];
+  const server = createServer((request, response) => {
+    response.setHeader("Content-Type", "application/json");
+    if (request.method === "GET" && request.url === "/source.wav") {
+      response.setHeader("Content-Type", "audio/wav");
+      response.end(Buffer.from("real-audio-fixture"));
+      return;
+    }
+    if (request.method === "GET" && request.url === "/health?provider=SHEETSAGE") {
+      response.end(JSON.stringify({
+        provider: "SHEETSAGE",
+        version: "0.2.1",
+        status: "ready",
+        runtimeReady: true,
+        checkpointReady: true,
+        smokeTested: true,
+        checksum: "a".repeat(64),
+      }));
+      return;
+    }
+    if (request.method === "POST" && request.url === "/analyze") {
+      analyzeRequests += 1;
+      request.resume();
+      response.statusCode = 503;
+      response.setHeader("X-SheetSage-Rejection", "capacity-admission");
+      response.end(JSON.stringify({ detail: "capacity busy" }));
+      return;
+    }
+    response.statusCode = 404;
+    response.end("{}");
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  process.env.SHEETSAGE_API_URL = `http://127.0.0.1:${address.port}`;
+  process.env.SHEETSAGE_LICENSE_AUTHORIZED = "true";
+  process.env.SHEETSAGE_API_TOKEN = "test-token";
+  try {
+    const result = await runAnalysisProviders({
+      sourceUrl: `http://127.0.0.1:${address.port}/source.wav`,
+      sourceType: "FULL_SONG",
+      durationSeconds: 10,
+      idempotencyKey: "analysis-one",
+      onSheetSageCapacityRejection: async (analysisKey) => {
+        recordedAnalysisKeys.push(analysisKey);
+      },
+    });
+    assert.equal(analyzeRequests, 3);
+    assert.deepEqual(recordedAnalysisKeys, ["analysis-one"]);
+    assert.equal(
+      result.provenance.find((item) => item.provider === "SHEETSAGE")?.errorCode,
+      "http-503",
+    );
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    });
+  }
+});
+
 test("rejects an oversized SheetSage source before sending it to the provider", async () => {
   const previous = new Map([
     ["SHEETSAGE_API_URL", process.env.SHEETSAGE_API_URL],

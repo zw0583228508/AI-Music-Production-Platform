@@ -278,6 +278,9 @@ class SheetSageTests(unittest.TestCase):
         }, receive)
         held = self.app.SPOOL_RESERVATIONS.acquire()
         self.assertIsNotNone(held)
+        rejections_before = self.app.SPOOL_RESERVATIONS.state()[
+            "capacityAdmissionRejections"
+        ]
         try:
             with patch.object(self.app, "asset_state", return_value=(True, "ready", {})), \
                  patch.object(self.app, "smoke_state", return_value=(True, "ready")):
@@ -287,7 +290,17 @@ class SheetSageTests(unittest.TestCase):
             self.app.SPOOL_RESERVATIONS.release(held)
         self.assertEqual(raised.exception.status_code, 503)
         self.assertEqual(raised.exception.headers["Retry-After"], "30")
+        self.assertEqual(
+            raised.exception.headers["X-SheetSage-Rejection"],
+            "capacity-admission",
+        )
         self.assertFalse(received)
+        state = self.app.SPOOL_RESERVATIONS.state()
+        self.assertEqual(
+            state["capacityAdmissionRejections"],
+            rejections_before + 1,
+        )
+        self.assertIsInstance(state["lastCapacityAdmissionRejectionAt"], int)
 
     def test_reservation_rejects_when_free_disk_cannot_cover_upload_and_headroom(self):
         disk = types.SimpleNamespace(

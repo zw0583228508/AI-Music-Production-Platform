@@ -1,6 +1,7 @@
 import type { AnalysisSection, SongModelData } from "@workspace/db";
 import { attestAnalysisProviderHealth } from "./analysisProviderManifest";
 import { requiresGpuPromotionRecord } from "./gpuProviderAttestation";
+import { isSheetSageCapacityAdmissionRejection } from "./sheetSageCapacityRate";
 
 type ProviderProvenance = SongModelData["providerProvenance"][number];
 type MelodyNote = SongModelData["melody"][number];
@@ -155,6 +156,7 @@ type AnalysisProviderInput = {
   sourceType: string;
   durationSeconds: number;
   idempotencyKey?: string;
+  onSheetSageCapacityRejection?: (analysisKey: string) => Promise<void>;
 };
 
 class ProviderRequestError extends Error {
@@ -558,6 +560,7 @@ async function requestProvider(
   const token = providerToken(providerId);
   const attestedVersion = await attestProviderHealth(providerId, endpoint, token);
   let lastError: ProviderRequestError | null = null;
+  let sheetSageCapacityRejectionReported = false;
   for (let attempt = 1; attempt <= MAX_PROVIDER_ATTEMPTS; attempt += 1) {
     try {
       const signal = AbortSignal.timeout(providerRequestTimeoutMs(providerId));
@@ -590,6 +593,14 @@ async function requestProvider(
         },
       );
       if (!response.ok) {
+        if (isSheetSageCapacityAdmissionRejection(
+          providerId,
+          response.status,
+          response.headers.get("x-sheetsage-rejection"),
+        ) && !sheetSageCapacityRejectionReported && input.idempotencyKey) {
+          sheetSageCapacityRejectionReported = true;
+          await input.onSheetSageCapacityRejection?.(input.idempotencyKey);
+        }
         const canRetry = retryableStatus(response.status);
         const error = new ProviderRequestError(
           `${providerId} returned HTTP ${response.status}`,

@@ -39,6 +39,7 @@ import { execFile, spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { logger } from "./logger";
 import { isEffectivelySilent } from "./audioSignal";
+import { recordSheetSageCapacityRejection } from "./sheetSageCapacityAlerts";
 
 export { isEffectivelySilent };
 
@@ -658,6 +659,7 @@ async function retiredAnalysisPath(sourceId: string): Promise<void> {
       sourceType: source.sourceType,
       durationSeconds,
       idempotencyKey: job.id,
+      onSheetSageCapacityRejection: recordSheetSageCapacityRejection,
     });
     const primaryTranscription = providerResults.transcriptions[0] ?? null;
     if (providerResults.structure) {
@@ -1153,6 +1155,7 @@ export async function analyzeProjectSource(
       sourceType: source.sourceType,
       durationSeconds,
       idempotencyKey: job.id,
+      onSheetSageCapacityRejection: recordSheetSageCapacityRejection,
     });
     let sourceStems: SongModelData["sourceStems"] =
       midi?.sourceStems.map((stem) => ({
