@@ -85,9 +85,14 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             self.assertNotIn("MUSIC_GPU_OUTPUT_ROOT", environment)
             self.assertEqual(environment["MUSIC_GPU_MAX_CONCURRENT_JOBS"], "1")
             self.assertNotIn("MUSIC_AI_WORKER_TOKEN", environment)
-            self.assertEqual(
-                environment["MUSIC_GPU_CONTAINER_DIGEST"], deployment.source_image_digest
-            )
+            if deployment.provider == "MT3":
+                self.assertNotIn("MUSIC_GPU_CONTAINER_DIGEST", environment)
+                self.assertNotIn("MUSIC_GPU_SOURCE_REVISION", environment)
+            else:
+                self.assertEqual(
+                    environment["MUSIC_GPU_CONTAINER_DIGEST"],
+                    deployment.source_image_digest,
+                )
             module = deployment.provider.lower()
             self.assertEqual(
                 environment[f"MUSIC_GPU_RUNNER_{deployment.provider}"],
@@ -127,9 +132,15 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
                     "TRANSFORMERS_SPEC",
                     "ACCELERATE_SPEC",
             }
-            if deployment.provider in {"MR_MT3", "YOUR_MT3"}:
+            if deployment.provider in {"MT3", "MR_MT3", "YOUR_MT3"}:
                 expected.add("SOURCE_IMAGE_DIGEST")
                 self.assertEqual(build_args["SOURCE_IMAGE_DIGEST"], deployment.source_image_digest)
+            if deployment.provider == "MT3":
+                expected.add("SOURCE_REVISION")
+                self.assertRegex(
+                    build_args["SOURCE_REVISION"],
+                    r"^(?:[a-f0-9]{40}|UNSET)$",
+                )
             self.assertEqual(set(build_args), expected)
             self.assertNotIn("MUSIC_GPU_SOURCE_IMAGE_DIGEST", build_args)
 
@@ -153,6 +164,9 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             "1ececcacbbde240ffca54d400df86e4fdd38f29c1a2366299279d197e92eaed3",
             dockerfile,
         )
+        self.assertIn("MUSIC_GPU_RUNTIME_IDENTITY=1", dockerfile)
+        self.assertIn("MUSIC_GPU_CONTAINER_DIGEST=${SOURCE_IMAGE_DIGEST}", dockerfile)
+        self.assertIn("MUSIC_GPU_SOURCE_REVISION=${SOURCE_REVISION}", dockerfile)
 
     def test_wave_two_has_compatible_transformers_and_isolated_yourmt3_extras(self):
         mr = (ROOT / "Dockerfile.mr-mt3").read_text()
@@ -252,12 +266,15 @@ class ModalDeploymentConfigurationTests(unittest.TestCase):
             self.assertNotIn("/provenance/runners/", dockerfile.read_text())
         self.assertNotIn("SOURCE_IMAGE_DIGEST", modal_app)
         for deployment in modal_config.DEPLOYMENTS.values():
-            self.assertEqual(
-                modal_config.worker_environment(deployment)[
+            if deployment.provider == "MT3":
+                observed = modal_config.provider_image_build_args(deployment)[
+                    "SOURCE_IMAGE_DIGEST"
+                ]
+            else:
+                observed = modal_config.worker_environment(deployment)[
                     "MUSIC_GPU_CONTAINER_DIGEST"
-                ],
-                deployment.source_image_digest,
-            )
+                ]
+            self.assertEqual(observed, deployment.source_image_digest)
 
     def test_source_digest_covers_every_copied_executable_input(self):
         source = (ROOT / "modal_config.py").read_text()

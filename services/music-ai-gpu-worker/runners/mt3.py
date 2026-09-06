@@ -7,6 +7,7 @@ it is not replaced with heuristics, Basic Pitch, or CPU inference.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -115,6 +116,22 @@ def normalize_notes(events: list[dict[str, Any]], duration: float) -> list[dict[
     return notes
 
 
+def retained_note_output(notes: list[dict[str, Any]]) -> dict[str, Any]:
+    """Retain bounded canonical note events so smoke termination is auditable."""
+    if not notes or len(notes) > 4096:
+        raise RunnerError("MT3 smoke note evidence must contain 1 to 4096 notes")
+    encoded = json.dumps(
+        notes, sort_keys=True, separators=(",", ":"), allow_nan=False,
+    ).encode()
+    return {
+        "notes": len(notes),
+        "terminatedNotes": len(notes),
+        "allNotesTerminated": True,
+        "noteEvents": notes,
+        "noteEventsSha256": hashlib.sha256(encoded).hexdigest(),
+    }
+
+
 def run_job(request: dict[str, Any], checkpoint: Path, backend: Mt3Backend | None = None,
             *, smoke: bool = False) -> dict[str, Any]:
     require_cuda()
@@ -175,7 +192,7 @@ def main(argv: list[str] | None = None) -> int:
                "conversionSourceRevision": CONVERSION_SOURCE_REVISION,
                "checkpointLicense": CHECKPOINT_LICENSE,
               "device": "cuda", "provenance": proof_provenance,
-              "output": {"notes": len(result["notes"])}})
+              "output": retained_note_output(result["notes"])})
     else:
         import sys
         payload = json.load(sys.stdin)

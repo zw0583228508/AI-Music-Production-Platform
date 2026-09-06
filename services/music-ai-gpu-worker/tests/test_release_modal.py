@@ -1,4 +1,6 @@
+import hashlib
 import importlib.util
+import json
 import sys
 import types
 import unittest
@@ -21,6 +23,21 @@ activation_spec = importlib.util.spec_from_file_location(
 activate_promotion = importlib.util.module_from_spec(activation_spec)
 assert activation_spec and activation_spec.loader
 activation_spec.loader.exec_module(activate_promotion)
+
+
+def mt3_output():
+    events = [
+        {"start": 0.0, "end": 0.5, "pitch": 60, "velocity": 96, "confidence": 96 / 127},
+        {"start": 0.5, "end": 1.0, "pitch": 64, "velocity": 88, "confidence": 88 / 127},
+    ]
+    encoded = json.dumps(events, sort_keys=True, separators=(",", ":")).encode()
+    return {
+        "notes": 2,
+        "terminatedNotes": 2,
+        "allNotesTerminated": True,
+        "noteEvents": events,
+        "noteEventsSha256": hashlib.sha256(encoded).hexdigest(),
+    }
 
 
 class GenericModalReleaseTests(unittest.TestCase):
@@ -51,7 +68,7 @@ class GenericModalReleaseTests(unittest.TestCase):
                 "provider": "MT3",
                 "smokeTested": True,
                 "checkpointSha256": "a" * 64,
-                "output": {"notes": 2},
+                "output": mt3_output(),
                 "provenance": {
                     "checkpointSha256": "a" * 64,
                     "modalImageId": "im-Previous",
@@ -72,7 +89,7 @@ class GenericModalReleaseTests(unittest.TestCase):
             "sourceRevision": "c" * 40,
             "smokeEvidence": {
                 "provider": "MT3", "smokeTested": True, "checkpointSha256": "a" * 64,
-                "output": {"notes": 2}, "provenance": {
+                "output": mt3_output(), "provenance": {
                     "checkpointSha256": "a" * 64, "modalImageId": "im-Current",
                     "sourceImageDigest": "sha256:" + "b" * 64,
                 },
@@ -97,7 +114,7 @@ class GenericModalReleaseTests(unittest.TestCase):
             "checkpointSha256": "a" * 64, "sourceImageDigest": digest,
             "sourceRevision": "c" * 40, "smokeEvidence": {
                 "provider": "MT3", "smokeTested": True, "checkpointSha256": "a" * 64,
-                "output": {"notes": 2}, "provenance": {
+                "output": mt3_output(), "provenance": {
                     "checkpointSha256": "a" * 64, "modalImageId": "im-Current",
                     "sourceImageDigest": digest,
                 },
@@ -106,6 +123,12 @@ class GenericModalReleaseTests(unittest.TestCase):
         with mock.patch.dict("os.environ", {"MUSIC_GPU_SOURCE_REVISION": "d" * 40}):
             with self.assertRaisesRegex(ValueError, "source revision"):
                 release_modal.validate_evidence(evidence, "MT3")
+
+    def test_evidence_rejects_tampered_mt3_note_events(self):
+        output = mt3_output()
+        output["noteEvents"][0]["end"] = 0.75
+        with self.assertRaisesRegex(ValueError, "note evidence hash"):
+            release_modal.validate_mt3_note_output(output)
 
     def test_failed_activation_keeps_existing_canonical_file(self):
         with __import__("tempfile").TemporaryDirectory() as directory:
