@@ -24,6 +24,9 @@ ROOT = Path(__file__).parent
 SPEC = json.loads((ROOT / "model_manifest.json").read_text())
 ASSET_ROOT = Path(os.getenv("SHEETSAGE_ASSET_ROOT", SPEC["asset_root"]))
 ASSET_MANIFEST = ASSET_ROOT / SPEC["asset_manifest"]
+import fcntl
+import logging
+from contextlib import asynccontextmanager
 
 
 def _token() -> str | None:
@@ -183,7 +186,10 @@ def validate_evidence(value: dict[str, Any]) -> dict[str, Any]:
     return {"provider": "SHEETSAGE", "modelVersion": SPEC["package"]["version"],
             "melody": melody, "chords": chords, "timing": timing, "confidence": confidence}
 
-
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    initialize_private_temp_storage()
+    yield
 def _environment_integer(name: str, default: int, minimum: int) -> int:
     raw = os.getenv(name, str(default))
     try:
@@ -193,20 +199,17 @@ def _environment_integer(name: str, default: int, minimum: int) -> int:
     if value < minimum:
         raise RuntimeError(f"{name} must be at least {minimum}")
     return value
-
-
-app = FastAPI(title="SheetSage 0.2.1")
+app = FastAPI(title="SheetSage 0.2.1", lifespan=lifespan)
 MAX_AUDIO_BYTES = _environment_integer(
     "SHEETSAGE_MAX_AUDIO_BYTES", 512 * 1024 * 1024, 1
 )
-TEMP_DIRECTORY = Path(os.getenv("SHEETSAGE_TEMP_DIR", tempfile.gettempdir()))
+TEMP_DIRECTORY = PRIVATE_TEMP_ROOT
 TEMP_DISK_HEADROOM_BYTES = _environment_integer(
     "SHEETSAGE_TEMP_DISK_HEADROOM_BYTES", 256 * 1024 * 1024, 0
 )
 MAX_SPOOLED_ANALYSES = _environment_integer(
     "SHEETSAGE_MAX_SPOOLED_ANALYSES", 1, 1
 )
-TEMP_DIRECTORY.mkdir(parents=True, exist_ok=True)
 SUPPORTED_AUDIO_SUFFIXES = {
     "audio/aac": ".aac",
     "audio/flac": ".flac",
@@ -230,7 +233,9 @@ class SpoolReservations:
 
     def state(self) -> dict[str, int | None]:
         with self._lock:
-            disk = shutil.disk_usage(TEMP_DIRECTORY)
+            disk = shutil.disk_usage(
+                TEMP_DIRECTORY if TEMP_DIRECTORY.exists() else TEMP_DIRECTORY.parent
+            )
             outstanding = sum(MAX_AUDIO_BYTES - written for written in self._uploads.values())
             reservable = max(0, disk.free - TEMP_DISK_HEADROOM_BYTES - outstanding)
             return {
@@ -251,7 +256,9 @@ class SpoolReservations:
 
     def acquire(self) -> str | None:
         with self._lock:
-            disk = shutil.disk_usage(TEMP_DIRECTORY)
+            disk = shutil.disk_usage(
+                TEMP_DIRECTORY if TEMP_DIRECTORY.exists() else TEMP_DIRECTORY.parent
+            )
             outstanding = sum(MAX_AUDIO_BYTES - written for written in self._uploads.values())
             if (
                 len(self._uploads) >= MAX_SPOOLED_ANALYSES
@@ -328,7 +335,10 @@ async def analyze(request: Request) -> dict[str, Any]:
         content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
         suffix = SUPPORTED_AUDIO_SUFFIXES.get(content_type, ".audio")
         with tempfile.NamedTemporaryFile(
-            prefix="sheetsage-", suffix=suffix, delete=False, dir=TEMP_DIRECTORY
+            prefix="upload-",
+            suffix=suffix,
+            delete=False,
+            dir=initialize_private_temp_storage(),
         ) as target:
             path = Path(target.name)
             size = 0
@@ -348,3 +358,46 @@ async def analyze(request: Request) -> dict[str, Any]:
         if path is not None:
             path.unlink(missing_ok=True)
         SPOOL_RESERVATIONS.release(reservation)
+
+def initialize_private_temp_storage() -> Path:
+    """Remove abandoned uploads and return this process's private directory."""
+    global PROCESS_TEMP_DIR, PROCESS_TEMP_LOCK
+    if PROCESS_TEMP_DIR is not None:
+        return PROCESS_TEMP_DIR
+    try:
+        PRIVATE_TEMP_ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
+        PRIVATE_TEMP_ROOT.chmod(0o700)
+        with (PRIVATE_TEMP_ROOT / ".startup.lock").open("a+b") as startup_lock:
+            fcntl.flock(startup_lock, fcntl.LOCK_EX)
+            for entry in PRIVATE_TEMP_ROOT.iterdir():
+                if entry.name == ".startup.lock":
+                    continue
+                if entry.is_dir():
+                    lock = None
+                    try:
+                        lock = (entry / ".active.lock").open("a+b")
+                        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except BlockingIOError:
+                        lock.close()
+                        continue
+                    finally:
+                        if lock is not None and not lock.closed:
+                            lock.close()
+                    shutil.rmtree(entry)
+                else:
+                    entry.unlink()
+            process_dir = PRIVATE_TEMP_ROOT / f"worker-{os.getpid()}-{uuid.uuid4().hex}"
+            process_dir.mkdir(mode=0o700)
+            process_lock = (process_dir / ".active.lock").open("a+b")
+            fcntl.flock(process_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        PROCESS_TEMP_LOCK = process_lock
+        PROCESS_TEMP_DIR = process_dir
+        return process_dir
+    except OSError as exc:
+        LOGGER.error(
+            "SheetSage private temporary storage cleanup failed",
+            extra={"error_type": type(exc).__name__},
+        )
+        raise RuntimeError(
+            "SheetSage private temporary storage initialization failed"
+        ) from None

@@ -25,3 +25,4 @@
 - [Modal container path portability](modal-container-path-portability.md) — Dockerfile-backed modules must resolve paths under both the repo tree and Modal’s flat `/app` layout.
 - [Deployment attestation gates](deployment-attestation-gates.md) — couple deploy and live validation; never send credentials to caller-selected endpoints or redirects.
 - [Private recovery drills](private-recovery-drills.md) — verify owner archives in disposable storage with no production volume mount, and suppress URL-bearing exception chains.
+- [Crash-safe private temp storage](crash-safe-private-temp-storage.md) — isolate uploads per process and use OS-held locks to distinguish active data from crash remnants.
