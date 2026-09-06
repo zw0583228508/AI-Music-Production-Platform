@@ -36,6 +36,16 @@ const GPU_STARTUP_PROVIDER_IDS = new Set([
   "BS_ROFORMER",
   "MT3",
   "ALL_IN_ONE",
+  "BEAT_THIS",
+]);
+const BEAT_THIS_HEALTH_KEYS = new Set([
+  "provider", "status", "ready", "healthy", "retryable",
+  "retryAfterSeconds", "modelVersion", "checksum", "checkpointSha256",
+  "revision", "sourceRevision", "sourceImageDigest", "modalAppId",
+  "modalDeploymentId", "modalFunctionId", "modalImageId", "runtime",
+  "framework", "packageName", "packageVersion", "packageReady",
+  "assetReady", "featureExecutionReady", "runtimeReady",
+  "checkpointReady", "smokeTested", "gpuReady", "identityReady", "reason",
 ]);
 export const GPU_PROMOTION_SCHEMA_VERSION = 1;
 
@@ -266,7 +276,24 @@ export function isAttestedGpuProviderStartup(
   endpoint: string,
   payload: Record<string, unknown>,
 ): boolean {
+  const beatThisContract = providerId !== "BEAT_THIS" || (
+    Object.keys(payload).length === BEAT_THIS_HEALTH_KEYS.size &&
+    Object.keys(payload).every((key) => BEAT_THIS_HEALTH_KEYS.has(key)) &&
+    payload["checksum"] === payload["checkpointSha256"] &&
+    payload["packageName"] === "beat-this" &&
+    payload["packageVersion"] === payload["modelVersion"] &&
+    payload["packageReady"] === false &&
+    payload["assetReady"] === false &&
+    payload["featureExecutionReady"] === false &&
+    payload["runtimeReady"] === false &&
+    payload["checkpointReady"] === false &&
+    payload["smokeTested"] === false &&
+    payload["gpuReady"] === false &&
+    payload["identityReady"] === true &&
+    payload["reason"] === "runtime initialization is still in progress"
+  );
   return GPU_STARTUP_PROVIDER_IDS.has(providerId) &&
+    beatThisContract &&
     gpuPromotionAttestationFailure(providerId, endpoint, payload) === null &&
     payload["provider"] === providerId &&
     payload["status"] === "starting" &&

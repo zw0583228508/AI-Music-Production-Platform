@@ -1,6 +1,9 @@
 import type { AnalysisSection, SongModelData } from "@workspace/db";
 import { attestAnalysisProviderHealth } from "./analysisProviderManifest";
-import { requiresGpuPromotionRecord } from "./gpuProviderAttestation";
+import {
+  isAttestedGpuProviderStartup,
+  requiresGpuPromotionRecord,
+} from "./gpuProviderAttestation";
 import { isSheetSageCapacityAdmissionRejection } from "./sheetSageCapacityRate";
 
 type ProviderProvenance = SongModelData["providerProvenance"][number];
@@ -170,8 +173,12 @@ class ProviderRequestError extends Error {
   }
 }
 
+class ProviderStartupTimeoutError extends Error {}
+
 const MAX_PROVIDER_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 250;
+const MAX_HEALTH_STARTUP_ATTEMPTS = 6;
+const HEALTH_STARTUP_RETRY_DELAY_MS = 5_000;
 const ANALYSIS_HEALTH_TTL_MS = 30_000;
 const analysisHealthCache = new Map<string, {
   expiresAt: number;
@@ -505,32 +512,64 @@ async function attestProviderHealth(
   try {
     const healthUrl = new URL("/health", endpoint);
     healthUrl.searchParams.set("provider", providerId);
-    const response = await fetch(healthUrl, {
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      signal: AbortSignal.timeout(30_000),
-    });
-    if (!response.ok) throw new Error(`health check returned HTTP ${response.status}`);
-    const payload = await readProviderJson(providerId, response);
-    const attestation = attestAnalysisProviderHealth(providerId, payload, endpoint);
-    analysisHealthCache.set(cacheKey, {
-      expiresAt: Date.now() + ANALYSIS_HEALTH_TTL_MS,
-      error: null,
-      version: attestation.version,
-    });
-    return attestation.version;
+    for (
+      let attempt = 1;
+      attempt <= MAX_HEALTH_STARTUP_ATTEMPTS;
+      attempt += 1
+    ) {
+      const response = await fetch(healthUrl, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!response.ok) {
+        throw new Error(`health check returned HTTP ${response.status}`);
+      }
+      const payload = await readProviderJson(providerId, response);
+      if (
+        isRecord(payload) &&
+        isAttestedGpuProviderStartup(providerId, endpoint, payload)
+      ) {
+        if (attempt === MAX_HEALTH_STARTUP_ATTEMPTS) {
+          throw new ProviderStartupTimeoutError(
+            `${providerId} health remained in startup state`,
+          );
+        }
+        await delay(HEALTH_STARTUP_RETRY_DELAY_MS);
+        continue;
+      }
+      const attestation = attestAnalysisProviderHealth(
+        providerId,
+        payload,
+        endpoint,
+      );
+      analysisHealthCache.set(cacheKey, {
+        expiresAt: Date.now() + ANALYSIS_HEALTH_TTL_MS,
+        error: null,
+        version: attestation.version,
+      });
+      return attestation.version;
+    }
+    throw new ProviderStartupTimeoutError(
+      `${providerId} health remained in startup state`,
+    );
   } catch (error) {
+    const startupTimeout = error instanceof ProviderStartupTimeoutError;
     const attestationError = new ProviderRequestError(
       `${providerId} health attestation failed: ${
         error instanceof Error ? error.message : "unknown error"
       }`,
-      "health-attestation-failed",
-      false,
-      0,
+      startupTimeout
+        ? "health-startup-timeout"
+        : "health-attestation-failed",
+      startupTimeout,
+      startupTimeout ? MAX_HEALTH_STARTUP_ATTEMPTS : 0,
     );
-    analysisHealthCache.set(cacheKey, {
-      expiresAt: Date.now() + ANALYSIS_HEALTH_TTL_MS,
-      error: attestationError,
-    });
+    if (!startupTimeout) {
+      analysisHealthCache.set(cacheKey, {
+        expiresAt: Date.now() + ANALYSIS_HEALTH_TTL_MS,
+        error: attestationError,
+      });
+    }
     throw attestationError;
   }
 }

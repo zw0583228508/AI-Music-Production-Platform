@@ -75,6 +75,7 @@ def matching_health(record):
         "healthy": True,
         "retryable": False,
         "retryAfterSeconds": None,
+        "checksum": record["checkpointSha256"],
         "modalAppId": record["modalAppId"],
         "modalDeploymentId": record["modalDeploymentId"],
         "modalFunctionId": record["modalFunctionId"],
@@ -86,6 +87,7 @@ def matching_health(record):
         "sourceImageDigest": record["sourceImageDigest"],
         "runtime": {"pythonVersion": runtime["python"]},
         "framework": {
+            "python": runtime["python"],
             "cuda_image": runtime["cudaImage"],
             "cuda": runtime["cuda"],
             "pytorch": runtime["pytorch"],
@@ -95,6 +97,17 @@ def matching_health(record):
             "transformers": runtime["transformers"],
             "accelerate": runtime["accelerate"],
         },
+        "packageName": "beat-this",
+        "packageVersion": record["modelVersion"],
+        "packageReady": True,
+        "assetReady": True,
+        "featureExecutionReady": True,
+        "runtimeReady": True,
+        "checkpointReady": True,
+        "smokeTested": True,
+        "gpuReady": True,
+        "identityReady": True,
+        "reason": None,
     }
 
 
@@ -129,6 +142,9 @@ class BeatThisReleaseTests(unittest.TestCase):
         )
         self.assertNotIn('git push origin "HEAD:$RELEASE_BRANCH"', workflow)
         self.assertIn("Reopen or merge this same pull request", workflow)
+        self.assertIn("deploy.py --candidate", workflow)
+        self.assertIn("verify-candidate-refresh", workflow)
+        self.assertIn("promotion/candidate-refresh-health.json", workflow)
 
     def test_modal_metadata_requires_one_deployed_app_and_latest_version(self):
         self.assertEqual(
@@ -178,11 +194,14 @@ class BeatThisReleaseTests(unittest.TestCase):
         ready = matching_health(promotion_record(evidence))
         starting = {
             **ready,
-            "status": "starting",
-            "ready": False,
-            "healthy": False,
-            "retryable": True,
-            "retryAfterSeconds": 5,
+            **promote_modal.STARTUP_HEALTH_CONTRACT,
+            "packageReady": False,
+            "assetReady": False,
+            "featureExecutionReady": False,
+            "runtimeReady": False,
+            "checkpointReady": False,
+            "smokeTested": False,
+            "gpuReady": False,
         }
         with patch.object(
             release_modal, "read_health", side_effect=[starting, ready]
@@ -215,6 +234,34 @@ class BeatThisReleaseTests(unittest.TestCase):
         ) as fetch, self.assertRaises(OSError):
             release_modal.verified_health(evidence, "token", attempts=3)
         fetch.assert_called_once()
+
+    def test_candidate_refresh_uses_trusted_derived_origin_and_evidence(self):
+        evidence = release_evidence()
+        expected = release_modal.expected_health(evidence)
+        report = {"provider": "BEAT_THIS", "finalStatus": "ready"}
+        with patch.object(
+            promote_modal,
+            "candidate_origin_from_production",
+            return_value="https://workspace--beat-this-candidate.modal.run",
+        ) as derive, patch.object(
+            promote_modal,
+            "refresh_candidate_and_verify",
+            return_value=report,
+        ) as refresh:
+            self.assertEqual(
+                release_modal.verified_candidate_refresh(
+                    evidence, "token", attempts=4
+                ),
+                report,
+            )
+        derive.assert_called_once_with(evidence["endpointOrigin"])
+        refresh.assert_called_once_with(
+            "https://workspace--beat-this-candidate.modal.run",
+            "token",
+            expected,
+            attempts=4,
+            delay_seconds=10,
+        )
 
     def test_validation_precedes_canonical_record_replacement(self):
         evidence = release_evidence()

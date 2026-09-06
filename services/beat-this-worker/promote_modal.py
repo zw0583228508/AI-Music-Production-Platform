@@ -24,6 +24,26 @@ RUNTIME_KEYS = (
     "python", "cudaImage", "cuda", "pytorch", "torchvision", "torchaudio",
     "torchIndexUrl", "transformers", "accelerate",
 )
+CANDIDATE_APP_NAME = "beat-this-candidate"
+CANDIDATE_ENDPOINT_LABEL = "beat-this-candidate"
+STARTUP_HEALTH_CONTRACT = {
+    "provider": "BEAT_THIS",
+    "status": "starting",
+    "ready": False,
+    "healthy": False,
+    "retryable": True,
+    "retryAfterSeconds": 5,
+    "reason": "runtime initialization is still in progress",
+}
+HEALTH_PAYLOAD_KEYS = {
+    "provider", "status", "ready", "healthy", "retryable",
+    "retryAfterSeconds", "modelVersion", "checksum", "checkpointSha256",
+    "revision", "sourceRevision", "sourceImageDigest", "modalAppId",
+    "modalDeploymentId", "modalFunctionId", "modalImageId", "runtime",
+    "framework", "packageName", "packageVersion", "packageReady",
+    "assetReady", "featureExecutionReady", "runtimeReady",
+    "checkpointReady", "smokeTested", "gpuReady", "identityReady", "reason",
+}
 
 def canonical(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -101,6 +121,8 @@ def _verify_live_identity(payload: object, expected: dict) -> dict:
     return payload
 
 def verify_live_health(payload: object, expected: dict) -> None:
+    if not isinstance(payload, dict) or set(payload) != HEALTH_PAYLOAD_KEYS:
+        raise ValueError("authenticated live health schema does not match")
     checked = _verify_live_identity(payload, expected)
     if (
         checked.get("status") != "ready"
@@ -110,6 +132,36 @@ def verify_live_health(payload: object, expected: dict) -> None:
         or checked.get("retryAfterSeconds") is not None
     ):
         raise ValueError("authenticated live health is not ready")
+
+def is_retryable_startup(payload: object) -> bool:
+    return (
+        isinstance(payload, dict)
+        and set(payload) == HEALTH_PAYLOAD_KEYS
+        and all(
+            payload.get(key) == value
+            for key, value in STARTUP_HEALTH_CONTRACT.items()
+        )
+    )
+
+def verify_retryable_startup(payload: object, expected: dict) -> None:
+    if not is_retryable_startup(payload):
+        raise ValueError("authenticated health is not the exact startup contract")
+    checked = _verify_live_identity(payload, expected)
+    exact = {
+        "checksum": expected["checkpointSha256"],
+        "packageName": "beat-this",
+        "packageVersion": expected["modelVersion"],
+        "packageReady": False,
+        "assetReady": False,
+        "featureExecutionReady": False,
+        "runtimeReady": False,
+        "checkpointReady": False,
+        "smokeTested": False,
+        "gpuReady": False,
+        "identityReady": True,
+    }
+    if any(checked.get(key) != value for key, value in exact.items()):
+        raise ValueError("authenticated startup health identity does not match")
 
 def verify_live_health_with_retries(
     fetch_health,
@@ -121,12 +173,9 @@ def verify_live_health_with_retries(
     if attempts < 1:
         raise ValueError("health verification attempts must be positive")
     for attempt in range(attempts):
-        payload = _verify_live_identity(fetch_health(), expected)
-        if (payload.get("status") == "starting"
-                and payload.get("ready") is False
-                and payload.get("healthy") is False
-                and payload.get("retryable") is True
-                and payload.get("retryAfterSeconds") == 5):
+        payload = fetch_health()
+        if is_retryable_startup(payload):
+            verify_retryable_startup(payload, expected)
             if attempt + 1 == attempts:
                 raise TimeoutError("authenticated health remained in startup state")
             time.sleep(delay_seconds)
@@ -147,8 +196,32 @@ def trusted_endpoint_origin(endpoint_origin: str) -> str:
         raise ValueError("endpoint does not match the trusted Beat This deployment origin")
     return candidate
 
-def fetch_authenticated_health(endpoint_origin: str, token: str) -> object:
-    endpoint = trusted_endpoint_origin(endpoint_origin)
+def trusted_candidate_origin(endpoint_origin: str) -> str:
+    expected = candidate_origin_from_production(
+        INSTALLATION_STATUS["providers"]["BEAT_THIS"]["evidence"][
+            "liveHealthEndpointOrigin"
+        ]
+    )
+    candidate = origin(endpoint_origin)
+    if candidate != expected:
+        raise ValueError("endpoint does not match the trusted Beat This candidate origin")
+    return candidate
+
+def candidate_origin_from_production(endpoint_origin: str) -> str:
+    production = urlsplit(trusted_endpoint_origin(endpoint_origin))
+    production_suffix = "--beat-this.modal.run"
+    if not production.hostname or not production.hostname.endswith(production_suffix):
+        raise ValueError("trusted Beat This origin is not a Modal endpoint")
+    workspace = production.hostname[:-len(production_suffix)]
+    return f"https://{workspace}--{CANDIDATE_ENDPOINT_LABEL}.modal.run"
+
+def fetch_authenticated_health(
+    endpoint_origin: str, token: str, *, candidate: bool = False
+) -> object:
+    endpoint = (
+        trusted_candidate_origin(endpoint_origin)
+        if candidate else trusted_endpoint_origin(endpoint_origin)
+    )
     if not token:
         raise ValueError("Beat This worker token is unavailable")
     request = Request(
@@ -158,8 +231,91 @@ def fetch_authenticated_health(endpoint_origin: str, token: str) -> object:
     try:
         with build_opener(NoRedirects).open(request, timeout=30) as response:
             return json.loads(response.read())
-    except HTTPError as exc:
-        raise RuntimeError("authenticated health request failed") from exc
+    except (HTTPError, OSError, ValueError):
+        raise RuntimeError("authenticated health request failed") from None
+
+def wait_for_candidate_route(
+    endpoint_origin: str,
+    *,
+    attempts: int = 6,
+    delay_seconds: float = 5,
+) -> int:
+    """Reach the candidate's auth boundary without sending a credential."""
+    endpoint = trusted_candidate_origin(endpoint_origin)
+    if attempts < 1:
+        raise ValueError("route verification attempts must be positive")
+    request = Request(
+        endpoint + "/health?provider=BEAT_THIS",
+        headers={"Accept": "application/json"},
+    )
+    for attempt in range(attempts):
+        try:
+            with build_opener(NoRedirects).open(request, timeout=30):
+                raise ValueError("candidate health route accepted an unauthenticated request")
+        except HTTPError as exc:
+            if exc.code == 401:
+                return attempt + 1
+            if exc.code not in (404, 500, 502, 503, 504):
+                raise RuntimeError("candidate route returned an unexpected status") from None
+        except OSError:
+            pass
+        if attempt + 1 < attempts:
+            time.sleep(delay_seconds)
+    raise TimeoutError("candidate route did not reach its authentication boundary")
+
+def refresh_candidate_and_verify(
+    endpoint_origin: str,
+    token: str,
+    expected: dict,
+    *,
+    attempts: int = 6,
+    delay_seconds: float = 5,
+    run=None,
+) -> dict:
+    """Recreate the fixed candidate and retain only bounded health states."""
+    endpoint = trusted_candidate_origin(endpoint_origin)
+    if attempts < 1:
+        raise ValueError("health verification attempts must be positive")
+    runner = run or subprocess.run
+    result = runner(
+        [
+            "uv", "run", "modal", "app", "rollover", CANDIDATE_APP_NAME,
+            "--strategy", "recreate",
+        ],
+        cwd=ROOT.parents[1],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode:
+        raise RuntimeError("Beat This candidate refresh failed")
+
+    route_attempts = wait_for_candidate_route(
+        endpoint, attempts=attempts, delay_seconds=delay_seconds
+    )
+    observed: list[str] = []
+
+    def fetch_health():
+        payload = fetch_authenticated_health(endpoint, token, candidate=True)
+        if is_retryable_startup(payload):
+            observed.append("starting")
+        else:
+            verify_live_health(payload, expected)
+            observed.append("ready")
+        return payload
+
+    verify_live_health_with_retries(
+        fetch_health, expected, attempts=attempts, delay_seconds=delay_seconds
+    )
+    return {
+        "provider": "BEAT_THIS",
+        "candidate": CANDIDATE_APP_NAME,
+        "refreshStrategy": "recreate",
+        "routeAttempts": route_attempts,
+        "firstStatus": observed[0],
+        "finalStatus": observed[-1],
+        "attempts": len(observed),
+    }
 
 def verify_health_file_with_retries(
     health_file: Path,

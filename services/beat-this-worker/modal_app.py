@@ -4,7 +4,12 @@ import hashlib, json, os, re, subprocess, sys, urllib.request
 from pathlib import Path
 import modal
 
-APP_NAME = "beat-this-worker"
+APP_NAME = os.environ.get("BEAT_THIS_MODAL_APP_NAME", "beat-this-worker").strip()
+ENDPOINT_LABEL = os.environ.get("BEAT_THIS_MODAL_ENDPOINT_LABEL", "beat-this").strip()
+if not re.fullmatch(r"beat-this(?:-candidate)?", APP_NAME):
+    raise RuntimeError("invalid Beat This Modal app name")
+if not re.fullmatch(r"beat-this(?:-candidate)?", ENDPOINT_LABEL):
+    raise RuntimeError("invalid Beat This Modal endpoint label")
 ASSET_MOUNT = "/var/lib/beat-this"
 VOLUME_NAME = "beat-this-models-smoke-v1"
 SECRET_NAME = "music-ai-worker-runtime"
@@ -40,6 +45,8 @@ def source_image_digest() -> str:
 common = {"image": image, "gpu": "L4", "volumes": {ASSET_MOUNT: volume},
           "secrets": [secret, identity_secret], "timeout": 600,
           "env": {
+              "BEAT_THIS_MODAL_APP_NAME": APP_NAME,
+              "BEAT_THIS_MODAL_ENDPOINT_LABEL": ENDPOINT_LABEL,
               "BEAT_THIS_SOURCE_IMAGE_DIGEST": source_image_digest(),
               "BEAT_THIS_SOURCE_REVISION": SOURCE_REVISION,
           }}
@@ -57,14 +64,7 @@ def tail(value: str, limit: int = 2048) -> str:
 @app.cls(**common)
 @modal.concurrent(max_inputs=1)
 class BeatThisWorker:
-    @modal.enter()
-    def initialize(self):
-        # Exercise cold CUDA/package/storage initialization before ASGI traffic.
-        # Health still fails closed if a later probe raises.
-        from app import readiness_checks
-        readiness_checks()
-
-    @modal.asgi_app(label="beat-this")
+    @modal.asgi_app(label=ENDPOINT_LABEL)
     def endpoint(self):
         from app import app as fastapi_app
         return fastapi_app

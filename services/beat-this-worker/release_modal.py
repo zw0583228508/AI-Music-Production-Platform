@@ -263,9 +263,9 @@ def read_health(endpoint_origin: str, token: str) -> dict:
         return json.loads(response.read())
 
 
-def verified_health(evidence: dict, token: str, attempts: int = 30) -> dict:
+def expected_health(evidence: dict) -> dict:
     validate_release_evidence(evidence)
-    expected = {
+    return {
         "provider": "BEAT_THIS",
         "modalAppId": evidence["modalAppId"],
         "modalDeploymentId": evidence["modalDeploymentId"],
@@ -281,6 +281,10 @@ def verified_health(evidence: dict, token: str, attempts: int = 30) -> dict:
             for key in promote_modal.RUNTIME_KEYS
         },
     }
+
+
+def verified_health(evidence: dict, token: str, attempts: int = 30) -> dict:
+    expected = expected_health(evidence)
     final_health: dict | None = None
 
     def fetch_health() -> dict:
@@ -299,6 +303,22 @@ def verified_health(evidence: dict, token: str, attempts: int = 30) -> dict:
     return final_health
 
 
+def verified_candidate_refresh(
+    evidence: dict, token: str, attempts: int = 30
+) -> dict:
+    expected = expected_health(evidence)
+    endpoint = promote_modal.candidate_origin_from_production(
+        evidence["endpointOrigin"]
+    )
+    return promote_modal.refresh_candidate_and_verify(
+        endpoint,
+        token,
+        expected,
+        attempts=attempts,
+        delay_seconds=10,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     commands = parser.add_subparsers(dest="command", required=True)
@@ -314,6 +334,9 @@ def main() -> None:
     health = commands.add_parser("verify-health")
     health.add_argument("--evidence", required=True)
     health.add_argument("--output", required=True)
+    candidate = commands.add_parser("verify-candidate-refresh")
+    candidate.add_argument("--evidence", required=True)
+    candidate.add_argument("--output", required=True)
     args = parser.parse_args()
     if args.command == "observe":
         atomic_json(Path(args.output), capture_metadata())
@@ -327,7 +350,7 @@ def main() -> None:
             Path(args.identity_output),
             Path(args.refresh_output),
         )
-    else:
+    elif args.command in ("verify-health", "verify-candidate-refresh"):
         token = (
             os.getenv("BEAT_THIS_WORKER_TOKEN")
             or os.getenv("MUSIC_AI_WORKER_TOKEN")
@@ -336,7 +359,12 @@ def main() -> None:
         if not token:
             raise ValueError("Beat This worker token is unavailable")
         evidence = json.loads(Path(args.evidence).read_text())
-        atomic_json(Path(args.output), verified_health(evidence, token))
+        result = (
+            verified_health(evidence, token)
+            if args.command == "verify-health"
+            else verified_candidate_refresh(evidence, token)
+        )
+        atomic_json(Path(args.output), result)
 
 
 if __name__ == "__main__":

@@ -71,6 +71,9 @@ jobs:
       - name: Deploy the exact worker revision
         run: uv run python services/beat-this-worker/deploy.py
 
+      - name: Deploy the exact non-production candidate revision
+        run: uv run python services/beat-this-worker/deploy.py --candidate
+
       - name: Observe the candidate Modal identity
         run: |
           set -euo pipefail
@@ -91,6 +94,14 @@ jobs:
           uv run python services/beat-this-worker/release_modal.py capture \
             --expected-identity promotion/worker-identity.json \
             --output promotion/release-evidence.json
+
+      - name: Recreate and verify the non-production candidate
+        run: |
+          set -euo pipefail
+          uv run python services/beat-this-worker/release_modal.py \
+            verify-candidate-refresh \
+            --evidence promotion/release-evidence.json \
+            --output promotion/candidate-refresh-health.json
 
       - name: Require final authenticated health
         run: |

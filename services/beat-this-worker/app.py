@@ -1,6 +1,6 @@
 """Dedicated, authenticated Beat This GPU inference boundary."""
 from __future__ import annotations
-import base64, hashlib, hmac, ipaddress, json, os, platform, re, socket, tempfile, threading, time
+import base64, hashlib, hmac, ipaddress, json, os, platform, re, socket, subprocess, sys, tempfile, threading, time
 from http.client import HTTPConnection, HTTPSConnection
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -15,9 +15,13 @@ MANIFEST = json.loads((HERE / "model_manifest.json").read_text())
 ASSET_ROOT = Path(os.getenv("BEAT_THIS_ASSET_ROOT", "/var/lib/beat-this")).resolve()
 CHECKPOINT = ASSET_ROOT / MANIFEST["checkpointPath"]
 READINESS = ASSET_ROOT / ".readiness" / "beat_this.json"
+RUNTIME_PYTHON = Path("/opt/beat-this/bin/python")
 MAX_BYTES = 25 * 1024 * 1024
 TRACKER = None
 TRACKER_LOCK = threading.Lock()
+READINESS_LOCK = threading.Lock()
+READINESS_RESULT: tuple[bool, bool, bool, bool, bool] | None = None
+READINESS_PROCESS: subprocess.Popen | None = None
 app = FastAPI(title="Beat This Worker", version="1.1.0")
 
 class RuntimeInitializing(RuntimeError):
@@ -80,6 +84,22 @@ def readiness_checks() -> tuple[bool, bool, bool, bool, bool]:
     except Exception:
         return False, False, False, False, True
 
+def start_readiness_probe() -> None:
+    global READINESS_PROCESS
+    with READINESS_LOCK:
+        if READINESS_PROCESS is not None:
+            return
+        try:
+            READINESS_PROCESS = subprocess.Popen(
+                [str(RUNTIME_PYTHON), str(HERE / "app.py"), "--readiness-probe"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+        except OSError:
+            # Process creation can be transient during container startup. Keep
+            # it retryable and never expose local paths or exception details.
+            READINESS_PROCESS = None
 def tracker():
     global TRACKER
     if not asset_ready(): raise RuntimeError("verified final0 checkpoint is unavailable; downloads are disabled")
@@ -134,7 +154,7 @@ class AnalyzeRequest(BaseModel):
 @app.get("/health", dependencies=[Depends(auth)])
 def health(provider: str = "BEAT_THIS") -> dict:
     if provider != "BEAT_THIS": raise HTTPException(404, "provider is not exposed")
-    package_ready, assets, smoke, initializing, check_failed = readiness_checks()
+    package_ready, assets, smoke, initializing, check_failed = readiness_snapshot()
     ready = package_ready and assets and smoke
     modal_image_id = os.getenv("MODAL_IMAGE_ID", "").strip()
     modal_app_id = os.getenv("BEAT_THIS_MODAL_APP_ID", "").strip()
@@ -197,3 +217,33 @@ def analyze(request: AnalyzeRequest) -> dict:
             result = analyze_path(path)
         except Exception as exc: raise HTTPException(503, "BEAT_THIS feature execution failed") from exc
     return {"provider": "BEAT_THIS", "status": "ok", "result": result, "executedAt": int(time.time())}
+
+def readiness_snapshot() -> tuple[bool, bool, bool, bool, bool]:
+    global READINESS_PROCESS, READINESS_RESULT
+    start_readiness_probe()
+    with READINESS_LOCK:
+        if READINESS_RESULT is not None:
+            return READINESS_RESULT
+        process = READINESS_PROCESS
+        if process is None or process.poll() is None:
+            return False, False, False, True, False
+        try:
+            output, _ = process.communicate()
+            result = tuple(json.loads(output))
+            if (
+                len(result) != 5
+                or any(type(value) is not bool for value in result)
+            ):
+                raise ValueError("invalid readiness result")
+            if result[3]:
+                READINESS_PROCESS = None
+                return result
+            READINESS_RESULT = result
+        except (OSError, subprocess.SubprocessError, ValueError, json.JSONDecodeError):
+            READINESS_RESULT = (False, False, False, False, True)
+        return READINESS_RESULT
+
+if __name__ == "__main__":
+    if sys.argv[1:] != ["--readiness-probe"]:
+        raise SystemExit("expected --readiness-probe")
+    print(json.dumps(readiness_checks(), separators=(",", ":")))

@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import sys
 import unittest
 import base64
@@ -12,6 +13,48 @@ ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT))
 import app as worker_app
 import promote_modal
+
+def ready_health(expected):
+    runtime = expected["runtime"]
+    return {
+        "provider": "BEAT_THIS", "status": "ready", "ready": True,
+        "healthy": True, "retryable": False, "retryAfterSeconds": None,
+        "modelVersion": expected["modelVersion"],
+        "checksum": expected["checkpointSha256"],
+        "checkpointSha256": expected["checkpointSha256"],
+        "revision": expected["checkpointRevision"],
+        "sourceRevision": expected["sourceRevision"],
+        "sourceImageDigest": expected["sourceImageDigest"],
+        "modalAppId": expected["modalAppId"],
+        "modalDeploymentId": expected["modalDeploymentId"],
+        "modalFunctionId": expected["modalFunctionId"],
+        "modalImageId": expected["modalImageId"],
+        "runtime": {"pythonVersion": runtime["python"]},
+        "framework": {
+            "python": runtime["python"], "cuda_image": runtime["cudaImage"],
+            "cuda": runtime["cuda"], "pytorch": runtime["pytorch"],
+            "torchvision": runtime["torchvision"],
+            "torchaudio": runtime["torchaudio"],
+            "torch_index_url": runtime["torchIndexUrl"],
+            "transformers": runtime["transformers"],
+            "accelerate": runtime["accelerate"],
+        },
+        "packageName": "beat-this",
+        "packageVersion": expected["modelVersion"],
+        "packageReady": True, "assetReady": True,
+        "featureExecutionReady": True, "runtimeReady": True,
+        "checkpointReady": True, "smokeTested": True, "gpuReady": True,
+        "identityReady": True, "reason": None,
+    }
+
+def startup_health(expected):
+    return {
+        **ready_health(expected),
+        **promote_modal.STARTUP_HEALTH_CONTRACT,
+        "packageReady": False, "assetReady": False,
+        "featureExecutionReady": False, "runtimeReady": False,
+        "checkpointReady": False, "smokeTested": False, "gpuReady": False,
+    }
 
 class BeatThisIsolationTests(unittest.TestCase):
     def test_runtime_pair_and_final0_are_exactly_pinned(self):
@@ -40,6 +83,9 @@ class BeatThisIsolationTests(unittest.TestCase):
         self.assertIn('SECRET_NAME = "music-ai-worker-runtime"', source)
         self.assertIn('IDENTITY_SECRET_NAME = "beat-this-deployment-identity-v1"', source)
         self.assertIn('"gpu": "L4"', source)
+        self.assertIn('"BEAT_THIS_MODAL_APP_NAME": APP_NAME', source)
+        self.assertIn('"BEAT_THIS_MODAL_ENDPOINT_LABEL": ENDPOINT_LABEL', source)
+        self.assertNotIn("@modal.enter", source)
         self.assertIn("downloaded final0 does not match the reviewed SHA-256", source)
         self.assertIn("deploy through deploy.py", source)
         deploy_source = (ROOT / "deploy.py").read_text()
@@ -63,9 +109,10 @@ class BeatThisIsolationTests(unittest.TestCase):
         self.assertIn('"fixture":', smoke_source)
 
     def test_health_and_bearer_boundary_fail_closed_without_attestation(self):
-        with patch.object(worker_app, "runtime_ready", return_value=False), \
-             patch.object(worker_app, "asset_ready", return_value=False), \
-             patch.object(worker_app, "smoke_ready", return_value=False):
+        with patch.object(
+            worker_app, "readiness_snapshot",
+            return_value=(False, False, False, False, False),
+        ):
             health = worker_app.health()
         self.assertEqual(health["status"], "not_ready")
         self.assertFalse(health["ready"])
@@ -76,8 +123,8 @@ class BeatThisIsolationTests(unittest.TestCase):
 
     def test_first_health_after_container_refresh_is_retryable_not_server_error(self):
         with patch.object(
-            worker_app, "runtime_ready",
-            side_effect=worker_app.RuntimeInitializing("sensitive CUDA failure"),
+            worker_app, "readiness_snapshot",
+            return_value=(False, False, False, True, False),
         ):
             health = worker_app.health()
         self.assertEqual(health["status"], "starting")
@@ -87,12 +134,74 @@ class BeatThisIsolationTests(unittest.TestCase):
         self.assertEqual(health["retryAfterSeconds"], 5)
         self.assertNotIn("CUDA", health["reason"])
 
-        with patch.object(worker_app, "runtime_ready", return_value=True), \
-             patch.object(worker_app, "asset_ready", side_effect=OSError("private path")):
+        with patch.object(
+            worker_app, "readiness_snapshot",
+            return_value=(False, False, False, False, True),
+        ):
             failed = worker_app.health()
         self.assertEqual(failed["status"], "not_ready")
         self.assertFalse(failed["retryable"])
         self.assertEqual(failed["reason"], "runtime readiness check failed")
+
+    def test_slow_cold_probe_runs_outside_the_asgi_interpreter(self):
+        process = type("Process", (), {"poll": lambda self: None})()
+        with patch.object(worker_app, "READINESS_RESULT", None), \
+             patch.object(worker_app, "READINESS_PROCESS", None), \
+             patch.object(worker_app.subprocess, "Popen",
+                          return_value=process) as popen:
+            health = worker_app.health()
+            self.assertTrue(promote_modal.is_retryable_startup(health))
+        self.assertEqual(popen.call_args.args[0][-1], "--readiness-probe")
+        self.assertEqual(
+            popen.call_args.args[0][0], "/opt/beat-this/bin/python"
+        )
+        self.assertEqual(
+            popen.call_args.kwargs["stderr"], worker_app.subprocess.DEVNULL
+        )
+
+    def test_probe_spawn_failure_stays_sanitized_and_retryable(self):
+        with patch.object(worker_app, "READINESS_RESULT", None), \
+             patch.object(worker_app, "READINESS_PROCESS", None), \
+             patch.object(
+                 worker_app.subprocess, "Popen",
+                 side_effect=OSError("private executable path"),
+             ):
+            health = worker_app.health()
+        self.assertTrue(promote_modal.is_retryable_startup(health))
+        self.assertNotIn("private", json.dumps(health))
+
+    def test_readiness_probe_cli_emits_exact_boolean_result(self):
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "app.py"), "--readiness-probe"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(len(payload), 5)
+        self.assertTrue(all(type(value) is bool for value in payload))
+        self.assertEqual(
+            result.stdout.strip(),
+            json.dumps(payload, separators=(",", ":")),
+        )
+
+    def test_transient_probe_result_is_not_cached(self):
+        process = type("Process", (), {
+            "poll": lambda self: 0,
+            "communicate": lambda self, timeout=0: (
+                "[false,false,false,true,false]", "",
+            ),
+        })()
+        with patch.object(worker_app, "READINESS_RESULT", None), \
+             patch.object(worker_app, "READINESS_PROCESS", process):
+            self.assertEqual(
+                worker_app.readiness_snapshot(),
+                (False, False, False, True, False),
+            )
+            self.assertIsNone(worker_app.READINESS_PROCESS)
+            self.assertIsNone(worker_app.READINESS_RESULT)
 
     def test_release_health_retry_is_bounded_and_only_accepts_starting(self):
         expected = {
@@ -108,23 +217,8 @@ class BeatThisIsolationTests(unittest.TestCase):
                 "accelerate": "accelerate",
             },
         }
-        ready = {
-            **{key: value for key, value in expected.items() if key != "runtime"},
-            "status": "ready", "ready": True, "healthy": True,
-            "retryable": False, "retryAfterSeconds": None,
-            "revision": expected["checkpointRevision"],
-            "runtime": {"pythonVersion": "3.11"},
-            "framework": {
-                "cuda_image": "cuda", "cuda": "12", "pytorch": "torch",
-                "torchvision": "vision", "torchaudio": "audio",
-                "torch_index_url": "index", "transformers": "transformers",
-                "accelerate": "accelerate",
-            },
-        }
-        starting = {
-            **ready, "status": "starting", "ready": False, "healthy": False,
-            "retryable": True, "retryAfterSeconds": 5,
-        }
+        ready = ready_health(expected)
+        starting = startup_health(expected)
         with patch.object(promote_modal.time, "sleep"), self.assertRaises(TimeoutError):
             promote_modal.verify_live_health_with_retries(
                 lambda: starting, expected, attempts=2, delay_seconds=0
@@ -141,6 +235,8 @@ class BeatThisIsolationTests(unittest.TestCase):
             {key: value for key, value in starting.items() if key != "healthy"},
             {**starting, "retryAfterSeconds": 10},
             {**starting, "modalImageId": "im-other"},
+            {**starting, "reason": "sensitive exception details"},
+            {**starting, "exception": "sensitive details"},
         )
         for payload in rejected_startups:
             with self.subTest(payload=payload), patch.object(
@@ -175,6 +271,101 @@ class BeatThisIsolationTests(unittest.TestCase):
                     "https://attacker.example.test", "secret"
                 )
         request.assert_not_called()
+
+    def test_real_candidate_refresh_is_recreate_bounded_and_sanitized(self):
+        expected = {
+            "provider": "BEAT_THIS", "modalAppId": "ap-x",
+            "modalDeploymentId": "v1", "modalFunctionId": "fu-x",
+            "modalImageId": "im-x", "modelVersion": "1.1.0",
+            "checkpointSha256": "a" * 64, "checkpointRevision": "model-rev",
+            "sourceRevision": "b" * 40, "sourceImageDigest": "sha256:" + "c" * 64,
+            "runtime": {
+                "python": "3.11", "cudaImage": "cuda", "cuda": "12",
+                "pytorch": "torch", "torchvision": "vision",
+                "torchaudio": "audio", "torchIndexUrl": "index",
+                "transformers": "transformers", "accelerate": "accelerate",
+            },
+        }
+        ready = ready_health(expected)
+        starting = startup_health(expected)
+        production = promote_modal.INSTALLATION_STATUS["providers"]["BEAT_THIS"][
+            "evidence"
+        ]["liveHealthEndpointOrigin"]
+        candidate = production.replace("--beat-this.modal.run",
+                                       "--beat-this-candidate.modal.run")
+        run_result = type("Run", (), {
+            "returncode": 0, "stdout": "secret output", "stderr": "exception details"
+        })()
+        with patch.object(promote_modal.time, "sleep"), \
+             patch.object(
+                 promote_modal, "fetch_authenticated_health",
+                 side_effect=[starting, ready],
+             ) as fetch, \
+             patch.object(promote_modal, "wait_for_candidate_route",
+                          return_value=2), \
+             patch.object(promote_modal.subprocess, "run",
+                          return_value=run_result) as rollover:
+            report = promote_modal.refresh_candidate_and_verify(
+                candidate, "secret", expected, attempts=2, delay_seconds=0,
+            )
+        self.assertEqual(report, {
+            "provider": "BEAT_THIS",
+            "candidate": "beat-this-candidate",
+            "refreshStrategy": "recreate",
+            "routeAttempts": 2,
+            "firstStatus": "starting",
+            "finalStatus": "ready",
+            "attempts": 2,
+        })
+        self.assertNotIn("secret", json.dumps(report))
+        self.assertNotIn("exception", json.dumps(report))
+        self.assertIn("--strategy", rollover.call_args.args[0])
+        self.assertIn("recreate", rollover.call_args.args[0])
+        self.assertEqual(fetch.call_count, 2)
+
+        with patch.object(promote_modal.time, "sleep"), \
+             patch.object(promote_modal, "fetch_authenticated_health",
+                          return_value=starting), \
+             patch.object(promote_modal, "wait_for_candidate_route",
+                          return_value=1), \
+             patch.object(promote_modal.subprocess, "run",
+                          return_value=run_result), \
+             self.assertRaises(TimeoutError):
+            promote_modal.refresh_candidate_and_verify(
+                candidate, "secret", expected, attempts=2, delay_seconds=0,
+            )
+
+        with patch.object(promote_modal.subprocess, "run") as rollover:
+            with self.assertRaisesRegex(ValueError, "candidate origin"):
+                promote_modal.refresh_candidate_and_verify(
+                    production, "secret", expected,
+                )
+        rollover.assert_not_called()
+
+    def test_candidate_route_warmup_never_sends_the_worker_token(self):
+        production = promote_modal.INSTALLATION_STATUS["providers"]["BEAT_THIS"][
+            "evidence"
+        ]["liveHealthEndpointOrigin"]
+        candidate = production.replace("--beat-this.modal.run",
+                                       "--beat-this-candidate.modal.run")
+        unavailable = promote_modal.HTTPError(
+            candidate, 500, "cold", {}, None
+        )
+        unauthorized = promote_modal.HTTPError(
+            candidate, 401, "auth", {}, None
+        )
+        opener = type("Opener", (), {
+            "open": unittest.mock.Mock(side_effect=[unavailable, unauthorized])
+        })()
+        with patch.object(promote_modal, "build_opener", return_value=opener), \
+             patch.object(promote_modal.time, "sleep"):
+            attempts = promote_modal.wait_for_candidate_route(
+                candidate, attempts=2, delay_seconds=0,
+            )
+        self.assertEqual(attempts, 2)
+        for call in opener.open.call_args_list:
+            request = call.args[0]
+            self.assertNotIn("Authorization", request.headers)
 
     def test_bearer_prefers_provider_token_and_accepts_shared_fallback(self):
         request = type("Request", (), {"headers": {"authorization": "Bearer shared"}})()
@@ -224,20 +415,12 @@ class BeatThisIsolationTests(unittest.TestCase):
                 "transformers": "transformers", "accelerate": "accelerate",
             },
         }
-        health = {
-            **{key: value for key, value in expected.items() if key != "runtime"},
-            "status": "ready", "ready": True, "healthy": True,
-            "retryable": False, "retryAfterSeconds": None,
-            "revision": expected["checkpointRevision"],
-            "runtime": {"pythonVersion": "3.11"},
-            "framework": {
-                "cuda_image": "cuda", "cuda": "12", "pytorch": "torch",
-                "torchvision": "vision", "torchaudio": "audio",
-                "torch_index_url": "index", "transformers": "transformers",
-                "accelerate": "accelerate",
-            },
-        }
+        health = ready_health(expected)
         promote_modal.verify_live_health(health, expected)
+        with self.assertRaises(ValueError):
+            promote_modal.verify_live_health(
+                {**health, "token": "sensitive details"}, expected
+            )
         health["modalImageId"] = "im-other"
         with self.assertRaises(ValueError):
             promote_modal.verify_live_health(health, expected)

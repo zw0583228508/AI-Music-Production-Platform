@@ -460,13 +460,15 @@ test("routes BS-RoFormer separation only after signed deployment attestation", a
   }
 });
 
-test("parses Beat This evidence on the primary beat-analysis route", async () => {
+test("retries exact Beat This startup before primary beat analysis", async () => {
   let analyzeRequests = 0;
+  let healthRequests = 0;
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const server = createServer((request, response) => {
     response.setHeader("Content-Type", "application/json");
     if (request.method === "GET" && request.url === "/health?provider=BEAT_THIS") {
-      response.end(JSON.stringify(health));
+      healthRequests += 1;
+      response.end(JSON.stringify(healthRequests === 1 ? startupHealth : health));
       return;
     }
     if (request.method === "POST" && request.url === "/analyze") {
@@ -525,6 +527,9 @@ test("parses Beat This evidence on the primary beat-analysis route", async () =>
     provider: record.provider,
     status: "ready",
     ready: true,
+    healthy: true,
+    retryable: false,
+    retryAfterSeconds: null,
     modelVersion: record.modelVersion,
     checksum: record.checkpointSha256,
     checkpointSha256: record.checkpointSha256,
@@ -541,6 +546,7 @@ test("parses Beat This evidence on the primary beat-analysis route", async () =>
     modalImageId: record.modalImageId,
     runtime: { pythonVersion: record.runtime.python },
     framework: {
+      python: record.runtime.python,
       cuda_image: record.runtime.cudaImage,
       cuda: record.runtime.cuda,
       pytorch: record.runtime.pytorch,
@@ -550,6 +556,29 @@ test("parses Beat This evidence on the primary beat-analysis route", async () =>
       transformers: record.runtime.transformers,
       accelerate: record.runtime.accelerate,
     },
+    packageName: "beat-this",
+    packageVersion: record.modelVersion,
+    packageReady: true,
+    assetReady: true,
+    featureExecutionReady: true,
+    identityReady: true,
+    reason: null,
+  };
+  const startupHealth = {
+    ...health,
+    status: "starting",
+    ready: false,
+    healthy: false,
+    retryable: true,
+    retryAfterSeconds: 5,
+    packageReady: false,
+    assetReady: false,
+    featureExecutionReady: false,
+    runtimeReady: false,
+    checkpointReady: false,
+    smokeTested: false,
+    gpuReady: false,
+    reason: "runtime initialization is still in progress",
   };
   const keys = [
     "MUSIC_PROVIDER_BEAT_THIS_URL",
@@ -605,6 +634,7 @@ test("parses Beat This evidence on the primary beat-analysis route", async () =>
       sourceType: "FULL_SONG",
       durationSeconds: 2,
     });
+    assert.equal(healthRequests, 2);
     assert.equal(analyzeRequests, 1);
     assert.deepEqual(result.rhythmEvidence.find(
       (item) => item.provider === "BEAT_THIS",
@@ -798,10 +828,13 @@ test("reports one logical SheetSage capacity rejection across provider retries",
       response.end(JSON.stringify({
         provider: "SHEETSAGE",
         version: "0.2.1",
+        sourceRevision: "openmirlab/sheetsage-infer@ee7c2aeeb8084840a4f938ae6913f566afdaebdc",
         status: "ready",
+        assetsVerified: true,
         runtimeReady: true,
         checkpointReady: true,
         smokeTested: true,
+        smokeProofVerified: true,
         checksum: "a".repeat(64),
       }));
       return;
