@@ -25,6 +25,28 @@ export type FusionResult =
   | { accepted: true; model: SongModelData; decisions: ProviderFusionDecision[] }
   | { accepted: false; issues: SongModelValidationIssue[]; decisions: ProviderFusionDecision[] };
 
+export function unavailableVocalIntelligence(
+  reason = "This historical Song Model has no verified phrase-level vocal evidence. Reanalyze the source to verify it.",
+): NonNullable<SongModelData["vocalIntelligence"]> {
+  return {
+    version: "1.0",
+    provenance: null,
+    phrases: { status: "not_available", reason, events: [] },
+    breaths: { status: "not_available", reason, events: [] },
+    lyricAlignment: {
+      status: "not_available",
+      reason: "No accepted vocal phrases and timed lyrics are both available.",
+      alignments: [],
+    },
+    melodyAlignment: {
+      status: "not_available",
+      reason: "No accepted vocal phrases and compatible melody notes are both available.",
+      alignments: [],
+    },
+    arrangementSpace: { status: "not_available", reason, windows: [] },
+  };
+}
+
 type MutableIssue = Omit<SongModelValidationIssue, "provider"> & { provider?: string };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -37,9 +59,10 @@ const isInteger = (value: unknown): value is number =>
 
 function canonicalizeCoordinates(
   model: SongModelCore,
-): SongModelCore & Partial<Pick<SongModelData, "vocalEvidence">> {
+): SongModelCore & Partial<Pick<SongModelData, "vocalEvidence" | "vocalIntelligence">> {
   const timeline = createCanonicalTimeline(model.tempoMap, model.meterMap);
   const vocalEvidence = (model as Partial<SongModelData>).vocalEvidence;
+  const vocalIntelligence = (model as Partial<SongModelData>).vocalIntelligence;
   const range = (start: number, end: number) => ({
     start: timeline.coordinateAtSeconds(start),
     end: timeline.coordinateAtSeconds(end),
@@ -73,6 +96,12 @@ function canonicalizeCoordinates(
       observedSilentWindows: vocalEvidence.observedSilentWindows.map((event) => ({
         ...event, coordinates: range(event.start, event.end),
       })),
+    },
+    vocalIntelligence: vocalIntelligence && {
+      ...vocalIntelligence,
+      phrases: { ...vocalIntelligence.phrases, events: vocalIntelligence.phrases.events.map((event) => ({ ...event, coordinates: range(event.start, event.end) })) },
+      breaths: { ...vocalIntelligence.breaths, events: vocalIntelligence.breaths.events.map((event) => ({ ...event, coordinates: range(event.start, event.end) })) },
+      arrangementSpace: { ...vocalIntelligence.arrangementSpace, windows: vocalIntelligence.arrangementSpace.windows.map((event) => ({ ...event, coordinates: range(event.start, event.end) })) },
     },
   };
 }
@@ -109,6 +138,7 @@ export function canonicalizeSongModelCoordinates(model: SongModelData): SongMode
       },
     })),
     vocalEvidence: (core as Partial<SongModelData>).vocalEvidence,
+    vocalIntelligence: (core as Partial<SongModelData>).vocalIntelligence,
   };
 }
 
@@ -174,6 +204,9 @@ function validateV2Coordinates(input: Record<string, unknown>, issues: MutableIs
     ["lyrics", Array.isArray(input.lyrics) ? input.lyrics : []],
     ["vocalEvidence.observedVoicedWindows", isRecord(input.vocalEvidence) && Array.isArray(input.vocalEvidence.observedVoicedWindows) ? input.vocalEvidence.observedVoicedWindows : []],
     ["vocalEvidence.observedSilentWindows", isRecord(input.vocalEvidence) && Array.isArray(input.vocalEvidence.observedSilentWindows) ? input.vocalEvidence.observedSilentWindows : []],
+    ["vocalIntelligence.phrases.events", isRecord(input.vocalIntelligence) && isRecord(input.vocalIntelligence.phrases) && Array.isArray(input.vocalIntelligence.phrases.events) ? input.vocalIntelligence.phrases.events : []],
+    ["vocalIntelligence.breaths.events", isRecord(input.vocalIntelligence) && isRecord(input.vocalIntelligence.breaths) && Array.isArray(input.vocalIntelligence.breaths.events) ? input.vocalIntelligence.breaths.events : []],
+    ["vocalIntelligence.arrangementSpace.windows", isRecord(input.vocalIntelligence) && isRecord(input.vocalIntelligence.arrangementSpace) && Array.isArray(input.vocalIntelligence.arrangementSpace.windows) ? input.vocalIntelligence.arrangementSpace.windows : []],
   ];
   for (const [name, events] of rangeEvents) {
     let previousStartTick = -1;
@@ -524,6 +557,203 @@ function validateVocalEvidence(value: unknown, duration: number | undefined, iss
     }
   } else if (voiced.length || silent.length) {
     issues.push(issue("INVALID_VOCAL_EVIDENCE", "error", "vocalEvidence", "Unavailable or failed vocal evidence must not contain windows."));
+  }
+}
+
+function validateVocalIntelligence(
+  value: unknown,
+  duration: number | undefined,
+  issues: MutableIssue[],
+  vocalEvidence?: unknown,
+  lyrics: unknown[] = [],
+  melody: unknown[] = [],
+  context?: Record<string, unknown>,
+): void {
+  if (!isRecord(value) || value.version !== "1.0") {
+    issues.push(issue("MISSING_VOCAL_INTELLIGENCE", "error", "vocalIntelligence",
+      "v2 Song Models require versioned phrase-level vocal intelligence."));
+    return;
+  }
+  const groups = [
+    ["phrases", "events", ["detected", "low_confidence", "not_available", "conflicting"]],
+    ["breaths", "events", ["detected", "not_available"]],
+    ["arrangementSpace", "windows", ["detected", "not_available"]],
+  ] as const;
+  const timedByGroup = new Map<string, Array<Record<string, unknown>>>();
+  for (const [groupName, eventName, statuses] of groups) {
+    const group = value[groupName];
+    if (!isRecord(group) || !Array.isArray(group[eventName]) ||
+      !statuses.includes(String(group.status) as never) ||
+      !(group.reason === null || typeof group.reason === "string") ||
+      (!["detected", "low_confidence"].includes(String(group.status)) &&
+        (group[eventName] as unknown[]).length > 0)) {
+      issues.push(issue("INVALID_VOCAL_INTELLIGENCE", "error", `vocalIntelligence.${groupName}`,
+        "Phrase-level evidence groups require a legal status, reason, and status-compatible event array."));
+      continue;
+    }
+    let priorEnd = -1;
+    const validEvents: Array<Record<string, unknown>> = [];
+    (group[eventName] as unknown[]).forEach((event, index) => {
+      if (!isRecord(event) || typeof event.id !== "string" || !event.id ||
+        !isFiniteNumber(event.start) || !isFiniteNumber(event.end) ||
+        event.start < 0 || event.end <= event.start ||
+        event.start < priorEnd ||
+        (duration !== undefined && event.end > duration + 0.000_001) ||
+        !isFiniteNumber(event.confidence) || event.confidence < 0 || event.confidence > 1) {
+        issues.push(issue("INVALID_VOCAL_INTELLIGENCE_EVENT", "error",
+          `vocalIntelligence.${groupName}.${eventName}.${index}`,
+          "Vocal evidence events must be bounded, identified, and carry confidence."));
+      } else {
+        priorEnd = event.end;
+        validEvents.push(event);
+      }
+    });
+    timedByGroup.set(groupName, validEvents);
+  }
+  const phrases = timedByGroup.get("phrases") ?? [];
+  const phraseIds = new Set(phrases.map((event) => String(event.id)));
+  const breaths = timedByGroup.get("breaths") ?? [];
+  const observedSilent = isRecord(vocalEvidence) && Array.isArray(vocalEvidence.observedSilentWindows)
+    ? vocalEvidence.observedSilentWindows.filter(isRecord)
+    : [];
+  for (const breath of breaths) {
+    const bounded = phrases.some((left, index) => {
+      const right = phrases[index + 1];
+      return right && left.end === breath.start && right.start === breath.end;
+    });
+    const observedGap = observedSilent.some((window) =>
+      window.start === breath.start && window.end === breath.end);
+    if (breath.kind !== "inter_phrase" || !bounded || !observedGap) {
+      issues.push(issue("UNVERIFIED_VOCAL_BREATH", "error", "vocalIntelligence.breaths",
+        "Breaths must be observed silent inter-phrase gaps bounded exactly by accepted phrases."));
+    }
+  }
+  const spaces = timedByGroup.get("arrangementSpace") ?? [];
+  let timeline: ReturnType<typeof createCanonicalTimeline> | null = null;
+  try {
+    if (context && Array.isArray(context.tempoMap) && Array.isArray(context.meterMap)) {
+      timeline = createCanonicalTimeline(
+        context.tempoMap.map((event) => isRecord(event)
+          ? { time: event.time as number, bpm: event.bpm as number }
+          : { time: -1, bpm: -1 }),
+        context.meterMap.map((event) => isRecord(event)
+          ? { bar: event.bar as number, meter: event.meter as string }
+          : { bar: 0, meter: "" }),
+      );
+    }
+  } catch {
+    timeline = null;
+  }
+  for (const space of spaces) {
+    const before = typeof space.phraseBeforeId === "string"
+      ? phrases.find((phrase) => phrase.id === space.phraseBeforeId)
+      : null;
+    const after = typeof space.phraseAfterId === "string"
+      ? phrases.find((phrase) => phrase.id === space.phraseAfterId)
+      : null;
+    const supportedBySilence = observedSilent.some((window) =>
+      isFiniteNumber(window.start) && isFiniteNumber(window.end) &&
+      window.start <= (space.start as number) && window.end >= (space.end as number));
+    const startBar = timeline?.coordinateAtSeconds(space.start as number).bar;
+    const endBar = timeline?.coordinateAtSeconds(space.end as number).bar;
+    const expectedBars = startBar !== undefined && endBar !== undefined
+      ? Array.from({ length: endBar - startBar + 1 }, (_, offset) => startBar + offset)
+      : [];
+    const expectedSections = startBar !== undefined && endBar !== undefined &&
+      context && Array.isArray(context.sections)
+      ? context.sections.filter((section) =>
+          isRecord(section) && Number.isInteger(section.startBar) && Number.isInteger(section.endBar) &&
+          (section.endBar as number) >= startBar && (section.startBar as number) <= endBar)
+        .map((section) => (section as Record<string, unknown>).name)
+        .filter((name): name is string => typeof name === "string")
+      : [];
+    const barsMatch = Array.isArray(space.bars) &&
+      JSON.stringify(space.bars) === JSON.stringify(expectedBars);
+    const sectionsMatch = Array.isArray(space.sections) &&
+      JSON.stringify(space.sections) === JSON.stringify(expectedSections);
+    if ((space.phraseBeforeId !== null && !before) ||
+      (space.phraseAfterId !== null && !after) ||
+      (before && isFiniteNumber(before.end) && before.end > (space.start as number)) ||
+      (after && isFiniteNumber(after.start) && after.start < (space.end as number)) ||
+      !Array.isArray(space.bars) ||
+      !space.bars.every((bar) => Number.isInteger(bar) && bar >= 1) ||
+      !Array.isArray(space.sections) ||
+      !space.sections.every((section) => typeof section === "string" && section.trim()) ||
+      !barsMatch ||
+      !sectionsMatch ||
+      !supportedBySilence) {
+      issues.push(issue("UNVERIFIED_ARRANGEMENT_SPACE", "error", "vocalIntelligence.arrangementSpace",
+        "Arrangement space must reference valid surrounding phrases, canonical bars/sections, and observed vocal-stem silence."));
+    }
+  }
+  for (const name of ["lyricAlignment", "melodyAlignment"] as const) {
+    const alignment = value[name];
+    const statuses = ["aligned", "not_available", "conflicting"];
+    if (!isRecord(alignment) || !Array.isArray(alignment.alignments) ||
+      !statuses.includes(String(alignment.status)) ||
+      (alignment.status !== "aligned" && alignment.alignments.length > 0) ||
+      !(alignment.reason === null || typeof alignment.reason === "string")) {
+      issues.push(issue("INVALID_VOCAL_ALIGNMENT", "error", `vocalIntelligence.${name}`,
+        "Alignment evidence requires a status, reason, and alignment array."));
+      continue;
+    }
+    const indexKey = name === "lyricAlignment" ? "lyricIndexes" : "melodyIndexes";
+    const sourceItems = name === "lyricAlignment" ? lyrics : melody;
+    alignment.alignments.forEach((item, index) => {
+      const indexes = isRecord(item) ? item[indexKey] : undefined;
+      const phrase = isRecord(item)
+        ? phrases.find((candidate) => candidate.id === item.phraseId)
+        : undefined;
+      if (!isRecord(item) || typeof item.phraseId !== "string" ||
+        !phraseIds.has(item.phraseId) || !Array.isArray(indexes) || !indexes.length ||
+        !indexes.every((value) => {
+          const source = Number.isInteger(value) ? sourceItems[value as number] : undefined;
+          return isRecord(source) && isFiniteNumber(source.start) && isFiniteNumber(source.end) &&
+            isFiniteNumber(phrase?.start) && isFiniteNumber(phrase?.end) &&
+            Math.min(source.end, phrase.end) > Math.max(source.start, phrase.start);
+        }) ||
+        !isFiniteNumber(item.confidence) || item.confidence < 0 || item.confidence > 1) {
+        issues.push(issue("UNVERIFIED_VOCAL_ALIGNMENT", "error",
+          `vocalIntelligence.${name}.alignments.${index}`,
+          "Alignments must reference an accepted phrase and existing compatible source events."));
+      }
+    });
+    if (alignment.status === "aligned" && alignment.alignments.length === 0) {
+      issues.push(issue("UNVERIFIED_VOCAL_ALIGNMENT", "error", `vocalIntelligence.${name}`,
+        "Aligned status requires at least one supported phrase alignment."));
+    }
+  }
+  const provenance = value.provenance;
+  const observed = isRecord(vocalEvidence) && vocalEvidence.status === "detected";
+  const observedVoiced = observed && Array.isArray(vocalEvidence.observedVoicedWindows)
+    ? vocalEvidence.observedVoicedWindows.filter(isRecord)
+    : [];
+  for (const phrase of phrases) {
+    const supportingWindows = observedVoiced.filter((window) =>
+      isFiniteNumber(window.start) && isFiniteNumber(window.end) &&
+      window.end > (phrase.start as number) && window.start < (phrase.end as number));
+    const boundariesMatch = supportingWindows.length > 0 &&
+      supportingWindows[0].start === phrase.start &&
+      supportingWindows.at(-1)?.end === phrase.end;
+    const gapsArePhraseSized = supportingWindows.every((window, index) =>
+      index === 0 ||
+      (window.start as number) - (supportingWindows[index - 1].end as number) <= .35);
+    if (!boundariesMatch || !gapsArePhraseSized) {
+      issues.push(issue("UNVERIFIED_VOCAL_PHRASE", "error", "vocalIntelligence.phrases",
+        "Phrases must be bounded by verified voiced windows with only phrase-sized internal gaps."));
+    }
+  }
+  const hasTimedEvidence = phrases.length || breaths.length ||
+    (timedByGroup.get("arrangementSpace")?.length ?? 0) > 0;
+  if (hasTimedEvidence) {
+    if (!observed || !isRecord(provenance) || !isRecord(vocalEvidence.provenance) ||
+      provenance.sourceStemRole !== vocalEvidence.provenance.sourceStemRole ||
+      provenance.objectPath !== vocalEvidence.provenance.objectPath ||
+      provenance.provider !== vocalEvidence.provenance.provider ||
+      provenance.contentChecksum !== vocalEvidence.provenance.contentChecksum) {
+      issues.push(issue("UNVERIFIED_VOCAL_PROVENANCE", "error", "vocalIntelligence.provenance",
+        "Detected phrases must use the exact verified vocal-stem provenance."));
+    }
   }
 }
 
@@ -910,6 +1140,19 @@ export function fuseProviderSongModels(
     }
     const validation = validateSongModelCore(response.output);
     responseIssues.push(...validation.issues);
+    if (isRecord(response.output) && response.output.vocalIntelligence !== undefined) {
+      const duration = isRecord(response.output.audio) && isFiniteNumber(response.output.audio.durationSeconds)
+        ? response.output.audio.durationSeconds : undefined;
+      validateVocalIntelligence(
+        response.output.vocalIntelligence,
+        duration,
+        responseIssues,
+        response.output.vocalEvidence,
+        Array.isArray(response.output.lyrics) ? response.output.lyrics : [],
+        Array.isArray(response.output.melody) ? response.output.melody : [],
+        response.output,
+      );
+    }
     const providerIssues = responseIssues.map((item) => ({ ...item, provider: response.provider }));
     if (!validation.success || providerIssues.some((item) => item.severity === "error")) {
       decisions.push({
@@ -1023,6 +1266,8 @@ export function fuseProviderSongModels(
           observedVoicedWindows: [],
           observedSilentWindows: [],
         },
+    vocalIntelligence: canonicalizeCoordinates(selected.model).vocalIntelligence ??
+      unavailableVocalIntelligence("No verified phrase-level vocal evidence was supplied."),
     contractVersion: SONG_MODEL_CONTRACT_VERSION,
     timebase: {
       ppq: CANONICAL_SONG_MODEL_PPQ,
@@ -1079,6 +1324,15 @@ export function validateCanonicalSongModel(input: unknown): ValidationResult<Son
     }
     validateVocalEvidence(input.vocalEvidence, isRecord(input.audio) && isFiniteNumber(input.audio.durationSeconds)
       ? input.audio.durationSeconds : undefined, issues);
+    validateVocalIntelligence(
+      input.vocalIntelligence,
+      isRecord(input.audio) && isFiniteNumber(input.audio.durationSeconds) ? input.audio.durationSeconds : undefined,
+      issues,
+      input.vocalEvidence,
+      Array.isArray(input.lyrics) ? input.lyrics : [],
+      Array.isArray(input.melody) ? input.melody : [],
+      input,
+    );
     validateV2Coordinates(input, issues);
   }
   if (!isRecord(input.validation) || !["accepted", "flagged"].includes(String(input.validation.status))) {

@@ -18,6 +18,7 @@ import {
   isLegacySongModel,
   canonicalizeSongModelCoordinates,
   refreshSongModelValidation,
+  unavailableVocalIntelligence,
   validateCanonicalSongModel,
   validateSongModelCore,
 } from "./songModelValidation";
@@ -232,6 +233,73 @@ test("Song Model API serialization retains v2 canonical coordinates and timebase
   assert.match(serialized.vocalEvidence.reason ?? "", /No decoded vocal/i);
 });
 
+test("pre-change v2 API rows serialize explicit unavailable vocal intelligence", () => {
+  const fused = fuseProviderSongModels([
+    { provider: "analysis", output: validSongModel, confidence: .9 },
+  ]);
+  assert.equal(fused.accepted, true);
+  if (!fused.accepted) return;
+  const historical = structuredClone(fused.model) as any;
+  delete historical.vocalEvidence;
+  delete historical.vocalIntelligence;
+  historical.vocalEvidence = {
+    status: "not_available",
+    reason: "This historical Song Model has no decoded vocal stem evidence.",
+    provenance: null,
+    sampleRate: null,
+    channels: null,
+    frameSizeSamples: null,
+    thresholds: null,
+    observedVoicedWindows: [],
+    observedSilentWindows: [],
+  };
+  historical.vocalIntelligence = unavailableVocalIntelligence();
+  const fields = ["tempo", "meter", "key", "melody", "bass", "harmony", "sections", "energy"] as const;
+  const serialized = GetProjectSongModelResponse.parse({
+    ...historical,
+    id: "historical-model",
+    projectId: "project-1",
+    sourceId: "source-1",
+    version: 1,
+    status: "ready",
+    audio: {
+      ...historical.audio,
+      proxyObjectPath: null,
+      proxyContentType: null,
+      analysisStartSeconds: 0,
+      analysisDurationSeconds: historical.audio.durationSeconds,
+      analysisCoverage: "full",
+    },
+    analysisStartSeconds: 0,
+    analysisDurationSeconds: historical.audio.durationSeconds,
+    analysisCoverage: 1,
+    beats: [],
+    bars: [],
+    bass: historical.bass ?? [],
+    dynamics: historical.energy,
+    waveform: [],
+    stems: [],
+    sourceStems: [],
+    lyrics: [],
+    confidenceByField: {},
+    providerProvenance: [],
+    fieldStatus: Object.fromEntries(fields.map((field) => [field, {
+      status: "not_available", confidence: null, providers: [], message: "Historical evidence unavailable.", edited: false,
+    }])),
+    provenance: Object.fromEntries(fields.map((field) => [field, []])),
+    parentModelId: null,
+    correction: null,
+    providers: [],
+    confidence: 0,
+    createdAt: new Date(0).toISOString(),
+  });
+  assert.equal(serialized.vocalIntelligence.phrases.status, "not_available");
+  assert.equal(serialized.vocalIntelligence.breaths.status, "not_available");
+  assert.equal(serialized.vocalIntelligence.lyricAlignment.status, "not_available");
+  assert.equal(serialized.vocalIntelligence.melodyAlignment.status, "not_available");
+  assert.equal(serialized.vocalIntelligence.arrangementSpace.status, "not_available");
+});
+
 test("vocal evidence retains stem provenance and rejects overlapping or out-of-bounds observations", () => {
   const fused = fuseProviderSongModels([
     {
@@ -270,6 +338,176 @@ test("vocal evidence retains stem provenance and rejects overlapping or out-of-b
   assert.equal(validation.success, false);
   assert.ok(issueCodes(validation).includes("INVALID_VOCAL_WINDOW"));
   assert.ok(issueCodes(validation).includes("OVERLAPPING_VOCAL_WINDOWS"));
+});
+
+test("phrase, breath, and arrangement-space evidence stays canonical across pickups and meter changes", () => {
+  const fused = fuseProviderSongModels([
+    {
+      provider: "analysis",
+      confidence: .9,
+      output: {
+        ...validSongModel,
+        meterMap: [
+          { bar: 1, meter: "4/4", confidence: .9 },
+          { bar: 2, meter: "3/4", confidence: .9 },
+        ],
+        vocalEvidence: {
+          status: "detected",
+          reason: null,
+          provenance: {
+            sourceStemRole: "vocals",
+            objectPath: "/objects/vocals.flac",
+            provider: "DEMUCS",
+            contentChecksum: "b".repeat(64),
+          },
+          sampleRate: 8_000,
+          channels: 1,
+          frameSizeSamples: 800,
+          thresholds: { rms: .01, peak: .02, activitySample: .005, activityRatio: .1 },
+          observedVoicedWindows: [{ start: .25, end: 1.5 }, { start: 2, end: 2.75 }],
+          observedSilentWindows: [{ start: 0, end: .25 }, { start: 1.5, end: 2 }, { start: 2.75, end: 4.5 }],
+        },
+        vocalIntelligence: {
+          version: "1.0",
+          provenance: {
+            sourceStemRole: "vocals",
+            objectPath: "/objects/vocals.flac",
+            provider: "DEMUCS",
+            contentChecksum: "b".repeat(64),
+          },
+          phrases: {
+            status: "detected",
+            reason: null,
+            events: [
+              { id: "phrase-1", start: .25, end: 1.5, confidence: .8 },
+              { id: "phrase-2", start: 2, end: 2.75, confidence: .8 },
+            ],
+          },
+          breaths: {
+            status: "detected",
+            reason: null,
+            events: [{ id: "breath-1", start: 1.5, end: 2, confidence: .65, kind: "inter_phrase" }],
+          },
+          lyricAlignment: {
+            status: "not_available",
+            reason: "No timed lyric evidence is available.",
+            alignments: [],
+          },
+          melodyAlignment: {
+            status: "aligned",
+            reason: null,
+            alignments: [{ phraseId: "phrase-1", melodyIndexes: [0], confidence: .8 }],
+          },
+          arrangementSpace: {
+            status: "detected",
+            reason: null,
+            windows: [{
+              id: "space-1", start: 2.75, end: 4.5, confidence: .8,
+              phraseBeforeId: "phrase-2", phraseAfterId: null,
+              bars: [2, 3], sections: ["Verse"],
+            }],
+          },
+        },
+      },
+    },
+  ]);
+  assert.equal(fused.accepted, true);
+  if (!fused.accepted) return;
+  const phrase = fused.model.vocalIntelligence!.phrases.events[0];
+  const space = fused.model.vocalIntelligence!.arrangementSpace.windows[0];
+  assert.equal(phrase.coordinates?.start.beatFraction, .5);
+  assert.equal(space.coordinates?.start.bar, 2);
+  assert.equal(validateCanonicalSongModel(fused.model).success, true);
+});
+
+test("fusion rejects malformed or unsupported vocal intelligence before canonicalization", () => {
+  const malformed = {
+    ...validSongModel,
+    vocalIntelligence: {
+      version: "1.0",
+      provenance: null,
+      phrases: { status: "detected", reason: null, events: [] },
+      breaths: null,
+      lyricAlignment: { status: "aligned", reason: null, alignments: [] },
+      melodyAlignment: { status: "not_available", reason: "Unavailable.", alignments: [] },
+      arrangementSpace: { status: "not_available", reason: "Unavailable.", windows: [] },
+    },
+  };
+  const result = fuseProviderSongModels([
+    { provider: "analysis", output: malformed, confidence: .9 },
+  ]);
+  assert.equal(result.accepted, false);
+  if (result.accepted) return;
+  assert.ok(issueCodes(result).includes("INVALID_VOCAL_INTELLIGENCE"));
+  assert.ok(issueCodes(result).includes("UNVERIFIED_VOCAL_ALIGNMENT"));
+});
+
+test("fusion rejects arrangement-space bars and sections that drift from the canonical model", () => {
+  const provenance = {
+    sourceStemRole: "vocals",
+    objectPath: "/objects/vocals.flac",
+    provider: "DEMUCS",
+    contentChecksum: "c".repeat(64),
+  };
+  const base = {
+    ...validSongModel,
+    vocalEvidence: {
+      status: "detected",
+      reason: null,
+      provenance,
+      sampleRate: 8_000,
+      channels: 1,
+      frameSizeSamples: 800,
+      thresholds: { rms: .01, peak: .02, activitySample: .005, activityRatio: .1 },
+      observedVoicedWindows: [{ start: 0, end: 1 }],
+      observedSilentWindows: [{ start: 1, end: 2 }],
+    },
+    vocalIntelligence: {
+      version: "1.0",
+      provenance,
+      phrases: {
+        status: "detected",
+        reason: null,
+        events: [{ id: "phrase-1", start: 0, end: 1, confidence: .8 }],
+      },
+      breaths: { status: "not_available", reason: "No bounded breath.", events: [] },
+      lyricAlignment: { status: "not_available", reason: "No lyrics.", alignments: [] },
+      melodyAlignment: { status: "not_available", reason: "No overlap.", alignments: [] },
+      arrangementSpace: {
+        status: "detected",
+        reason: null,
+        windows: [{
+          id: "space-1", start: 1, end: 2, confidence: .8,
+          phraseBeforeId: "phrase-1", phraseAfterId: null,
+          bars: [99], sections: ["invented-section"],
+        }],
+      },
+    },
+  };
+  const result = fuseProviderSongModels([
+    { provider: "analysis", output: base, confidence: .9 },
+  ]);
+  assert.equal(result.accepted, false);
+  if (result.accepted) return;
+  assert.ok(issueCodes(result).includes("UNVERIFIED_ARRANGEMENT_SPACE"));
+});
+
+test("conflicting and absent vocal intelligence remains explicit and empty", () => {
+  const fused = fuseProviderSongModels([
+    { provider: "analysis", output: validSongModel, confidence: .9 },
+  ]);
+  assert.equal(fused.accepted, true);
+  if (!fused.accepted) return;
+  assert.equal(fused.model.vocalIntelligence?.phrases.status, "not_available");
+  assert.deepEqual(fused.model.vocalIntelligence?.phrases.events, []);
+  const conflicting = structuredClone(fused.model);
+  conflicting.vocalIntelligence!.lyricAlignment = {
+    status: "conflicting",
+    reason: "Timed lyric evidence overlaps and cannot be aligned deterministically.",
+    alignments: [],
+  };
+  assert.equal(validateCanonicalSongModel(conflicting).success, true);
+  assert.deepEqual(conflicting.vocalIntelligence!.lyricAlignment.alignments, []);
 });
 
 test("does not invent timed evidence for energy and dynamics sample arrays", () => {

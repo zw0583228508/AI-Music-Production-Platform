@@ -821,6 +821,145 @@ export interface VocalEvidence {
   observedSilentWindows: VocalObservedWindow[];
 }
 
+export type VocalIntelligenceVersion = typeof VocalIntelligenceVersion[keyof typeof VocalIntelligenceVersion];
+
+
+export const VocalIntelligenceVersion = {
+  '10': '1.0',
+} as const;
+
+export type VocalPhraseEvidenceStatus = typeof VocalPhraseEvidenceStatus[keyof typeof VocalPhraseEvidenceStatus];
+
+
+export const VocalPhraseEvidenceStatus = {
+  detected: 'detected',
+  low_confidence: 'low_confidence',
+  not_available: 'not_available',
+  conflicting: 'conflicting',
+} as const;
+
+export interface VocalPhraseEvent {
+  id: string;
+  /** @minimum 0 */
+  start: number;
+  /** @minimum 0 */
+  end: number;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  confidence: number;
+  coordinates: CanonicalTimeRange;
+}
+
+export interface VocalPhraseEvidence {
+  status: VocalPhraseEvidenceStatus;
+  /** @nullable */
+  reason: string | null;
+  events: VocalPhraseEvent[];
+}
+
+export type VocalBreathEvidenceStatus = typeof VocalBreathEvidenceStatus[keyof typeof VocalBreathEvidenceStatus];
+
+
+export const VocalBreathEvidenceStatus = {
+  detected: 'detected',
+  not_available: 'not_available',
+} as const;
+
+export type VocalBreathEventKind = typeof VocalBreathEventKind[keyof typeof VocalBreathEventKind];
+
+
+export const VocalBreathEventKind = {
+  inter_phrase: 'inter_phrase',
+} as const;
+
+export type VocalBreathEvent = VocalPhraseEvent & {
+  kind: VocalBreathEventKind;
+};
+
+export interface VocalBreathEvidence {
+  status: VocalBreathEvidenceStatus;
+  /** @nullable */
+  reason: string | null;
+  events: VocalBreathEvent[];
+}
+
+export type VocalAlignmentEvidenceStatus = typeof VocalAlignmentEvidenceStatus[keyof typeof VocalAlignmentEvidenceStatus];
+
+
+export const VocalAlignmentEvidenceStatus = {
+  aligned: 'aligned',
+  not_available: 'not_available',
+  conflicting: 'conflicting',
+} as const;
+
+export type VocalAlignmentEvidenceAlignmentsItem = {
+  phraseId: string;
+  /** @items.minimum 0 */
+  lyricIndexes?: number[];
+  /** @items.minimum 0 */
+  melodyIndexes?: number[];
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  confidence: number;
+};
+
+export interface VocalAlignmentEvidence {
+  status: VocalAlignmentEvidenceStatus;
+  /** @nullable */
+  reason: string | null;
+  alignments: VocalAlignmentEvidenceAlignmentsItem[];
+}
+
+export type VocalArrangementSpaceEvidenceStatus = typeof VocalArrangementSpaceEvidenceStatus[keyof typeof VocalArrangementSpaceEvidenceStatus];
+
+
+export const VocalArrangementSpaceEvidenceStatus = {
+  detected: 'detected',
+  not_available: 'not_available',
+} as const;
+
+export type VocalArrangementSpaceEvidenceWindowsItem = {
+  id: string;
+  /** @minimum 0 */
+  start: number;
+  /** @minimum 0 */
+  end: number;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  confidence: number;
+  /** @nullable */
+  phraseBeforeId: string | null;
+  /** @nullable */
+  phraseAfterId: string | null;
+  /** @items.minimum 1 */
+  bars: number[];
+  sections: string[];
+  coordinates: CanonicalTimeRange;
+};
+
+export interface VocalArrangementSpaceEvidence {
+  status: VocalArrangementSpaceEvidenceStatus;
+  /** @nullable */
+  reason: string | null;
+  windows: VocalArrangementSpaceEvidenceWindowsItem[];
+}
+
+export interface VocalIntelligence {
+  version: VocalIntelligenceVersion;
+  provenance: VocalStemProvenance | null;
+  phrases: VocalPhraseEvidence;
+  breaths: VocalBreathEvidence;
+  lyricAlignment: VocalAlignmentEvidence;
+  melodyAlignment: VocalAlignmentEvidence;
+  arrangementSpace: VocalArrangementSpaceEvidence;
+}
+
 export interface LyricEvent {
   start: number;
   end: number;
@@ -947,6 +1086,7 @@ export interface SongModel {
   dynamics: number[];
   sourceStems: SourceStem[];
   vocalEvidence: VocalEvidence;
+  vocalIntelligence: VocalIntelligence;
   lyrics: LyricEvent[];
   confidenceByField: SongModelConfidenceByField;
   providerProvenance: ProviderProvenance[];

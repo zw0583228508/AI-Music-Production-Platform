@@ -270,6 +270,63 @@ export type SongModelData = SongModelCore & {
       coordinates?: CanonicalTimeRange;
     }>;
   };
+  vocalIntelligence?: {
+    version: "1.0";
+    provenance: {
+      sourceStemRole: string;
+      objectPath: string;
+      provider: string;
+      contentChecksum?: string;
+    } | null;
+    phrases: {
+      status: "detected" | "low_confidence" | "not_available" | "conflicting";
+      reason: string | null;
+      events: Array<{
+        id: string;
+        start: number;
+        end: number;
+        confidence: number;
+        coordinates?: CanonicalTimeRange;
+      }>;
+    };
+    breaths: {
+      status: "detected" | "not_available";
+      reason: string | null;
+      events: Array<{
+        id: string;
+        start: number;
+        end: number;
+        confidence: number;
+        kind: "inter_phrase";
+        coordinates?: CanonicalTimeRange;
+      }>;
+    };
+    lyricAlignment: {
+      status: "aligned" | "not_available" | "conflicting";
+      reason: string | null;
+      alignments: Array<{ phraseId: string; lyricIndexes: number[]; confidence: number }>;
+    };
+    melodyAlignment: {
+      status: "aligned" | "not_available" | "conflicting";
+      reason: string | null;
+      alignments: Array<{ phraseId: string; melodyIndexes: number[]; confidence: number }>;
+    };
+    arrangementSpace: {
+      status: "detected" | "not_available";
+      reason: string | null;
+      windows: Array<{
+        id: string;
+        start: number;
+        end: number;
+        confidence: number;
+        phraseBeforeId: string | null;
+        phraseAfterId: string | null;
+        bars: number[];
+        sections: string[];
+        coordinates?: CanonicalTimeRange;
+      }>;
+    };
+  };
   lyrics: Array<{
     start: number;
     end: number;

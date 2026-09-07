@@ -41,6 +41,20 @@ export type DecodedVocalActivity = {
   observedSilentWindows: ObservedVocalWindow[];
 };
 
+export type VocalPhraseWindow = ObservedVocalWindow & {
+  confidence: number;
+};
+
+export type VocalBreathWindow = ObservedVocalWindow & {
+  confidence: number;
+  kind: "inter_phrase";
+};
+
+export type DecodedVocalPhrasing = {
+  phrases: VocalPhraseWindow[];
+  breaths: VocalBreathWindow[];
+};
+
 /** Fixed, documented detector parameters; no musical/template inputs are used. */
 export const VOCAL_ACTIVITY_THRESHOLDS: VocalActivityThresholds = {
   rms: 0.01,
@@ -96,4 +110,37 @@ export function detectVocalActivity(
     observedVoicedWindows: voiced,
     observedSilentWindows: silent,
   };
+}
+
+/**
+ * Groups verified voiced activity into phrases and treats only bounded silence
+ * between two phrases as a possible breath. Leading/trailing silence is
+ * arrangement space, not breathing evidence.
+ */
+export function deriveVocalPhrasing(
+  activity: DecodedVocalActivity,
+  maximumPhraseGapSeconds = 0.35,
+  minimumBreathSeconds = 0.12,
+  maximumBreathSeconds = 2,
+): DecodedVocalPhrasing {
+  if (activity.status !== "detected") return { phrases: [], breaths: [] };
+  const phrases: VocalPhraseWindow[] = [];
+  for (const window of activity.observedVoicedWindows) {
+    const previous = phrases.at(-1);
+    if (previous && window.start - previous.end <= maximumPhraseGapSeconds) {
+      previous.end = window.end;
+      continue;
+    }
+    phrases.push({ ...window, confidence: 0.8 });
+  }
+  const breaths: VocalBreathWindow[] = [];
+  for (let index = 1; index < phrases.length; index += 1) {
+    const start = phrases[index - 1].end;
+    const end = phrases[index].start;
+    const duration = end - start;
+    if (duration >= minimumBreathSeconds && duration <= maximumBreathSeconds) {
+      breaths.push({ start, end, confidence: 0.65, kind: "inter_phrase" });
+    }
+  }
+  return { phrases, breaths };
 }
