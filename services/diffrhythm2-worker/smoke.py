@@ -346,7 +346,6 @@ def main(fixture: Path) -> dict:
            "runtimeDiagnostic":json.loads(diagnostic.read_text())}
     (ASSETS/SPEC["smoke_proof"]).write_text(json.dumps(proof,indent=2,sort_keys=True))
     return proof
-
 def _chroma(audio: np.ndarray) -> np.ndarray:
     _, _, spectrum = stft(
         audio, fs=COMPARISON_SAMPLE_RATE, nperseg=1024, noverlap=512,
@@ -401,7 +400,11 @@ def _strongest_chroma_match(source: np.ndarray, output: np.ndarray) -> dict:
     best["searchedAlignmentCount"] = searched
     best["offsetSeconds"] = best.pop("lagFrames") / frames_per_second
     return best
-
 if __name__=="__main__":
-    fixture = Path(os.environ["DIFFRHYTHM2_SMOKE_AUDIO"])
-    print(json.dumps(main(fixture), sort_keys=True))
+    if os.environ.get("DIFFRHYTHM2_SMOKE_ENTRYPOINT_CHECK") == "1":
+        if not callable(_strongest_chroma_match):
+            raise RuntimeError("smoke helpers are not initialized")
+        print("DiffRhythm2 smoke entrypoint ready")
+    else:
+        fixture = Path(os.environ["DIFFRHYTHM2_SMOKE_AUDIO"])
+        print(json.dumps(main(fixture), sort_keys=True))

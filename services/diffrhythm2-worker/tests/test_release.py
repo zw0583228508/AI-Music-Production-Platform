@@ -77,6 +77,13 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             "checkpointSha256": "b" * 64,
             "sourceRevision": "source-revision",
             "sourceImageDigest": "sha256:" + "c" * 64,
+            "codecThresholdEvidence": {
+                "passed": True,
+                "audioRetained": False,
+                "ffmpegVersion": "ffmpeg version 4.4.2",
+                "sourceImageDigest": "sha256:" + "c" * 64,
+                "modalImageId": "im-Test",
+            },
             "runtime": {"pythonVersion": "3.11"},
             "framework": {
                 "cuda_image": "image", "cuda": "12.6", "pytorch": "2.7",

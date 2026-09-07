@@ -265,7 +265,18 @@ def fetch_health(metadata: dict) -> dict:
         raise ValueError("DiffRhythm2 live health is incomplete or identity drifted")
     return health
 
-
+def validate_codec_evidence(health: dict) -> dict:
+    codec_evidence = health.get("codecThresholdEvidence")
+    if (
+        not isinstance(codec_evidence, dict)
+        or codec_evidence.get("passed") is not True
+        or codec_evidence.get("audioRetained") is not False
+        or codec_evidence.get("sourceImageDigest") != health["sourceImageDigest"]
+        or codec_evidence.get("modalImageId") != health["modalImageId"]
+        or not str(codec_evidence.get("ffmpegVersion", "")).startswith("ffmpeg version ")
+    ):
+        raise ValueError("DiffRhythm2 image codec threshold evidence is incomplete")
+    return codec_evidence
 def research_rhythm_wav() -> bytes:
     sample_rate = 16000
     duration_seconds = 4
@@ -667,6 +678,15 @@ def validate_release(release: dict) -> dict:
         raise ValueError("DiffRhythm2 release identity or readiness is invalid")
     validate_generation_proof(proof, metadata, health)
     validate_comparison_burst(burst, metadata)
+    codec_evidence = validate_codec_evidence(health)
+    codec_path = EVIDENCE / "codec-threshold-evidence.json"
+    if (
+        release.get("codecThresholdEvidence") != codec_evidence
+        or json.loads(codec_path.read_text()) != codec_evidence
+        or release.get("retainedEvidence", {}).get(codec_path.name)
+        != {"sha256": sha256(codec_path), "bytes": codec_path.stat().st_size}
+    ):
+        raise ValueError("DiffRhythm2 codec threshold evidence digest is not retained")
     for name, expected in (
         ("live-research-generation-proof.json", proof),
         ("live-comparison-burst-proof.json", burst),
@@ -683,11 +703,13 @@ def validate_release(release: dict) -> dict:
 
 def capture(metadata: dict) -> dict:
     health = fetch_health(metadata)
+    codec_evidence = validate_codec_evidence(health)
     burst = verify_comparison_burst(metadata)
     generation = verify_research_generation(metadata, health)
     if observe() != metadata:
         raise ValueError("DiffRhythm2 deployment identity changed during capture")
     atomic_json(EVIDENCE / "live-health.json", health)
+    atomic_json(EVIDENCE / "codec-threshold-evidence.json", codec_evidence)
     retained_names = (
         "model-assets.json",
         "known-good-short-smoke-proof.json",
@@ -698,6 +720,7 @@ def capture(metadata: dict) -> dict:
         "full-fixture-diagnostic.json",
         "live-research-generation-proof.json",
         "live-comparison-burst-proof.json",
+        "codec-threshold-evidence.json",
     )
     retained = {}
     for name in retained_names:
@@ -714,6 +737,7 @@ def capture(metadata: dict) -> dict:
         "sourceImageDigest": health["sourceImageDigest"],
         "licenseStatus": "RESEARCH_ONLY",
         "commercialUsePermitted": False,
+        "codecThresholdEvidence": codec_evidence,
         "retainedEvidence": retained,
         "liveHealth": health,
         "liveResearchGeneration": generation,

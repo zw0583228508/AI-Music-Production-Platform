@@ -2070,6 +2070,7 @@ def evidence_errors(rows, root):
         live_generation = read_json(
             evidence_base / "live-research-generation-proof.json"
         )
+        codec_evidence = read_json(evidence_base / "codec-threshold-evidence.json")
         bundle = read_json(evidence_base / "promotion-bundle.json")
         source_revision = "13a7b091f45124f611e36ee674973234f38d55b6"
         checkpoint_revision = "9aa15742e4889c0eb2e198db6fdab1facf1b6761"
@@ -2078,7 +2079,7 @@ def evidence_errors(rows, root):
         source_files = (
             "Dockerfile", "requirements.txt", "model_manifest.json", "app.py",
             "contract.py", "inference.py", "upstream_runner.py", "modal_app.py",
-            "modal_config.py",
+            "modal_config.py", "codec_threshold_corpus.py",
         )
         for name in source_files:
             data = (root / base / name).read_bytes()
@@ -2124,6 +2125,7 @@ def evidence_errors(rows, root):
             "full-fixture-output.mp3",
             "full-fixture-diagnostic.json",
             "live-research-generation-proof.json",
+            "codec-threshold-evidence.json",
         )
         try:
             public_key = public_key_path.read_text()
@@ -2267,11 +2269,9 @@ def evidence_errors(rows, root):
             evidence.get("notSourceCopyVerified") is True,
             evidence.get("apiAttestationValidated") is True,
             evidence.get("apiZeroPostMismatchRegression") is True,
-            all(
-                f'WORKER_ROOT / "{name}"' in modal_app_source
-                and f'remote_path="/app/{name}"' in modal_app_source
-                for name in ("app.py", "inference.py", "upstream_runner.py", "model_manifest.json")
-            ),
+            "modal.Image.from_dockerfile(" in modal_app_source,
+            "WORKER_ROOT / \"Dockerfile\"" in modal_app_source,
+            "context_dir=REPOSITORY_ROOT" in modal_app_source,
             diffrhythm.get("licenseStatus") == "RESEARCH_ONLY",
             diffrhythm.get("codeRevision") == source_revision,
             manifest.get("provider") == "DIFFRHYTHM_2",
@@ -2313,6 +2313,18 @@ def evidence_errors(rows, root):
             release.get("commercialUsePermitted") is False,
             all(release.get(field) == observed.get(field) for field in identity_fields),
             release.get("liveResearchGeneration") == live_generation,
+            release.get("codecThresholdEvidence") == codec_evidence,
+            health.get("codecThresholdEvidence") == codec_evidence,
+            codec_evidence.get("schemaVersion") == 1,
+            codec_evidence.get("passed") is True,
+            codec_evidence.get("audioRetained") is False,
+            str(codec_evidence.get("ffmpegVersion", "")).startswith("ffmpeg version "),
+            codec_evidence.get("sourceImageDigest") == source_digest,
+            codec_evidence.get("modalImageId") == release.get("modalImageId"),
+            len(codec_evidence.get("cases", [])) == 12,
+            {case.get("codec") for case in codec_evidence.get("cases", [])}
+            == {"libmp3lame", "aac", "libopus"},
+            all(case.get("passed") is True for case in codec_evidence.get("cases", [])),
             live_generation.get("provider") == "DIFFRHYTHM_2",
             live_generation.get("modalDeploymentId")
             == observed.get("modalDeploymentId"),
