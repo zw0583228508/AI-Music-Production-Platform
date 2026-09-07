@@ -1,0 +1,108 @@
+{
+  "assetManifestSha256": "e80417495444e51b8a0053233d015a4d3a29652e0fc6d91e6b90a03a59fad654",
+  "input": {
+    "bytes": 352844,
+    "durationSeconds": 4,
+    "generatorSha256": "80cc392c966096dfe2cd5f94debd4c05a1d2dc3350973600fbe35e65037bcb29",
+    "sampleRate": 44100,
+    "sha256": "e88d6e2de44f38c6a0d097d1952cd52209c9515342c12c7b45f97340dae3e915"
+  },
+  "models": {
+    "STABLE_AUDIO_3_MEDIUM": {
+      "modes": {
+        "audioToAudio": {
+          "bytes": 352878,
+          "channels": 2,
+          "durationSeconds": 2.0,
+          "peak": 0.732421875,
+          "rms": 0.12058125259227541,
+          "sampleRate": 44100,
+          "sha256": "18db7c3aa25d6ef94196282cb1df2d771c8afdc6c061565178f81ae76d3fbd0d"
+        },
+        "continuation": {
+          "bytes": 1058478,
+          "channels": 2,
+          "durationSeconds": 6.0,
+          "extendedBeyondSource": true,
+          "generatedTailRms": 0.00024040312097619985,
+          "peak": 0.70947265625,
+          "rms": 0.06734701566949292,
+          "sampleRate": 44100,
+          "sha256": "77dfb174b3b09cbb2b5e3e2955ff7d083c80ea3d56b119401a087f3a5c583cdf",
+          "sourceDurationSeconds": 4
+        },
+        "inpainting": {
+          "bytes": 352878,
+          "channels": 1,
+          "durationSeconds": 4.0,
+          "maskedRegionChanged": true,
+          "outsideMaskBitExact": true,
+          "peak": 0.235107421875,
+          "rms": 0.06814399580150339,
+          "sampleRate": 44100,
+          "sha256": "caa3995b5ec70c4b84a0cc7899df456939bb91e02f88ac51257d6bbb49cebbc4"
+        },
+        "textToAudio": {
+          "bytes": 352878,
+          "channels": 2,
+          "durationSeconds": 2.0,
+          "peak": 0.86083984375,
+          "rms": 0.12959666835497544,
+          "sampleRate": 44100,
+          "sha256": "be5d85a8741264d01f90bf97f03e5b88bb96d3511d7d19b34185ec2071f89dbe"
+        }
+      },
+      "nonSilent": true,
+      "realInference": true
+    },
+    "STABLE_AUDIO_3_SMALL_MUSIC": {
+      "modes": {
+        "audioToAudio": {
+          "bytes": 352878,
+          "channels": 2,
+          "durationSeconds": 2.0,
+          "peak": 0.84375,
+          "rms": 0.08226936813592033,
+          "sampleRate": 44100,
+          "sha256": "466cb4900fb284f6ad4f50444a3bf7511b4bd130792d351886814a5c46ce1229"
+        },
+        "continuation": {
+          "bytes": 1058478,
+          "channels": 2,
+          "durationSeconds": 6.0,
+          "extendedBeyondSource": true,
+          "generatedTailRms": 0.00046427044297341974,
+          "peak": 0.37451171875,
+          "rms": 0.06647688155901658,
+          "sampleRate": 44100,
+          "sha256": "b3744b4c10d95f6bef8d2f1c00da962ea13251515eb8398e42cd399867268536",
+          "sourceDurationSeconds": 4
+        },
+        "inpainting": {
+          "bytes": 352878,
+          "channels": 1,
+          "durationSeconds": 4.0,
+          "maskedRegionChanged": true,
+          "outsideMaskBitExact": true,
+          "peak": 0.235107421875,
+          "rms": 0.06559408276787763,
+          "sampleRate": 44100,
+          "sha256": "57afc767c865471a0897143ac0e61f7bde54214d8fd00cdee4fe88b95e82ea6c"
+        },
+        "textToAudio": {
+          "bytes": 352878,
+          "channels": 2,
+          "durationSeconds": 2.0,
+          "peak": 0.199951171875,
+          "rms": 0.011531670356552707,
+          "sampleRate": 44100,
+          "sha256": "fd0d6150cdde404ed7efab66930b6a909865fa13a520f9412c488ae1ade1435b"
+        }
+      },
+      "nonSilent": true,
+      "realInference": true
+    }
+  },
+  "networkAccessDenied": true,
+  "schemaVersion": 2
+}

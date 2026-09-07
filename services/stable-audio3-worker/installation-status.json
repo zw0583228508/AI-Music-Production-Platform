@@ -2,39 +2,68 @@
   "schemaVersion": 1,
   "providers": {
     "STABLE_AUDIO_3_SMALL_MUSIC": {
-      "classification": "BLOCKED_LICENSE",
+      "classification": "READY",
       "evidence": {
         "modelManifest": "model_manifest.json",
         "sourceRevisionPinned": true,
         "modelRevisionPinned": true,
-        "licenseAcceptancePresent": false,
-        "licensedAccessTokenPresent": false,
-        "assetInventoryPresent": false,
-        "realSmokeProofPresent": false
+        "licenseAcceptancePresent": true,
+        "licensedAccessTokenPresent": true,
+        "assetInventoryPresent": true,
+        "assetInventorySha256": "e80417495444e51b8a0053233d015a4d3a29652e0fc6d91e6b90a03a59fad654",
+        "immutableProvisioningCompleted": true,
+        "provisioningRun": "Modal ap-UCPsqpWS9hmgIcKNOQPzav",
+        "isolatedEndpointDeployed": true,
+        "endpointConfigured": true,
+        "authenticatedHealthReached": true,
+        "healthReady": true,
+        "endpointOrigin": "https://windot100--stable-audio3.modal.run",
+        "realSmokeProofPresent": true,
+        "smokeProofSha256": "2301ab052810b31656a0ece12dabd5a62f424b88615e8aa7947b9ae388c6efca",
+        "realTextToAudioSmokeProofPresent": true,
+        "realAudioToAudioSmokeProofPresent": true,
+        "realInpaintingSmokeProofPresent": true,
+        "realContinuationSmokeProofPresent": true,
+        "continuationExtendedBeyondSource": true,
+        "inpaintingOutsideMaskBitExact": true,
+        "networkAccessDenied": true,
+        "apiConnected": true,
+        "promotionRequired": false,
+        "promotionSigned": false
       },
-      "blockers": [
-        "Stability AI license acceptance and a licensed Hugging Face token are unavailable.",
-        "No provisioned immutable asset inventory or real text-to-audio smoke proof exists."
-      ]
+      "blockers": []
     },
     "STABLE_AUDIO_3_MEDIUM": {
-      "classification": "BLOCKED_LICENSE",
+      "classification": "READY",
       "evidence": {
         "modelManifest": "model_manifest.json",
         "sourceRevisionPinned": true,
         "modelRevisionPinned": true,
-        "licenseAcceptancePresent": false,
-        "licensedAccessTokenPresent": false,
-        "assetInventoryPresent": false,
-        "realTextToAudioSmokeProofPresent": false,
-        "realAudioToAudioSmokeProofPresent": false,
-        "realInpaintingSmokeProofPresent": false,
-        "realContinuationSmokeProofPresent": false
+        "licenseAcceptancePresent": true,
+        "licensedAccessTokenPresent": true,
+        "assetInventoryPresent": true,
+        "assetInventorySha256": "e80417495444e51b8a0053233d015a4d3a29652e0fc6d91e6b90a03a59fad654",
+        "immutableProvisioningCompleted": true,
+        "provisioningRun": "Modal ap-UCPsqpWS9hmgIcKNOQPzav",
+        "isolatedEndpointDeployed": true,
+        "endpointConfigured": true,
+        "authenticatedHealthReached": true,
+        "healthReady": true,
+        "endpointOrigin": "https://windot100--stable-audio3.modal.run",
+        "realSmokeProofPresent": true,
+        "smokeProofSha256": "2301ab052810b31656a0ece12dabd5a62f424b88615e8aa7947b9ae388c6efca",
+        "realTextToAudioSmokeProofPresent": true,
+        "realAudioToAudioSmokeProofPresent": true,
+        "realInpaintingSmokeProofPresent": true,
+        "realContinuationSmokeProofPresent": true,
+        "continuationExtendedBeyondSource": true,
+        "inpaintingOutsideMaskBitExact": true,
+        "networkAccessDenied": true,
+        "apiConnected": true,
+        "promotionRequired": false,
+        "promotionSigned": false
       },
-      "blockers": [
-        "Stability AI license acceptance and a licensed Hugging Face token are unavailable.",
-        "No provisioned immutable asset inventory or required Medium capability smoke proofs exist."
-      ]
+      "blockers": []
     }
   }
 }
