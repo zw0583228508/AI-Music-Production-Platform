@@ -2,12 +2,23 @@
 from __future__ import annotations
 
 import os
+import json
+import subprocess
 import sys
 from pathlib import Path
 
 import modal
 
-from modal_config import *
+APP_NAME = "anyaccomp-worker"
+ENDPOINT_LABEL = "anyaccomp"
+MODEL_VOLUME_NAME = "anyaccomp-models-private-v1"
+ARTIFACT_VOLUME_NAME = "anyaccomp-artifacts-private-v1"
+MODEL_MOUNT = "/var/lib/anyaccomp/models"
+ARTIFACT_MOUNT = "/var/lib/anyaccomp/artifacts"
+RUNTIME_SECRET_NAME = "anyaccomp-runtime-v1"
+PROMOTION_SECRET_NAME = "anyaccomp-promotion-identity-v1"
+WORKER_ROOT = Path(__file__).resolve().parent
+PINNED_PYTHON = "/opt/anyaccomp-venv/bin/python"
 
 app = modal.App(APP_NAME)
 SOURCE_IMAGE_DIGEST = "sha256:73ea0220b42826b7603162855ab2b6fdf5695a8b265403aa38462ae206690fd3"
@@ -50,11 +61,29 @@ def provision_assets() -> dict:
     timeout=1800,
 )
 def smoke_fixture(fixture_path: str) -> dict:
-    os.environ["ANYACCOMP_ASSET_ROOT"] = MODEL_MOUNT
-    sys.path.insert(0, "/app")
-    from smoke import main
-
-    result = main(Path(fixture_path))
+    expected_fixture = (
+        f"{MODEL_MOUNT}/fixtures/authorized-procedural-vocal.wav"
+    )
+    if fixture_path != expected_fixture:
+        raise RuntimeError("AnyAccomp smoke fixture path is not authorized")
+    environment = {**os.environ, "ANYACCOMP_ASSET_ROOT": MODEL_MOUNT}
+    subprocess.run(
+        [
+            PINNED_PYTHON,
+            "-c",
+            (
+                "from pathlib import Path; "
+                "from smoke import main; "
+                f"main(Path({fixture_path!r}))"
+            ),
+        ],
+        cwd="/app",
+        env=environment,
+        check=True,
+    )
+    result = json.loads(
+        Path(f"{MODEL_MOUNT}/smoke-proof.json").read_text()
+    )
     models.commit()
     return result
 
@@ -66,23 +95,27 @@ def smoke_fixture(fixture_path: str) -> dict:
     timeout=900,
 )
 def runtime_identity() -> dict:
-    import accelerate
-    import torch
-    import torchaudio
-    import torchvision
-    import transformers
-
-    return {
-        "pythonVersion": ".".join(map(str, sys.version_info[:3])),
-        "torchVersion": torch.__version__,
-        "torchaudioVersion": torchaudio.__version__,
-        "torchvisionVersion": torchvision.__version__,
-        "transformersVersion": transformers.__version__,
-        "accelerateVersion": accelerate.__version__,
-        "cudaAvailable": torch.cuda.is_available(),
-        "cudaVersion": torch.version.cuda,
-        "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
-    }
+    script = """
+import accelerate, json, sys, torch, torchaudio, torchvision, transformers
+print(json.dumps({
+    "pythonVersion": ".".join(map(str, sys.version_info[:3])),
+    "torchVersion": torch.__version__,
+    "torchaudioVersion": torchaudio.__version__,
+    "torchvisionVersion": torchvision.__version__,
+    "transformersVersion": transformers.__version__,
+    "accelerateVersion": accelerate.__version__,
+    "cudaAvailable": torch.cuda.is_available(),
+    "cudaVersion": torch.version.cuda,
+    "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
+}, sort_keys=True))
+"""
+    return json.loads(
+        subprocess.check_output(
+            [PINNED_PYTHON, "-c", script],
+            cwd="/app",
+            text=True,
+        )
+    )
 
 
 @app.cls(
@@ -94,8 +127,34 @@ def runtime_identity() -> dict:
     max_containers=1,
 )
 class AnyAccompWorker:
-    @modal.asgi_app(label=ENDPOINT_LABEL)
+    @modal.web_server(port=8000, startup_timeout=600, label=ENDPOINT_LABEL)
     def endpoint(self):
-        from app import app as api
-
-        return api
+        environment = {
+            **os.environ,
+            "ANYACCOMP_ASSET_ROOT": MODEL_MOUNT,
+            "ANYACCOMP_ARTIFACT_ROOT": ARTIFACT_MOUNT,
+        }
+        process = subprocess.Popen(
+            [
+                PINNED_PYTHON,
+                "-m",
+                "uvicorn",
+                "app:app",
+                "--host",
+                "0.0.0.0",
+                "--port",
+                "8000",
+            ],
+            cwd="/app",
+            env=environment,
+        )
+        try:
+            code = process.wait()
+            if code:
+                raise RuntimeError(
+                    "AnyAccomp pinned Python web workload exited unexpectedly"
+                )
+        finally:
+            if process.poll() is None:
+                process.terminate()
+                process.wait(timeout=30)
