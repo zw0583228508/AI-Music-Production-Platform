@@ -26,12 +26,15 @@ def main() -> dict:
         name = requested["repository"].replace("/", "--")
         destination = ASSETS / name
         snapshot_download(repo_id=requested["repository"], revision=revision, local_dir=destination,
-                          local_dir_use_symlinks=False)
+                          local_dir_use_symlinks=False,
+                          allow_patterns=requested.get("allow_patterns"))
         files = [{"path": p.relative_to(destination).as_posix(), "bytes": p.stat().st_size,
                   "sha256": sha256(p)} for p in sorted(destination.rglob("*")) if p.is_file()]
         if not files: raise RuntimeError(f"{requested['repository']} produced an empty asset tree")
         models.append({"repository": requested["repository"], "requestedRevision": requested["requested_revision"],
                        "resolvedRevision": revision, "path": name, "files": files,
+                       "license": requested["license"],
+                       "commercialUsePermitted": requested["commercial_use_permitted"],
                        "treeSha256": hashlib.sha256("".join(x["sha256"] for x in files).encode()).hexdigest()})
     record = {"provider": SPEC["provider"], "source": SPEC["source"], "license": SPEC["license"], "models": models}
     (ASSETS / SPEC["asset_manifest"]).write_text(json.dumps(record, indent=2, sort_keys=True))

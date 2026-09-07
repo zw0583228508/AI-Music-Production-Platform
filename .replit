@@ -128,3 +128,4 @@ MUSIC_PROVIDER_ALL_IN_ONE_SOURCE_IMAGE_DIGEST = "sha256:cacdd8e47a225c61dc108c16
 MUSIC_PROVIDER_ALL_IN_ONE_SOURCE_REVISION = "a04c3f14e12db9eede528b26ad64aeae21fbbbdc"
 MUSIC_PROVIDER_ALL_IN_ONE_URL = "https://windot100--all-in-one-isolated.modal.run"
 ANYACCOMP_API_URL = "https://windot100--anyaccomp.modal.run"
+DIFFRHYTHM2_API_URL = "https://windot100--diffrhythm2-worker-endpoint.modal.run"

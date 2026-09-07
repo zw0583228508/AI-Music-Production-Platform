@@ -1,0 +1,17 @@
+{
+  "checkpoint": "/var/lib/diffrhythm2/models/ASLP-lab--DiffRhythm2/model.safetensors",
+  "conditioning": "MuQ-MuLan audio embedding from deterministic first 10 seconds",
+  "cuda": "12.6",
+  "cudaAvailable": true,
+  "decoderCheckpoint": "/var/lib/diffrhythm2/models/ASLP-lab--DiffRhythm2/decoder.bin",
+  "decoderConfig": "/var/lib/diffrhythm2/models/ASLP-lab--DiffRhythm2/decoder.json",
+  "device": "NVIDIA L40S",
+  "dtype": "float16",
+  "modelConfig": "/var/lib/diffrhythm2/models/ASLP-lab--DiffRhythm2/config.json",
+  "mulan": "/var/lib/diffrhythm2/models/OpenMuQ--MuQ-MuLan-large",
+  "muq": "/var/lib/diffrhythm2/models/OpenMuQ--MuQ-large-msd-iter",
+  "output": "/tmp/tmpcqzkzip3/generated.mp3",
+  "textEncoder": "/var/lib/diffrhythm2/models/FacebookAI--xlm-roberta-base",
+  "tokenizer": "/opt/diffrhythm2/g2p/g2p/vocab.json",
+  "torch": "2.7.0+cu126"
+}

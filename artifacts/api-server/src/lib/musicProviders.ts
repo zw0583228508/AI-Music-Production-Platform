@@ -132,13 +132,14 @@ export class ProviderUnavailableError extends Error {
 }
 
 const LICENSE_BLOCKED_PROVIDER_IDS = new Set<string>(["BS_ROFORMER"]);
+const RESEARCH_ONLY_PROVIDER_IDS = new Set<string>(["LADA_BAND", "DIFFRHYTHM_2"]);
 
 const UPSTREAM_BLOCKED_PROVIDER_IDS = new Set<string>(["MIDI_SAG"]);
 function providerRoutingAuthorized(providerId: string): boolean {
   return !LICENSE_BLOCKED_PROVIDER_IDS.has(providerId) &&
     !UPSTREAM_BLOCKED_PROVIDER_IDS.has(providerId) &&
     !MISSING_LICENSED_ASSET_PROVIDER_IDS.has(providerId) &&
-    providerId !== "LADA_BAND" &&
+    !RESEARCH_ONLY_PROVIDER_IDS.has(providerId) &&
     (providerId !== "ANYACCOMP" || anyAccompCommercialUseAuthorized());
 }
 
@@ -158,9 +159,9 @@ function assertProviderCommercialUseAuthorized(providerId: string): void {
       "MUSE_CONTROL_LITE (BLOCKED_MISSING_LICENSED_ASSET: required licensed asset is unavailable)",
     );
   }
-  if (providerId === "LADA_BAND") {
+  if (RESEARCH_ONLY_PROVIDER_IDS.has(providerId)) {
     throw new ProviderUnavailableError(
-      "LADA_BAND (non-commercial research-only provider is excluded from production routing)",
+      `${providerId} (non-commercial research-only provider is excluded from production routing)`,
     );
   }
   if (providerId === "ANYACCOMP" && !anyAccompCommercialUseAuthorized()) {
@@ -292,9 +293,9 @@ export const MUSIC_PROVIDERS: MusicProviderDescriptor[] = [
     inputTypes: ["FULL_SONG", "VOCAL_ONLY", "INSTRUMENTAL"],
     execution: "remote",
     status: remoteConfigured("DIFFRHYTHM2") ? "configured" : "unavailable",
-    license: "Apache-2.0 (code and weights)",
+    license: "Apache-2.0 source and DiffRhythm weights; CC-BY-NC-4.0 MuQ weights",
     priority: 36,
-    notes: "Full-song generation only. Requires DIFFRHYTHM2_API_URL, bearer authentication, private immutable model volume, provisioning-only downloads, and persisted real non-silent/non-copy lyric-and-rhythm-conditioned smoke evidence. It is never READY merely because an endpoint is configured.",
+    notes: "RESEARCH_READY only after signed promotion. MuQ-MuLan and its base MuQ weights are CC-BY-NC-4.0, so commercial production routing remains fail closed even when the isolated endpoint, immutable assets, and real smoke evidence verify.",
   },
   {
     id: "ANYACCOMP",

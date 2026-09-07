@@ -129,6 +129,10 @@ after(async () => {
   delete process.env.MUSIC_AI_WORKER_TOKEN;
   delete process.env.LADA_BAND_API_URL;
   delete process.env.LADA_BAND_ACCEPT_NONCOMMERCIAL_RESEARCH;
+  delete process.env.DIFFRHYTHM2_API_URL;
+  delete process.env.DIFFRHYTHM2_API_TOKEN;
+  delete process.env.MUSIC_PROVIDER_DIFFRHYTHM_2_PROMOTION_BUNDLE;
+  delete process.env.MUSIC_PROVIDER_DIFFRHYTHM_2_PROMOTION_PUBLIC_KEY;
   await unlink(harnessPath).catch(() => undefined);
 });
 
@@ -320,6 +324,75 @@ function withAcePromotion(health, promotion) {
     modalDeploymentId: promotion.record.modalDeploymentId,
     modalFunctionId: promotion.record.modalFunctionId,
     sourceRevision: promotion.record.sourceRevision,
+  };
+}
+
+const diffRhythmRuntimePins = {
+  python: "3.11",
+  cudaImage: "nvidia/cuda@sha256:" + "1".repeat(64),
+  cuda: "12.6",
+  pytorch: "2.7.0+cu126",
+  torchvision: "0.22.0",
+  torchaudio: "2.7.0",
+  torchIndexUrl: "https://pypi.org/simple",
+  transformers: "4.47.1",
+  accelerate: "not-installed",
+};
+
+function configureDiffRhythmPromotion(endpointOrigin) {
+  const record = {
+    schemaVersion: 1,
+    provider: "DIFFRHYTHM_2",
+    modalAppId: "ap-DiffRhythm42",
+    modalDeploymentId: "v42",
+    modalFunctionId: "fu-DiffRhythm42",
+    modalImageId: "im-DiffRhythm42",
+    endpointOrigin,
+    modelVersion: "13a7b091f45124f611e36ee674973234f38d55b6",
+    checkpointSha256: "2".repeat(64),
+    checkpointRevision: "3".repeat(40),
+    sourceRevision: "13a7b091f45124f611e36ee674973234f38d55b6",
+    sourceImageDigest: `sha256:${"4".repeat(64)}`,
+    releaseEvidenceSha256: "5".repeat(64),
+    runtime: diffRhythmRuntimePins,
+  };
+  const signature = signBytes(
+    null,
+    Buffer.from(canonicalGpuPromotionJson(record)),
+    promotionKeys.privateKey,
+  ).toString("base64");
+  process.env.MUSIC_PROVIDER_DIFFRHYTHM_2_PROMOTION_PUBLIC_KEY =
+    promotionPublicKey;
+  process.env.MUSIC_PROVIDER_DIFFRHYTHM_2_PROMOTION_BUNDLE =
+    JSON.stringify({ record, signature });
+  return { record, signature };
+}
+
+function diffRhythmHealth(promotion) {
+  const { record } = promotion;
+  return {
+    provider: record.provider,
+    modalAppId: record.modalAppId,
+    modalDeploymentId: record.modalDeploymentId,
+    modalFunctionId: record.modalFunctionId,
+    modalImageId: record.modalImageId,
+    modelVersion: record.modelVersion,
+    checkpointSha256: record.checkpointSha256,
+    revision: record.checkpointRevision,
+    sourceRevision: record.sourceRevision,
+    sourceImageDigest: record.sourceImageDigest,
+    runtime: { pythonVersion: diffRhythmRuntimePins.python },
+    framework: {
+      python: diffRhythmRuntimePins.python,
+      cuda_image: diffRhythmRuntimePins.cudaImage,
+      cuda: diffRhythmRuntimePins.cuda,
+      pytorch: diffRhythmRuntimePins.pytorch,
+      torchvision: diffRhythmRuntimePins.torchvision,
+      torchaudio: diffRhythmRuntimePins.torchaudio,
+      torch_index_url: diffRhythmRuntimePins.torchIndexUrl,
+      transformers: diffRhythmRuntimePins.transformers,
+      accelerate: diffRhythmRuntimePins.accelerate,
+    },
   };
 }
 
@@ -1188,10 +1261,10 @@ test("authenticated cancellation uses the generation provider configuration", as
   }
 });
 
-test("DiffRhythm outbound auth prefers its API token over the shared worker token", async () => {
-  let authorization = null;
+test("DiffRhythm research endpoint never receives a commercial generation POST", async () => {
+  let requests = 0;
   const server = createServer((request, response) => {
-    authorization = request.headers.authorization;
+    requests += 1;
     response.writeHead(503, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ status: "blocked" }));
   });
@@ -1205,14 +1278,102 @@ test("DiffRhythm outbound auth prefers its API token over the shared worker toke
       (candidate) => candidate.id === "DIFFRHYTHM_2",
     );
     assert.ok(provider);
-    await assert.rejects(() => runArrangementProvider(provider, {}));
-    assert.equal(authorization, "Bearer diffrhythm-provider-token");
+    await assert.rejects(
+      () => runArrangementProvider(provider, {}),
+      /non-commercial research-only provider/,
+    );
+    assert.equal(requests, 0);
   } finally {
     delete process.env.DIFFRHYTHM2_API_URL;
     delete process.env.DIFFRHYTHM2_API_TOKEN;
     delete process.env.MUSIC_AI_WORKER_TOKEN;
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+test("DiffRhythm catalog exposes research-only licensing without authorizing routing", () => {
+  const provider = MUSIC_PROVIDERS.find(
+    (candidate) => candidate.id === "DIFFRHYTHM_2",
+  );
+  assert.ok(provider);
+  assert.equal(provider.status, "configured");
+  assert.match(provider.license, /CC-BY-NC-4.0/);
+  assert.match(provider.notes, /RESEARCH_READY/);
+  assert.match(provider.notes, /commercial production routing remains fail closed/i);
+});
+
+test("DiffRhythm promotion binds signature, endpoint, runtime, checkpoint, source, and image", () => {
+  const promotion = configureDiffRhythmPromotion("https://diffrhythm.invalid");
+  const health = diffRhythmHealth(promotion);
+  assert.equal(
+    gpuPromotionAttestationFailure(
+      "DIFFRHYTHM_2",
+      "https://diffrhythm.invalid",
+      health,
+    ),
+    null,
+  );
+  for (const [field, value] of [
+    ["modalAppId", "ap-Drifted"],
+    ["modalDeploymentId", "v99"],
+    ["modalFunctionId", "fu-Drifted"],
+    ["modalImageId", "im-Drifted"],
+    ["checkpointSha256", "6".repeat(64)],
+    ["sourceRevision", "drifted-source"],
+    ["sourceImageDigest", `sha256:${"7".repeat(64)}`],
+  ]) {
+    assert.match(
+      gpuPromotionAttestationFailure(
+        "DIFFRHYTHM_2",
+        "https://diffrhythm.invalid",
+        { ...health, [field]: value },
+      ),
+      /does not match/,
+    );
+  }
+  for (const [section, field, value] of [
+    ["runtime", "pythonVersion", "3.12"],
+    ["framework", "cuda_image", "nvidia/cuda@sha256:" + "8".repeat(64)],
+    ["framework", "cuda", "12.8"],
+    ["framework", "pytorch", "2.8.0+cu128"],
+    ["framework", "torchvision", "0.23.0"],
+    ["framework", "torchaudio", "2.8.0"],
+    ["framework", "torch_index_url", "https://download.pytorch.org/whl/cu128"],
+    ["framework", "transformers", "4.48.0"],
+    ["framework", "accelerate", "1.0.0"],
+  ]) {
+    assert.match(
+      gpuPromotionAttestationFailure(
+        "DIFFRHYTHM_2",
+        "https://diffrhythm.invalid",
+        {
+          ...health,
+          [section]: { ...health[section], [field]: value },
+        },
+      ),
+      /do not match/,
+    );
+  }
+  assert.match(
+    gpuPromotionAttestationFailure(
+      "DIFFRHYTHM_2",
+      "https://other.invalid",
+      health,
+    ),
+    /origin does not match/,
+  );
+  process.env.MUSIC_PROVIDER_DIFFRHYTHM_2_PROMOTION_BUNDLE = JSON.stringify({
+    record: promotion.record,
+    signature: "A".repeat(88),
+  });
+  assert.match(
+    gpuPromotionAttestationFailure(
+      "DIFFRHYTHM_2",
+      "https://diffrhythm.invalid",
+      health,
+    ),
+    /signature is missing or invalid/,
+  );
 });
 
 test("deployment env routes and authenticates ACE-Step health and generation", async () => {
