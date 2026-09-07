@@ -4,7 +4,7 @@ import hashlib, json, os
 from pathlib import Path
 import numpy as np
 import soundfile as sf
-from scipy.signal import resample_poly
+from scipy.signal import correlate, correlation_lags, resample_poly
 from app import ASSETS, SPEC, sha
 from inference import infer
 
@@ -17,43 +17,109 @@ def describe(path: Path) -> dict:
         "rmsAmplitude": float((audio ** 2).mean() ** .5),
     }
 
+COMPARISON_SAMPLE_RATE = 8000
+MAX_OFFSET_SECONDS = 5.0
+MIN_OVERLAP_SECONDS = 1.0
+COPY_LIKE_CORRELATION_THRESHOLD = 0.95
+COPY_LIKE_DIFFERENCE_THRESHOLD = 0.25
+
+def _resample(audio: np.ndarray, source_rate: int, target_rate: int) -> np.ndarray:
+    if source_rate == target_rate:
+        return audio
+    divisor = int(np.gcd(source_rate, target_rate))
+    return resample_poly(audio, target_rate // divisor, source_rate // divisor)
+
+def _window_sum(prefix: np.ndarray, start: np.ndarray, length: np.ndarray) -> np.ndarray:
+    return prefix[start + length] - prefix[start]
+
 def signal_comparison(source_path: Path, output_path: Path) -> dict:
     source, source_rate = sf.read(str(source_path), always_2d=True)
     output, output_rate = sf.read(str(output_path), always_2d=True)
-    source = source.mean(axis=1)
-    output = output.mean(axis=1)
-    if source_rate != output_rate:
-        divisor = int(np.gcd(source_rate, output_rate))
-        source = resample_poly(source, output_rate // divisor, source_rate // divisor)
-    compared_samples = min(len(source), len(output))
-    if compared_samples < output_rate:
-        raise RuntimeError("smoke comparison requires at least one second of audio")
-    source = source[:compared_samples] - source[:compared_samples].mean()
-    output = output[:compared_samples] - output[:compared_samples].mean()
-    source_rms = float(np.sqrt(np.mean(source ** 2)))
-    output_rms = float(np.sqrt(np.mean(output ** 2)))
-    if source_rms <= 1e-8 or output_rms <= 1e-8:
-        raise RuntimeError("smoke comparison rejects silent source or output")
-    source_normalized = source / source_rms
-    output_normalized = output / output_rms
-    correlation = float(
-        np.dot(source_normalized, output_normalized) / compared_samples
+    source = _resample(source.mean(axis=1), source_rate, COMPARISON_SAMPLE_RATE)
+    output = _resample(output.mean(axis=1), output_rate, COMPARISON_SAMPLE_RATE)
+    minimum_overlap = max(
+        int(MIN_OVERLAP_SECONDS * COMPARISON_SAMPLE_RATE),
+        min(len(source), len(output)) // 2,
     )
-    normalized_difference = float(min(
-        np.sqrt(np.mean((source_normalized - output_normalized) ** 2) / 2),
-        np.sqrt(np.mean((source_normalized + output_normalized) ** 2) / 2),
-    ))
-    absolute_correlation = abs(correlation)
-    passes = absolute_correlation < 0.98 and normalized_difference > 0.1
+    if min(len(source), len(output)) < minimum_overlap:
+        raise RuntimeError("smoke comparison requires at least one second of audio")
+    max_offset_samples = int(MAX_OFFSET_SECONDS * COMPARISON_SAMPLE_RATE)
+    lags = correlation_lags(len(output), len(source), mode="full")
+    dot_products = correlate(output, source, mode="full", method="fft")
+    selected = np.flatnonzero(
+        (lags >= -max_offset_samples) & (lags <= max_offset_samples)
+    )
+    candidate_lags = lags[selected]
+    source_starts = np.maximum(-candidate_lags, 0)
+    output_starts = np.maximum(candidate_lags, 0)
+    overlaps = np.minimum(
+        len(source) - source_starts,
+        len(output) - output_starts,
+    )
+    valid = overlaps >= minimum_overlap
+    candidate_lags = candidate_lags[valid]
+    source_starts = source_starts[valid]
+    output_starts = output_starts[valid]
+    overlaps = overlaps[valid]
+    dots = dot_products[selected][valid]
+    if not len(candidate_lags):
+        raise RuntimeError("smoke comparison has no sufficiently long overlap")
+
+    source_sum = np.concatenate(([0.0], np.cumsum(source, dtype=np.float64)))
+    output_sum = np.concatenate(([0.0], np.cumsum(output, dtype=np.float64)))
+    source_square_sum = np.concatenate(
+        ([0.0], np.cumsum(source * source, dtype=np.float64))
+    )
+    output_square_sum = np.concatenate(
+        ([0.0], np.cumsum(output * output, dtype=np.float64))
+    )
+    source_sums = _window_sum(source_sum, source_starts, overlaps)
+    output_sums = _window_sum(output_sum, output_starts, overlaps)
+    covariance = dots - source_sums * output_sums / overlaps
+    source_energy = (
+        _window_sum(source_square_sum, source_starts, overlaps)
+        - source_sums * source_sums / overlaps
+    )
+    output_energy = (
+        _window_sum(output_square_sum, output_starts, overlaps)
+        - output_sums * output_sums / overlaps
+    )
+    denominators = np.sqrt(np.maximum(source_energy * output_energy, 0.0))
+    if float(np.max(denominators)) <= 1e-8:
+        raise RuntimeError("smoke comparison rejects silent source or output")
+    correlations = np.divide(
+        covariance,
+        denominators,
+        out=np.zeros_like(covariance),
+        where=denominators > 1e-8,
+    )
+    strongest_index = int(np.argmax(np.abs(correlations)))
+    strongest_correlation = float(correlations[strongest_index])
+    absolute_correlation = abs(strongest_correlation)
+    normalized_difference = float(np.sqrt(max(0.0, 1.0 - absolute_correlation)))
+    strongest_lag = int(candidate_lags[strongest_index])
+    compared_samples = int(overlaps[strongest_index])
+    passes = (
+        absolute_correlation < COPY_LIKE_CORRELATION_THRESHOLD
+        and normalized_difference > COPY_LIKE_DIFFERENCE_THRESHOLD
+    )
     return {
-        "method": "resampled-aligned-mono-waveform-v1",
+        "method": "bounded-offset-normalized-cross-correlation-v2",
         "sourceSampleRate": source_rate,
         "outputSampleRate": output_rate,
+        "comparisonSampleRate": COMPARISON_SAMPLE_RATE,
+        "maxOffsetSeconds": MAX_OFFSET_SECONDS,
+        "minimumOverlapSeconds": MIN_OVERLAP_SECONDS,
+        "searchedLagCount": int(len(candidate_lags)),
+        "strongestOffsetSamples": strongest_lag,
+        "strongestOffsetSeconds": strongest_lag / COMPARISON_SAMPLE_RATE,
         "comparedSamples": compared_samples,
+        "comparedSeconds": compared_samples / COMPARISON_SAMPLE_RATE,
+        "strongestWaveformCorrelation": strongest_correlation,
         "absoluteWaveformCorrelation": absolute_correlation,
         "polarityInvariantNormalizedDifference": normalized_difference,
-        "copyLikeCorrelationThreshold": 0.98,
-        "copyLikeDifferenceThreshold": 0.1,
+        "copyLikeCorrelationThreshold": COPY_LIKE_CORRELATION_THRESHOLD,
+        "copyLikeDifferenceThreshold": COPY_LIKE_DIFFERENCE_THRESHOLD,
         "passesNotSourceCopy": passes,
     }
 

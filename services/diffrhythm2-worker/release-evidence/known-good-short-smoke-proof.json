@@ -47,15 +47,23 @@
     "torch": "2.7.0+cu126"
   },
   "signalComparison": {
-    "absoluteWaveformCorrelation": 0.003161283915778954,
-    "comparedSamples": 576000,
-    "copyLikeCorrelationThreshold": 0.98,
-    "copyLikeDifferenceThreshold": 0.1,
-    "method": "resampled-aligned-mono-waveform-v1",
+    "absoluteWaveformCorrelation": 0.08016889428082741,
+    "comparedSamples": 58525,
+    "comparedSeconds": 7.315625,
+    "comparisonSampleRate": 8000,
+    "copyLikeCorrelationThreshold": 0.95,
+    "copyLikeDifferenceThreshold": 0.25,
+    "maxOffsetSeconds": 5.0,
+    "method": "bounded-offset-normalized-cross-correlation-v2",
+    "minimumOverlapSeconds": 1.0,
     "outputSampleRate": 48000,
     "passesNotSourceCopy": true,
-    "polarityInvariantNormalizedDifference": 0.9984181068491402,
-    "sourceSampleRate": 44100
+    "polarityInvariantNormalizedDifference": 0.9590782583914478,
+    "searchedLagCount": 80001,
+    "sourceSampleRate": 44100,
+    "strongestOffsetSamples": 37475,
+    "strongestOffsetSeconds": 4.684375,
+    "strongestWaveformCorrelation": 0.08016889428082741
   },
   "sourceSha256": "3ac8afcf7f7b2f40b858f1274c5aa779266703d55123ab5d96f5e6041ad83dd1"
 }
