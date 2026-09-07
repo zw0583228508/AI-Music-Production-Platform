@@ -1469,7 +1469,20 @@ export default function ProjectWorkspace() {
                               {evaluated ? (
                                 <div className="grid gap-3 border-t pt-3 text-xs sm:grid-cols-2">
                                   <div className="sm:col-span-2">
-                                    <div className="font-medium text-foreground">Music Critic</div>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <div className="font-medium text-foreground">Music Critic</div>
+                                      <Badge variant="outline">
+                                        {critic.coverage.availableDimensions} of {critic.coverage.totalDimensions} dimensions available
+                                      </Badge>
+                                    </div>
+                                    {critic.coverage.sparse && (
+                                      <Alert className="mt-2">
+                                        <AlertTitle>Limited critic evidence</AlertTitle>
+                                        <AlertDescription>
+                                          This score is based on only {critic.coverage.availableDimensions} of {critic.coverage.totalDimensions} dimensions. You can still choose this candidate, but compare it with broader-evidence scores carefully.
+                                        </AlertDescription>
+                                      </Alert>
+                                    )}
                                     <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                                       {Object.entries(critic.dimensions).map(([name, dimension]) => (
                                         <div key={name} className="rounded-md border bg-card p-2">

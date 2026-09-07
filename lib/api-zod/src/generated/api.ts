@@ -769,6 +769,11 @@ export const GetProjectResponse = zod.object({
   "musicCritic": zod.union([zod.object({
   "version": zod.literal("music-critic-v1"),
   "score": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneScoreMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneScoreMax),
+  "coverage": zod.object({
+  "availableDimensions": zod.union([zod.literal(0),zod.literal(1),zod.literal(2),zod.literal(3),zod.literal(4),zod.literal(5),zod.literal(6),zod.literal(7),zod.literal(8)]),
+  "totalDimensions": zod.literal(8),
+  "sparse": zod.boolean().describe('True when fewer than half of the critic dimensions have available evidence.')
+}).describe('Producer-safe summary of how broadly the aggregate score is supported.'),
   "dimensions": zod.object({
   "vocalFit": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -3253,6 +3258,11 @@ export const ListArrangementsResponseItem = zod.object({
   "musicCritic": zod.union([zod.object({
   "version": zod.literal("music-critic-v1"),
   "score": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMax),
+  "coverage": zod.object({
+  "availableDimensions": zod.union([zod.literal(0),zod.literal(1),zod.literal(2),zod.literal(3),zod.literal(4),zod.literal(5),zod.literal(6),zod.literal(7),zod.literal(8)]),
+  "totalDimensions": zod.literal(8),
+  "sparse": zod.boolean().describe('True when fewer than half of the critic dimensions have available evidence.')
+}).describe('Producer-safe summary of how broadly the aggregate score is supported.'),
   "dimensions": zod.object({
   "vocalFit": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -3587,6 +3597,11 @@ export const CreateArrangementResponse = zod.object({
   "musicCritic": zod.union([zod.object({
   "version": zod.literal("music-critic-v1"),
   "score": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMin).max(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMax),
+  "coverage": zod.object({
+  "availableDimensions": zod.union([zod.literal(0),zod.literal(1),zod.literal(2),zod.literal(3),zod.literal(4),zod.literal(5),zod.literal(6),zod.literal(7),zod.literal(8)]),
+  "totalDimensions": zod.literal(8),
+  "sparse": zod.boolean().describe('True when fewer than half of the critic dimensions have available evidence.')
+}).describe('Producer-safe summary of how broadly the aggregate score is supported.'),
   "dimensions": zod.object({
   "vocalFit": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4017,6 +4032,11 @@ export const UpdateArrangementResponse = zod.object({
   "musicCritic": zod.union([zod.object({
   "version": zod.literal("music-critic-v1"),
   "score": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMax),
+  "coverage": zod.object({
+  "availableDimensions": zod.union([zod.literal(0),zod.literal(1),zod.literal(2),zod.literal(3),zod.literal(4),zod.literal(5),zod.literal(6),zod.literal(7),zod.literal(8)]),
+  "totalDimensions": zod.literal(8),
+  "sparse": zod.boolean().describe('True when fewer than half of the critic dimensions have available evidence.')
+}).describe('Producer-safe summary of how broadly the aggregate score is supported.'),
   "dimensions": zod.object({
   "vocalFit": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4472,6 +4492,11 @@ export const RestoreArrangementRevisionResponse = zod.object({
   "musicCritic": zod.union([zod.object({
   "version": zod.literal("music-critic-v1"),
   "score": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMax),
+  "coverage": zod.object({
+  "availableDimensions": zod.union([zod.literal(0),zod.literal(1),zod.literal(2),zod.literal(3),zod.literal(4),zod.literal(5),zod.literal(6),zod.literal(7),zod.literal(8)]),
+  "totalDimensions": zod.literal(8),
+  "sparse": zod.boolean().describe('True when fewer than half of the critic dimensions have available evidence.')
+}).describe('Producer-safe summary of how broadly the aggregate score is supported.'),
   "dimensions": zod.object({
   "vocalFit": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -5346,6 +5371,11 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "musicCritic": zod.union([zod.object({
   "version": zod.literal("music-critic-v1"),
   "score": zod.number().min(listGenerationCandidatesResponseEvaluationMusicCriticOneScoreMin).max(listGenerationCandidatesResponseEvaluationMusicCriticOneScoreMax),
+  "coverage": zod.object({
+  "availableDimensions": zod.union([zod.literal(0),zod.literal(1),zod.literal(2),zod.literal(3),zod.literal(4),zod.literal(5),zod.literal(6),zod.literal(7),zod.literal(8)]),
+  "totalDimensions": zod.literal(8),
+  "sparse": zod.boolean().describe('True when fewer than half of the critic dimensions have available evidence.')
+}).describe('Producer-safe summary of how broadly the aggregate score is supported.'),
   "dimensions": zod.object({
   "vocalFit": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -5667,6 +5697,11 @@ export const SelectGenerationCandidateResponse = zod.object({
   "musicCritic": zod.union([zod.object({
   "version": zod.literal("music-critic-v1"),
   "score": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMax),
+  "coverage": zod.object({
+  "availableDimensions": zod.union([zod.literal(0),zod.literal(1),zod.literal(2),zod.literal(3),zod.literal(4),zod.literal(5),zod.literal(6),zod.literal(7),zod.literal(8)]),
+  "totalDimensions": zod.literal(8),
+  "sparse": zod.boolean().describe('True when fewer than half of the critic dimensions have available evidence.')
+}).describe('Producer-safe summary of how broadly the aggregate score is supported.'),
   "dimensions": zod.object({
   "vocalFit": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),

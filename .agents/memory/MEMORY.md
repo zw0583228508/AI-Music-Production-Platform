@@ -45,3 +45,4 @@
 - [Canonical musical timeline consumers](canonical-musical-timeline-consumers.md) — corrections and render/export math must reuse canonical tempo/meter semantics, including meter denominators.
 - [Song Model timebase compatibility](song-model-timebase-compatibility.md) — v2 uses explicit 960 PPQ; historical performances without PPQ must remain interpreted at 480.
 - [Candidate diversity gates](candidate-diversity-gates.md) — compare canonical musical structure, keep retry seeds stable, and never rank near-duplicate candidates.
+- [OpenAPI bounded counts](openapi-bounded-counts.md) — avoid bare integer schemas until generated Zod targets support zod.int; use bounded numbers for small count summaries.

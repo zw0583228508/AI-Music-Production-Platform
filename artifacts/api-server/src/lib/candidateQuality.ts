@@ -309,7 +309,16 @@ export function evaluateCandidateMusicalFit(input: {
   const score = totalWeight
     ? scored.reduce((sum, name) => sum + (results[name].score ?? 0) * weights[name], 0) / totalWeight
     : 0;
-  return { version: "music-critic-v1", score: round(score), dimensions: results };
+  return {
+    version: "music-critic-v1",
+    score: round(score),
+    coverage: {
+      availableDimensions: scored.length,
+      totalDimensions: 8,
+      sparse: scored.length < dimensions.length / 2,
+    },
+    dimensions: results,
+  };
 }
 
 export const musicCriticDimensions = dimensions;

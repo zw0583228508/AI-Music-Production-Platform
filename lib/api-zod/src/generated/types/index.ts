@@ -63,6 +63,8 @@ export * from './candidateMusicCriticEvidence';
 export * from './candidateMusicCriticEvidenceObservations';
 export * from './candidateMusicCriticEvidenceSource';
 export * from './candidateMusicCriticReport';
+export * from './candidateMusicCriticReportCoverage';
+export * from './candidateMusicCriticReportCoverageAvailableDimensions';
 export * from './candidateMusicCriticReportDimensions';
 export * from './candidateQualityReport';
 export * from './candidateQualityReportChecks';
