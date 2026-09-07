@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { SongModelData } from "@workspace/db";
 import {
+  buildArrangementBrain,
   buildTrackModels,
   createArrangementPlan,
   createStyleSpec,
@@ -328,6 +329,52 @@ test("orchestra size and rhythm intensity deterministically alter layers and rhy
     buildTrackModels({ songModel: model, plan: large, style: large.style, tracks: drumInput, seed: 4 }),
     buildTrackModels({ songModel: model, plan: large, style: large.style, tracks: drumInput, seed: 4 }),
   );
+});
+
+test("arrangement brain establishes a bounded whole-song arc before local planning", () => {
+  const model = song({ sections: [
+    { name: "Intro", startBar: 1, endBar: 2, energy: .15 },
+    { name: "Verse", startBar: 3, endBar: 6, energy: .42 },
+    { name: "Pre-Chorus", startBar: 7, endBar: 8, energy: .6 },
+    { name: "Chorus", startBar: 9, endBar: 12, energy: .88 },
+    { name: "Bridge", startBar: 13, endBar: 14, energy: .3 },
+    { name: "Chorus", startBar: 15, endBar: 18, energy: .78 },
+    { name: "Outro", startBar: 19, endBar: 20, energy: .35 },
+  ] });
+  const brain = buildArrangementBrain({ songModel: model, controls: { energy: .7, density: .65 } });
+  assert.equal(brain.enabled, true);
+  assert.deepEqual(brain.sections.map((section) => section.function),
+    ["intro", "verse", "prechorus", "chorus", "bridge", "chorus", "outro"]);
+  assert.equal(brain.sections[5].development, "development");
+  assert.ok(brain.sections[5].targetEnergy >= brain.sections[3].targetEnergy);
+  assert.ok(brain.sections.every((section, index) => index === 0 ||
+    Math.abs(section.targetEnergy - brain.sections[index - 1].targetEnergy) <= .28));
+  assert.ok(brain.sections.every((section, index) => index === 0 ||
+    Math.abs(section.targetDensity - brain.sections[index - 1].targetDensity) <= .18));
+  const plan = planFor(model, 9, { energy: .7, density: .65, seed: 44 });
+  assert.deepEqual(plan, planFor(model, 9, { energy: .7, density: .65, seed: 44 }));
+  assert.ok(plan.sections.every((section, index) => index === 0 ||
+    Math.abs((section.activeTracks?.length ?? 0) - (plan.sections[index - 1].activeTracks?.length ?? 0)) <= 1));
+});
+
+test("arrangement brain is a neutral no-op for weak observed structure and keeps unusual meters compatible", () => {
+  const weak = song({ meterMap: [{ bar: 1, meter: "7/8", confidence: 1 }], sections: [
+    { name: "A", startBar: 1, endBar: 1, energy: .5 },
+    { name: "B", startBar: 2, endBar: 2, energy: .5 },
+  ] });
+  const brain = buildArrangementBrain({ songModel: weak, controls: { energy: .7, density: .6 } });
+  assert.equal(brain.enabled, false);
+  const plan = planFor(weak);
+  assert.deepEqual(plan.sections.map((section) => section.energy), [.5, .5]);
+  const vocal = { ...weak, contractVersion: "2.0" as const, vocalEvidence: {
+    status: "detected" as const, reason: null, provenance: null, sampleRate: 44_100,
+    channels: 1, frameSizeSamples: 1024, thresholds: { rms: .1, peak: .1, activitySample: .1, activityRatio: .1 },
+    observedVoicedWindows: [], observedSilentWindows: [],
+  } };
+  assert.doesNotThrow(() => buildTrackModels({
+    songModel: vocal, plan, style: plan.style, seed: 44,
+    tracks: [{ id: "piano", name: "Piano", role: "harmony" }],
+  }));
 });
 
 test("director membership/directives drive composition without fabricating an absent melody", () => {
