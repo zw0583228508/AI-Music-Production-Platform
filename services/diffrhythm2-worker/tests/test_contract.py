@@ -1,5 +1,8 @@
-import json,unittest
+import json,tempfile,unittest
 from pathlib import Path
+import numpy as np
+import soundfile as sf
+from smoke import signal_comparison
 ROOT=Path(__file__).parents[1]
 class DiffRhythmContract(unittest.TestCase):
  def test_immutable_manifest_and_license(self):
@@ -56,13 +59,16 @@ class DiffRhythmContract(unittest.TestCase):
  def test_real_smoke_and_offline_serving_gates_remain_enforced(self):
   app=(ROOT/"app.py").read_text(); smoke=(ROOT/"smoke.py").read_text()
   provision=(ROOT/"modal_provision.py").read_text()
+  audit=(ROOT.parents[1]/"scripts/audit-installation-stack.py").read_text()
   self.assertIn('proof["realInference"] is True',app)
   self.assertIn('proof["nonSilent"] is True',app)
   self.assertIn('proof["notSourceCopy"] is True',app)
   self.assertIn('"lyricsConditioned":True',smoke)
   self.assertIn('"rhythmConditioned":True',smoke)
   self.assertIn('"signalComparison":comparison',smoke)
-  self.assertIn('absolute_correlation < 0.98 and normalized_difference > 0.1',smoke)
+  self.assertIn('absolute_correlation < COPY_LIKE_CORRELATION_THRESHOLD',smoke)
+  self.assertIn('"bounded-offset-normalized-cross-correlation-v2"',audit)
+  self.assertNotIn('comparison.get("passesNotSourceCopy")',audit)
   self.assertIn("def smoke_real_audio():",provision)
   self.assertIn("smoke_image = image.add_local_file(",provision)
   self.assertIn("image=smoke_image",provision)
@@ -77,3 +83,41 @@ class DiffRhythmContract(unittest.TestCase):
   self.assertIn('"licenseStatus":"RESEARCH_ONLY"',app)
   self.assertIn('"commercialUsePermitted":False',app)
   self.assertNotIn('"license":"Apache-2.0"}',app)
+
+ def test_source_copy_detection_handles_transforms_and_offsets(self):
+  sample_rate=16000
+  time=np.arange(sample_rate*3,dtype=np.float64)/sample_rate
+  source=(
+   .45*np.sin(2*np.pi*(180*time+35*time*time))
+   +.2*np.sin(2*np.pi*613*time)
+   +.08*np.sin(2*np.pi*997*time)
+  )
+  rng=np.random.default_rng(169)
+  unrelated=rng.normal(0,.25,len(source))
+  with tempfile.TemporaryDirectory() as directory:
+   directory=Path(directory)
+   source_path=directory/"source.wav"
+   sf.write(source_path,source,sample_rate,subtype="PCM_16")
+   cases={
+    "direct-copy.wav":source,
+    "gain-change.wav":source*.35,
+    "polarity-inversion.wav":-source,
+    "leading-silence.wav":np.concatenate((np.zeros(sample_rate),source)),
+    "time-shift.wav":np.concatenate((source[sample_rate//2:],np.zeros(sample_rate//2))),
+    "unrelated.wav":unrelated,
+   }
+   results={}
+   for name,audio in cases.items():
+    path=directory/name
+    sf.write(path,audio,sample_rate,subtype="PCM_16")
+    results[name]=signal_comparison(source_path,path)
+   mp3_path=directory/"reencoded.mp3"
+   sf.write(mp3_path,source,sample_rate,format="MP3")
+   results["reencoded.mp3"]=signal_comparison(source_path,mp3_path)
+  for name in cases.keys()-{"unrelated.wav"}:
+   self.assertFalse(results[name]["passesNotSourceCopy"],name)
+   self.assertGreaterEqual(results[name]["absoluteWaveformCorrelation"],.95,name)
+  self.assertFalse(results["reencoded.mp3"]["passesNotSourceCopy"])
+  self.assertTrue(results["unrelated.wav"]["passesNotSourceCopy"])
+  self.assertLess(results["leading-silence.wav"]["strongestOffsetSeconds"],1.01)
+  self.assertGreater(results["leading-silence.wav"]["strongestOffsetSeconds"],.99)

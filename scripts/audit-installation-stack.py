@@ -2176,13 +2176,38 @@ def evidence_errors(rows, root):
                 output.get("sha256") == file_hashes.get(output_name),
                 output.get("sha256") != fixture_sha,
                 output.get("bytes") == file_sizes.get(output_name),
-                comparison.get("method") == "resampled-aligned-mono-waveform-v1",
-                comparison.get("comparedSamples", 0) >= int(duration * 48000),
-                comparison.get("absoluteWaveformCorrelation", 1) < 0.98,
-                comparison.get("polarityInvariantNormalizedDifference", 0) > 0.1,
-                comparison.get("copyLikeCorrelationThreshold") == 0.98,
-                comparison.get("copyLikeDifferenceThreshold") == 0.1,
-                comparison.get("passesNotSourceCopy") is True,
+                comparison.get("method")
+                == "bounded-offset-normalized-cross-correlation-v2",
+                comparison.get("comparisonSampleRate") == 8000,
+                comparison.get("maxOffsetSeconds") == 5.0,
+                comparison.get("minimumOverlapSeconds") == 1.0,
+                comparison.get("searchedLagCount", 0) > 1,
+                abs(comparison.get("strongestOffsetSeconds", 6)) <= 5.0,
+                comparison.get("comparedSamples", 0)
+                >= comparison.get("comparisonSampleRate", 1),
+                comparison.get("comparedSeconds", 0) >= 1.0,
+                math.isclose(
+                    abs(comparison.get("strongestWaveformCorrelation", 2)),
+                    comparison.get("absoluteWaveformCorrelation", -1),
+                    rel_tol=0,
+                    abs_tol=1e-12,
+                ),
+                math.isclose(
+                    comparison.get("polarityInvariantNormalizedDifference", 0),
+                    (1 - comparison.get("absoluteWaveformCorrelation", 1)) ** .5,
+                    rel_tol=0,
+                    abs_tol=1e-12,
+                ),
+                comparison.get("absoluteWaveformCorrelation", 1) < 0.95,
+                comparison.get("polarityInvariantNormalizedDifference", 0) > 0.25,
+                comparison.get("copyLikeCorrelationThreshold") == 0.95,
+                comparison.get("copyLikeDifferenceThreshold") == 0.25,
+                (
+                    comparison.get("absoluteWaveformCorrelation", 1)
+                    < comparison.get("copyLikeCorrelationThreshold", 0)
+                    and comparison.get("polarityInvariantNormalizedDifference", 0)
+                    > comparison.get("copyLikeDifferenceThreshold", 1)
+                ),
             ])
         diagnostic_required = []
         for diagnostic in (short_diagnostic, full_diagnostic):
