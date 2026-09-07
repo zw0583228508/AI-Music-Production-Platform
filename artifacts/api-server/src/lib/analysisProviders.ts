@@ -1542,6 +1542,10 @@ function overlap(
 export function fuseHarmonyEvidence(
   results: HarmonyAnalysisResult[],
 ): { chords: ChordEvent[]; confidence: number; providersUsed: string[] } {
+  // Scores are normalized per canonical time slice.  A tenth of the available
+  // evidence is deliberately required to resolve a disagreement: this keeps a
+  // single confident detector from manufacturing certainty in a close split.
+  const AMBIGUITY_NORMALIZED_MARGIN = 0.1;
   const directCandidates = results.flatMap((result) =>
     result.candidates.map((candidate) => ({ candidate, result })));
   if (!directCandidates.length) {
@@ -1559,31 +1563,60 @@ export function fuseHarmonyEvidence(
     if (segment.end <= segment.start) continue;
     const active = directCandidates.filter(({ candidate }) => overlap(candidate, segment));
     if (!active.length) continue;
-    const scores = new Map<string, {
+    type HarmonyScore = {
       score: number;
+      directScore: number;
       roman: string;
       strongest: number;
       candidate?: ChordEvent;
       provider?: string;
+      directByProvider: Map<string, number>;
+      directProviders: Set<string>;
+      bassProviders: Set<string>;
+      chromaProviders: Set<string>;
       bassSupportEvidence?: NonNullable<ChordEvent["bassSupportEvidence"]>;
-    }>();
+    };
+    const scores = new Map<string, HarmonyScore>();
     for (const { candidate, result } of active) {
-      providersUsed.add(result.providerId);
-      const current = scores.get(candidate.symbol) ?? {
+      const current: HarmonyScore = scores.get(candidate.symbol) ?? {
         score: 0,
+        directScore: 0,
         roman: candidate.roman,
         strongest: 0,
+        directByProvider: new Map(),
+        directProviders: new Set(),
+        bassProviders: new Set(),
+        chromaProviders: new Set(),
       };
       const directScore = candidate.confidence * result.confidence;
-      current.score += directScore;
-      if (directScore > current.strongest) {
+      const previousProviderScore = current.directByProvider.get(result.providerId) ?? 0;
+      if (directScore > previousProviderScore) {
+        current.directByProvider.set(result.providerId, directScore);
+        current.directProviders.add(result.providerId);
+      }
+      if (
+        directScore > current.strongest ||
+        (directScore === current.strongest &&
+          (result.providerId < (current.provider ?? "") ||
+            (result.providerId === current.provider &&
+              (candidate.roman < current.roman ||
+                (candidate.roman === current.roman &&
+                  (candidate.start < (current.candidate?.start ?? Infinity) ||
+                    (candidate.start === current.candidate?.start &&
+                      candidate.end < (current.candidate?.end ?? Infinity))))))))
+      ) {
         current.strongest = directScore;
         current.roman = candidate.roman;
-          current.candidate = candidate;
-          current.provider = result.providerId;
+        current.candidate = candidate;
+        current.provider = result.providerId;
       }
-
-      const pitchClasses = chordPitchClasses(candidate.symbol);
+      scores.set(candidate.symbol, current);
+    }
+    for (const [symbol, current] of scores) {
+      current.directScore = [...current.directByProvider.values()]
+        .reduce((sum, score) => sum + score, 0);
+      current.score = current.directScore;
+      const pitchClasses = chordPitchClasses(symbol);
       const root = pitchClasses[0];
       if (root !== undefined) {
         const bassSupportEvidence = results.flatMap((item) => item.bass
@@ -1607,26 +1640,57 @@ export function fuseHarmonyEvidence(
               (pitchSum, pitchClass) => pitchSum + frame.values[pitchClass],
               0,
             ) * frame.confidence, 0);
+        // Auxiliary evidence contributes to an aggregate, but cannot reverse
+        // the direct ordering of a multi-provider disagreement below.
         current.score += Math.min(0.2, bassSupport * 0.08);
         current.score += Math.min(0.25, chromaSupport * 0.12);
         if (bassSupport > 0) {
-          for (const provider of supportingBassProviders) providersUsed.add(provider);
+          for (const provider of supportingBassProviders) current.bassProviders.add(provider);
         }
         if (chromaSupport > 0) {
           for (const item of overlappingChromaResults) {
-            providersUsed.add(item.providerId);
+            current.chromaProviders.add(item.providerId);
           }
         }
       }
-      scores.set(candidate.symbol, current);
+    }
+    const directWinner = [...scores.entries()].sort((left, right) =>
+      right[1].directScore - left[1].directScore ||
+      right[1].directProviders.size - left[1].directProviders.size ||
+      left[0].localeCompare(right[0]))[0];
+    if (scores.size > 1 && directWinner[1].directProviders.size > 1) {
+      // Bass and chroma evidence may refine a direct tie, never displace
+      // independently corroborated direct harmony.
+      for (const [candidateSymbol, candidateScore] of scores) {
+        if (candidateSymbol !== directWinner[0]) {
+          candidateScore.score = Math.min(candidateScore.score, directWinner[1].directScore);
+        }
+      }
     }
     const ranked = [...scores.entries()].sort((left, right) =>
-      right[1].score - left[1].score || left[0].localeCompare(right[0]));
+      right[1].score - left[1].score ||
+      right[1].directProviders.size - left[1].directProviders.size ||
+      left[0].localeCompare(right[0]));
     const [symbol, winner] = ranked[0];
     const total = ranked.reduce((sum, item) => sum + item[1].score, 0);
+    const normalizedWinnerScore = total > 0 ? winner.score / total : 0;
+    const runnerUp = ranked[1];
+    const normalizedMargin = runnerUp && total > 0
+      ? normalizedWinnerScore - runnerUp[1].score / total
+      : Infinity;
+    const equalSupportTooClose = runnerUp &&
+      winner.directProviders.size === runnerUp[1].directProviders.size &&
+      normalizedMargin <= AMBIGUITY_NORMALIZED_MARGIN;
+    const uncorroboratedTooClose = runnerUp &&
+      winner.directProviders.size < 2 &&
+      normalizedMargin <= AMBIGUITY_NORMALIZED_MARGIN;
+    if (uncorroboratedTooClose || equalSupportTooClose) continue;
     const fusedConfidence = total > 0
-      ? Math.min(1, winner.score / total * 0.65 + winner.strongest * 0.35)
+      ? Math.min(1, normalizedWinnerScore * 0.65 + winner.strongest * 0.35)
       : 0;
+    for (const provider of winner.directProviders) providersUsed.add(provider);
+    for (const provider of winner.bassProviders) providersUsed.add(provider);
+    for (const provider of winner.chromaProviders) providersUsed.add(provider);
     const previous = segments[segments.length - 1];
     if (
       previous &&

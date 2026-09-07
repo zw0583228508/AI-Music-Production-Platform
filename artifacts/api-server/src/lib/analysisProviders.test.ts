@@ -322,6 +322,75 @@ test("fusion rebuilds timing when adjacent provider segments merge", () => {
   assert.deepEqual(fused.chords[0].timing, { startSeconds: 0, endSeconds: 2 });
 });
 
+test("harmony fusion favors two independent providers over one confident provider", () => {
+  const highConfidence = parseHarmony("SHEETSAGE", {
+    version: "1", confidence: .99,
+    chords: [{ start: 0, end: 2, symbol: "G", roman: "V", confidence: .99 }],
+  }, 2);
+  const firstAgreement = parseHarmony("CHROMA", {
+    version: "1", confidence: .8,
+    chords: [{ start: 0, end: 2, symbol: "C", roman: "I", confidence: .9 }],
+  }, 2);
+  const secondAgreement = parseHarmony("BASS", {
+    version: "1", confidence: .8,
+    chords: [{ start: 0, end: 2, symbol: "C", roman: "I", confidence: .9 }],
+  }, 2);
+  const fused = fuseHarmonyEvidence([highConfidence, firstAgreement, secondAgreement]);
+  assert.equal(fused.chords[0]?.symbol, "C");
+  assert.deepEqual(fused.providersUsed, ["BASS", "CHROMA"]);
+});
+
+test("harmony fusion abstains deterministically for close equally-supported symbols", () => {
+  const c = parseHarmony("SHEETSAGE", {
+    version: "1", confidence: .9,
+    chords: [{ start: 0, end: 2, symbol: "C", roman: "I", confidence: .9 }],
+  }, 2);
+  const g = parseHarmony("CHROMA", {
+    version: "1", confidence: .9,
+    chords: [{ start: 0, end: 2, symbol: "G", roman: "V", confidence: .9 }],
+  }, 2);
+  const forward = fuseHarmonyEvidence([c, g]);
+  const reverse = fuseHarmonyEvidence([g, c]);
+  assert.deepEqual(forward, { chords: [], confidence: 0, providersUsed: [] });
+  assert.deepEqual(reverse, forward);
+});
+
+test("harmony fusion preserves unanimous canonical chords and merged timing", () => {
+  const first = parseHarmony("SHEETSAGE", {
+    version: "1", confidence: .9,
+    chords: [{ start: 0, end: 1, symbol: "C", roman: "I", confidence: .9, timing: { startSeconds: 0, endSeconds: 1 } }],
+  }, 2);
+  const second = parseHarmony("CHROMA", {
+    version: "1", confidence: .9,
+    chords: [{ start: 0, end: 2, symbol: "C", roman: "I", confidence: .9, timing: { startSeconds: 0, endSeconds: 2 } }],
+  }, 2);
+  const fused = fuseHarmonyEvidence([first, second]);
+  assert.equal(fused.chords.length, 1);
+  assert.equal(fused.chords[0]?.symbol, "C");
+  assert.deepEqual(fused.chords[0]?.timing, { startSeconds: 0, endSeconds: 2 });
+});
+
+test("bass and chroma support cannot override direct multi-provider disagreement", () => {
+  const cFromSheetSage = parseHarmony("SHEETSAGE", {
+    version: "1", confidence: .8,
+    chords: [{ start: 0, end: 2, symbol: "C", roman: "I", confidence: .9 }],
+  }, 2);
+  const cFromChroma = parseHarmony("CHROMA", {
+    version: "1", confidence: .8,
+    chords: [{ start: 0, end: 2, symbol: "C", roman: "I", confidence: .9 }],
+  }, 2);
+  const gWithAuxiliarySupport = parseHarmony("BASS", {
+    version: "1", confidence: .9,
+    chords: [{ start: 0, end: 2, symbol: "G", roman: "V", confidence: .9 }],
+    bass: [{ start: 0, end: 2, pitch: 43, confidence: 1 }],
+    chroma: [{ start: 0, end: 2, values: [0, 0, 1, 0, 0, 0, 0, 2, 0, 0, 0, 1], confidence: 1 }],
+  }, 2);
+  assert.equal(
+    fuseHarmonyEvidence([cFromSheetSage, cFromChroma, gWithAuxiliarySupport]).chords[0]?.symbol,
+    "C",
+  );
+});
+
 test("validates nested chord decision evidence from harmony providers", () => {
   const valid = parseHarmony("SHEETSAGE", {
     version: "1.2.0",
