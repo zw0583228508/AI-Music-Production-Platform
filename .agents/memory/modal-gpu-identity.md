@@ -27,6 +27,12 @@ When a promotion record binds Modal's deployment-history version, do not use `mo
 
 **How to apply:** Capture authoritative app/version/function metadata once after deploy, refresh containers through container lifecycle operations only, re-query the same metadata, and fail closed if any identity changed before smoke and signing.
 
+If an intentional identity-origin mismatch sends a Modal web function into a startup crash loop, a corrected Secret may not recover that deployment promptly. Redeploy the same reviewed endpoint with the corrected origin already present, then observe the final deployment version and rotate its exact IDs before signing.
+
+**Why:** During a real endpoint-label drill, fresh containers correctly rejected drifted origins, but updating the Secret alone left requests trapped behind the crash-looping deployment. A same-label redeploy restored startup without changing the attested image bytes.
+
+**How to apply:** Preserve the negative startup logs, redeploy without changing the reviewed worker image inputs, treat the redeploy as a new deployment identity, stop its stale containers after installing exact observed metadata, and promote only the final ready version.
+
 Treat mounted model snapshots as immutable. If an upstream loader syncs code, caches, or bytecode into its model directory, build a temporary runtime view outside the attested checkpoint and link only validated model bytes into it.
 
 **Why:** ACE-Step initialization overwrites model-adjacent Python files, which changes an otherwise canonical checkpoint digest after successful inference.

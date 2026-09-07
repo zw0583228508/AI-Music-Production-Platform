@@ -15,7 +15,7 @@ from urllib.parse import urlsplit
 import modal
 
 APP_NAME = "anyaccomp-worker"
-ENDPOINT_LABEL = "anyaccomp"
+ENDPOINT_LABEL = "anyaccomp-rename-drill"
 ALLOWED_SOURCE_ORIGINS = "https://storage.googleapis.com"
 MODEL_VOLUME_NAME = "anyaccomp-models-private-v1"
 ARTIFACT_VOLUME_NAME = "anyaccomp-artifacts-private-v1"

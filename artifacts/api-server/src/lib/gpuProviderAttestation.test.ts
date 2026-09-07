@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import test from "node:test";
 import {
   anyAccompCommercialUseAuthorized,
@@ -318,6 +320,46 @@ test("the committed AnyAccomp promotion is signed, exact, and cannot be replaced
         previousCommercial;
     }
   }
+});
+
+test("production AnyAccomp configuration, retained health, and rename download proof agree", () => {
+  const workspace = resolve(process.cwd(), "../..");
+  const record = expectedGpuPromotionRecord("ANYACCOMP");
+  assert.ok(record);
+  const replit = readFileSync(resolve(workspace, ".replit"), "utf8");
+  const configured = replit.match(
+    /^\s*ANYACCOMP_API_URL\s*=\s*"([^"]+)"\s*$/m,
+  )?.[1];
+  assert.equal(configured, record.endpointOrigin);
+
+  const evidenceRoot = resolve(
+    workspace,
+    "services/anyaccomp-worker/release-evidence",
+  );
+  const release = JSON.parse(
+    readFileSync(resolve(evidenceRoot, "release-evidence.json"), "utf8"),
+  );
+  const drill = JSON.parse(
+    readFileSync(resolve(evidenceRoot, "endpoint-rename-drill.json"), "utf8"),
+  );
+  assert.equal(
+    gpuPromotionAttestationFailure(
+      "ANYACCOMP",
+      `${configured}/health`,
+      release.liveHealth,
+    ),
+    null,
+  );
+  assert.deepEqual(drill.observedDeployment, {
+    provider: "ANYACCOMP",
+    modalAppId: record.modalAppId,
+    modalDeploymentId: record.modalDeploymentId,
+    modalFunctionId: record.modalFunctionId,
+    endpointOrigin: record.endpointOrigin,
+  });
+  assert.equal(drill.generation.artifactOrigin, configured);
+  assert.equal(drill.generation.capabilityRetrieved, true);
+  assert.equal(drill.generation.artifactHashVerified, true);
 });
 
 test("Beat This startup requires the exact promoted health schema", () => {
