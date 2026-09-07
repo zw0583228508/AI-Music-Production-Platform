@@ -1208,6 +1208,8 @@ components:
           enum: [ready]
         contractVersion:
           $ref: "#/components/schemas/SongModelContractVersion"
+        timebase:
+          $ref: "#/components/schemas/CanonicalTimebase"
         validation:
           $ref: "#/components/schemas/SongModelValidation"
         fusion:
@@ -1386,7 +1388,31 @@ components:
             enum: [bpm, key, meter, sections]
     SongModelContractVersion:
       type: string
-      enum: ["1.0"]
+      enum: ["1.0", "2.0"]
+    CanonicalTimebase:
+      type: object
+      required: [ppq, originSeconds, coordinateSystem]
+      properties:
+        ppq: { type: number, enum: [960] }
+        originSeconds: { type: number, enum: [0] }
+        coordinateSystem: { type: string, enum: [seconds+ticks] }
+    CanonicalTimeCoordinate:
+      type: object
+      required: [seconds, tick, beat, bar, beatInBar]
+      properties:
+        seconds: { type: number, minimum: 0 }
+        tick: { type: number, minimum: 0 }
+        beat: { type: number, minimum: 1 }
+        bar: { type: number, minimum: 1 }
+        beatInBar: { type: number, minimum: 1 }
+    CanonicalTimeRange:
+      type: object
+      required: [start, end]
+      properties:
+        start:
+          $ref: "#/components/schemas/CanonicalTimeCoordinate"
+        end:
+          $ref: "#/components/schemas/CanonicalTimeCoordinate"
     SongModelValidation:
       type: object
       required: [status, issues]
@@ -1490,6 +1516,8 @@ components:
         time: { type: number }
         bpm: { type: number, minimum: 30, maximum: 300 }
         confidence: { type: number, minimum: 0, maximum: 1 }
+        coordinates:
+          $ref: "#/components/schemas/CanonicalTimeCoordinate"
     MeterEvent:
       type: object
       required: [bar, meter, confidence]
@@ -1497,6 +1525,8 @@ components:
         bar: { type: number }
         meter: { type: string }
         confidence: { type: number, minimum: 0, maximum: 1 }
+        coordinates:
+          $ref: "#/components/schemas/CanonicalTimeCoordinate"
     KeyEvent:
       type: object
       required: [time, key, confidence]
@@ -1504,6 +1534,8 @@ components:
         time: { type: number }
         key: { type: string }
         confidence: { type: number, minimum: 0, maximum: 1 }
+        coordinates:
+          $ref: "#/components/schemas/CanonicalTimeCoordinate"
     BeatEvent:
       type: object
       required: [time, beat, bar, confidence]
@@ -1512,6 +1544,8 @@ components:
         beat: { type: number }
         bar: { type: number }
         confidence: { type: number }
+        coordinates:
+          $ref: "#/components/schemas/CanonicalTimeCoordinate"
     BarEvent:
       type: object
       required: [bar, start, end, beats, confidence]
@@ -1521,6 +1555,8 @@ components:
         end: { type: number }
         beats: { type: number }
         confidence: { type: number }
+        coordinates:
+          $ref: "#/components/schemas/CanonicalTimeRange"
     SourceStem:
       type: object
       required: [role, objectPath, provider, confidence]
@@ -1537,6 +1573,8 @@ components:
         end: { type: number }
         text: { type: string }
         confidence: { type: number }
+        coordinates:
+          $ref: "#/components/schemas/CanonicalTimeRange"
     ProviderProvenance:
       type: object
       required: [capability, provider, version, status]
@@ -1650,6 +1688,8 @@ components:
         velocity: { type: number }
         confidence: { type: number }
         source: { type: string }
+        coordinates:
+          $ref: "#/components/schemas/CanonicalTimeRange"
     BassEvidenceEvent:
       type: object
       required: [start, end, pitch, confidence]
@@ -1666,6 +1706,8 @@ components:
         providers:
           type: array
           items: { type: string }
+        coordinates:
+          $ref: "#/components/schemas/CanonicalTimeRange"
     ChordEvent:
       type: object
       required: [start, end, symbol, roman, confidence]
@@ -1711,6 +1753,8 @@ components:
           description: Observed provider bass notes that supported this selected chord.
           items:
             $ref: "#/components/schemas/ChordBassSupportEvidence"
+        coordinates:
+          $ref: "#/components/schemas/CanonicalTimeRange"
     ChordTiming:
       type: object
       properties:
@@ -1916,6 +1960,8 @@ components:
         startBar: { type: number }
         endBar: { type: number }
         energy: { type: number }
+        coordinates:
+          $ref: "#/components/schemas/CanonicalTimeRange"
     ArrangementInput:
       type: object
       required: [name, style, harmonyComplexity, mode]

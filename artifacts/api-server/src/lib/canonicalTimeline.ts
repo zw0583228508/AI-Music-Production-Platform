@@ -20,7 +20,11 @@ type Meter = { numerator: number; denominator: number };
 function parseMeter(value: string): Meter {
   const match = /^([1-9]\d*)\/([1-9]\d*)$/.exec(value);
   if (!match) throw new Error(`Invalid meter: ${value}`);
-  return { numerator: Number(match[1]), denominator: Number(match[2]) };
+  const meter = { numerator: Number(match[1]), denominator: Number(match[2]) };
+  if (CANONICAL_PPQ * 4 % meter.denominator !== 0) {
+    throw new Error(`Meter denominator must be representable at ${CANONICAL_PPQ} PPQ: ${value}`);
+  }
+  return meter;
 }
 
 /**
@@ -56,6 +60,9 @@ export function createCanonicalTimeline(
     const previous = tempos[index - 1];
     tickAtTempo.push(tickAtTempo[index - 1] +
       (tempos[index].time - previous.time) * previous.bpm * CANONICAL_PPQ / 60);
+  }
+  if (tickAtTempo.some((tick, index) => index > 0 && Math.round(tick) <= Math.round(tickAtTempo[index - 1]))) {
+    throw new Error("Tempo changes must resolve to strictly ordered canonical ticks.");
   }
   const tickAtMeter: number[] = [0];
   const beatAtMeter: number[] = [0];

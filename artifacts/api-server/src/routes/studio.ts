@@ -157,6 +157,7 @@ import {
   evaluateArrangementEligibility,
   fuseProviderSongModels,
   isLegacySongModel,
+  canonicalizeSongModelCoordinates,
   refreshSongModelValidation,
   validateCanonicalSongModel,
 } from "../lib/songModelValidation";
@@ -814,7 +815,12 @@ function aggregateSongModelConfidence(
 const songModelResponse = (
   row: typeof songModelsTable.$inferSelect,
 ) => {
-  const model = normalizeSongModel(row.model) as SongModelData;
+  const normalized = normalizeSongModel(row.model) as SongModelData;
+  // JSONB rows written before v2 coordinates were persisted remain readable,
+  // while every v2 API serialization rehydrates its authoritative axes.
+  const model = normalized.contractVersion === "2.0"
+    ? canonicalizeSongModelCoordinates(normalized)
+    : normalized;
   const quality = normalizeSongModelQuality(model);
   const legacyProviderProvenance = Array.isArray(model.provenance)
     ? model.provenance
@@ -2026,7 +2032,11 @@ router.patch("/projects/:projectId/song-model", async (req, res): Promise<void> 
           })),
         }),
   };
-  const correctedModel = refreshSongModelValidation(correctedModelDraft);
+  const correctedModel = refreshSongModelValidation(
+    correctedModelDraft.contractVersion === "2.0"
+      ? canonicalizeSongModelCoordinates(correctedModelDraft)
+      : correctedModelDraft,
+  );
 
   const created = await db.transaction(async (tx) => {
     await tx.execute(
