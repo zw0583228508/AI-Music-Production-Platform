@@ -766,6 +766,95 @@ class DiffRhythmReleaseTests(unittest.TestCase):
         self.assertEqual(proof["cancellationsAcknowledged"], 0)
         self.assertFalse(proof["allExecutionsStopped"])
 
+    def test_cancelled_comparison_batch_acknowledgements_share_one_deadline(self):
+        missing_ack = threading.Event()
+
+        class Lifecycle:
+            def __init__(self):
+                self.markers = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def get(self, timeout=None):
+                return self.markers.pop(0) if self.markers else None
+
+        class Call:
+            def __init__(self, index):
+                self.index = index
+
+            def cancel(self):
+                pass
+
+            def get(self, timeout=None):
+                if self.index == 0:
+                    missing_ack.wait()
+                    raise RuntimeError("private provider detail")
+                time.sleep(0.02 * self.index)
+                raise release.RemoteError("private provider detail")
+
+        class Comparison:
+            def __init__(self):
+                self.spawned = 0
+
+            def spawn(self, control, lifecycle):
+                call = Call(self.spawned)
+                self.spawned += 1
+                lifecycle.markers.append({
+                    "outcome": "pre_work",
+                    "startedUnixSeconds": time.time(),
+                    "modalImageId": "im-Compare",
+                })
+                return call
+
+        identity = {
+            "modalAppId": "ap-Compare",
+            "modalDeploymentId": "v3",
+            "modalFunctionId": "fu-Compare",
+        }
+        acknowledgement_bound = 0.08
+        try:
+            with tempfile.TemporaryDirectory() as directory, patch.object(
+                release, "EVIDENCE", Path(directory)
+            ), patch.object(
+                release, "COMPARISON_CANCEL_ACK_BOUND_SECONDS",
+                acknowledgement_bound,
+            ), patch.object(
+                release.modal.Queue, "ephemeral", return_value=Lifecycle()
+            ), patch.object(
+                release.modal.Function, "from_name", return_value=Comparison()
+            ), patch.object(
+                release, "observe_comparison", return_value=identity
+            ):
+                started = time.monotonic()
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "^cancelled comparison batch did not stop within the safe bound$",
+                ):
+                    release.verify_cancelled_comparison_batch_execution(
+                        self.metadata
+                    )
+                elapsed = time.monotonic() - started
+                retained = (
+                    Path(directory)
+                    / "live-comparison-batch-execution-cancellation-proof.json"
+                ).read_text()
+        finally:
+            missing_ack.set()
+
+        self.assertLess(elapsed, acknowledgement_bound + 0.2)
+        proof = json.loads(retained)
+        self.assertEqual(
+            proof["cancellationsAcknowledged"],
+            release.COMPARISON_MAX_CONCURRENT_INPUTS - 1,
+        )
+        self.assertFalse(proof["allExecutionsStopped"])
+        self.assertNotIn("private provider detail", retained)
+        self.assertLess(len(retained), 2048)
+
     def test_cancelled_comparison_batch_rejects_one_post_work_marker(self):
         class Lifecycle:
             def __init__(self):
