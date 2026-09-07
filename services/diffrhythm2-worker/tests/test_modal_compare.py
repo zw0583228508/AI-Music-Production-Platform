@@ -17,6 +17,31 @@ class FakeLifecycle:
 
 
 class ControlledCancellationContractTests(unittest.TestCase):
+    def test_missing_lifecycle_fails_before_comparison_or_sleep(self):
+        private_details = (
+            "/private/customer-fixture.wav",
+            "diffrhythm-provider",
+            "im-Safe123",
+        )
+
+        with mock.patch.dict(os.environ, {"MODAL_IMAGE_ID": "im-Safe123"}), \
+             mock.patch.object(smoke, "signal_comparison") as comparison, \
+             mock.patch("time.sleep") as sleep:
+            with self.assertRaises(RuntimeError) as raised:
+                modal_compare.drill_retained_smoke_comparison.local(
+                    "cancel_execution"
+                )
+
+        self.assertEqual(
+            str(raised.exception),
+            "comparison cancellation lifecycle channel is required",
+        )
+        comparison.assert_not_called()
+        sleep.assert_not_called()
+        for detail in private_details:
+            self.assertNotIn(detail, str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+
     def run_controlled_comparison(self, signal_comparison):
         events = []
         lifecycle = FakeLifecycle(events)
@@ -139,6 +164,29 @@ class ControlledCancellationContractTests(unittest.TestCase):
 
 
 class ControlledStallContractTests(unittest.TestCase):
+    def test_missing_lifecycle_fails_before_comparison_or_sleep(self):
+        private_details = (
+            "/private/customer-fixture.wav",
+            "diffrhythm-provider",
+            "im-Safe123",
+        )
+
+        with mock.patch.dict(os.environ, {"MODAL_IMAGE_ID": "im-Safe123"}), \
+             mock.patch.object(smoke, "signal_comparison") as comparison, \
+             mock.patch("time.sleep") as sleep:
+            with self.assertRaises(RuntimeError) as raised:
+                modal_compare.drill_retained_smoke_comparison.local("stall")
+
+        self.assertEqual(
+            str(raised.exception),
+            "comparison stall readiness channel is required",
+        )
+        comparison.assert_not_called()
+        sleep.assert_not_called()
+        for detail in private_details:
+            self.assertNotIn(detail, str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+
     def test_started_marker_is_safe_and_emitted_before_stall(self):
         events = []
         lifecycle = FakeLifecycle(events)
