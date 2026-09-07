@@ -123,6 +123,12 @@ def drill_retained_smoke_comparison(control: str = "compare", readiness=None):
             "finishedUnixSeconds": time.time(),
             "modalImageId": image_id,
         })
+        return {
+            "outcome": "completed",
+            "startedUnixSeconds": started,
+            "finishedUnixSeconds": time.time(),
+            "modalImageId": image_id,
+        }
     elif control == "probe":
         return {
             "outcome": "completed",
