@@ -100,19 +100,35 @@ def _strongest_waveform_match(source: np.ndarray, output: np.ndarray) -> dict:
         "overlap": int(overlaps[strongest_index]),
         "searchedLagCount": int(len(candidate_lags)),
     }
+
+def _channel_projections(audio: np.ndarray) -> list[tuple[str, np.ndarray]]:
+    return [(f"channel-{index}", audio[:, index]) for index in range(audio.shape[1])]
+
 def signal_comparison(source_path: Path, output_path: Path) -> dict:
     source, source_rate = sf.read(str(source_path), always_2d=True)
     output, output_rate = sf.read(str(output_path), always_2d=True)
-    source = _resample(source.mean(axis=1), source_rate, COMPARISON_SAMPLE_RATE)
-    output = _resample(output.mean(axis=1), output_rate, COMPARISON_SAMPLE_RATE)
+    source = _resample(source, source_rate, COMPARISON_SAMPLE_RATE)
+    output = _resample(output, output_rate, COMPARISON_SAMPLE_RATE)
+    source_mono = source.mean(axis=1)
+    output_mono = output.mean(axis=1)
     waveform_matches = []
     for tempo_ratio in TEMPO_RATIOS:
-        transformed = resample_poly(source, 100, int(round(100 * tempo_ratio)))
-        match = _strongest_waveform_match(transformed, output)
+        transformed = resample_poly(source_mono, 100, int(round(100 * tempo_ratio)))
+        match = _strongest_waveform_match(transformed, output_mono)
         match["tempoRatio"] = tempo_ratio
+        match["sourceProjection"] = "mono-fold-down"
+        match["outputProjection"] = "mono-fold-down"
         waveform_matches.append(match)
+    if source.shape[1] > 1 or output.shape[1] > 1:
+        for source_label, source_projection in _channel_projections(source):
+            for output_label, output_projection in _channel_projections(output):
+                match = _strongest_waveform_match(source_projection, output_projection)
+                match["tempoRatio"] = 1.0
+                match["sourceProjection"] = source_label
+                match["outputProjection"] = output_label
+                waveform_matches.append(match)
     waveform = max(waveform_matches, key=lambda match: abs(match["correlation"]))
-    chroma = _strongest_chroma_match(source, output)
+    chroma = _strongest_chroma_match(source_mono, output_mono)
     strongest_correlation = waveform["correlation"]
     absolute_correlation = abs(strongest_correlation)
     normalized_difference = float(np.sqrt(max(0.0, 1.0 - absolute_correlation)))
@@ -150,6 +166,13 @@ def signal_comparison(source_path: Path, output_path: Path) -> dict:
             "similarity": chroma["correlation"],
         },
         "strongestWaveformTempoRatio": waveform["tempoRatio"],
+        "sourceProjection": waveform["sourceProjection"],
+        "outputProjection": waveform["outputProjection"],
+        "comparedProjectionPairs": (
+            source.shape[1] * output.shape[1]
+            if source.shape[1] > 1 or output.shape[1] > 1
+            else 1
+        ),
         "searchedTransformCount": chroma["searchedTransformCount"],
         "searchedTransformAlignmentCount": chroma["searchedAlignmentCount"],
         "passesNotSourceCopy": passes,
