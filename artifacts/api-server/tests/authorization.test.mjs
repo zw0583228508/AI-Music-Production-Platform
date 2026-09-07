@@ -1307,6 +1307,49 @@ test("project and export endpoints enforce owner authorization", async () => {
   assert.equal(freshArrangementJson.includes("private-fresh-harmony"), false);
   assert.equal(freshArrangementJson.includes("private-fresh-role"), false);
 
+  const reopenedProjectResponse = await request(
+    `/api/projects/${projectId}`,
+    ownerSession,
+  );
+  assert.equal(reopenedProjectResponse.status, 200);
+  const reopenedProject = await reopenedProjectResponse.json();
+  const reopenedArrangement = reopenedProject.arrangements.find(
+    ({ sourceCandidateId }) => sourceCandidateId === freshCandidateId,
+  );
+  assert.ok(reopenedArrangement);
+  assert.deepEqual(
+    reopenedArrangement.generationProvenance.evaluation.musicCritic,
+    freshMusicCritic,
+  );
+  assert.deepEqual(
+    reopenedArrangement.generationProvenance.evaluation.diversity,
+    freshPublicEvaluation.diversity,
+  );
+  assert.equal(JSON.stringify(reopenedProject).includes('"fingerprint"'), false);
+
+  const reopenedArrangementListResponse = await request(
+    `/api/projects/${projectId}/arrangements`,
+    ownerSession,
+  );
+  assert.equal(reopenedArrangementListResponse.status, 200);
+  const reopenedArrangementList = await reopenedArrangementListResponse.json();
+  const reopenedListedArrangement = reopenedArrangementList.find(
+    ({ sourceCandidateId }) => sourceCandidateId === freshCandidateId,
+  );
+  assert.ok(reopenedListedArrangement);
+  assert.deepEqual(
+    reopenedListedArrangement.generationProvenance.evaluation.musicCritic,
+    freshMusicCritic,
+  );
+  assert.deepEqual(
+    reopenedListedArrangement.generationProvenance.evaluation.diversity,
+    freshPublicEvaluation.diversity,
+  );
+  assert.equal(
+    JSON.stringify(reopenedArrangementList).includes('"fingerprint"'),
+    false,
+  );
+
   const crossUserExport = await request(`/api/projects/${projectId}/export`, otherSession, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
