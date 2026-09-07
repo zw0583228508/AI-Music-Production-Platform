@@ -12,6 +12,8 @@ import {
   isGpuAttestedProvider,
 } from "./gpuProviderAttestation";
 import { CANONICAL_PPQ, createCanonicalTimeline } from "./canonicalTimeline";
+import { publicCandidateEvaluation } from "./candidateRanking";
+import type { CandidateEvaluation } from "@workspace/db";
 
 type Project = {
   id: string;
@@ -47,6 +49,7 @@ type Arrangement = {
     providerRequestId: string | null;
     seed: number;
     parentArtifactIds: string[];
+    evaluation?: CandidateEvaluation;
   } | null;
   sections: Array<{
     name: string;
@@ -960,9 +963,20 @@ export function createExportBundle(
     })),
     generatedAt: new Date().toISOString(),
   };
+  const publicArrangement = arrangement.generationProvenance?.evaluation
+    ? {
+        ...arrangement,
+        generationProvenance: {
+          ...arrangement.generationProvenance,
+          evaluation: publicCandidateEvaluation(
+            arrangement.generationProvenance.evaluation,
+          ),
+        },
+      }
+    : arrangement;
   const arrangementMetadata = {
     schema: "arrangement-metadata/v1",
-    arrangement,
+    arrangement: publicArrangement,
     rendering: {
       engine: "embedded-sfz-sampler",
       presetFormat: "SFZ v2 opcode subset",
