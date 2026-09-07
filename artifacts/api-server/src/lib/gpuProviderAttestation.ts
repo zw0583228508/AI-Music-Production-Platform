@@ -8,6 +8,7 @@ import { committedGpuPromotionsJson } from "./gpuPromotions.generated";
 const GPU_ATTESTED_PROVIDER_IDS = new Set([
   "ACE_STEP",
   "BS_ROFORMER",
+  "DIFFRHYTHM_2",
   "ALL_IN_ONE",
   "MT3",
   "MR_MT3",
@@ -23,6 +24,7 @@ const GPU_ATTESTED_PROVIDER_IDS = new Set([
 const MODAL_PROMOTED_PROVIDER_IDS = new Set([
   "ACE_STEP",
   "BS_ROFORMER",
+  "DIFFRHYTHM_2",
   "ALL_IN_ONE",
   "MT3",
   "MR_MT3",

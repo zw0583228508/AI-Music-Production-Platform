@@ -2,22 +2,56 @@
   "schemaVersion": 1,
   "providers": {
     "DIFFRHYTHM_2": {
-      "classification": "BLOCKED_UPSTREAM",
+      "classification": "RESEARCH_READY",
       "evidence": {
         "modelManifestSource": "services/diffrhythm2-worker/model_manifest.json",
+        "sourceRevision": "13a7b091f45124f611e36ee674973234f38d55b6",
         "sourceRevisionPinnedInManifest": true,
         "requestedModelRevisionsPinnedInManifest": true,
         "provisionedAssetsObserved": true,
-        "provisionedAssetsEvidenceSource": "operator-verified phase 3 evidence referenced by the re-audit request",
+        "provisionedAssetsEvidenceSource": "services/diffrhythm2-worker/release-evidence/model-assets.json",
+        "assetManifestSha256": "9d2521a8d53e541e44e3bed841b88dc60c3dd18a5e7abd5f9351839cf5ca24ee",
+        "runtimeBuilt": true,
+        "licenseStatus": "RESEARCH_ONLY",
+        "commercialUsePermitted": false,
         "realGpuAttemptObserved": true,
-        "realGpuAttemptEvidenceSource": "operator-verified phase 3 evidence referenced by the re-audit request",
-        "generatedArtifactProduced": false,
+        "realGpuAttemptEvidenceSource": "services/diffrhythm2-worker/release-evidence/known-good-short-smoke-proof.json and full-fixture-smoke-proof.json",
+        "generatedArtifactProduced": true,
+        "knownGoodShortDurationSeconds": 12.0,
+        "knownGoodShortArtifactSha256": "5052bde7d7520e8f33f67970280c958c3c867f37b936b11629d154f651a985ec",
+        "knownGoodShortPeakAmplitude": 0.3530440032482147,
+        "knownGoodShortRmsAmplitude": 0.05995712525344413,
+        "knownGoodShortAbsoluteWaveformCorrelation": 0.003161283915778954,
+        "knownGoodShortNormalizedDifference": 0.9984181068491402,
+        "fullFixtureDurationSeconds": 30.0,
+        "fullFixtureArtifactSha256": "8091ce9a759225ec0ca8f4d12684e32823c1adf3413129837a897e4c5ff96c0b",
+        "fullFixturePeakAmplitude": 0.38360917568206787,
+        "fullFixtureRmsAmplitude": 0.07112647162124419,
+        "fullFixtureAbsoluteWaveformCorrelation": 0.0014195504628480365,
+        "fullFixtureNormalizedDifference": 0.9992899726991921,
+        "sourceFixtureSha256": "3ac8afcf7f7b2f40b858f1274c5aa779266703d55123ab5d96f5e6041ad83dd1",
+        "realInference": true,
+        "nonSilentOutputVerified": true,
+        "notSourceCopyVerified": true,
+        "lyricsConditioned": true,
+        "rhythmConditioned": true,
         "smokeImplementationSource": "services/diffrhythm2-worker/smoke.py and modal_provision.py",
-        "endpointConfigured": false
+        "endpointConfigured": true,
+        "endpointOrigin": "https://windot100--diffrhythm2-worker-endpoint.modal.run",
+        "liveHealthReady": true,
+        "modalAppId": "ap-e8VqwLNj6CBxh0zudXk0xX",
+        "modalDeploymentId": "v3",
+        "modalFunctionId": "fu-CfySvwvkbaUlmwZDUG6NUR",
+        "modalImageId": "im-8poSZJJ9LLfn4IQL4e4pC5",
+        "sourceImageDigest": "sha256:20eb0cc1d56faf55ea64b5096e1f6a629a9bdbbf436e6106926cd69170638c20",
+        "promotionSigned": true,
+        "promotionSignatureValidated": true,
+        "canonicalPromotionActive": true,
+        "apiAttestationValidated": true,
+        "apiZeroPostMismatchRegression": true
       },
       "blockers": [
-        "The provisioned real GPU attempt did not generate an artifact, so it cannot satisfy the real lyrics-and-rhythm-conditioned non-silent/non-copy smoke gate.",
-        "No persisted successful smoke proof, signed promotion, or deployed endpoint evidence is present."
+        "Commercial READY and production generation routing are prohibited because the MuQ-MuLan and MuQ checkpoint weights are CC-BY-NC-4.0; this endpoint is research-only."
       ]
     }
   }

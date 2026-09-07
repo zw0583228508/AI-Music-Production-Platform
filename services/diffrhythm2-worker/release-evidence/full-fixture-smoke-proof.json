@@ -1,0 +1,61 @@
+{
+  "artifactSha256": "8091ce9a759225ec0ca8f4d12684e32823c1adf3413129837a897e4c5ff96c0b",
+  "assetManifestSha256": "9d2521a8d53e541e44e3bed841b88dc60c3dd18a5e7abd5f9351839cf5ca24ee",
+  "input": {
+    "bytes": 2646198,
+    "channels": 1,
+    "durationSeconds": 30.0,
+    "path": "golden-30s.wav",
+    "peakAmplitude": 0.9832763671875,
+    "rmsAmplitude": 0.22166223590917575,
+    "sampleRate": 44100,
+    "sha256": "3ac8afcf7f7b2f40b858f1274c5aa779266703d55123ab5d96f5e6041ad83dd1"
+  },
+  "label": "full-fixture",
+  "lyricsConditioned": true,
+  "nonSilent": true,
+  "notSourceCopy": true,
+  "output": {
+    "bytes": 1201920,
+    "channels": 1,
+    "durationSeconds": 30.0,
+    "path": "full-fixture-output.mp3",
+    "peakAmplitude": 0.38360917568206787,
+    "rmsAmplitude": 0.07112647162124419,
+    "sampleRate": 48000,
+    "sha256": "8091ce9a759225ec0ca8f4d12684e32823c1adf3413129837a897e4c5ff96c0b"
+  },
+  "provider": "DIFFRHYTHM_2",
+  "realInference": true,
+  "rhythmConditioned": true,
+  "rms": 0.07112647162124419,
+  "runtimeDiagnostic": {
+    "checkpoint": "/var/lib/diffrhythm2/models/ASLP-lab--DiffRhythm2/model.safetensors",
+    "conditioning": "MuQ-MuLan audio embedding from deterministic first 10 seconds",
+    "cuda": "12.6",
+    "cudaAvailable": true,
+    "decoderCheckpoint": "/var/lib/diffrhythm2/models/ASLP-lab--DiffRhythm2/decoder.bin",
+    "decoderConfig": "/var/lib/diffrhythm2/models/ASLP-lab--DiffRhythm2/decoder.json",
+    "device": "NVIDIA L40S",
+    "dtype": "float16",
+    "modelConfig": "/var/lib/diffrhythm2/models/ASLP-lab--DiffRhythm2/config.json",
+    "mulan": "/var/lib/diffrhythm2/models/OpenMuQ--MuQ-MuLan-large",
+    "muq": "/var/lib/diffrhythm2/models/OpenMuQ--MuQ-large-msd-iter",
+    "output": "/tmp/tmpa83ddzmv/generated.mp3",
+    "textEncoder": "/var/lib/diffrhythm2/models/FacebookAI--xlm-roberta-base",
+    "tokenizer": "/opt/diffrhythm2/g2p/g2p/vocab.json",
+    "torch": "2.7.0+cu126"
+  },
+  "signalComparison": {
+    "absoluteWaveformCorrelation": 0.0014195504628480365,
+    "comparedSamples": 1440000,
+    "copyLikeCorrelationThreshold": 0.98,
+    "copyLikeDifferenceThreshold": 0.1,
+    "method": "resampled-aligned-mono-waveform-v1",
+    "outputSampleRate": 48000,
+    "passesNotSourceCopy": true,
+    "polarityInvariantNormalizedDifference": 0.9992899726991921,
+    "sourceSampleRate": 44100
+  },
+  "sourceSha256": "3ac8afcf7f7b2f40b858f1274c5aa779266703d55123ab5d96f5e6041ad83dd1"
+}

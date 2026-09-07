@@ -4,10 +4,55 @@
   "asset_manifest": "model-assets.json",
   "smoke_proof": "smoke-proof.json",
   "source": {"repository": "xiaomi-research/diffrhythm2", "revision": "13a7b091f45124f611e36ee674973234f38d55b6"},
-  "runtime": {"python": "3.11", "pytorch": "2.7.0", "cuda_image": "nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04"},
-  "license": {"code": "Apache-2.0", "weights": "Apache-2.0"},
+  "runtime": {
+    "python": "3.11",
+    "pytorch": "2.7.0+cu126",
+    "torchvision": "0.22.0",
+    "torchaudio": "2.7.0",
+    "transformers": "4.47.1",
+    "accelerate": "not-installed",
+    "cuda": "12.6",
+    "cuda_image": "nvidia/cuda@sha256:59e0e4376a0f16d10b03d3a14344b80a866a1674cb4948cb318291387ac05010",
+    "torch_index_url": "https://pypi.org/simple"
+  },
+  "license": {
+    "code": "Apache-2.0",
+    "weights": "COMPOSITE",
+    "commercial_use_permitted": false,
+    "status": "RESEARCH_ONLY"
+  },
   "models": [
-    {"repository": "ASLP-lab/DiffRhythm2", "requested_revision": "9aa15742e4889c0eb2e198db6fdab1facf1b6761"},
-    {"repository": "OpenMuQ/MuQ-MuLan-large", "requested_revision": "2e01c796b71dca71b45251384c04cd7b237c9020"}
+    {
+      "repository": "ASLP-lab/DiffRhythm2",
+      "requested_revision": "9aa15742e4889c0eb2e198db6fdab1facf1b6761",
+      "license": "Apache-2.0",
+      "commercial_use_permitted": true
+    },
+    {
+      "repository": "OpenMuQ/MuQ-MuLan-large",
+      "requested_revision": "2e01c796b71dca71b45251384c04cd7b237c9020",
+      "license": "CC-BY-NC-4.0",
+      "commercial_use_permitted": false
+    },
+    {
+      "repository": "OpenMuQ/MuQ-large-msd-iter",
+      "requested_revision": "0562a57814f6f8bbd9fdea0a25921a2fce1a841a",
+      "license": "CC-BY-NC-4.0",
+      "commercial_use_permitted": false,
+      "allow_patterns": ["config.json", "model.safetensors"]
+    },
+    {
+      "repository": "FacebookAI/xlm-roberta-base",
+      "requested_revision": "e73636d4f797dec63c3081bb6ed5c7b0bb3f2089",
+      "license": "MIT",
+      "commercial_use_permitted": true,
+      "allow_patterns": [
+        "config.json",
+        "model.safetensors",
+        "sentencepiece.bpe.model",
+        "tokenizer.json",
+        "tokenizer_config.json"
+      ]
+    }
   ]
 }
