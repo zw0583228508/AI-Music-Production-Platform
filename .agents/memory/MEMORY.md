@@ -34,3 +34,4 @@
 - [Attested generation I/O](attested-generation-response-urls.md) — results repeat health provenance; artifact origins and source allowlists are deployment gates, never request-host defaults.
 - [Focused API bundle boundaries](focused-api-bundle-boundaries.md) — no-route tests should alias database packages to throwing stubs, not bundle native clients.
 - [DiffRhythm upstream recovery](diffrhythm-upstream-recovery.md) — bypass its unsafe boolean CLI path, install omitted G2P dependencies, and wire pinned local tokenizer/MuQ state explicitly.
+- [Codec threshold fixtures](codec-threshold-fixtures.md) — decode lossy codec fixtures through FFmpeg before waveform checks because worker libsndfile lacks AAC container support.
