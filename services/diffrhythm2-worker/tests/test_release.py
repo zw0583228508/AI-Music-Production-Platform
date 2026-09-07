@@ -1708,7 +1708,7 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             def __init__(self, comparison):
                 self.comparison = comparison
 
-            def get(self):
+            def get(self, timeout=None):
                 return self.comparison.remote()
 
             def cancel(self):
@@ -1772,7 +1772,7 @@ class DiffRhythmReleaseTests(unittest.TestCase):
 
     def test_comparison_burst_failure_is_sanitized_after_safe_evidence_is_written(self):
         class FailedCall:
-            def get(self):
+            def get(self, timeout=None):
                 raise RuntimeError("/private/audio.wav " + "a" * 64)
 
             def cancel(self):
@@ -1815,8 +1815,9 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             def __init__(self, index):
                 self.index = index
 
-            def get(self):
-                stalled.wait()
+            def get(self, timeout=None):
+                if not stalled.wait(timeout):
+                    raise TimeoutError
                 raise RuntimeError(private_details)
 
             def cancel(self):
@@ -1902,9 +1903,10 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             def __init__(self, index):
                 self.index = index
 
-            def get(self):
+            def get(self, timeout=None):
                 if self.index:
-                    stalled.wait()
+                    if not stalled.wait(timeout):
+                        raise TimeoutError
                 now = time.time()
                 return {
                     "outcome": "completed",
@@ -1972,8 +1974,9 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             def __init__(self, index):
                 self.index = index
 
-            def get(self):
-                stalled.wait()
+            def get(self, timeout=None):
+                if not stalled.wait(timeout):
+                    raise TimeoutError
 
         class StalledComparison:
             def __init__(self):
@@ -2065,8 +2068,9 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             def __init__(self, index):
                 self.object_id = f"fc-Test{index}"
 
-            def get(self):
-                stalled.wait()
+            def get(self, timeout=None):
+                if not stalled.wait(timeout):
+                    raise TimeoutError
                 raise RuntimeError(private_details)
 
         class StalledComparison:
@@ -2093,6 +2097,11 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             "modalFunctionId": "fu-Compare",
         }
         baseline = {worker.pid for worker in multiprocessing.active_children()}
+        baseline_waiters = {
+            thread.ident
+            for thread in threading.enumerate()
+            if thread.name.startswith("diffrhythm2-comparison-result-")
+        }
         timeout = 0.05
         cleanup_bound = 1.0
         try:
@@ -2128,6 +2137,16 @@ class DiffRhythmReleaseTests(unittest.TestCase):
                     self.assertEqual(
                         {worker.pid for worker in multiprocessing.active_children()},
                         baseline,
+                    )
+                    self.assertEqual(
+                        {
+                            thread.ident
+                            for thread in threading.enumerate()
+                            if thread.name.startswith(
+                                "diffrhythm2-comparison-result-"
+                            )
+                        },
+                        baseline_waiters,
                     )
                     self.assertLess(len(retained), 4096)
                     surfaced = str(raised.exception) + retained

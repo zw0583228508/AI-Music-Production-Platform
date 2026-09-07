@@ -44,6 +44,7 @@ RESEARCH_LICENSE = (
 COMPARISON_APP_NAME = f"{APP_NAME}-comparison"
 COMPARISON_BURST_REQUESTS = max(3, COMPARISON_MAX_CONCURRENT_INPUTS + 1)
 COMPARISON_BURST_TIMEOUT_SECONDS = 600
+COMPARISON_RESULT_WAITER_CLEANUP_SECONDS = 0.1
 COMPARISON_CANCEL_TIMEOUT_SECONDS = 0.25
 COMPARISON_CANCEL_WORKER_START_BOUND_SECONDS = 5
 COMPARISON_STALL_START_BOUND_SECONDS = 60
@@ -568,10 +569,17 @@ def verify_comparison_burst(metadata: dict) -> dict:
     outcomes = []
     results = queue.Queue()
     calls = {}
+    result_waiters = []
+    deadline = time.monotonic() + COMPARISON_BURST_TIMEOUT_SECONDS
 
     def await_comparison(index: int, call) -> None:
         try:
-            results.put((index, call.get()))
+            results.put((
+                index,
+                call.get(timeout=max(0, deadline - time.monotonic())),
+            ))
+        except TimeoutError:
+            return
         except Exception:
             results.put((index, None))
 
@@ -582,11 +590,15 @@ def verify_comparison_burst(metadata: dict) -> dict:
             results.put((index, None))
             continue
         calls[index] = call
-        threading.Thread(
-            target=await_comparison, args=(index, call), daemon=True
-        ).start()
+        waiter = threading.Thread(
+            target=await_comparison,
+            args=(index, call),
+            daemon=True,
+            name=f"diffrhythm2-comparison-result-{index}",
+        )
+        waiter.start()
+        result_waiters.append(waiter)
 
-    deadline = time.monotonic() + COMPARISON_BURST_TIMEOUT_SECONDS
     pending = set(range(COMPARISON_BURST_REQUESTS))
     while pending:
         remaining = deadline - time.monotonic()
@@ -627,6 +639,11 @@ def verify_comparison_burst(metadata: dict) -> dict:
             ),
             "modalImageId": result.get("modalImageId", "") if valid else "",
         })
+    waiter_cleanup_deadline = (
+        max(deadline, time.monotonic()) + COMPARISON_RESULT_WAITER_CLEANUP_SECONDS
+    )
+    for waiter in result_waiters:
+        waiter.join(timeout=max(0, waiter_cleanup_deadline - time.monotonic()))
     cancellable = {index for index in pending if index in calls}
     cancellation_failed = set(pending - cancellable)
     cancellation_deadline = time.monotonic() + COMPARISON_CANCEL_TIMEOUT_SECONDS
