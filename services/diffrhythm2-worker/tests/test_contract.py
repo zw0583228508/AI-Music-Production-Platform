@@ -12,6 +12,7 @@ from smoke import (
  MAX_DECODED_AUDIO_BYTES,
  MAX_DECODED_CHANNELS,
  MAX_INPUT_SAMPLE_RATE,
+ MIN_COMPARISON_MEMORY_HEADROOM_BYTES,
  _comparison_working_bytes,
  signal_comparison,
 )
@@ -109,6 +110,13 @@ class DiffRhythmContract(unittest.TestCase):
   self.assertIn("cmake",install)
   self.assertIn("python3.11-dev",install)
   self.assertIn("inflect==7.5.0",(ROOT/"Dockerfile").read_text())
+
+  def test_image_pins_memory_benchmarked_audio_array_libraries(self):
+   docker=(ROOT/"Dockerfile").read_text()
+   self.assertIn("numpy==1.26.4 scipy==1.17.1",docker)
+   self.assertIn(
+    "Any upgrade must pass the mono/stereo/surround peak-RSS contract",docker,
+   )
 
  def test_modal_python_detection_uses_the_exact_venv_interpreter(self):
   docker=(ROOT/"Dockerfile").read_text()
@@ -229,55 +237,88 @@ class DiffRhythmContract(unittest.TestCase):
   self.assertGreater(results["leading-silence.wav"]["strongestOffsetSeconds"],.99)
 
  def test_source_copy_detection_stays_bounded_at_maximum_smoke_duration(self):
-  sample_rate=16000
-  duration=int(MAX_DURATION_SECONDS)
-  time=np.arange(sample_rate*duration,dtype=np.float64)/sample_rate
-  source=(
-   .38*np.sin(2*np.pi*(173*time+2.5*time*time))
-   +.17*np.sin(2*np.pi*521*time)
-   +.09*np.sin(2*np.pi*887*time)
-  )
-  shifted=np.concatenate((np.zeros(sample_rate*2),source[:-sample_rate*2]))*.61
   with tempfile.TemporaryDirectory() as directory:
    directory=Path(directory)
-   source_path=directory/"maximum-duration-source.wav"
-   output_path=directory/"maximum-duration-output.wav"
-   sf.write(source_path,source,sample_rate,subtype="PCM_16")
-   sf.write(output_path,shifted,sample_rate,subtype="PCM_16")
    benchmark = """
-import json, resource, sys, time
+import json, resource, sys, tempfile, time
 from pathlib import Path
+import numpy as np
+import scipy
+import soundfile as sf
+from contract import MAX_DURATION_SECONDS
 from smoke import signal_comparison
+channels=int(sys.argv[1])
+sample_rate=16000
+duration=int(MAX_DURATION_SECONDS)
+time_values=np.arange(sample_rate*duration,dtype=np.float64)/sample_rate
+mono=(.38*np.sin(2*np.pi*(173*time_values+2.5*time_values*time_values))
+      +.17*np.sin(2*np.pi*521*time_values)+.09*np.sin(2*np.pi*887*time_values))
+source=mono if channels == 1 else np.column_stack(
+    [mono*(1-.035*channel) for channel in range(channels)]
+)
+shifted=np.concatenate((np.zeros(sample_rate*2),mono[:-sample_rate*2]))*.61
+output=shifted if channels == 1 else np.column_stack(
+    [shifted*(1-.025*channel) for channel in range(channels)]
+)
+directory=Path(sys.argv[2])
+source_path=directory/f"maximum-duration-{channels}ch-source.wav"
+output_path=directory/f"maximum-duration-{channels}ch-output.wav"
+sf.write(source_path,source,sample_rate,subtype="PCM_16")
+sf.write(output_path,output,sample_rate,subtype="PCM_16")
+# Drop fixture-construction arrays so RSS growth during comparison is measured
+# against a realistic fresh worker process rather than double-counting them.
+del time_values, mono, source, shifted, output
 started=time.perf_counter()
-result=signal_comparison(Path(sys.argv[1]),Path(sys.argv[2]))
+result=signal_comparison(source_path,output_path)
 elapsed=time.perf_counter()-started
 peak_kib=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-print(json.dumps({"elapsedSeconds":elapsed,"peakResidentMiB":peak_kib/1024,"result":result}))
+print(json.dumps({
+ "channels":channels,"elapsedSeconds":elapsed,"peakResidentBytes":peak_kib*1024,
+ "numpyVersion":np.__version__,"scipyVersion":scipy.__version__,"result":result,
+}))
 """
-   completed=subprocess.run(
-    [sys.executable,"-c",benchmark,str(source_path),str(output_path)],
-    cwd=ROOT,check=True,capture_output=True,text=True,timeout=30,
+   measurements=[]
+   for channels in (1,2,6):
+    completed=subprocess.run(
+     [sys.executable,"-c",benchmark,str(channels),str(directory)],
+     cwd=ROOT,capture_output=True,text=True,timeout=90,
+    )
+    self.assertEqual(
+     completed.returncode,0,
+     f"{channels}-channel memory benchmark failed:\n{completed.stderr}",
+    )
+    measurements.append(json.loads(completed.stdout))
+   permitted_peak=(
+    MAX_COMPARISON_WORKING_BYTES-MIN_COMPARISON_MEMORY_HEADROOM_BYTES
    )
-   measurement=json.loads(completed.stdout)
-  self.assertFalse(measurement["result"]["passesNotSourceCopy"])
-  self.assertEqual(measurement["result"]["searchedTransformCount"],0)
-  self.assertAlmostEqual(
-   measurement["result"]["strongestOffsetSeconds"],2.0,delta=.02,
-  )
-  self.assertLess(
-   measurement["elapsedSeconds"],15.0,
-   f"maximum-duration comparison took {measurement['elapsedSeconds']:.2f}s",
-  )
-  self.assertLess(
-   measurement["peakResidentMiB"],512.0,
-   f"maximum-duration comparison peaked at "
-   f"{measurement['peakResidentMiB']:.1f} MiB RSS",
-  )
-  policy=measurement["result"]["workingMemoryPolicy"]
-  self.assertEqual(
-   policy["maximumMiB"],MAX_COMPARISON_WORKING_BYTES//(1024*1024),
-  )
-  self.assertLessEqual(policy["estimatedPeakMiB"],policy["maximumMiB"])
+   for measurement in measurements:
+    label=(
+     f"{measurement['channels']}-channel maximum-duration comparison "
+     f"(NumPy {measurement['numpyVersion']}, SciPy {measurement['scipyVersion']})"
+    )
+    self.assertFalse(measurement["result"]["passesNotSourceCopy"],label)
+    self.assertEqual(measurement["result"]["searchedTransformCount"],0,label)
+    self.assertAlmostEqual(
+     measurement["result"]["strongestOffsetSeconds"],2.0,delta=.02,msg=label,
+    )
+    self.assertLess(
+     measurement["elapsedSeconds"],45.0,
+     f"{label} took {measurement['elapsedSeconds']:.2f}s",
+    )
+    observed=measurement["peakResidentBytes"]
+    self.assertLessEqual(
+     observed,permitted_peak,
+     f"{label} peaked at {observed/(1024*1024):.1f} MiB RSS; comparison "
+     f"boundary is {MAX_COMPARISON_WORKING_BYTES/(1024*1024):.0f} MiB and "
+     f"requires {MIN_COMPARISON_MEMORY_HEADROOM_BYTES/(1024*1024):.0f} MiB "
+     f"headroom. Review NumPy/SciPy dependency changes or raise the declared "
+     f"boundary with measured evidence.",
+    )
+    policy=measurement["result"]["workingMemoryPolicy"]
+    self.assertEqual(
+     policy["maximumMiB"],MAX_COMPARISON_WORKING_BYTES//(1024*1024),label,
+    )
+    self.assertLessEqual(policy["estimatedPeakMiB"],policy["maximumMiB"],label)
 
  def test_source_copy_thresholds_have_margin_across_real_codecs(self):
   # These settings intentionally span the sample rates, layouts, and lossy

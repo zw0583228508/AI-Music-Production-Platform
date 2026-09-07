@@ -27,6 +27,10 @@ RUN set -eux; \
 # requirements.txt. Keep the corrected transitive dependency explicit.
 RUN /opt/diffrhythm2-venv/bin/pip install --no-cache-dir inflect==7.5.0 && \
     /opt/diffrhythm2-venv/bin/python -c 'import inflect; assert inflect.engine()'
+# Comparison memory is regression-tested against these exact native-library
+# versions. Any upgrade must pass the mono/stereo/surround peak-RSS contract.
+RUN /opt/diffrhythm2-venv/bin/pip install --no-cache-dir numpy==1.26.4 scipy==1.17.1 && \
+    /opt/diffrhythm2-venv/bin/python -c 'import numpy, scipy; assert numpy.__version__ == "1.26.4"; assert scipy.__version__ == "1.17.1"'
 COPY services/diffrhythm2-worker /app
 RUN useradd --system diffrhythm2 && mkdir -p /var/lib/diffrhythm2/{models,artifacts} && chown -R diffrhythm2:diffrhythm2 /app /var/lib/diffrhythm2
 USER diffrhythm2
