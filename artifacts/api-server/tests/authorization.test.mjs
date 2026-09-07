@@ -1261,6 +1261,29 @@ test("project and export endpoints enforce owner authorization", async () => {
     evaluation: freshSelectionEvaluation,
   });
 
+  const freshCandidatesResponse = await request(
+    `/api/generation-jobs/${freshGenerationJobId}/candidates`,
+    ownerSession,
+  );
+  assert.equal(freshCandidatesResponse.status, 200);
+  const freshCandidates = await freshCandidatesResponse.json();
+  assert.equal(freshCandidates.length, 1);
+  const freshCandidatePreview = freshCandidates[0];
+  assert.equal(freshCandidatePreview.id, freshCandidateId);
+  assert.deepEqual(freshCandidatePreview.evaluation.musicCritic, freshMusicCritic);
+  assert.deepEqual(freshCandidatePreview.evaluation.diversity, {
+    comparedToCandidateId: "fresh-baseline-candidate",
+    distance: 0.47,
+    threshold: 0.25,
+    rejected: false,
+    reason: "sufficiently_distinct",
+  });
+  const freshCandidatePreviewJson = JSON.stringify(freshCandidatePreview);
+  assert.equal(freshCandidatePreviewJson.includes('"fingerprint"'), false);
+  assert.equal(freshCandidatePreviewJson.includes("private-fresh-track"), false);
+  assert.equal(freshCandidatePreviewJson.includes("private-fresh-harmony"), false);
+  assert.equal(freshCandidatePreviewJson.includes("private-fresh-role"), false);
+
   const freshSelectionResponse = await request(
     `/api/generation-candidates/${freshCandidateId}/select`,
     ownerSession,
