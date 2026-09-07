@@ -10,6 +10,7 @@ import {
   useListGenerationProviders,
   getListGenerationProvidersQueryKey,
   useSelectGenerationCandidate,
+  useRepairGenerationCandidate,
   useUpdateArrangement,
   useListTracks,
   useListArtifacts,
@@ -26,6 +27,7 @@ import {
   getListGenerationCandidatesQueryKey,
   ExportResult,
   GenerationCandidate,
+  CandidateRepairInputFinding,
   HarmonyDecisionEvidence,
   ArrangementMode,
   Arrangement,
@@ -48,7 +50,8 @@ import {
   FileArchive,
   Loader2,
   Grid3X3,
-  ShieldCheck
+  ShieldCheck,
+  Wrench,
 } from "lucide-react";
 
 import { EmptyState } from "@/components/ui/empty";
@@ -110,6 +113,32 @@ function readHarmonyDecisions(value: unknown): HarmonyDecisionEvidence[] {
     ));
 }
 
+type RepairFindingPreview = {
+  candidate: GenerationCandidate;
+  dimensionName: string;
+  finding: CandidateRepairInputFinding;
+};
+
+function repairFindingForDimension(
+  candidate: GenerationCandidate,
+  dimensionName: string,
+  explanation: string,
+): CandidateRepairInputFinding | null {
+  const sections = candidate.plan.sections.filter(
+    (section) => section.startBar !== undefined && section.endBar !== undefined,
+  );
+  const trackIds = (candidate.trackModels ?? []).map((track) => track.id).filter(Boolean);
+  if (!sections.length || !trackIds.length) return null;
+  return {
+    id: `music-critic-v1:${dimensionName}`,
+    affectedSections: sections.map((section) => section.name),
+    startBar: Math.min(...sections.map((section) => section.startBar!)),
+    endBar: Math.max(...sections.map((section) => section.endBar!)),
+    affectedTrackIds: trackIds,
+    musicalReason: explanation,
+  };
+}
+
 export default function ProjectWorkspace() {
   const [, params] = useRoute("/projects/:projectId");
   const projectId = params?.projectId || "";
@@ -141,6 +170,7 @@ export default function ProjectWorkspace() {
   const updateArrangement = useUpdateArrangement();
   const generateArrangement = useGenerateArrangement();
   const selectGenerationCandidate = useSelectGenerationCandidate();
+  const repairGenerationCandidate = useRepairGenerationCandidate();
   const createExport = useCreateProjectExport();
 
   const [activeTab, setActiveTab] = useState("editor");
@@ -159,6 +189,9 @@ export default function ProjectWorkspace() {
     label: string;
     url: string;
   } | null>(null);
+  const [repairPreview, setRepairPreview] = useState<RepairFindingPreview | null>(null);
+  const [repairSourceCandidate, setRepairSourceCandidate] = useState<GenerationCandidate | null>(null);
+  const [repairSourceJobId, setRepairSourceJobId] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [includeStems, setIncludeStems] = useState(true);
   const [includeMidi, setIncludeMidi] = useState(true);
@@ -347,6 +380,27 @@ export default function ProjectWorkspace() {
     },
   );
   const generationCandidates = generationCandidatesQuery.data ?? [];
+  const repairSourceCandidatesQuery = useListGenerationCandidates(
+    repairSourceJobId ?? "",
+    {
+      query: {
+        queryKey: getListGenerationCandidatesQueryKey(repairSourceJobId ?? ""),
+        enabled: Boolean(repairSourceJobId),
+      },
+    },
+  );
+  const persistedRepairSourceCandidate = repairSourceCandidate ??
+    repairSourceCandidatesQuery.data?.find((candidate) =>
+      generationCandidates.some((repaired) =>
+        repaired.evaluation.repair?.sourceCandidateId === candidate.id
+      )
+    ) ??
+    null;
+  const visibleGenerationCandidates =
+    persistedRepairSourceCandidate &&
+    !generationCandidates.some((candidate) => candidate.id === persistedRepairSourceCandidate.id)
+      ? [persistedRepairSourceCandidate, ...generationCandidates]
+      : generationCandidates;
   const activeHarmonyDecisions = generationCandidates.find(
     (candidate) => candidate.id === activeArrangement?.sourceCandidateId,
   )?.harmonyDecisions ?? readHarmonyDecisions(
@@ -366,6 +420,11 @@ export default function ProjectWorkspace() {
     setGenerationJobId(
       window.sessionStorage.getItem(
         `music-studio:generation-job:${activeArrangement.id}`,
+      ),
+    );
+    setRepairSourceJobId(
+      window.sessionStorage.getItem(
+        `music-studio:repair-source-job:${activeArrangement.id}`,
       ),
     );
   }, [activeArrangement?.id]);
@@ -511,9 +570,14 @@ export default function ProjectWorkspace() {
       onSuccess: (job) => {
         setGenerationJobId(job.id);
         setCandidatePreview(null);
+        setRepairSourceCandidate(null);
+        setRepairSourceJobId(null);
         window.sessionStorage.setItem(
           `music-studio:generation-job:${activeArrangement.id}`,
           job.id,
+        );
+        window.sessionStorage.removeItem(
+          `music-studio:repair-source-job:${activeArrangement.id}`,
         );
         handledTerminalJobRef.current = null;
         setActiveTab("candidates");
@@ -564,6 +628,50 @@ export default function ProjectWorkspace() {
           toast({
             title: "Candidate could not be selected",
             description: "Only validated provider candidates can become arrangements.",
+            variant: "destructive",
+          });
+        },
+      },
+    );
+  };
+
+  const handleRepairCandidate = () => {
+    if (!repairPreview || !activeArrangement) return;
+    const sourceCandidate = repairPreview.candidate;
+    repairGenerationCandidate.mutate(
+      {
+        candidateId: sourceCandidate.id,
+        data: {
+          idempotencyKey: crypto.randomUUID(),
+          finding: repairPreview.finding,
+        },
+      },
+      {
+        onSuccess: (job) => {
+          setRepairSourceCandidate(sourceCandidate);
+          setRepairSourceJobId(sourceCandidate.jobId);
+          setGenerationJobId(job.id);
+          setRepairPreview(null);
+          handledTerminalJobRef.current = null;
+          window.sessionStorage.setItem(
+            `music-studio:generation-job:${activeArrangement.id}`,
+            job.id,
+          );
+          window.sessionStorage.setItem(
+            `music-studio:repair-source-job:${activeArrangement.id}`,
+            sourceCandidate.jobId,
+          );
+          toast({
+            title: "Critic repair queued",
+            description: `${sourceCandidate.label} stays available while the bounded repair is evaluated.`,
+          });
+        },
+        onError: (repairError) => {
+          toast({
+            title: "Repair could not be queued",
+            description: repairError instanceof Error
+              ? repairError.message
+              : "The critic finding was not accepted.",
             variant: "destructive",
           });
         },
@@ -1366,10 +1474,12 @@ export default function ProjectWorkspace() {
                     generationJob?.status === "failed") &&
                     generationCandidates.length > 0 ? (
                    <div className="space-y-4">
-                      {generationCandidates.map((candidate: GenerationCandidate) => {
+                      {visibleGenerationCandidates.map((candidate: GenerationCandidate) => {
                         const quality = candidate.evaluation.qualityReport;
                          const critic = candidate.evaluation.musicCritic;
-                         const evaluated = candidate.evaluation.status === "evaluated" && quality && critic;
+                          const evaluated = quality && critic;
+                          const repair = candidate.evaluation.repair;
+                          const isRepairSource = persistedRepairSourceCandidate?.id === candidate.id;
                         return (
                           <Card key={candidate.id} className="group hover:border-primary/50 transition-colors shadow-sm">
                             <CardContent className="p-4 space-y-4">
@@ -1401,6 +1511,16 @@ export default function ProjectWorkspace() {
                                       {candidate.evaluation.diversity && (
                                         <Badge variant={candidate.evaluation.diversity.rejected ? "secondary" : "outline"} className="capitalize">
                                           {candidate.evaluation.diversity.rejected ? "Rejected" : "Accepted"}: {candidate.evaluation.diversity.reason.replaceAll("_", " ")}
+                                        </Badge>
+                                      )}
+                                      {isRepairSource && (
+                                        <Badge variant="outline">Original · repair source</Badge>
+                                      )}
+                                      {repair && (
+                                        <Badge variant={repair.improved ? "default" : "secondary"}>
+                                          Repair of {persistedRepairSourceCandidate?.id === repair.sourceCandidateId
+                                            ? persistedRepairSourceCandidate.label
+                                            : repair.sourceCandidateId.slice(0, 8)}
                                         </Badge>
                                       )}
                                     </div>
@@ -1484,7 +1604,20 @@ export default function ProjectWorkspace() {
                                       </Alert>
                                     )}
                                     <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                                      {Object.entries(critic.dimensions).map(([name, dimension]) => (
+                                      {Object.entries(critic.dimensions).map(([name, dimension]) => {
+                                        const finding = repairFindingForDimension(
+                                          candidate,
+                                          name,
+                                          dimension.explanation,
+                                        );
+                                        const eligible =
+                                          candidate.status === "validated" &&
+                                          !repair &&
+                                          dimension.status === "available" &&
+                                          dimension.score !== null &&
+                                          dimension.score < 1 &&
+                                          finding;
+                                        return (
                                         <div key={name} className="rounded-md border bg-card p-2">
                                           <div className="flex items-center justify-between gap-2">
                                             <span className="font-medium capitalize">{name.replace(/([A-Z])/g, " $1")}</span>
@@ -1500,10 +1633,47 @@ export default function ProjectWorkspace() {
                                               {item.summary}
                                             </p>
                                           ))}
+                                          {eligible && (
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              className="mt-2 h-7 w-full text-[10px]"
+                                              onClick={() => setRepairPreview({
+                                                candidate,
+                                                dimensionName: name,
+                                                finding,
+                                              })}
+                                            >
+                                              <Wrench className="mr-1.5 h-3 w-3" />
+                                              Repair this finding
+                                            </Button>
+                                          )}
                                         </div>
-                                      ))}
+                                      )})}
                                     </div>
                                   </div>
+                                  {repair && (
+                                    <Alert
+                                      className="sm:col-span-2"
+                                      variant={!repair.outsideScopePreserved ? "destructive" : "default"}
+                                    >
+                                      <Wrench className="h-4 w-4" />
+                                      <AlertTitle>
+                                        {!repair.outsideScopePreserved
+                                          ? "Repair violated its scope"
+                                          : repair.improved
+                                            ? "Critic repair improved this candidate"
+                                            : "Repair did not improve the candidate"}
+                                      </AlertTitle>
+                                      <AlertDescription>
+                                        {repair.musicalReason} Source score {Math.round(repair.sourceQualityScore * 100)}
+                                        {repair.repairedQualityScore === null
+                                          ? "; repaired score unavailable."
+                                          : `; repaired score ${Math.round(repair.repairedQualityScore * 100)}.`}
+                                        {" "}Attempt {repair.attempt} of {repair.maxAttempts}. The original candidate remains unchanged.
+                                      </AlertDescription>
+                                    </Alert>
+                                  )}
                                   <div>
                                     <div className="font-medium text-foreground">Strongest dimensions</div>
                                     <div className="mt-1 text-muted-foreground">
@@ -1724,7 +1894,58 @@ export default function ProjectWorkspace() {
         </Sheet>
       )}
 
-      <Dialog open={exportOpen} onOpenChange={setExportOpen}>
+        <Dialog open={Boolean(repairPreview)} onOpenChange={(open) => !open && setRepairPreview(null)}>
+          <DialogContent className="sm:max-w-xl">
+            <DialogHeader>
+              <DialogTitle>Review bounded critic repair</DialogTitle>
+              <DialogDescription>
+                Confirm the exact musical scope before requesting a deterministic repair. The original candidate will not be replaced.
+              </DialogDescription>
+            </DialogHeader>
+            {repairPreview && (
+              <div className="space-y-4 text-sm">
+                <div className="rounded-md border bg-muted/30 p-3">
+                  <div className="font-medium">{repairPreview.candidate.label}</div>
+                  <div className="mt-1 text-xs capitalize text-muted-foreground">
+                    Music Critic · {repairPreview.dimensionName.replace(/([A-Z])/g, " $1")}
+                  </div>
+                </div>
+                <div>
+                  <Label>Musical reason</Label>
+                  <p className="mt-1 rounded-md border p-3 text-muted-foreground">
+                    {repairPreview.finding.musicalReason}
+                  </p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-md border p-3">
+                    <div className="text-xs font-medium uppercase text-muted-foreground">Sections and bars</div>
+                    <div className="mt-2">{repairPreview.finding.affectedSections.join(" · ")}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      Bars {repairPreview.finding.startBar}–{repairPreview.finding.endBar}
+                    </div>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <div className="text-xs font-medium uppercase text-muted-foreground">Tracks</div>
+                    <div className="mt-2">
+                      {repairPreview.finding.affectedTrackIds.map((trackId) =>
+                        repairPreview.candidate.trackModels?.find((track) => track.id === trackId)?.instrument ?? trackId
+                      ).join(" · ")}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setRepairPreview(null)}>Cancel</Button>
+              <Button onClick={handleRepairCandidate} disabled={repairGenerationCandidate.isPending}>
+                {repairGenerationCandidate.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Request bounded repair
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={exportOpen} onOpenChange={setExportOpen}>
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
