@@ -1,7 +1,9 @@
 import hashlib
 import importlib.util
 import json
+import multiprocessing
 import os
+import signal
 import sys
 import tempfile
 import threading
@@ -15,6 +17,16 @@ sys.path.insert(0, str(ROOT))
 SPEC = importlib.util.spec_from_file_location("diffrhythm2_release", ROOT / "release.py")
 release = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(release)
+
+
+def hung_cancel_worker(call_id, sender, worker_args):
+    attempts, release_worker = worker_args
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    sender.send("started")
+    with attempts.get_lock():
+        attempts[int(call_id.removeprefix("fc-Test"))] += 1
+    release_worker.wait()
+    sender.send(True)
 
 
 class FakeResponse:
@@ -60,6 +72,23 @@ class FakeOpener:
 
 class DiffRhythmReleaseTests(unittest.TestCase):
     def setUp(self):
+        def cancel_synchronously(calls, _timeout):
+            outcomes = []
+            for call in calls:
+                try:
+                    call.cancel()
+                    outcomes.append(True)
+                except Exception:
+                    outcomes.append(False)
+            return outcomes
+
+        cancellation_patcher = patch.object(
+            release,
+            "cancel_calls_within_bound",
+            side_effect=cancel_synchronously,
+        )
+        cancellation_patcher.start()
+        self.addCleanup(cancellation_patcher.stop)
         self.metadata = {
             "provider": "DIFFRHYTHM_2",
             "modalAppId": "ap-Test",
@@ -421,7 +450,7 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             def cancel(self):
                 self.cancel_attempts += 1
                 cancel_started.set()
-                blocked.wait()
+                raise RuntimeError("private provider detail")
 
         class Comparison:
             def __init__(self):
@@ -470,6 +499,100 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             self.assertTrue(all(call.cancel_attempts == 1 for call in comparison.calls))
         finally:
             blocked.set()
+
+    def test_repeated_consolidated_hangs_leave_no_cancellation_workers(self):
+        context = multiprocessing.get_context("spawn")
+        release_hung_cancel = context.Event()
+        attempts = context.Array(
+            "i", release.COMPARISON_MAX_CONCURRENT_INPUTS
+        )
+
+        class Lifecycle:
+            def __init__(self):
+                self.markers = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def get(self, timeout=None):
+                if self.markers:
+                    return self.markers.pop(0)
+                raise release.queue.Empty
+
+        class Call:
+            def __init__(self, index):
+                self.object_id = f"fc-Test{index}"
+
+        class Comparison:
+            def __init__(self):
+                self.spawned = 0
+
+            def spawn(self, control, lifecycle=None):
+                index = self.spawned % release.COMPARISON_MAX_CONCURRENT_INPUTS
+                self.spawned += 1
+                lifecycle.markers.append({
+                    "outcome": "pre_work",
+                    "startedUnixSeconds": time.time(),
+                    "modalImageId": "im-Compare",
+                })
+                return Call(index)
+
+        def isolate(calls, timeout):
+            return release._run_cancel_workers_within_bound(
+                [call.object_id for call in calls],
+                min(timeout, 0.5),
+                hung_cancel_worker,
+                (attempts, release_hung_cancel),
+            )
+
+        identity = {
+            "modalAppId": "ap-Compare",
+            "modalDeploymentId": "v3",
+            "modalFunctionId": "fu-Compare",
+        }
+        baseline_processes = {
+            worker.pid for worker in multiprocessing.active_children()
+        }
+        baseline_threads = {thread.ident for thread in threading.enumerate()}
+        started = time.monotonic()
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            release, "EVIDENCE", Path(directory)
+        ), patch.object(
+            release, "COMPARISON_CANCEL_ACK_BOUND_SECONDS", 1.0
+        ), patch.object(
+            release.modal.Queue, "ephemeral", side_effect=Lifecycle
+        ), patch.object(
+            release.modal.Function, "from_name", return_value=Comparison()
+        ), patch.object(
+            release, "observe_comparison", return_value=identity
+        ), patch.object(
+            release, "cancel_calls_within_bound", side_effect=isolate
+        ):
+            for _ in range(3):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "^consolidated comparison cancellation drills failed "
+                    "within a safe bound$",
+                ):
+                    release.verify_cancelled_comparison_drills(self.metadata)
+        elapsed = time.monotonic() - started
+
+        self.assertEqual(list(attempts), [3] * len(attempts))
+        self.assertLess(
+            elapsed,
+            3 * (release.COMPARISON_CANCEL_WORKER_START_BOUND_SECONDS + 0.5),
+        )
+        self.assertEqual(
+            {worker.pid for worker in multiprocessing.active_children()},
+            baseline_processes,
+        )
+        self.assertEqual(
+            {thread.ident for thread in threading.enumerate()},
+            baseline_threads,
+        )
 
     def test_consolidated_drills_cancel_every_call_after_partial_markers(self):
         all_cancelled = threading.Event()
@@ -583,22 +706,7 @@ class DiffRhythmReleaseTests(unittest.TestCase):
                 self.cancelled = False
 
             def cancel(self):
-                with self.comparison.lock:
-                    self.comparison.active_cancellations += 1
-                    self.comparison.peak_cancellations = max(
-                        self.comparison.peak_cancellations,
-                        self.comparison.active_cancellations,
-                    )
-                    if (
-                        self.comparison.active_cancellations
-                        == release.COMPARISON_MAX_CONCURRENT_INPUTS
-                    ):
-                        self.comparison.all_cancelling.set()
-                if not self.comparison.all_cancelling.wait(1):
-                    raise AssertionError("cancellations did not overlap")
                 self.cancelled = True
-                with self.comparison.lock:
-                    self.comparison.active_cancellations -= 1
 
             def get(self, timeout=None):
                 if self.cancelled:
@@ -656,10 +764,6 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             len(comparison.calls), release.COMPARISON_MAX_CONCURRENT_INPUTS
         )
         self.assertTrue(all(call.cancelled for call in comparison.calls))
-        self.assertEqual(
-            comparison.peak_cancellations,
-            release.COMPARISON_MAX_CONCURRENT_INPUTS,
-        )
         self.assertEqual(proof, self.batch_execution_cancellation_proof())
         release.validate_cancelled_comparison_batch_execution(
             proof, self.metadata
@@ -697,7 +801,6 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             def cancel(self):
                 self.attempts.append(self.index)
                 if self.index == 0:
-                    release_hung_cancel.wait()
                     raise RuntimeError(private_detail)
 
             def get(self, timeout=None):
@@ -1313,7 +1416,6 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             def cancel(self):
                 self.attempts.append(self.index)
                 if self.index == 0:
-                    release_hung_cancel.wait()
                     raise RuntimeError(private_detail)
 
             def get(self, timeout=None):
@@ -1591,7 +1693,6 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             def cancel(self):
                 cancelled_indices.append(self.index)
                 cancellation_attempted.set()
-                stalled.wait()
                 raise RuntimeError(private_details)
 
         class StalledComparison:
@@ -1734,6 +1835,62 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             outcome["outcome"] == "timeout"
             for outcome in retained["outcomes"][1:]
         ))
+
+    def test_repeated_hung_cancellations_leave_no_live_workers(self):
+        context = multiprocessing.get_context("spawn")
+        release_hung_cancel = context.Event()
+        attempts = context.Array(
+            "i", release.COMPARISON_MAX_CONCURRENT_INPUTS
+        )
+        call_ids = [
+            f"fc-Test{index}"
+            for index in range(release.COMPARISON_MAX_CONCURRENT_INPUTS)
+        ]
+        baseline = {worker.pid for worker in multiprocessing.active_children()}
+        started = time.monotonic()
+        for _ in range(3):
+            self.assertEqual(
+                release._run_cancel_workers_within_bound(
+                    call_ids,
+                    0.5,
+                    hung_cancel_worker,
+                    (attempts, release_hung_cancel),
+                ),
+                [False] * len(call_ids),
+            )
+        elapsed = time.monotonic() - started
+
+        self.assertEqual(list(attempts), [3] * len(call_ids))
+        self.assertLess(
+            elapsed,
+            3 * (release.COMPARISON_CANCEL_WORKER_START_BOUND_SECONDS + 0.5),
+        )
+        self.assertEqual(
+            {worker.pid for worker in multiprocessing.active_children()},
+            baseline,
+        )
+
+    def test_isolated_cancellation_reconstructs_exact_modal_call(self):
+        class Call:
+            def __init__(self):
+                self.cancelled = False
+
+            def cancel(self):
+                self.cancelled = True
+
+        call = Call()
+        receiver, sender = multiprocessing.Pipe(duplex=False)
+        with patch.object(
+            release.modal.FunctionCall,
+            "from_id",
+            return_value=call,
+        ) as from_id:
+            release._cancel_modal_call("fc-ExactCall", sender, ())
+
+        self.assertTrue(receiver.recv())
+        receiver.close()
+        from_id.assert_called_once_with("fc-ExactCall")
+        self.assertTrue(call.cancelled)
 
 
 if __name__ == "__main__":
