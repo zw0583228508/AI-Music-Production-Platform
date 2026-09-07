@@ -1,10 +1,39 @@
 {
+  "schemaVersion": 2,
   "provider": "MIDI_SAG",
-  "codeLicense": "upstream repository terms",
-  "weightsLicense": "asset-specific upstream terms; recorded per asset during bootstrap",
-  "commercialStatus": "LICENSE_REVIEW_REQUIRED",
-  "separateProviderIdentity": {
-    "MIDI_SAG": "vocal-to-symbolic accompaniment pipeline",
-    "MUSE_CONTROL_LITE": "controlled neural backing-audio renderer"
+  "classification": "BLOCKED_MISSING_LICENSED_ASSET",
+  "code": {
+    "origin": "https://github.com/fundwotsai2001/MIDI-SAG/blob/b79839ed0cdd0b5e5f39d4cc4a80fcc90002d32f/LICENSE",
+    "revision": "b79839ed0cdd0b5e5f39d4cc4a80fcc90002d32f",
+    "blob": "b22cabd036d8b65397db08aacbe7a756e1cd47ba",
+    "license": "Apache-2.0"
+  },
+  "components": {
+    "rmvpe": {"license": "UNVERIFIED", "commercialUsePermitted": false},
+    "game-1.0-medium": {"sourceLicense": "MIT", "checkpointLicense": "UNVERIFIED", "commercialUsePermitted": false},
+    "muse-control-lite": {"license": "UNVERIFIED", "commercialUsePermitted": false},
+    "vocal-beat-tracking": {"license": "UNVERIFIED", "commercialUsePermitted": false},
+    "accomontage2": {"sourceLicense": "MIT", "assetLicense": "UNVERIFIED", "commercialUsePermitted": false},
+    "csll2m": {"license": "UNVERIFIED", "commercialUsePermitted": false},
+    "soulx-singer": {"modelCardLicense": "Apache-2.0", "completeInventoryRetained": false, "commercialUsePermitted": false},
+    "soulx-singer-preprocess": {"modelCardLicense": "Apache-2.0", "completeInventoryRetained": false, "commercialUsePermitted": false},
+    "stable-audio-open-1.0": {"modelCardLicense": "other", "gated": "auto", "acceptedTermsEvidenceRetained": false, "commercialUsePermitted": false}
+  },
+  "commercialStatus": "BLOCKED_UNTIL_EVERY_REQUIRED_ASSET_IS_REVIEWED",
+  "provisioningAllowed": false,
+  "deploymentAllowed": false,
+  "providerIdentities": {
+    "MIDI_SAG": {
+      "role": "vocal-to-symbolic accompaniment pipeline",
+      "status": "BLOCKED_UPSTREAM",
+      "licenseStatus": "UNVERIFIED"
+    },
+    "MUSE_CONTROL_LITE": {
+      "role": "controlled neural backing-audio renderer",
+      "status": "BLOCKED_MISSING_LICENSED_ASSET",
+      "origin": "https://drive.google.com/drive/folders/1o6eUCYwUcIzZeqEycar6AHTSQ-vYcL_q",
+      "revision": null,
+      "license": "UNVERIFIED"
+    }
   }
 }

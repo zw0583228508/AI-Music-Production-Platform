@@ -14,8 +14,23 @@ class AuditFixtures(unittest.TestCase):
                 "licenseStatus":"COMMERCIAL","codeRevision":"abc123","modelRevision":"def456",
                 "blockers":[],"notes":["proof"]}
     def matrix(self, row):
-        return {"providers":[row] + [{"provider":p,"finalStatus":"BLOCKED_UPSTREAM",
-          "blockers":["blocked"]} for p in audit.EXPECTED-{"ACE_STEP"}],
+        retained = {
+            item["provider"]: copy.deepcopy(item)
+            for item in json.loads(
+                Path("installation-matrix-v2.json").read_text()
+            )["providers"]
+            if item["provider"] in {"MIDI_SAG", "MUSE_CONTROL_LITE"}
+        }
+        providers = [row]
+        providers.extend(
+            retained[p] if p in retained else {
+                "provider": p,
+                "finalStatus": "BLOCKED_UPSTREAM",
+                "blockers": ["blocked"],
+            }
+            for p in audit.EXPECTED - {"ACE_STEP"}
+        )
+        return {"providers":providers,
           "defaults":{k:(False if k in audit.BOOLS else [] if k in {"blockers","notes"}
                          else "UNVERIFIED" if k == "licenseStatus" else "x")
                       for k in audit.REQUIRED}}
@@ -172,3 +187,53 @@ class AuditFixtures(unittest.TestCase):
         row["codeRevision"] = "0" * 40
         errors = audit.evidence_errors(audit.effective(drifted), Path("."))
         self.assertTrue(any(error.startswith("ANYACCOMP:") for error in errors))
+
+    def test_midi_sag_blocked_evidence_passes(self):
+        matrix = json.loads(Path("installation-matrix-v2.json").read_text())
+        errors = audit.evidence_errors(audit.effective(matrix), Path("."))
+        self.assertFalse(
+            any(error.startswith("MIDI_SAG/MUSE_CONTROL_LITE:") for error in errors)
+        )
+
+    def test_midi_sag_rejects_terminal_status_drift(self):
+        matrix = json.loads(Path("installation-matrix-v2.json").read_text())
+        drifted = copy.deepcopy(matrix)
+        row = next(
+            item for item in drifted["providers"]
+            if item["provider"] == "MIDI_SAG"
+        )
+        row["finalStatus"] = "BLOCKED_MISSING_LICENSED_ASSET"
+        errors = audit.evidence_errors(audit.effective(drifted), Path("."))
+        self.assertTrue(
+            any(error.startswith("MIDI_SAG/MUSE_CONTROL_LITE:") for error in errors)
+        )
+
+    def test_midi_sag_rejects_both_source_revisions_drifting(self):
+        matrix = json.loads(Path("installation-matrix-v2.json").read_text())
+        drifted = copy.deepcopy(matrix)
+        for provider in ("MIDI_SAG", "MUSE_CONTROL_LITE"):
+            row = next(
+                item for item in drifted["providers"]
+                if item["provider"] == provider
+            )
+            row["codeRevision"] = "0" * 40
+        errors = audit.evidence_errors(audit.effective(drifted), Path("."))
+        self.assertTrue(
+            any(error.startswith("MIDI_SAG/MUSE_CONTROL_LITE:") for error in errors)
+        )
+
+    def test_midi_sag_rejects_coordinated_identity_and_status_drift(self):
+        matrix = json.loads(Path("installation-matrix-v2.json").read_text())
+        drifted = copy.deepcopy(matrix)
+        for provider in ("MIDI_SAG", "MUSE_CONTROL_LITE"):
+            row = next(
+                item for item in drifted["providers"]
+                if item["provider"] == provider
+            )
+            row["codeRepository"] = "https://example.invalid/replaced"
+            row["codeRevision"] = "0" * 40
+            row["finalStatus"] = "BLOCKED_LICENSE"
+        errors = audit.evidence_errors(audit.effective(drifted), Path("."))
+        self.assertTrue(
+            any(error.startswith("MIDI_SAG/MUSE_CONTROL_LITE:") for error in errors)
+        )

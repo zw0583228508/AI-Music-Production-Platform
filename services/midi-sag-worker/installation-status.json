@@ -1,32 +1,71 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "providerFamily": "MIDI_SAG",
+  "sourceReview": "release-evidence/source-contract-license-review.json",
   "providers": {
     "MIDI_SAG": {
-      "classification": "BLOCKED_MISSING_LICENSED_ASSET",
-      "evidence": {
-        "modelManifest": "model_manifest.json",
-        "licenseManifest": "license_manifest.json",
-        "requiredAssetCount": 8,
-        "assetSpecificLicenseReviewComplete": false,
-        "assetInventoryPresent": false,
-        "realPipelineSmokeProofPresent": false
+      "classification": "BLOCKED_UPSTREAM",
+      "terminal": {
+        "status": "BLOCKED_UPSTREAM",
+        "ready": false,
+        "modelVersion": "midi-sag-b79839ed0cdd0b5e5f39d4cc4a80fcc90002d32f",
+        "message": "The pinned upstream source lacks production_adapter.py; no provision, smoke, deployment, or inference is authorized.",
+        "readiness": {
+          "sourcePinned": true,
+          "sourceContract": false,
+          "runtimeBuilt": false,
+          "assetsDownloaded": false,
+          "assetsChecksummed": false,
+          "licenseReview": false,
+          "standaloneSmoke": false,
+          "pipelineSmoke": false,
+          "promotionSigned": false,
+          "deployment": false,
+          "healthReady": false,
+          "apiConnected": false
+        },
+        "findings": [
+          "production_adapter.py is absent from upstream commit b79839ed0cdd0b5e5f39d4cc4a80fcc90002d32f (tree 7e979241dde308c5670439994849eb877433a0db).",
+          "The published install script uses mutable Google Drive folders and unpinned Hugging Face repository heads, and omits the required AccoMontage2 data bootstrap.",
+          "No installed asset inventory, complete per-file SHA-256/license review, real detected-mode intermediate proof, deployment, promotion, live health, or API evidence is retained."
+        ]
       },
       "blockers": [
-        "The required RMVPE, GAME, beat tracking, Accomontage2, CSLL2M, SoulX and related asset files are not provisioned with reviewed licenses and SHA-256 identities."
+        "The immutable upstream source does not publish the production_adapter.py contract required by this isolated worker.",
+        "Required model/data assets do not have a complete provisioned per-file identity and asset-specific license chain."
       ]
     },
     "MUSE_CONTROL_LITE": {
       "classification": "BLOCKED_MISSING_LICENSED_ASSET",
-      "evidence": {
-        "modelManifest": "model_manifest.json",
-        "licenseManifest": "license_manifest.json",
-        "separateProviderIdentityRecorded": true,
-        "assetSpecificLicenseReviewComplete": false,
-        "assetInventoryPresent": false,
-        "individualRealSmokeProofPresent": false
+      "terminal": {
+        "status": "BLOCKED_MISSING_LICENSED_ASSET",
+        "ready": false,
+        "modelVersion": "UNVERIFIED",
+        "message": "MuseControlLite has no independently revision-pinned, provisioned, checksummed, and licensed checkpoint inventory.",
+        "readiness": {
+          "sourcePinned": false,
+          "sourceContract": false,
+          "runtimeBuilt": false,
+          "assetsDownloaded": false,
+          "assetsChecksummed": false,
+          "licenseReview": false,
+          "standaloneSmoke": false,
+          "pipelineSmoke": false,
+          "promotionSigned": false,
+          "deployment": false,
+          "healthReady": false,
+          "apiConnected": false
+        },
+        "findings": [
+          "The pinned MIDI-SAG source lacks production_adapter.py, so there is no reviewed integration contract for MuseControlLite.",
+          "The MuseControlLite checkpoint is referenced only through an unversioned Google Drive folder; its filenames, bytes, SHA-256 values, and checkpoint-specific license grant are not published in the source.",
+          "Stable Audio Open 1.0 is loaded by repository name at request time in upstream scripts; no accepted, revision-pinned offline inventory is retained.",
+          "MIDI-SAG MIDI evidence is not evidence for the separately identified MuseControlLite renderer."
+        ]
       },
       "blockers": [
-        "MuseControlLite weights are not provisioned with exact revision, SHA-256 inventory, and reviewed asset-specific license evidence."
+        "MuseControlLite weights lack an immutable revision, complete per-file SHA-256 inventory, and asset-specific license evidence.",
+        "No standalone MuseControlLite real inference or non-silent/non-copy WAV proof is retained."
       ]
     }
   }

@@ -133,8 +133,11 @@ export class ProviderUnavailableError extends Error {
 
 const LICENSE_BLOCKED_PROVIDER_IDS = new Set<string>(["BS_ROFORMER"]);
 
+const UPSTREAM_BLOCKED_PROVIDER_IDS = new Set<string>(["MIDI_SAG"]);
 function providerRoutingAuthorized(providerId: string): boolean {
   return !LICENSE_BLOCKED_PROVIDER_IDS.has(providerId) &&
+    !UPSTREAM_BLOCKED_PROVIDER_IDS.has(providerId) &&
+    !MISSING_LICENSED_ASSET_PROVIDER_IDS.has(providerId) &&
     providerId !== "LADA_BAND" &&
     (providerId !== "ANYACCOMP" || anyAccompCommercialUseAuthorized());
 }
@@ -143,6 +146,16 @@ function assertProviderCommercialUseAuthorized(providerId: string): void {
   if (LICENSE_BLOCKED_PROVIDER_IDS.has(providerId)) {
     throw new ProviderUnavailableError(
       `${providerId} (BLOCKED_LICENSE until checkpoint-owner rights are verified)`,
+    );
+  }
+  if (UPSTREAM_BLOCKED_PROVIDER_IDS.has(providerId)) {
+    throw new ProviderUnavailableError(
+      "MIDI_SAG (BLOCKED_UPSTREAM: pinned source lacks the required production adapter)",
+    );
+  }
+  if (MISSING_LICENSED_ASSET_PROVIDER_IDS.has(providerId)) {
+    throw new ProviderUnavailableError(
+      "MUSE_CONTROL_LITE (BLOCKED_MISSING_LICENSED_ASSET: required licensed asset is unavailable)",
     );
   }
   if (providerId === "LADA_BAND") {
@@ -352,27 +365,27 @@ export const MUSIC_PROVIDERS: MusicProviderDescriptor[] = [
     id: "MIDI_SAG",
     name: "MIDI-SAG",
     provider: "MIDI-SAG",
-    version: "configured-endpoint",
+    version: "blocked-upstream",
     capabilities: ["arrangement", "orchestration"],
     inputTypes: ["VOCAL_ONLY", "SOLO_INSTRUMENT", "MIDI"],
     execution: "remote",
-    status: remoteConfigured("MIDI_SAG") ? "configured" : "unavailable",
-    license: "Provider terms",
+    status: "unavailable",
+    license: "Apache-2.0 source; required asset licenses unresolved",
     priority: 65,
-    notes: "Requires MIDI_SAG_API_URL, bearer authentication, private immutable asset volume, and valid nonempty MIDI smoke evidence.",
+    notes: "BLOCKED_UPSTREAM. The pinned source lacks the required production adapter; endpoint and token environment variables cannot enable routing.",
   },
   {
     id: "MUSE_CONTROL_LITE",
     name: "MuseControlLite",
     provider: "MIDI-SAG packaged MuseControlLite",
-    version: "midi-sag-b79839ed0cdd0b5e5f39d4cc4a80fcc90002d32f",
+    version: "blocked-missing-licensed-asset",
     capabilities: ["audio_generation"],
     inputTypes: ["MIDI", "VOCAL_ONLY", "INSTRUMENTAL"],
     execution: "remote",
-    status: remoteConfigured("MUSE_CONTROL_LITE") || remoteConfigured("MIDI_SAG") ? "configured" : "unavailable",
-    license: "Asset-specific upstream terms; license review required",
+    status: "unavailable",
+    license: "BLOCKED_MISSING_LICENSED_ASSET: required asset license and artifact are unavailable",
     priority: 66,
-    notes: "Separate controlled-generation identity although packaged in MIDI-SAG. Requires MUSE_CONTROL_LITE_API_URL (or MIDI_SAG_API_URL), bearer authentication, private immutable asset volume, and real smoke evidence.",
+    notes: "BLOCKED_MISSING_LICENSED_ASSET. This packaged MIDI-SAG identity cannot route until its required licensed asset is acquired and verified.",
   },
   {
     id: "LOCAL_EXPRESSIVE_SYNTH",
@@ -1904,7 +1917,7 @@ export const providerDefinitions: ProviderDefinition[] = [
   {
     id: "MIDI_SAG",
     displayName: "MIDI-SAG",
-    modelVersion: "configured-endpoint",
+    modelVersion: "midi-sag-b79839ed0cdd0b5e5f39d4cc4a80fcc90002d32f",
     tasks: ["ACCOMPANIMENT", "ORCHESTRATION", "ARRANGEMENT"],
     hardware: ["CPU", "GPU"],
     speeds: ["FAST", "BALANCED", "QUALITY"],
@@ -1913,7 +1926,7 @@ export const providerDefinitions: ProviderDefinition[] = [
   {
     id: "MUSE_CONTROL_LITE",
     displayName: "MuseControlLite",
-    modelVersion: "midi-sag-b79839ed0cdd0b5e5f39d4cc4a80fcc90002d32f",
+    modelVersion: "UNVERIFIED",
     tasks: ["ACCOMPANIMENT"],
     hardware: ["GPU"],
     speeds: ["BALANCED", "QUALITY"],
@@ -1972,10 +1985,15 @@ function initialProviderReadiness(configured: boolean): ProviderRuntimeSnapshot 
 }
 
 function blockedProviderReadiness(providerId: string): ProviderRuntimeSnapshot {
+  const reason = UPSTREAM_BLOCKED_PROVIDER_IDS.has(providerId)
+    ? "BLOCKED_UPSTREAM: pinned source lacks the required production adapter."
+    : MISSING_LICENSED_ASSET_PROVIDER_IDS.has(providerId)
+      ? "BLOCKED_MISSING_LICENSED_ASSET: required licensed asset is unavailable."
+      : "BLOCKED_LICENSE until checkpoint-owner rights are verified.";
   return {
     ...initialProviderReadiness(false),
     healthStatus: "unhealthy",
-    message: `${providerId} is BLOCKED_LICENSE until checkpoint-owner rights are verified.`,
+    message: `${providerId} is ${reason}`,
   };
 }
 
@@ -2618,3 +2636,5 @@ function finite(value: unknown, min: number, max = Number.POSITIVE_INFINITY): va
 function integer(value: unknown, min: number, max: number): value is number {
   return Number.isInteger(value) && (value as number) >= min && (value as number) <= max;
 }
+
+const MISSING_LICENSED_ASSET_PROVIDER_IDS = new Set<string>(["MUSE_CONTROL_LITE"]);

@@ -27,7 +27,20 @@ def valid_midi(data: bytes) -> bool:
     if len(data) < 26 or data[:4] != b"MThd":
         return False
     header_size = int.from_bytes(data[4:8], "big")
-    return header_size >= 6 and b"MTrk" in data[8 + header_size:] and len(data) > 32
+    if header_size < 6 or 8 + header_size + 8 > len(data):
+        return False
+    offset = 8 + header_size
+    saw_track = False
+    while offset < len(data):
+        if offset + 8 > len(data) or data[offset:offset + 4] != b"MTrk":
+            return False
+        track_size = int.from_bytes(data[offset + 4:offset + 8], "big")
+        offset += 8
+        if track_size == 0 or offset + track_size > len(data):
+            return False
+        saw_track = True
+        offset += track_size
+    return saw_track and offset == len(data)
 
 
 def run_pipeline(vocal: bytes, controls: dict[str, Any], vocal_midi: bytes | None) -> dict[str, bytes]:

@@ -6,6 +6,11 @@ from app import ASSET_ROOT, SPEC
 from inference import run_pipeline, valid_midi, sha256
 
 def main(fixture: Path) -> None:
+    # Smoke may not turn a blocked source contract into evidence.
+    from app import state
+    terminal = state("MIDI_SAG")
+    if terminal["status"].startswith("BLOCKED_"):
+        raise RuntimeError(f"MIDI-SAG smoke is blocked: {terminal['message']}")
     result = run_pipeline(fixture.read_bytes(), {"mode": "detected", "dynamics": 0.5}, None)
     if not valid_midi(result["midi"]) or not result["wav"]:
         raise RuntimeError("real MIDI-SAG smoke produced empty/invalid MIDI or WAV")

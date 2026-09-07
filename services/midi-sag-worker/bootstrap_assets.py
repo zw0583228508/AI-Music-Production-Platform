@@ -13,6 +13,14 @@ from inference import ROOT, SPEC, UPSTREAM, sha256
 ASSET_ROOT = Path(os.getenv("MIDI_SAG_ASSET_ROOT", SPEC["assetRoot"]))
 
 def main() -> None:
+    # The reviewed source contract is terminally blocked: do not create an
+    # inventory, invoke a downloader, or otherwise reach a network operation.
+    try:
+        terminal = json.loads((ROOT / "installation-status.json").read_text())["providers"]["MIDI_SAG"]["terminal"]
+    except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("reviewed MIDI-SAG terminal status is unavailable; refusing provisioning") from exc
+    if terminal.get("ready") is not True or str(terminal.get("status", "")).startswith("BLOCKED_"):
+        raise RuntimeError(f"MIDI-SAG provisioning is blocked: {terminal.get('message', 'terminal review failed')}")
     if subprocess.check_output(["git", "-C", str(UPSTREAM), "rev-parse", "HEAD"], text=True).strip() != SPEC["code"]["revision"]:
         raise RuntimeError("MIDI-SAG source revision does not match immutable manifest")
     adapter = UPSTREAM / "production_adapter.py"
