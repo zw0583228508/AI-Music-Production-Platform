@@ -49,8 +49,7 @@ COMPARISON_CANCEL_ACK_BOUND_SECONDS = 30
 COMPARISON_RECOVERY_BOUND_SECONDS = 30
 COMPARISON_CANCELLATION_SUITE_BOUND_SECONDS = (
     COMPARISON_STALL_START_BOUND_SECONDS * COMPARISON_MAX_CONCURRENT_INPUTS
-    + COMPARISON_CANCEL_ACK_BOUND_SECONDS
-    * (COMPARISON_MAX_CONCURRENT_INPUTS + 1)
+    + COMPARISON_CANCEL_ACK_BOUND_SECONDS * 2
     + COMPARISON_EXECUTION_STOP_BOUND_SECONDS
     + COMPARISON_RECOVERY_BOUND_SECONDS
 )
@@ -985,6 +984,47 @@ def validate_cancelled_comparison_execution(proof: dict, metadata: dict) -> None
         )
 
 
+def count_cancellation_acknowledgements(calls: list, deadline: float) -> int:
+    results = queue.Queue()
+
+    def await_cancellation(call) -> None:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        try:
+            call.get(timeout=remaining)
+        except RemoteError:
+            results.put((time.monotonic(), True))
+        except Exception:
+            results.put((time.monotonic(), False))
+
+    for call in calls:
+        threading.Thread(target=await_cancellation, args=(call,), daemon=True).start()
+
+    pending = len(calls)
+    acknowledged = 0
+    while pending:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        try:
+            completed_at, succeeded = results.get(timeout=remaining)
+        except queue.Empty:
+            break
+        pending -= 1
+        if succeeded and completed_at <= deadline:
+            acknowledged += 1
+    while pending:
+        try:
+            completed_at, succeeded = results.get_nowait()
+        except queue.Empty:
+            break
+        pending -= 1
+        if succeeded and completed_at <= deadline:
+            acknowledged += 1
+    return acknowledged
+
+
 def verify_cancelled_comparison_batch_execution(metadata: dict) -> dict:
     identity = observe_comparison()
     comparison = modal.Function.from_name(
@@ -1052,11 +1092,14 @@ def verify_cancelled_comparison_batch_execution(metadata: dict) -> dict:
                         break
                     cancellation_requests_succeeded += 1
                 if cancellation_requests_succeeded == len(calls):
-                    for call in calls:
-                        try:
-                            call.get(timeout=COMPARISON_CANCEL_ACK_BOUND_SECONDS)
-                        except RemoteError:
-                            cancellations_acknowledged += 1
+                    acknowledgement_deadline = (
+                        time.monotonic() + COMPARISON_CANCEL_ACK_BOUND_SECONDS
+                    )
+                    cancellations_acknowledged = (
+                        count_cancellation_acknowledgements(
+                            calls, acknowledgement_deadline
+                        )
+                    )
                 if cancellations_acknowledged == len(calls):
                     deadline = (
                         time.monotonic() + COMPARISON_EXECUTION_STOP_BOUND_SECONDS
@@ -1247,11 +1290,14 @@ def verify_cancelled_comparison_drills(metadata: dict) -> tuple[dict, dict, dict
                         break
                     requests_succeeded += 1
                 if requests_succeeded == len(calls):
-                    for call in calls:
-                        try:
-                            call.get(timeout=COMPARISON_CANCEL_ACK_BOUND_SECONDS)
-                        except RemoteError:
-                            cancellations_acknowledged += 1
+                    acknowledgement_deadline = (
+                        time.monotonic() + COMPARISON_CANCEL_ACK_BOUND_SECONDS
+                    )
+                    cancellations_acknowledged = (
+                        count_cancellation_acknowledgements(
+                            calls, acknowledgement_deadline
+                        )
+                    )
                 if cancellations_acknowledged == len(calls):
                     deadline = (
                         time.monotonic() + COMPARISON_EXECUTION_STOP_BOUND_SECONDS
