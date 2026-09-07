@@ -161,6 +161,23 @@ function assertProducerSafeEvaluation(evaluation) {
   assert.equal(evaluation.diversity.rejected, true);
 }
 
+function assertSerializedEvaluationBoundary(
+  responseBody,
+  evaluation,
+  privateSentinels,
+) {
+  assertProducerSafeEvaluation(evaluation);
+  const serialized = JSON.stringify(responseBody);
+  assert.equal(serialized.includes('"fingerprint"'), false);
+  for (const sentinel of privateSentinels) {
+    assert.equal(
+      serialized.includes(sentinel),
+      false,
+      `private evaluation sentinel crossed the API boundary: ${sentinel}`,
+    );
+  }
+}
+
 function completeMusicCriticReport(score) {
   const dimensions = [
     "vocalFit",
@@ -1038,8 +1055,16 @@ test("project and export endpoints enforce owner authorization", async () => {
   assert.equal(ownerEdit.status, 200);
   const arrangementDetail = await ownerEdit.json();
   assert.equal(arrangementDetail.name, "Owner edit");
-  assertProducerSafeEvaluation(arrangementDetail.generationProvenance.evaluation);
-  assert.equal(JSON.stringify(arrangementDetail).includes("private-track"), false);
+  const historicalPrivateSentinels = [
+    "private-track",
+    "private-harmony",
+    "private-role",
+  ];
+  assertSerializedEvaluationBoundary(
+    arrangementDetail,
+    arrangementDetail.generationProvenance.evaluation,
+    historicalPrivateSentinels,
+  );
 
   const arrangementListResponse = await request(
     `/api/projects/${projectId}/arrangements`,
@@ -1049,8 +1074,11 @@ test("project and export endpoints enforce owner authorization", async () => {
   const arrangementList = await arrangementListResponse.json();
   const listedArrangement = arrangementList.find(({ id }) => id === arrangementId);
   assert.ok(listedArrangement);
-  assertProducerSafeEvaluation(listedArrangement.generationProvenance.evaluation);
-  assert.equal(JSON.stringify(listedArrangement).includes("private-track"), false);
+  assertSerializedEvaluationBoundary(
+    listedArrangement,
+    listedArrangement.generationProvenance.evaluation,
+    historicalPrivateSentinels,
+  );
 
   const candidatesResponse = await request(
     `/api/generation-jobs/${generationJobId}/candidates`,
@@ -1059,8 +1087,38 @@ test("project and export endpoints enforce owner authorization", async () => {
   assert.equal(candidatesResponse.status, 200);
   const candidates = await candidatesResponse.json();
   assert.equal(candidates.length, 1);
-  assertProducerSafeEvaluation(candidates[0].evaluation);
-  assert.equal(JSON.stringify(candidates[0]).includes("private-track"), false);
+  assertSerializedEvaluationBoundary(
+    candidates[0],
+    candidates[0].evaluation,
+    historicalPrivateSentinels,
+  );
+
+  const arrangementRevisionsResponse = await request(
+    `/api/arrangements/${arrangementId}/revisions`,
+    ownerSession,
+  );
+  assert.equal(arrangementRevisionsResponse.status, 200);
+  const arrangementRevisions = await arrangementRevisionsResponse.json();
+  const currentArrangementRevision = arrangementRevisions.find(
+    ({ version }) => version === arrangementDetail.version,
+  );
+  assert.ok(currentArrangementRevision);
+  const restoredArrangementResponse = await request(
+    `/api/arrangements/${arrangementId}/revisions/${currentArrangementRevision.id}/restore`,
+    ownerSession,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expectedVersion: arrangementDetail.version }),
+    },
+  );
+  assert.equal(restoredArrangementResponse.status, 200);
+  const restoredArrangement = await restoredArrangementResponse.json();
+  assertSerializedEvaluationBoundary(
+    restoredArrangement,
+    restoredArrangement.generationProvenance.evaluation,
+    historicalPrivateSentinels,
+  );
 
   const selectedCandidateId = `selected-auth-candidate-${process.pid}`;
   const selectedArrangementId = `selected-auth-arrangement-${process.pid}`;
