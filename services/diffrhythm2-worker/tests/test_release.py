@@ -201,6 +201,16 @@ class DiffRhythmReleaseTests(unittest.TestCase):
         }
 
     def test_comparison_burst_submits_above_cap_and_retains_only_safe_fields(self):
+        class FakeCall:
+            def __init__(self, comparison):
+                self.comparison = comparison
+
+            def get(self):
+                return self.comparison.remote()
+
+            def cancel(self):
+                raise AssertionError("completed calls must not be cancelled")
+
         class FakeComparison:
             def __init__(self):
                 self.active = 0
@@ -221,6 +231,9 @@ class DiffRhythmReleaseTests(unittest.TestCase):
                     "finishedUnixSeconds": time.time(),
                     "modalImageId": "im-Compare",
                 }
+
+            def spawn(self):
+                return FakeCall(self)
 
         comparison = FakeComparison()
         with tempfile.TemporaryDirectory() as directory, patch.object(
@@ -255,9 +268,16 @@ class DiffRhythmReleaseTests(unittest.TestCase):
         )
 
     def test_comparison_burst_failure_is_sanitized_after_safe_evidence_is_written(self):
-        class FailedComparison:
-            def remote(self):
+        class FailedCall:
+            def get(self):
                 raise RuntimeError("/private/audio.wav " + "a" * 64)
+
+            def cancel(self):
+                raise AssertionError("finished failed calls must not be cancelled")
+
+        class FailedComparison:
+            def spawn(self):
+                return FailedCall()
 
         with tempfile.TemporaryDirectory() as directory, patch.object(
             release, "EVIDENCE", Path(directory)
@@ -285,11 +305,31 @@ class DiffRhythmReleaseTests(unittest.TestCase):
     def test_comparison_burst_stall_times_out_without_waiting_for_call_threads(self):
         private_details = "/private/stalled/audio.wav " + "a" * 64
         stalled = threading.Event()
+        cancellation_attempted = threading.Event()
+        cancelled_indices = []
 
-        class StalledComparison:
-            def remote(self):
+        class StalledCall:
+            def __init__(self, index):
+                self.index = index
+
+            def get(self):
                 stalled.wait()
                 raise RuntimeError(private_details)
+
+            def cancel(self):
+                cancelled_indices.append(self.index)
+                cancellation_attempted.set()
+                stalled.wait()
+                raise RuntimeError(private_details)
+
+        class StalledComparison:
+            def __init__(self):
+                self.spawned = 0
+
+            def spawn(self):
+                call = StalledCall(self.spawned)
+                self.spawned += 1
+                return call
 
         try:
             with tempfile.TemporaryDirectory() as directory, patch.object(
@@ -314,6 +354,7 @@ class DiffRhythmReleaseTests(unittest.TestCase):
                 ) as raised:
                     release.verify_comparison_burst(self.metadata)
                 elapsed = time.monotonic() - started
+                self.assertTrue(cancellation_attempted.wait(0.2))
                 retained = json.loads(
                     (
                         Path(directory) / "live-comparison-burst-proof.json"
@@ -323,12 +364,15 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             stalled.set()
 
         self.assertLess(elapsed, 0.5)
+        self.assertCountEqual(
+            cancelled_indices, range(release.COMPARISON_BURST_REQUESTS)
+        )
         self.assertEqual(
             retained["outcomes"],
             [
                 {
                     "requestIndex": index,
-                    "outcome": "timeout",
+                    "outcome": "cancellation_failed",
                     "startedAfterSeconds": 0,
                     "durationSeconds": 0.05,
                 }
@@ -346,6 +390,78 @@ class DiffRhythmReleaseTests(unittest.TestCase):
         self.assertNotRegex(
             surfaced.lower(), r"(private|sha256|audio|fixture|artifact|metadata)"
         )
+
+    def test_comparison_burst_cancels_only_calls_unfinished_at_deadline(self):
+        stalled = threading.Event()
+        cancelled_indices = []
+        cancellations_completed = []
+
+        class FakeCall:
+            def __init__(self, index):
+                self.index = index
+
+            def get(self):
+                if self.index:
+                    stalled.wait()
+                now = time.time()
+                return {
+                    "outcome": "completed",
+                    "startedUnixSeconds": now,
+                    "finishedUnixSeconds": now,
+                    "modalImageId": "im-Compare",
+                }
+
+            def cancel(self):
+                time.sleep(0.02)
+                cancelled_indices.append(self.index)
+                cancellations_completed.append(self.index)
+
+        class FakeComparison:
+            def __init__(self):
+                self.spawned = 0
+
+            def spawn(self):
+                call = FakeCall(self.spawned)
+                self.spawned += 1
+                return call
+
+        try:
+            with tempfile.TemporaryDirectory() as directory, patch.object(
+                release, "EVIDENCE", Path(directory)
+            ), patch.object(
+                release, "COMPARISON_BURST_TIMEOUT_SECONDS", 0.05
+            ), patch.object(
+                release.modal.Function, "from_name", return_value=FakeComparison()
+            ), patch.object(
+                release, "observe_comparison",
+                return_value={
+                    "modalAppId": "ap-Compare",
+                    "modalDeploymentId": "v3",
+                    "modalFunctionId": "fu-Compare",
+                },
+            ):
+                with self.assertRaises(RuntimeError):
+                    release.verify_comparison_burst(self.metadata)
+                self.assertCountEqual(
+                    cancellations_completed,
+                    range(1, release.COMPARISON_BURST_REQUESTS),
+                )
+                retained = json.loads(
+                    (
+                        Path(directory) / "live-comparison-burst-proof.json"
+                    ).read_text()
+                )
+        finally:
+            stalled.set()
+
+        self.assertCountEqual(
+            cancelled_indices, range(1, release.COMPARISON_BURST_REQUESTS)
+        )
+        self.assertEqual(retained["outcomes"][0]["outcome"], "completed")
+        self.assertTrue(all(
+            outcome["outcome"] == "timeout"
+            for outcome in retained["outcomes"][1:]
+        ))
 
 
 if __name__ == "__main__":

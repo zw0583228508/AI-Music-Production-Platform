@@ -38,6 +38,7 @@ RESEARCH_LICENSE = (
 COMPARISON_APP_NAME = f"{APP_NAME}-comparison"
 COMPARISON_BURST_REQUESTS = max(3, COMPARISON_MAX_CONCURRENT_INPUTS + 1)
 COMPARISON_BURST_TIMEOUT_SECONDS = 600
+COMPARISON_CANCEL_TIMEOUT_SECONDS = 0.25
 
 
 def canonical(value: object) -> str:
@@ -430,16 +431,31 @@ def verify_comparison_burst(metadata: dict) -> dict:
     started = time.time()
     outcomes = []
     results = queue.Queue()
+    cancellations = queue.Queue()
+    calls = {}
 
-    def call_comparison(index: int) -> None:
+    def await_comparison(index: int, call) -> None:
         try:
-            results.put((index, comparison.remote()))
+            results.put((index, call.get()))
         except Exception:
             results.put((index, None))
 
+    def cancel_comparison(index: int, call) -> None:
+        try:
+            call.cancel()
+            cancellations.put((index, True))
+        except Exception:
+            cancellations.put((index, False))
+
     for index in range(COMPARISON_BURST_REQUESTS):
+        try:
+            call = comparison.spawn()
+        except Exception:
+            results.put((index, None))
+            continue
+        calls[index] = call
         threading.Thread(
-            target=call_comparison, args=(index,), daemon=True
+            target=await_comparison, args=(index, call), daemon=True
         ).start()
 
     deadline = time.monotonic() + COMPARISON_BURST_TIMEOUT_SECONDS
@@ -483,10 +499,35 @@ def verify_comparison_burst(metadata: dict) -> dict:
             ),
             "modalImageId": result.get("modalImageId", "") if valid else "",
         })
+    cancellable = {index for index in pending if index in calls}
+    for index in cancellable:
+        call = calls.get(index)
+        threading.Thread(
+            target=cancel_comparison, args=(index, call), daemon=True
+        ).start()
+    cancellation_deadline = time.monotonic() + COMPARISON_CANCEL_TIMEOUT_SECONDS
+    cancellation_failed = set(pending - cancellable)
+    awaiting_cancellation = set(cancellable)
+    while awaiting_cancellation:
+        remaining = cancellation_deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        try:
+            index, succeeded = cancellations.get(timeout=remaining)
+        except queue.Empty:
+            break
+        if index not in awaiting_cancellation:
+            continue
+        awaiting_cancellation.remove(index)
+        if not succeeded:
+            cancellation_failed.add(index)
+    cancellation_failed.update(awaiting_cancellation)
     for index in pending:
         outcomes.append({
             "requestIndex": index,
-            "outcome": "timeout",
+            "outcome": (
+                "cancellation_failed" if index in cancellation_failed else "timeout"
+            ),
             "startedUnixSeconds": started,
             "finishedUnixSeconds": started + COMPARISON_BURST_TIMEOUT_SECONDS,
             "modalImageId": "",
