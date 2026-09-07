@@ -1545,6 +1545,103 @@ export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCo
 export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndBeatFractionMin = 0;
 export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndBeatFractionExclusiveMax = 1;
 
+export const getProjectSongModelResponseVocalIntelligenceProvenanceOneContentChecksumRegExp = new RegExp('^[a-fA-F0-9]{64}$');
+export const getProjectSongModelResponseVocalIntelligencePhrasesEventsItemStartMin = 0;
+
+export const getProjectSongModelResponseVocalIntelligencePhrasesEventsItemEndMin = 0;
+
+export const getProjectSongModelResponseVocalIntelligencePhrasesEventsItemConfidenceMin = 0;
+export const getProjectSongModelResponseVocalIntelligencePhrasesEventsItemConfidenceMax = 1;
+
+export const getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartSecondsMin = 0;
+
+export const getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartTickMin = 0;
+
+
+
+
+export const getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartBeatFractionMin = 0;
+export const getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartBeatFractionExclusiveMax = 1;
+
+export const getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndSecondsMin = 0;
+
+export const getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndTickMin = 0;
+
+
+
+
+export const getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndBeatFractionMin = 0;
+export const getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndBeatFractionExclusiveMax = 1;
+
+export const getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneStartMin = 0;
+
+export const getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneEndMin = 0;
+
+export const getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneConfidenceMin = 0;
+export const getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneConfidenceMax = 1;
+
+export const getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartSecondsMin = 0;
+
+export const getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartTickMin = 0;
+
+
+
+
+export const getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartBeatFractionMin = 0;
+export const getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartBeatFractionExclusiveMax = 1;
+
+export const getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndSecondsMin = 0;
+
+export const getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndTickMin = 0;
+
+
+
+
+export const getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndBeatFractionMin = 0;
+export const getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndBeatFractionExclusiveMax = 1;
+
+export const getProjectSongModelResponseVocalIntelligenceLyricAlignmentAlignmentsItemLyricIndexesItemMin = 0;
+
+export const getProjectSongModelResponseVocalIntelligenceLyricAlignmentAlignmentsItemMelodyIndexesItemMin = 0;
+
+export const getProjectSongModelResponseVocalIntelligenceLyricAlignmentAlignmentsItemConfidenceMin = 0;
+export const getProjectSongModelResponseVocalIntelligenceLyricAlignmentAlignmentsItemConfidenceMax = 1;
+
+export const getProjectSongModelResponseVocalIntelligenceMelodyAlignmentAlignmentsItemLyricIndexesItemMin = 0;
+
+export const getProjectSongModelResponseVocalIntelligenceMelodyAlignmentAlignmentsItemMelodyIndexesItemMin = 0;
+
+export const getProjectSongModelResponseVocalIntelligenceMelodyAlignmentAlignmentsItemConfidenceMin = 0;
+export const getProjectSongModelResponseVocalIntelligenceMelodyAlignmentAlignmentsItemConfidenceMax = 1;
+
+export const getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemStartMin = 0;
+
+export const getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemEndMin = 0;
+
+export const getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemConfidenceMin = 0;
+export const getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemConfidenceMax = 1;
+
+
+export const getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartSecondsMin = 0;
+
+export const getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartTickMin = 0;
+
+
+
+
+export const getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartBeatFractionMin = 0;
+export const getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartBeatFractionExclusiveMax = 1;
+
+export const getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndSecondsMin = 0;
+
+export const getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndTickMin = 0;
+
+
+
+
+export const getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndBeatFractionMin = 0;
+export const getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndBeatFractionExclusiveMax = 1;
+
 export const getProjectSongModelResponseLyricsItemCoordinatesStartSecondsMin = 0;
 
 export const getProjectSongModelResponseLyricsItemCoordinatesStartTickMin = 0;
@@ -1957,6 +2054,125 @@ export const GetProjectSongModelResponse = zod.object({
 })
 })
 }))
+}),
+  "vocalIntelligence": zod.object({
+  "version": zod.enum(['1.0']),
+  "provenance": zod.union([zod.object({
+  "sourceStemRole": zod.string(),
+  "objectPath": zod.string(),
+  "provider": zod.string(),
+  "contentChecksum": zod.string().regex(getProjectSongModelResponseVocalIntelligenceProvenanceOneContentChecksumRegExp).optional()
+}),zod.null()]),
+  "phrases": zod.object({
+  "status": zod.enum(['detected', 'low_confidence', 'not_available', 'conflicting']),
+  "reason": zod.string().nullable(),
+  "events": zod.array(zod.object({
+  "id": zod.string(),
+  "start": zod.number().min(getProjectSongModelResponseVocalIntelligencePhrasesEventsItemStartMin),
+  "end": zod.number().min(getProjectSongModelResponseVocalIntelligencePhrasesEventsItemEndMin),
+  "confidence": zod.number().min(getProjectSongModelResponseVocalIntelligencePhrasesEventsItemConfidenceMin).max(getProjectSongModelResponseVocalIntelligencePhrasesEventsItemConfidenceMax),
+  "coordinates": zod.object({
+  "start": zod.object({
+  "seconds": zod.number().min(getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartSecondsMin),
+  "tick": zod.number().min(getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartTickMin),
+  "beat": zod.number().min(1),
+  "bar": zod.number().min(1),
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartBeatFractionMin).lt(getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartBeatFractionExclusiveMax)
+}),
+  "end": zod.object({
+  "seconds": zod.number().min(getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndSecondsMin),
+  "tick": zod.number().min(getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndTickMin),
+  "beat": zod.number().min(1),
+  "bar": zod.number().min(1),
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndBeatFractionMin).lt(getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndBeatFractionExclusiveMax)
+})
+})
+}))
+}),
+  "breaths": zod.object({
+  "status": zod.enum(['detected', 'not_available']),
+  "reason": zod.string().nullable(),
+  "events": zod.array(zod.object({
+  "id": zod.string(),
+  "start": zod.number().min(getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneStartMin),
+  "end": zod.number().min(getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneEndMin),
+  "confidence": zod.number().min(getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneConfidenceMin).max(getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneConfidenceMax),
+  "coordinates": zod.object({
+  "start": zod.object({
+  "seconds": zod.number().min(getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartSecondsMin),
+  "tick": zod.number().min(getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartTickMin),
+  "beat": zod.number().min(1),
+  "bar": zod.number().min(1),
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartBeatFractionMin).lt(getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartBeatFractionExclusiveMax)
+}),
+  "end": zod.object({
+  "seconds": zod.number().min(getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndSecondsMin),
+  "tick": zod.number().min(getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndTickMin),
+  "beat": zod.number().min(1),
+  "bar": zod.number().min(1),
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndBeatFractionMin).lt(getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndBeatFractionExclusiveMax)
+})
+})
+}).and(zod.object({
+  "kind": zod.enum(['inter_phrase'])
+})))
+}),
+  "lyricAlignment": zod.object({
+  "status": zod.enum(['aligned', 'not_available', 'conflicting']),
+  "reason": zod.string().nullable(),
+  "alignments": zod.array(zod.object({
+  "phraseId": zod.string(),
+  "lyricIndexes": zod.array(zod.number().min(getProjectSongModelResponseVocalIntelligenceLyricAlignmentAlignmentsItemLyricIndexesItemMin)).optional(),
+  "melodyIndexes": zod.array(zod.number().min(getProjectSongModelResponseVocalIntelligenceLyricAlignmentAlignmentsItemMelodyIndexesItemMin)).optional(),
+  "confidence": zod.number().min(getProjectSongModelResponseVocalIntelligenceLyricAlignmentAlignmentsItemConfidenceMin).max(getProjectSongModelResponseVocalIntelligenceLyricAlignmentAlignmentsItemConfidenceMax)
+}))
+}),
+  "melodyAlignment": zod.object({
+  "status": zod.enum(['aligned', 'not_available', 'conflicting']),
+  "reason": zod.string().nullable(),
+  "alignments": zod.array(zod.object({
+  "phraseId": zod.string(),
+  "lyricIndexes": zod.array(zod.number().min(getProjectSongModelResponseVocalIntelligenceMelodyAlignmentAlignmentsItemLyricIndexesItemMin)).optional(),
+  "melodyIndexes": zod.array(zod.number().min(getProjectSongModelResponseVocalIntelligenceMelodyAlignmentAlignmentsItemMelodyIndexesItemMin)).optional(),
+  "confidence": zod.number().min(getProjectSongModelResponseVocalIntelligenceMelodyAlignmentAlignmentsItemConfidenceMin).max(getProjectSongModelResponseVocalIntelligenceMelodyAlignmentAlignmentsItemConfidenceMax)
+}))
+}),
+  "arrangementSpace": zod.object({
+  "status": zod.enum(['detected', 'not_available']),
+  "reason": zod.string().nullable(),
+  "windows": zod.array(zod.object({
+  "id": zod.string(),
+  "start": zod.number().min(getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemStartMin),
+  "end": zod.number().min(getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemEndMin),
+  "confidence": zod.number().min(getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemConfidenceMin).max(getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemConfidenceMax),
+  "phraseBeforeId": zod.string().nullable(),
+  "phraseAfterId": zod.string().nullable(),
+  "bars": zod.array(zod.number().min(1)),
+  "sections": zod.array(zod.string()),
+  "coordinates": zod.object({
+  "start": zod.object({
+  "seconds": zod.number().min(getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartSecondsMin),
+  "tick": zod.number().min(getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartTickMin),
+  "beat": zod.number().min(1),
+  "bar": zod.number().min(1),
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartBeatFractionMin).lt(getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartBeatFractionExclusiveMax)
+}),
+  "end": zod.object({
+  "seconds": zod.number().min(getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndSecondsMin),
+  "tick": zod.number().min(getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndTickMin),
+  "beat": zod.number().min(1),
+  "bar": zod.number().min(1),
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndBeatFractionMin).lt(getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndBeatFractionExclusiveMax)
+})
+})
+}))
+})
 }),
   "lyrics": zod.array(zod.object({
   "start": zod.number(),
@@ -2432,6 +2648,103 @@ export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsIt
 export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndBeatFractionMin = 0;
 export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndBeatFractionExclusiveMax = 1;
 
+export const correctProjectSongModelResponseVocalIntelligenceProvenanceOneContentChecksumRegExp = new RegExp('^[a-fA-F0-9]{64}$');
+export const correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemStartMin = 0;
+
+export const correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemEndMin = 0;
+
+export const correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemConfidenceMin = 0;
+export const correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemConfidenceMax = 1;
+
+export const correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartSecondsMin = 0;
+
+export const correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartTickMin = 0;
+
+
+
+
+export const correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartBeatFractionMin = 0;
+export const correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartBeatFractionExclusiveMax = 1;
+
+export const correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndSecondsMin = 0;
+
+export const correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndTickMin = 0;
+
+
+
+
+export const correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndBeatFractionMin = 0;
+export const correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndBeatFractionExclusiveMax = 1;
+
+export const correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneStartMin = 0;
+
+export const correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneEndMin = 0;
+
+export const correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneConfidenceMin = 0;
+export const correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneConfidenceMax = 1;
+
+export const correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartSecondsMin = 0;
+
+export const correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartTickMin = 0;
+
+
+
+
+export const correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartBeatFractionMin = 0;
+export const correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartBeatFractionExclusiveMax = 1;
+
+export const correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndSecondsMin = 0;
+
+export const correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndTickMin = 0;
+
+
+
+
+export const correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndBeatFractionMin = 0;
+export const correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndBeatFractionExclusiveMax = 1;
+
+export const correctProjectSongModelResponseVocalIntelligenceLyricAlignmentAlignmentsItemLyricIndexesItemMin = 0;
+
+export const correctProjectSongModelResponseVocalIntelligenceLyricAlignmentAlignmentsItemMelodyIndexesItemMin = 0;
+
+export const correctProjectSongModelResponseVocalIntelligenceLyricAlignmentAlignmentsItemConfidenceMin = 0;
+export const correctProjectSongModelResponseVocalIntelligenceLyricAlignmentAlignmentsItemConfidenceMax = 1;
+
+export const correctProjectSongModelResponseVocalIntelligenceMelodyAlignmentAlignmentsItemLyricIndexesItemMin = 0;
+
+export const correctProjectSongModelResponseVocalIntelligenceMelodyAlignmentAlignmentsItemMelodyIndexesItemMin = 0;
+
+export const correctProjectSongModelResponseVocalIntelligenceMelodyAlignmentAlignmentsItemConfidenceMin = 0;
+export const correctProjectSongModelResponseVocalIntelligenceMelodyAlignmentAlignmentsItemConfidenceMax = 1;
+
+export const correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemStartMin = 0;
+
+export const correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemEndMin = 0;
+
+export const correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemConfidenceMin = 0;
+export const correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemConfidenceMax = 1;
+
+
+export const correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartSecondsMin = 0;
+
+export const correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartTickMin = 0;
+
+
+
+
+export const correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartBeatFractionMin = 0;
+export const correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartBeatFractionExclusiveMax = 1;
+
+export const correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndSecondsMin = 0;
+
+export const correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndTickMin = 0;
+
+
+
+
+export const correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndBeatFractionMin = 0;
+export const correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndBeatFractionExclusiveMax = 1;
+
 export const correctProjectSongModelResponseLyricsItemCoordinatesStartSecondsMin = 0;
 
 export const correctProjectSongModelResponseLyricsItemCoordinatesStartTickMin = 0;
@@ -2844,6 +3157,125 @@ export const CorrectProjectSongModelResponse = zod.object({
 })
 })
 }))
+}),
+  "vocalIntelligence": zod.object({
+  "version": zod.enum(['1.0']),
+  "provenance": zod.union([zod.object({
+  "sourceStemRole": zod.string(),
+  "objectPath": zod.string(),
+  "provider": zod.string(),
+  "contentChecksum": zod.string().regex(correctProjectSongModelResponseVocalIntelligenceProvenanceOneContentChecksumRegExp).optional()
+}),zod.null()]),
+  "phrases": zod.object({
+  "status": zod.enum(['detected', 'low_confidence', 'not_available', 'conflicting']),
+  "reason": zod.string().nullable(),
+  "events": zod.array(zod.object({
+  "id": zod.string(),
+  "start": zod.number().min(correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemStartMin),
+  "end": zod.number().min(correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemEndMin),
+  "confidence": zod.number().min(correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemConfidenceMin).max(correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemConfidenceMax),
+  "coordinates": zod.object({
+  "start": zod.object({
+  "seconds": zod.number().min(correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartSecondsMin),
+  "tick": zod.number().min(correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartTickMin),
+  "beat": zod.number().min(1),
+  "bar": zod.number().min(1),
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartBeatFractionMin).lt(correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartBeatFractionExclusiveMax)
+}),
+  "end": zod.object({
+  "seconds": zod.number().min(correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndSecondsMin),
+  "tick": zod.number().min(correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndTickMin),
+  "beat": zod.number().min(1),
+  "bar": zod.number().min(1),
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndBeatFractionMin).lt(correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndBeatFractionExclusiveMax)
+})
+})
+}))
+}),
+  "breaths": zod.object({
+  "status": zod.enum(['detected', 'not_available']),
+  "reason": zod.string().nullable(),
+  "events": zod.array(zod.object({
+  "id": zod.string(),
+  "start": zod.number().min(correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneStartMin),
+  "end": zod.number().min(correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneEndMin),
+  "confidence": zod.number().min(correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneConfidenceMin).max(correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneConfidenceMax),
+  "coordinates": zod.object({
+  "start": zod.object({
+  "seconds": zod.number().min(correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartSecondsMin),
+  "tick": zod.number().min(correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartTickMin),
+  "beat": zod.number().min(1),
+  "bar": zod.number().min(1),
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartBeatFractionMin).lt(correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartBeatFractionExclusiveMax)
+}),
+  "end": zod.object({
+  "seconds": zod.number().min(correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndSecondsMin),
+  "tick": zod.number().min(correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndTickMin),
+  "beat": zod.number().min(1),
+  "bar": zod.number().min(1),
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndBeatFractionMin).lt(correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndBeatFractionExclusiveMax)
+})
+})
+}).and(zod.object({
+  "kind": zod.enum(['inter_phrase'])
+})))
+}),
+  "lyricAlignment": zod.object({
+  "status": zod.enum(['aligned', 'not_available', 'conflicting']),
+  "reason": zod.string().nullable(),
+  "alignments": zod.array(zod.object({
+  "phraseId": zod.string(),
+  "lyricIndexes": zod.array(zod.number().min(correctProjectSongModelResponseVocalIntelligenceLyricAlignmentAlignmentsItemLyricIndexesItemMin)).optional(),
+  "melodyIndexes": zod.array(zod.number().min(correctProjectSongModelResponseVocalIntelligenceLyricAlignmentAlignmentsItemMelodyIndexesItemMin)).optional(),
+  "confidence": zod.number().min(correctProjectSongModelResponseVocalIntelligenceLyricAlignmentAlignmentsItemConfidenceMin).max(correctProjectSongModelResponseVocalIntelligenceLyricAlignmentAlignmentsItemConfidenceMax)
+}))
+}),
+  "melodyAlignment": zod.object({
+  "status": zod.enum(['aligned', 'not_available', 'conflicting']),
+  "reason": zod.string().nullable(),
+  "alignments": zod.array(zod.object({
+  "phraseId": zod.string(),
+  "lyricIndexes": zod.array(zod.number().min(correctProjectSongModelResponseVocalIntelligenceMelodyAlignmentAlignmentsItemLyricIndexesItemMin)).optional(),
+  "melodyIndexes": zod.array(zod.number().min(correctProjectSongModelResponseVocalIntelligenceMelodyAlignmentAlignmentsItemMelodyIndexesItemMin)).optional(),
+  "confidence": zod.number().min(correctProjectSongModelResponseVocalIntelligenceMelodyAlignmentAlignmentsItemConfidenceMin).max(correctProjectSongModelResponseVocalIntelligenceMelodyAlignmentAlignmentsItemConfidenceMax)
+}))
+}),
+  "arrangementSpace": zod.object({
+  "status": zod.enum(['detected', 'not_available']),
+  "reason": zod.string().nullable(),
+  "windows": zod.array(zod.object({
+  "id": zod.string(),
+  "start": zod.number().min(correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemStartMin),
+  "end": zod.number().min(correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemEndMin),
+  "confidence": zod.number().min(correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemConfidenceMin).max(correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemConfidenceMax),
+  "phraseBeforeId": zod.string().nullable(),
+  "phraseAfterId": zod.string().nullable(),
+  "bars": zod.array(zod.number().min(1)),
+  "sections": zod.array(zod.string()),
+  "coordinates": zod.object({
+  "start": zod.object({
+  "seconds": zod.number().min(correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartSecondsMin),
+  "tick": zod.number().min(correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartTickMin),
+  "beat": zod.number().min(1),
+  "bar": zod.number().min(1),
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartBeatFractionMin).lt(correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartBeatFractionExclusiveMax)
+}),
+  "end": zod.object({
+  "seconds": zod.number().min(correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndSecondsMin),
+  "tick": zod.number().min(correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndTickMin),
+  "beat": zod.number().min(1),
+  "bar": zod.number().min(1),
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndBeatFractionMin).lt(correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndBeatFractionExclusiveMax)
+})
+})
+}))
+})
 }),
   "lyrics": zod.array(zod.object({
   "start": zod.number(),

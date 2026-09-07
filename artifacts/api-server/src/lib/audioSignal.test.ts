@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { detectVocalActivity, isEffectivelySilent } from "./audioSignal";
+import { deriveVocalPhrasing, detectVocalActivity, isEffectivelySilent } from "./audioSignal";
 
 test("rejects empty, digital-silent, and non-finite decoded PCM", () => {
   assert.equal(isEffectivelySilent(new Float32Array()), true);
@@ -35,4 +35,35 @@ test("records silence-only decoded stem activity without inventing voiced window
   assert.equal(evidence.status, "low_confidence");
   assert.deepEqual(evidence.observedVoicedWindows, []);
   assert.deepEqual(evidence.observedSilentWindows, [{ start: 0, end: 0.1 }]);
+});
+
+test("groups short gaps into phrases and records only bounded inter-phrase breaths", () => {
+  const phrasing = deriveVocalPhrasing({
+    status: "detected",
+    frameSizeSamples: 100,
+    thresholds: { rms: .01, peak: .02, activitySample: .005, activityRatio: .1 },
+    observedVoicedWindows: [
+      { start: .2, end: 1 },
+      { start: 1.2, end: 2 },
+      { start: 2.8, end: 4 },
+    ],
+    observedSilentWindows: [],
+  });
+  assert.deepEqual(phrasing.phrases, [
+    { start: .2, end: 2, confidence: .8 },
+    { start: 2.8, end: 4, confidence: .8 },
+  ]);
+  assert.deepEqual(phrasing.breaths, [
+    { start: 2, end: 2.8, confidence: .65, kind: "inter_phrase" },
+  ]);
+});
+
+test("silence does not invent phrases or breaths", () => {
+  assert.deepEqual(deriveVocalPhrasing({
+    status: "low_confidence",
+    frameSizeSamples: 100,
+    thresholds: { rms: .01, peak: .02, activitySample: .005, activityRatio: .1 },
+    observedVoicedWindows: [],
+    observedSilentWindows: [{ start: 0, end: 8 }],
+  }), { phrases: [], breaths: [] });
 });

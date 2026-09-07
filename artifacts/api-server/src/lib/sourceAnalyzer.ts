@@ -39,9 +39,9 @@ import {
 import { execFile, spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { logger } from "./logger";
-import { detectVocalActivity, isEffectivelySilent } from "./audioSignal";
+import { deriveVocalPhrasing, detectVocalActivity, isEffectivelySilent } from "./audioSignal";
 import { recordSheetSageCapacityRejection } from "./sheetSageCapacityAlerts";
-import { buildMeterAwareEvidence } from "./canonicalTimeline";
+import { buildMeterAwareEvidence, createCanonicalTimeline } from "./canonicalTimeline";
 
 export { isEffectivelySilent };
 
@@ -449,7 +449,7 @@ async function deriveVocalEvidence(
   sourceStems: SongModelData["sourceStems"],
   directory: string,
   durationSeconds: number,
-): Promise<SongModelData["vocalEvidence"]> {
+): Promise<NonNullable<SongModelData["vocalEvidence"]>> {
   const sourceStem = sourceStems.find((stem) => isVocalStemRole(stem.role));
   const providerStem = separation?.stems.find((stem) =>
     sourceStem?.provider === separation.providerId && stem.role === sourceStem.role
@@ -517,6 +517,103 @@ async function deriveVocalEvidence(
       observedSilentWindows: [],
     };
   }
+}
+
+function derivePhraseLevelVocalIntelligence(
+  vocalEvidence: NonNullable<SongModelData["vocalEvidence"]>,
+  melody: SongModelData["melody"],
+  lyrics: SongModelData["lyrics"],
+  sections: AnalysisSection[],
+  tempoMap: SongModelData["tempoMap"],
+  meterMap: SongModelData["meterMap"],
+  durationSeconds: number,
+): NonNullable<SongModelData["vocalIntelligence"]> {
+  const unavailable = (reason: string): NonNullable<SongModelData["vocalIntelligence"]> => ({
+    version: "1.0",
+    provenance: vocalEvidence.provenance,
+    phrases: { status: "not_available", reason, events: [] },
+    breaths: { status: "not_available", reason, events: [] },
+    lyricAlignment: { status: "not_available", reason: "No accepted vocal phrases and timed lyrics are both available.", alignments: [] },
+    melodyAlignment: { status: "not_available", reason: "No accepted vocal phrases and compatible melody notes are both available.", alignments: [] },
+    arrangementSpace: { status: "not_available", reason, windows: [] },
+  });
+  if (vocalEvidence.status !== "detected" || !vocalEvidence.provenance) {
+    return unavailable(vocalEvidence.reason || "Verified vocal activity was not detected.");
+  }
+  const phrasing = deriveVocalPhrasing({
+    status: "detected",
+    frameSizeSamples: vocalEvidence.frameSizeSamples!,
+    thresholds: vocalEvidence.thresholds!,
+    observedVoicedWindows: vocalEvidence.observedVoicedWindows,
+    observedSilentWindows: vocalEvidence.observedSilentWindows,
+  });
+  const phrases = phrasing.phrases.map((event, index) => ({ ...event, id: `phrase-${index + 1}` }));
+  if (!phrases.length) return unavailable("Verified vocal activity did not contain a bounded phrase.");
+  const overlaps = (start: number, end: number, itemStart: number, itemEnd: number) =>
+    Math.min(end, itemEnd) - Math.max(start, itemStart) > 0;
+  const alignment = <T extends { start: number; end: number }>(items: T[]) =>
+    phrases.map((phrase) => items
+      .map((item, index) => ({ item, index }))
+      .filter(({ item }) => overlaps(phrase.start, phrase.end, item.start, item.end))
+      .map(({ index }) => index));
+  const lyricMatches = alignment(lyrics);
+  const melodyMatches = alignment(melody);
+  const hasLyricMatches = lyricMatches.some((matches) => matches.length > 0);
+  const hasMelodyMatches = melodyMatches.some((matches) => matches.length > 0);
+  const hasConflictingOverlap = <T extends { start: number; end: number }>(items: T[]) =>
+    items.some((item, index) => items.some((other, otherIndex) =>
+      otherIndex > index && overlaps(item.start, item.end, other.start, other.end)));
+  const timeline = createCanonicalTimeline(tempoMap, meterMap);
+  const spaces = vocalEvidence.observedSilentWindows
+    .filter((window) => window.end - window.start >= .5)
+    .map((window, index) => {
+      const before = [...phrases].reverse().find((phrase) => phrase.end <= window.start);
+      const after = phrases.find((phrase) => phrase.start >= window.end);
+      const startBar = timeline.coordinateAtSeconds(window.start).bar;
+      const endBar = timeline.coordinateAtSeconds(Math.min(durationSeconds, window.end)).bar;
+      return {
+        ...window,
+        id: `space-${index + 1}`,
+        confidence: .8,
+        phraseBeforeId: before?.id ?? null,
+        phraseAfterId: after?.id ?? null,
+        bars: Array.from({ length: endBar - startBar + 1 }, (_, offset) => startBar + offset),
+        sections: sections
+          .filter((section) => section.endBar >= startBar && section.startBar <= endBar)
+          .map((section) => section.name),
+      };
+    });
+  const lyricConflict = hasConflictingOverlap(lyrics);
+  const melodyConflict = hasConflictingOverlap(melody);
+  return {
+    version: "1.0",
+    provenance: vocalEvidence.provenance,
+    phrases: { status: "detected", reason: null, events: phrases },
+    breaths: {
+      status: phrasing.breaths.length ? "detected" : "not_available",
+      reason: phrasing.breaths.length ? null : "No bounded inter-phrase pause met the breath thresholds.",
+      events: phrasing.breaths.map((event, index) => ({ ...event, id: `breath-${index + 1}` })),
+    },
+    lyricAlignment: {
+      status: !lyrics.length || !hasLyricMatches ? "not_available" : lyricConflict ? "conflicting" : "aligned",
+      reason: !lyrics.length ? "No timed lyric evidence is available." : !hasLyricMatches ? "Timed lyrics do not overlap an accepted vocal phrase." : lyricConflict ? "Timed lyric evidence overlaps and cannot be aligned deterministically." : null,
+      alignments: !hasLyricMatches || lyricConflict ? [] : phrases.map((phrase, index) => ({
+        phraseId: phrase.id, lyricIndexes: lyricMatches[index], confidence: .8,
+      })).filter((item) => item.lyricIndexes.length),
+    },
+    melodyAlignment: {
+      status: !melody.length || !hasMelodyMatches ? "not_available" : melodyConflict ? "conflicting" : "aligned",
+      reason: !melody.length ? "No compatible melody evidence is available." : !hasMelodyMatches ? "Melody notes do not overlap an accepted vocal phrase." : melodyConflict ? "Melody evidence overlaps and cannot be aligned deterministically." : null,
+      alignments: !hasMelodyMatches || melodyConflict ? [] : phrases.map((phrase, index) => ({
+        phraseId: phrase.id, melodyIndexes: melodyMatches[index], confidence: .8,
+      })).filter((item) => item.melodyIndexes.length),
+    },
+    arrangementSpace: {
+      status: spaces.length ? "detected" : "not_available",
+      reason: spaces.length ? null : "No verified silent window long enough for arrangement space was detected.",
+      windows: spaces,
+    },
+  };
 }
 
 type MidiEvent = {
@@ -1518,6 +1615,24 @@ export async function analyzeProjectSource(
     const analysisCoverage = Number(
       (analysisDurationSeconds / durationSeconds).toFixed(4),
     );
+    const candidateTempoMap = midi?.tempoMap.length
+      ? midi.tempoMap
+      : providerResults.structure?.tempoMap.length
+        ? providerResults.structure.tempoMap
+        : tempoReconciliation?.value !== null && tempoReconciliation?.value !== undefined
+          ? [{ time: 0, bpm: tempoReconciliation.value, confidence: tempoReconciliation.confidence ?? 0 }]
+          : [];
+    const candidateMeterMap = midi?.meterMap.length
+      ? midi.meterMap
+      : providerResults.structure?.meterMap.length
+        ? providerResults.structure.meterMap
+        : meterReconciliation?.value
+          ? [{ bar: 1, meter: meterReconciliation.value, confidence: meterReconciliation.confidence ?? 0 }]
+          : [];
+    const lyrics: SongModelData["lyrics"] = [];
+    const vocalIntelligence = derivePhraseLevelVocalIntelligence(
+      vocalEvidence, melody, lyrics, sections, candidateTempoMap, candidateMeterMap, durationSeconds,
+    );
     const candidate = {
       audio: {
         name: source.name,
@@ -1537,20 +1652,8 @@ export async function analyzeProjectSource(
       analysisStartSeconds,
       analysisDurationSeconds,
       analysisCoverage,
-      tempoMap: midi?.tempoMap.length
-        ? midi.tempoMap
-        : providerResults.structure?.tempoMap.length
-          ? providerResults.structure.tempoMap
-          : tempoReconciliation?.value !== null && tempoReconciliation?.value !== undefined
-            ? [{ time: 0, bpm: tempoReconciliation.value, confidence: tempoReconciliation.confidence ?? 0 }]
-            : [],
-      meterMap: midi?.meterMap.length
-        ? midi.meterMap
-        : providerResults.structure?.meterMap.length
-          ? providerResults.structure.meterMap
-          : meterReconciliation?.value
-            ? [{ bar: 1, meter: meterReconciliation.value, confidence: meterReconciliation.confidence ?? 0 }]
-            : [],
+      tempoMap: candidateTempoMap,
+      meterMap: candidateMeterMap,
       keyMap: midi?.keyMap.length
         ? midi.keyMap
         : keyReconciliation?.value
@@ -1574,7 +1677,8 @@ export async function analyzeProjectSource(
       })),
       sourceStems,
       vocalEvidence,
-      lyrics: [],
+      vocalIntelligence,
+      lyrics,
       confidenceByField,
       providerProvenance: [
         {

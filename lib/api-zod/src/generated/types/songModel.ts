@@ -34,6 +34,7 @@ import type { SongModelValidation } from './songModelValidation';
 import type { SourceStem } from './sourceStem';
 import type { TempoEvent } from './tempoEvent';
 import type { VocalEvidence } from './vocalEvidence';
+import type { VocalIntelligence } from './vocalIntelligence';
 
 export interface SongModel {
   id: string;
@@ -74,6 +75,7 @@ export interface SongModel {
   dynamics: number[];
   sourceStems: SourceStem[];
   vocalEvidence: VocalEvidence;
+  vocalIntelligence: VocalIntelligence;
   lyrics: LyricEvent[];
   confidenceByField: SongModelConfidenceByField;
   providerProvenance: ProviderProvenance[];

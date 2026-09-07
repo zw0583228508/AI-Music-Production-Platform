@@ -162,6 +162,7 @@ import {
   isLegacySongModel,
   canonicalizeSongModelCoordinates,
   refreshSongModelValidation,
+  unavailableVocalIntelligence,
   validateCanonicalSongModel,
 } from "../lib/songModelValidation";
 import {
@@ -917,6 +918,7 @@ function normalizeSongModel(model: typeof songModelsTable.$inferSelect["model"])
       observedVoicedWindows: [],
       observedSilentWindows: [],
     },
+    vocalIntelligence: legacy.vocalIntelligence ?? unavailableVocalIntelligence(),
     lyrics: legacy.lyrics ?? [],
     confidenceByField: legacy.confidenceByField ?? {},
     provenance: legacy.provenance ?? [],

@@ -1221,7 +1221,7 @@ components:
         createdAt: { type: string }
     SongModel:
       type: object
-      required: [id, projectId, sourceId, version, status, contractVersion, validation, fusion, audio, analysisStartSeconds, analysisDurationSeconds, analysisCoverage, tempoMap, meterMap, keyMap, beats, bars, melody, bass, chords, sections, energy, waveform, stems, dynamics, sourceStems, vocalEvidence, lyrics, confidenceByField, providerProvenance, fieldStatus, provenance, providers, confidence, createdAt]
+      required: [id, projectId, sourceId, version, status, contractVersion, validation, fusion, audio, analysisStartSeconds, analysisDurationSeconds, analysisCoverage, tempoMap, meterMap, keyMap, beats, bars, melody, bass, chords, sections, energy, waveform, stems, dynamics, sourceStems, vocalEvidence, vocalIntelligence, lyrics, confidenceByField, providerProvenance, fieldStatus, provenance, providers, confidence, createdAt]
       properties:
         id: { type: string }
         projectId: { type: string }
@@ -1299,6 +1299,8 @@ components:
             $ref: "#/components/schemas/SourceStem"
         vocalEvidence:
           $ref: "#/components/schemas/VocalEvidence"
+        vocalIntelligence:
+          $ref: "#/components/schemas/VocalIntelligence"
         lyrics:
           type: array
           items:
@@ -1641,6 +1643,91 @@ components:
         start: { type: number, minimum: 0 }
         end: { type: number, minimum: 0 }
         coordinates: { $ref: "#/components/schemas/CanonicalTimeRange" }
+    VocalIntelligence:
+      type: object
+      required: [version, provenance, phrases, breaths, lyricAlignment, melodyAlignment, arrangementSpace]
+      properties:
+        version: { type: string, enum: ["1.0"] }
+        provenance:
+          oneOf:
+            - $ref: "#/components/schemas/VocalStemProvenance"
+            - type: "null"
+        phrases: { $ref: "#/components/schemas/VocalPhraseEvidence" }
+        breaths: { $ref: "#/components/schemas/VocalBreathEvidence" }
+        lyricAlignment: { $ref: "#/components/schemas/VocalAlignmentEvidence" }
+        melodyAlignment: { $ref: "#/components/schemas/VocalAlignmentEvidence" }
+        arrangementSpace: { $ref: "#/components/schemas/VocalArrangementSpaceEvidence" }
+    VocalPhraseEvidence:
+      type: object
+      required: [status, reason, events]
+      properties:
+        status: { type: string, enum: [detected, low_confidence, not_available, conflicting] }
+        reason: { type: ["string", "null"] }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/VocalPhraseEvent" }
+    VocalPhraseEvent:
+      type: object
+      required: [id, start, end, confidence, coordinates]
+      properties:
+        id: { type: string }
+        start: { type: number, minimum: 0 }
+        end: { type: number, minimum: 0 }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        coordinates: { $ref: "#/components/schemas/CanonicalTimeRange" }
+    VocalBreathEvidence:
+      type: object
+      required: [status, reason, events]
+      properties:
+        status: { type: string, enum: [detected, not_available] }
+        reason: { type: ["string", "null"] }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/VocalBreathEvent" }
+    VocalBreathEvent:
+      allOf:
+        - $ref: "#/components/schemas/VocalPhraseEvent"
+        - type: object
+          required: [kind]
+          properties:
+            kind: { type: string, enum: [inter_phrase] }
+    VocalAlignmentEvidence:
+      type: object
+      required: [status, reason, alignments]
+      properties:
+        status: { type: string, enum: [aligned, not_available, conflicting] }
+        reason: { type: ["string", "null"] }
+        alignments:
+          type: array
+          items:
+            type: object
+            required: [phraseId, confidence]
+            properties:
+              phraseId: { type: string }
+              lyricIndexes: { type: array, items: { type: number, minimum: 0 } }
+              melodyIndexes: { type: array, items: { type: number, minimum: 0 } }
+              confidence: { type: number, minimum: 0, maximum: 1 }
+    VocalArrangementSpaceEvidence:
+      type: object
+      required: [status, reason, windows]
+      properties:
+        status: { type: string, enum: [detected, not_available] }
+        reason: { type: ["string", "null"] }
+        windows:
+          type: array
+          items:
+            type: object
+            required: [id, start, end, confidence, phraseBeforeId, phraseAfterId, bars, sections, coordinates]
+            properties:
+              id: { type: string }
+              start: { type: number, minimum: 0 }
+              end: { type: number, minimum: 0 }
+              confidence: { type: number, minimum: 0, maximum: 1 }
+              phraseBeforeId: { type: ["string", "null"] }
+              phraseAfterId: { type: ["string", "null"] }
+              bars: { type: array, items: { type: number, minimum: 1 } }
+              sections: { type: array, items: { type: string } }
+              coordinates: { $ref: "#/components/schemas/CanonicalTimeRange" }
     LyricEvent:
       type: object
       required: [start, end, text, confidence]

@@ -647,6 +647,52 @@ export function SongModelInspector({ projectId }: SongModelInspectorProps) {
                   </div>
                 </div>
               )}
+              {model.vocalIntelligence && (
+                <div className="space-y-2 border-t pt-3" data-testid="vocal-intelligence-summary">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Phrase intelligence v{model.vocalIntelligence.version}
+                    </div>
+                    <Badge variant="outline" className="font-mono text-[10px]">
+                      {model.vocalIntelligence.phrases.status.replace("_", " ")}
+                    </Badge>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                    <div className="rounded border p-2">
+                      <div className="text-lg font-mono font-semibold">{model.vocalIntelligence.phrases.events.length}</div>
+                      <div className="text-[10px] uppercase text-muted-foreground">Phrases</div>
+                    </div>
+                    <div className="rounded border p-2">
+                      <div className="text-lg font-mono font-semibold">{model.vocalIntelligence.breaths.events.length}</div>
+                      <div className="text-[10px] uppercase text-muted-foreground">Breaths</div>
+                    </div>
+                    <div className="rounded border p-2">
+                      <div className="text-lg font-mono font-semibold">{model.vocalIntelligence.arrangementSpace.windows.length}</div>
+                      <div className="text-[10px] uppercase text-muted-foreground">Open spaces</div>
+                    </div>
+                    <div className="rounded border p-2">
+                      <div className="text-xs font-mono font-semibold capitalize">{model.vocalIntelligence.melodyAlignment.status.replace("_", " ")}</div>
+                      <div className="text-[10px] uppercase text-muted-foreground">Melody link</div>
+                    </div>
+                  </div>
+                  {[
+                    model.vocalIntelligence.phrases.reason,
+                    model.vocalIntelligence.breaths.reason,
+                    model.vocalIntelligence.lyricAlignment.reason,
+                    model.vocalIntelligence.melodyAlignment.reason,
+                    model.vocalIntelligence.arrangementSpace.reason,
+                  ].filter((reason): reason is string => Boolean(reason)).map((reason) => (
+                    <p key={reason} className="text-[10px] text-muted-foreground">{reason}</p>
+                  ))}
+                  {model.vocalIntelligence.arrangementSpace.windows.slice(0, 4).map((space) => (
+                    <div key={space.id} className="flex flex-wrap gap-x-3 text-[10px] text-muted-foreground">
+                      <span>{formatTime(space.start)}–{formatTime(space.end)}</span>
+                      <span>Bars {space.bars.join(", ") || "unknown"}</span>
+                      <span>{space.sections.join(", ") || "No known section"}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </CardContent>
