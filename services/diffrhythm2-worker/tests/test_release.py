@@ -929,6 +929,99 @@ class DiffRhythmReleaseTests(unittest.TestCase):
         self.assertNotIn("provider detail", retained)
         self.assertFalse(json.loads(retained)["capacityReleased"])
 
+    def test_capacity_drill_hung_cancel_stays_within_shared_bound(self):
+        private_detail = "/private/provider/input.wav " + "a" * 64
+        release_hung_cancel = threading.Event()
+
+        class Readiness:
+            def __init__(self):
+                self.markers = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def get(self, timeout=None):
+                return self.markers.pop(0)
+
+        class Call:
+            def __init__(self, index, attempts):
+                self.index = index
+                self.attempts = attempts
+
+            def cancel(self):
+                self.attempts.append(self.index)
+                if self.index == 0:
+                    release_hung_cancel.wait()
+                    raise RuntimeError(private_detail)
+
+            def get(self, timeout=None):
+                raise release.RemoteError(private_detail)
+
+        class Comparison:
+            def __init__(self):
+                self.attempts = []
+                self.spawned = 0
+
+            def spawn(self, control, readiness=None):
+                if control != "stall":
+                    raise AssertionError("recovery probe must not start")
+                index = self.spawned
+                self.spawned += 1
+                readiness.markers.append({
+                    "outcome": "started",
+                    "startedUnixSeconds": time.time(),
+                    "modalImageId": "im-Compare",
+                })
+                return Call(index, self.attempts)
+
+        comparison = Comparison()
+        identity = {
+            "modalAppId": "ap-Compare",
+            "modalDeploymentId": "v3",
+            "modalFunctionId": "fu-Compare",
+        }
+        cancellation_bound = 0.05
+        try:
+            with tempfile.TemporaryDirectory() as directory, patch.object(
+                release, "EVIDENCE", Path(directory)
+            ), patch.object(
+                release, "COMPARISON_CANCEL_ACK_BOUND_SECONDS",
+                cancellation_bound,
+            ), patch.object(
+                release.modal.Queue, "ephemeral", return_value=Readiness()
+            ), patch.object(
+                release.modal.Function, "from_name", return_value=comparison
+            ), patch.object(
+                release, "observe_comparison", return_value=identity
+            ):
+                started = time.monotonic()
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "^cancelled comparison capacity was not released within the safe bound$",
+                ) as raised:
+                    release.verify_cancelled_comparison_capacity(self.metadata)
+                elapsed = time.monotonic() - started
+                retained = (
+                    Path(directory) / "live-comparison-cancellation-proof.json"
+                ).read_text()
+        finally:
+            release_hung_cancel.set()
+
+        self.assertLess(elapsed, cancellation_bound + 0.2)
+        self.assertEqual(
+            set(comparison.attempts),
+            set(range(release.COMPARISON_MAX_CONCURRENT_INPUTS)),
+        )
+        surfaced = str(raised.exception) + retained
+        self.assertNotIn(private_detail, surfaced)
+        self.assertLess(len(retained), 2048)
+        proof = json.loads(retained)
+        self.assertEqual(proof["cancellationsAcknowledged"], 0)
+        self.assertFalse(proof["capacityReleased"])
+
     def test_comparison_burst_submits_above_cap_and_retains_only_safe_fields(self):
         class FakeCall:
             def __init__(self, comparison):
