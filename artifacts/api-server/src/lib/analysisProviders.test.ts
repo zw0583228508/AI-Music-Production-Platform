@@ -12,9 +12,11 @@ import { attestAnalysisProviderHealth } from "./analysisProviderManifest";
 import {
   parseHarmony,
   fuseHarmonyEvidence,
+  fuseCanonicalNotes,
   parseSeparation,
   runAnalysisProviders,
   analyzeVerifiedBassStem,
+  type TranscriptionAnalysisResult,
 } from "./analysisProviders";
 
 const VALID_MADMOM_HEALTH = {
@@ -368,6 +370,71 @@ test("harmony fusion preserves unanimous canonical chords and merged timing", ()
   assert.equal(fused.chords.length, 1);
   assert.equal(fused.chords[0]?.symbol, "C");
   assert.deepEqual(fused.chords[0]?.timing, { startSeconds: 0, endSeconds: 2 });
+});
+
+const transcription = (
+  providerId: TranscriptionAnalysisResult["providerId"],
+  notes: TranscriptionAnalysisResult["notes"],
+  confidence = .9,
+): TranscriptionAnalysisResult => ({ providerId, version: "test", notes, confidence });
+
+test("canonical melody fusion is order-invariant and merges unanimous timing/pitch evidence", () => {
+  const basic = transcription("BASIC_PITCH", [{
+    start: 1, end: 1.5, pitch: 64, velocity: 91, confidence: .9, source: "BASIC_PITCH",
+  }]);
+  const mt3 = transcription("MT3", [{
+    start: 1.02, end: 1.53, pitch: 64, velocity: 85, confidence: .9, source: "MT3",
+  }]);
+  const forward = fuseCanonicalNotes([basic, mt3]);
+  assert.equal(forward.length, 1);
+  assert.equal(forward[0]?.pitch, 64);
+  assert.deepEqual(fuseCanonicalNotes([mt3, basic]), forward);
+});
+
+test("canonical melody fusion favors two independent transcription providers over one", () => {
+  const result = fuseCanonicalNotes([
+    transcription("BASIC_PITCH", [{
+      start: 0, end: 1, pitch: 60, velocity: 100, confidence: .99, source: "BASIC_PITCH",
+    }], .99),
+    transcription("MT3", [{
+      start: 0, end: 1, pitch: 62, velocity: 90, confidence: .8, source: "MT3",
+    }], .9),
+    transcription("MR_MT3", [{
+      start: 0, end: 1, pitch: 62, velocity: 90, confidence: .8, source: "MR_MT3",
+    }], .9),
+  ]);
+  assert.deepEqual(result.map((note) => note.pitch), [62]);
+});
+
+test("canonical melody fusion abstains for close unsupported pitch conflicts", () => {
+  const first = transcription("BASIC_PITCH", [{
+    start: 0, end: 1, pitch: 60, velocity: 100, confidence: .9, source: "BASIC_PITCH",
+  }]);
+  const second = transcription("MT3", [{
+    start: 0, end: 1, pitch: 61, velocity: 90, confidence: .9, source: "MT3",
+  }]);
+  assert.deepEqual(fuseCanonicalNotes([first, second]), []);
+  assert.deepEqual(fuseCanonicalNotes([second, first]), []);
+});
+
+test("canonical melody fusion preserves only high-confidence isolated evidence from a sole provider", () => {
+  const high = transcription("BASIC_PITCH", [{
+    start: 0, end: 1, pitch: 60, velocity: 100, confidence: .95, source: "BASIC_PITCH",
+  }], .95);
+  const low = transcription("BASIC_PITCH", [{
+    start: 1, end: 2, pitch: 62, velocity: 100, confidence: .5, source: "BASIC_PITCH",
+  }], .9);
+  assert.deepEqual(fuseCanonicalNotes([high]).map((note) => note.pitch), [60]);
+  assert.deepEqual(fuseCanonicalNotes([low]), []);
+  assert.deepEqual(fuseCanonicalNotes([high, transcription("MT3", [])]), []);
+});
+
+test("canonical melody fusion never creates notes without voiced transcription evidence", () => {
+  assert.deepEqual(fuseCanonicalNotes([]), []);
+  assert.deepEqual(fuseCanonicalNotes([
+    transcription("BASIC_PITCH", []),
+    transcription("MT3", []),
+  ]), []);
 });
 
 test("bass and chroma support cannot override direct multi-provider disagreement", () => {

@@ -27,6 +27,7 @@ import {
   type SeparationAnalysisResult,
 } from "./analysisProviders";
 import { fuseProviderSongModels } from "./songModelValidation";
+import { reconcileAnalysisField } from "./analysisReconciliation";
 import {
   createSourceDownloadUrl,
   createAnalysisDownloadUrl,
@@ -1253,17 +1254,55 @@ export async function analyzeProjectSource(
         });
       }
     }
+    const tempoReconciliation = midi
+      ? null
+      : reconcileAnalysisField("tempo", [
+          ...(providerResults.structure ? [{
+            provider: providerResults.structure.providerId,
+            value: providerResults.structure.bpm,
+            confidence: providerResults.structure.confidence,
+          }] : []),
+          ...providerResults.rhythmEvidence.map((evidence) => ({
+            provider: evidence.provider,
+            value: evidence.tempoBpm,
+            // Raw rhythm evidence has no provider-reported confidence; the
+            // capability profile supplies its bounded weight.
+          })),
+          ...(localTempo ? [{
+            provider: "LOCAL_SIGNAL_ANALYZER_V1",
+            value: localTempo.bpm,
+            confidence: localTempo.confidence,
+          }] : []),
+        ]);
+    const meterReconciliation = midi
+      ? null
+      : reconcileAnalysisField("meter", providerResults.structure ? [{
+          provider: providerResults.structure.providerId,
+          value: providerResults.structure.meter,
+          confidence: providerResults.structure.confidence,
+        }] : []);
+    const keyReconciliation = midi
+      ? null
+      : reconcileAnalysisField("key", [
+          ...providerResults.keyEvidence.map((evidence) => ({
+            provider: evidence.provider,
+            value: `${evidence.key} ${evidence.scale}`.trim(),
+            confidence: evidence.confidence,
+          })),
+          ...(keyDetection ? [{
+            provider: "LOCAL_SIGNAL_ANALYZER_V1",
+            value: keyDetection.key,
+            confidence: keyDetection.confidence,
+          }] : []),
+        ]);
     if (!midi && providerResults.structure) {
-      bpm = providerResults.structure.bpm;
-      meter = providerResults.structure.meter;
       beats = providerResults.structure.beats;
       bars = providerResults.structure.bars;
       sections = providerResults.structure.sections;
     }
-    const essentiaKey = providerResults.keyEvidence[0];
-    if (!midi && essentiaKey) {
-      key = `${essentiaKey.key} ${essentiaKey.scale}`.trim();
-    }
+    bpm = midi?.bpm ?? tempoReconciliation?.value ?? 0;
+    meter = midi?.meterMap.length ? midi.meter : meterReconciliation?.value ?? "—";
+    key = midi?.keyMap.length ? midi.key : keyReconciliation?.value ?? "—";
     const melody = midi?.melody ??
       fuseCanonicalNotes(providerResults.transcriptions);
     const bass = midi ? [] : providerResults.bassEvidence;
@@ -1274,9 +1313,9 @@ export async function analyzeProjectSource(
       ? Math.max(...bass.map((note) => note.confidence))
       : 0;
     const confidenceByField = {
-      tempo: midi ? 1 : providerResults.structure?.confidence ?? localTempo?.confidence ?? 0,
-      meter: midi?.meterMap.length ? 1 : providerResults.structure?.confidence ?? 0,
-      key: midi?.keyMap.length ? 1 : essentiaKey?.confidence ?? keyDetection?.confidence ?? 0,
+      tempo: midi ? 1 : tempoReconciliation?.confidence ?? 0,
+      meter: midi?.meterMap.length ? 1 : meterReconciliation?.confidence ?? 0,
+      key: midi?.keyMap.length ? 1 : keyReconciliation?.confidence ?? 0,
       structure: providerResults.structure?.confidence ?? 0,
       melody: midi
         ? 1
@@ -1295,32 +1334,29 @@ export async function analyzeProjectSource(
     const harmonyProviders = [...new Set(providerResults.harmony.map((item) => item.providerId))];
     const fieldStatus: Record<SongModelField, SongModelFieldStatus> = {
       tempo: {
-        status: midi || structureProvider ? "detected" : localTempo ? "low_confidence" : "not_available",
+        status: midi ? "detected" : tempoReconciliation?.status ?? "not_available",
         confidence: confidenceByField.tempo || null,
-        providers: midi ? ["STANDARD_MIDI"] : structureProvider ? [structureProvider] :
-          localTempo ? ["LOCAL_SIGNAL_ANALYZER_V1"] : [],
-        message: midi || structureProvider ? null : localTempo
-          ? "Tempo is a local signal estimate and was not confirmed by a structure provider."
-          : "No usable periodic tempo evidence was detected.",
+        providers: midi ? ["STANDARD_MIDI"] : tempoReconciliation?.providers ?? [],
+        message: midi ? null : tempoReconciliation?.message ??
+          "No usable periodic tempo evidence was detected.",
         edited: false,
       },
       meter: {
-        status: midi?.meterMap.length || structureProvider ? "detected" : "not_available",
+        status: midi?.meterMap.length ? "detected" : meterReconciliation?.status ?? "not_available",
         confidence: confidenceByField.meter || null,
         providers: midi?.meterMap.length ? ["STANDARD_MIDI"] :
-          structureProvider ? [structureProvider] : [],
-        message: midi?.meterMap.length || structureProvider ? null :
+          meterReconciliation?.providers ?? [],
+        message: midi?.meterMap.length ? null : meterReconciliation?.message ??
           "No structure provider returned a verified meter.",
         edited: false,
       },
       key: {
-        status: midi?.keyMap.length || essentiaKey ? "detected" : keyDetection ? "low_confidence" : "not_available",
+        status: midi?.keyMap.length ? "detected" : keyReconciliation?.status ?? "not_available",
         confidence: confidenceByField.key || null,
         providers: midi?.keyMap.length ? ["STANDARD_MIDI"] :
-          essentiaKey ? ["ESSENTIA"] : keyDetection ? ["LOCAL_SIGNAL_ANALYZER_V1"] : [],
-        message: midi?.keyMap.length || essentiaKey ? null : keyDetection
-          ? "Key is a local spectral estimate and was not confirmed by a harmony provider."
-          : "No unambiguous tonal center was detected.",
+          keyReconciliation?.providers ?? [],
+        message: midi?.keyMap.length ? null : keyReconciliation?.message ??
+          "No unambiguous tonal center was detected.",
         edited: false,
       },
       melody: {
@@ -1398,19 +1434,18 @@ export async function analyzeProjectSource(
       analysisCoverage,
       tempoMap: midi?.tempoMap.length
         ? midi.tempoMap
-        : providerResults.structure?.tempoMap ??
-          (localTempo
-            ? [{ time: 0, bpm: localTempo.bpm, confidence: localTempo.confidence }]
-            : []),
+        : tempoReconciliation?.value !== null && tempoReconciliation?.value !== undefined
+          ? [{ time: 0, bpm: tempoReconciliation.value, confidence: tempoReconciliation.confidence ?? 0 }]
+          : [],
       meterMap: midi?.meterMap.length
         ? midi.meterMap
-        : providerResults.structure?.meterMap ?? [],
+        : meterReconciliation?.value
+          ? [{ bar: 1, meter: meterReconciliation.value, confidence: meterReconciliation.confidence ?? 0 }]
+          : [],
       keyMap: midi?.keyMap.length
         ? midi.keyMap
-        : essentiaKey
-          ? [{ time: 0, key, confidence: essentiaKey.confidence }]
-          : keyDetection
-          ? [{ time: 0, key: keyDetection.key, confidence: keyDetection.confidence }]
+        : keyReconciliation?.value
+          ? [{ time: 0, key: keyReconciliation.value, confidence: keyReconciliation.confidence ?? 0 }]
           : [],
       beats,
       bars,

@@ -1760,25 +1760,135 @@ export function fuseHarmonyEvidence(
 export function fuseCanonicalNotes(
   transcriptions: TranscriptionAnalysisResult[],
 ): MelodyNote[] {
-  const ranked = transcriptions
-    .flatMap((result) => result.notes.map((note) => ({
+  // These weights intentionally describe transcription capability reliability,
+  // rather than a provider's reliability for another analysis capability.
+  const transcriptionReliability: Record<TranscriptionAnalysisResult["providerId"], number> = {
+    BASIC_PITCH: 1,
+    MT3: 0.98,
+    MR_MT3: 0.98,
+    YOUR_MT3: 0.98,
+    SHEETSAGE: 0.92,
+  };
+  const TIMING_START_TOLERANCE = 0.03;
+  const TIMING_END_TOLERANCE = 0.05;
+  const AMBIGUITY_NORMALIZED_MARGIN = 0.1;
+  const SOLE_PROVIDER_CONFIDENCE = 0.85;
+  type NoteVote = {
+    note: MelodyNote;
+    provider: TranscriptionAnalysisResult["providerId"];
+    score: number;
+  };
+  type TimingCluster = {
+    start: number;
+    end: number;
+    votes: NoteVote[];
+  };
+
+  const attestedProviders = new Set(transcriptions.map((result) => result.providerId));
+  if (!attestedProviders.size) return [];
+  const votes = transcriptions.flatMap((result) =>
+    result.notes.map((note): NoteVote => ({
       note,
-      score: note.confidence * result.confidence,
+      provider: result.providerId,
+      score: note.confidence * result.confidence *
+        transcriptionReliability[result.providerId],
     })))
     .sort((left, right) =>
       left.note.start - right.note.start ||
-      right.score - left.score ||
-      left.note.pitch - right.note.pitch);
-  const accepted: MelodyNote[] = [];
-  for (const candidate of ranked) {
-    const duplicate = accepted.some((note) =>
-      note.pitch === candidate.note.pitch &&
-      Math.abs(note.start - candidate.note.start) <= 0.03 &&
-      Math.abs(note.end - candidate.note.end) <= 0.05);
-    if (!duplicate) accepted.push(candidate.note);
+      left.note.end - right.note.end ||
+      left.note.pitch - right.note.pitch ||
+      left.provider.localeCompare(right.provider) ||
+      right.score - left.score);
+  if (!votes.length) return [];
+
+  // Clustering against a deterministic anchor prevents input order from
+  // changing whether adjacent timing jitter is considered the same event.
+  const timingClusters: TimingCluster[] = [];
+  for (const vote of votes) {
+    const cluster = timingClusters.find((candidate) =>
+      Math.abs(candidate.start - vote.note.start) <= TIMING_START_TOLERANCE &&
+      Math.abs(candidate.end - vote.note.end) <= TIMING_END_TOLERANCE);
+    if (cluster) cluster.votes.push(vote);
+    else timingClusters.push({
+      start: vote.note.start,
+      end: vote.note.end,
+      votes: [vote],
+    });
   }
-  return accepted.sort((left, right) =>
-    left.start - right.start || left.pitch - right.pitch);
+
+  return timingClusters.flatMap((cluster) => {
+    type PitchSupport = {
+      score: number;
+      votesByProvider: Map<NoteVote["provider"], NoteVote>;
+    };
+    const voteByProvider = new Map<NoteVote["provider"], NoteVote>();
+    for (const vote of cluster.votes) {
+      const existing = voteByProvider.get(vote.provider);
+      if (
+        !existing ||
+        vote.score > existing.score ||
+        (vote.score === existing.score &&
+          (vote.note.pitch < existing.note.pitch ||
+            (vote.note.pitch === existing.note.pitch &&
+              (vote.note.start < existing.note.start ||
+                (vote.note.start === existing.note.start &&
+                  vote.note.end < existing.note.end)))))
+      ) {
+        voteByProvider.set(vote.provider, vote);
+      }
+    }
+    const byPitch = new Map<number, PitchSupport>();
+    for (const vote of voteByProvider.values()) {
+      const support = byPitch.get(vote.note.pitch) ?? {
+        score: 0,
+        votesByProvider: new Map(),
+      };
+      // A provider gets exactly one vote per timing cluster, even if it
+      // returned duplicate or polyphonic events at that instant.
+      support.votesByProvider.set(vote.provider, vote);
+      byPitch.set(vote.note.pitch, support);
+    }
+    for (const support of byPitch.values()) {
+      support.score = [...support.votesByProvider.values()]
+        .reduce((sum, vote) => sum + vote.score, 0);
+    }
+    const ranked = [...byPitch.entries()].sort((left, right) =>
+      right[1].score - left[1].score ||
+      right[1].votesByProvider.size - left[1].votesByProvider.size ||
+      left[0] - right[0]);
+    const [pitch, winner] = ranked[0]!;
+    const runnerUp = ranked[1];
+    const totalScore = ranked.reduce((sum, [, support]) => sum + support.score, 0);
+    const normalizedMargin = runnerUp && totalScore > 0
+      ? (winner.score - runnerUp[1].score) / totalScore
+      : Infinity;
+    const hasCloseUnsupportedConflict = runnerUp &&
+      winner.votesByProvider.size < 2 &&
+      normalizedMargin <= AMBIGUITY_NORMALIZED_MARGIN;
+    const hasEquallySupportedCloseConflict = runnerUp &&
+      winner.votesByProvider.size === runnerUp[1].votesByProvider.size &&
+      normalizedMargin <= AMBIGUITY_NORMALIZED_MARGIN;
+    if (hasCloseUnsupportedConflict || hasEquallySupportedCloseConflict) return [];
+
+    // An isolated event can only enter canon when this analysis actually had
+    // one attested transcription provider. Empty results from another
+    // attested provider therefore cannot be silently treated as agreement.
+    if (
+      winner.votesByProvider.size === 1 &&
+      attestedProviders.size !== 1
+    ) return [];
+    const representative = [...winner.votesByProvider.values()].sort((left, right) =>
+      right.score - left.score ||
+      left.provider.localeCompare(right.provider) ||
+      left.note.start - right.note.start ||
+      left.note.end - right.note.end)[0]!;
+    if (
+      winner.votesByProvider.size === 1 &&
+      representative.score < SOLE_PROVIDER_CONFIDENCE
+    ) return [];
+    return [{ ...representative.note, pitch }];
+  }).sort((left, right) =>
+    left.start - right.start || left.pitch - right.pitch || left.end - right.end);
 }
 
 export type VerifiedBassStemAnalysisResult = {
