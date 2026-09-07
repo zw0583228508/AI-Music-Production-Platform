@@ -667,6 +667,7 @@ def verify_cancelled_comparison_capacity(metadata: dict) -> dict:
     probe = None
     cancellation_requested = time.time()
     cancellation_results = queue.Queue()
+    acknowledgement_results = queue.Queue()
 
     def cancel_call(call) -> None:
         try:
@@ -674,6 +675,17 @@ def verify_cancelled_comparison_capacity(metadata: dict) -> dict:
             cancellation_results.put(True)
         except Exception:
             cancellation_results.put(False)
+
+    def await_cancellation(call, deadline: float) -> None:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        try:
+            call.get(timeout=remaining)
+        except RemoteError:
+            acknowledgement_results.put(True)
+        except Exception:
+            acknowledgement_results.put(False)
 
     with modal.Queue.ephemeral() as readiness:
         calls = [
@@ -718,10 +730,28 @@ def verify_cancelled_comparison_capacity(metadata: dict) -> dict:
                     break
                 cancellation_requests_succeeded += 1
             if cancellation_requests_succeeded == len(calls):
+                acknowledgement_deadline = (
+                    time.monotonic() + COMPARISON_CANCEL_ACK_BOUND_SECONDS
+                )
                 for call in calls:
+                    threading.Thread(
+                        target=await_cancellation,
+                        args=(call, acknowledgement_deadline),
+                        daemon=True,
+                    ).start()
+                awaiting_acknowledgements = len(calls)
+                while awaiting_acknowledgements:
+                    remaining = acknowledgement_deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
                     try:
-                        call.get(timeout=COMPARISON_CANCEL_ACK_BOUND_SECONDS)
-                    except RemoteError:
+                        acknowledged = acknowledgement_results.get(
+                            timeout=remaining
+                        )
+                    except queue.Empty:
+                        break
+                    awaiting_acknowledgements -= 1
+                    if acknowledged:
                         cancellation_acknowledged += 1
                 if cancellation_acknowledged == len(calls):
                     probe = comparison.spawn("probe")
