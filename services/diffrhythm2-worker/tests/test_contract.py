@@ -432,6 +432,28 @@ print(json.dumps({"elapsedSeconds":elapsed,"peakResidentMiB":peak_kib/1024,"resu
      signal_comparison(extreme,normal)
   decode.assert_not_called()
 
+ def test_source_copy_detection_rejects_malformed_oversized_audio_before_decode(self):
+  sample_rate=8000
+  claimed_frames=int(sample_rate*MAX_SUPPORTED_SMOKE_DURATION_SECONDS)+1
+  with tempfile.TemporaryDirectory() as directory:
+   directory=Path(directory)
+   oversized=directory/"truncated-oversized.wav"
+   normal=directory/"normal.wav"
+   oversized.write_bytes(b"malformed oversized audio fixture")
+   sf.write(normal,np.zeros(32),sample_rate,subtype="PCM_16")
+   oversized_metadata=mock.Mock(
+    channels=1,samplerate=sample_rate,frames=claimed_frames,
+   )
+   with mock.patch("smoke.sf.info",return_value=oversized_metadata), \
+        mock.patch("smoke.sf.read",wraps=sf.read) as decode:
+    with self.assertRaisesRegex(
+     RuntimeError,
+     rf"audio duration exceeds supported maximum of "
+     rf"{MAX_SUPPORTED_SMOKE_DURATION_SECONDS:g} seconds",
+    ):
+     signal_comparison(oversized,normal)
+   decode.assert_not_called()
+
  def test_source_copy_detection_keeps_stereo_projection_behavior(self):
   sample_rate=8000
   source_audio=music_fixture("melodic",sample_rate,2)
