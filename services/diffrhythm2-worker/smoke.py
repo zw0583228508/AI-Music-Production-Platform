@@ -8,6 +8,10 @@ from scipy.signal import correlate, correlation_lags, resample_poly, stft
 from app import ASSETS, SPEC, sha
 from inference import infer
 from contract import MAX_DURATION_SECONDS
+from comparison_resources import (
+    COMPARISON_MEASURED_PEAK_MIB,
+    COMPARISON_PER_INPUT_BUDGET_MIB,
+)
 
 def describe(path: Path) -> dict:
     audio, sample_rate = sf.read(str(path), always_2d=True)
@@ -36,6 +40,14 @@ MAX_COMPARISON_WORKING_BYTES = 700 * 1024 * 1024
 # library state so a NumPy/SciPy scratch-allocation increase fails before the
 # supported comparison boundary is consumed.
 MIN_COMPARISON_MEMORY_HEADROOM_BYTES = 32 * 1024 * 1024
+
+if (
+    MAX_COMPARISON_WORKING_BYTES - MIN_COMPARISON_MEMORY_HEADROOM_BYTES
+    != COMPARISON_MEASURED_PEAK_MIB * 1024 * 1024
+    or MAX_COMPARISON_WORKING_BYTES
+    != COMPARISON_PER_INPUT_BUDGET_MIB * 1024 * 1024
+):
+    raise RuntimeError("comparison deployment budget disagrees with peak-RSS contract")
 
 def _audio_metadata(path: Path):
     metadata = sf.info(str(path))
