@@ -14,11 +14,26 @@ import { build } from "esbuild";
 
 const apiDirectory = new URL("..", import.meta.url).pathname;
 const harnessPath = `/tmp/gpu-provider-attestation-${process.pid}.mjs`;
+const generatedPromotionsSource = await readFile(
+  new URL("../src/lib/gpuPromotions.generated.ts", import.meta.url),
+  "utf8",
+);
+const generatedPromotionsLiteral = generatedPromotionsSource.match(
+  /= (".*");\s*$/s,
+)?.[1];
+assert.ok(generatedPromotionsLiteral);
+const generatedPromotions = JSON.parse(JSON.parse(generatedPromotionsLiteral));
+const anyAccompCommittedPromotions = JSON.stringify({
+  bundles: { ANYACCOMP: generatedPromotions.bundles.ANYACCOMP },
+  publicKey: generatedPromotions.publicKey,
+  schemaVersion: 1,
+});
 await build({
   stdin: {
     contents: `
       export {
          MUSIC_PROVIDERS,
+         HttpMusicGenerationProvider,
         createProviderRegistry,
         cancelRemoteProviderJob,
         canonicalGpuPromotionJson,
@@ -45,7 +60,7 @@ await build({
 globalThis.require = __createRequire(import.meta.url);`,
   },
   plugins: [{
-    name: "empty-committed-gpu-promotions",
+    name: "anyaccomp-only-committed-gpu-promotions",
     setup(build) {
       build.onResolve(
         { filter: /gpuPromotions\.generated$/ },
@@ -55,7 +70,7 @@ globalThis.require = __createRequire(import.meta.url);`,
         { filter: /.*/, namespace: "test" },
         () => ({
           contents: `export const committedGpuPromotionsJson =
-            "{\\"bundles\\":{},\\"publicKey\\":\\"\\",\\"schemaVersion\\":1}";`,
+             ${JSON.stringify(anyAccompCommittedPromotions)};`,
           loader: "js",
         }),
       );
@@ -65,6 +80,7 @@ globalThis.require = __createRequire(import.meta.url);`,
 
 const {
   MUSIC_PROVIDERS,
+  HttpMusicGenerationProvider,
   cancelRemoteProviderJob,
   canonicalGpuPromotionJson,
   createProviderRegistry,
@@ -1273,7 +1289,8 @@ test("deployment env routes and authenticates ACE-Step health and generation", a
   }
 });
 
-test("AnyAccomp cannot be selected or invoked without commercial-use authorization", async () => {
+test("AnyAccomp ignores env authorization and sends zero POSTs on attestation mismatch", async () => {
+  let generationPosts = 0;
   const server = createServer((request, response) => {
     response.writeHead(200, { "Content-Type": "application/json" });
     if (request.url?.startsWith("/health")) {
@@ -1294,31 +1311,75 @@ test("AnyAccomp cannot be selected or invoked without commercial-use authorizati
       }));
       return;
     }
+    if (request.method === "POST") generationPosts += 1;
     response.end(JSON.stringify({ candidates: [] }));
   });
   await listen(server);
   const address = server.address();
   process.env.MUSIC_PROVIDER_ANYACCOMP_URL = `http://127.0.0.1:${address.port}/generate`;
-  process.env.MUSIC_PROVIDER_ANYACCOMP_CHECKPOINT_SHA256 = "d".repeat(64);
-  process.env.MUSIC_PROVIDER_ANYACCOMP_CONTAINER_DIGEST = `sha256:${"e".repeat(64)}`;
-  delete process.env.MUSIC_PROVIDER_ANYACCOMP_COMMERCIAL_USE_AUTHORIZED;
-  delete process.env.ANYACCOMP_COMMERCIAL_USE_AUTHORIZED;
+  process.env.MUSIC_PROVIDER_ANYACCOMP_COMMERCIAL_USE_AUTHORIZED = "true";
+  process.env.ANYACCOMP_COMMERCIAL_USE_AUTHORIZED = "true";
+  process.env.MUSIC_PROVIDER_ANYACCOMP_PROMOTION_BUNDLE = JSON.stringify({
+    record: {
+      ...expectedGpuPromotionRecord("ANYACCOMP"),
+      endpointOrigin: `http://127.0.0.1:${address.port}`,
+    },
+    signature: "A".repeat(88),
+  });
+  process.env.MUSIC_PROVIDER_ANYACCOMP_PROMOTION_PUBLIC_KEY =
+    promotionPublicKey.toString();
   try {
     const registry = await verifyProviderRegistry(createProviderRegistry(), true);
     assert.throws(() => selectMusicProvider(registry, {
       task: "ARRANGEMENT", requestedProvider: "ANYACCOMP", hardware: "GPU", speed: "BALANCED",
     }), /unavailable/i);
     await assert.rejects(() => registry.find((item) =>
-      item.definition.id === "ANYACCOMP")?.generate({}), /commercial-use authorization/i);
-    await assert.rejects(() => runArrangementProvider({
-      id: "ANYACCOMP", name: "AnyAccomp", provider: "AnyAccomp", version: "anyaccomp",
-      capabilities: ["arrangement"], inputTypes: ["VOCAL_ONLY"], execution: "remote",
-      status: "configured", license: "CC-BY-NC-ND", priority: 1, notes: "",
-    }, {}), /commercial-use authorization/i);
+      item.definition.id === "ANYACCOMP")?.generate({
+        sourceAudio: { url: "https://storage.example.test/private-vocal.wav" },
+      }), /signed deployment health attestation/i);
+    assert.equal(generationPosts, 0);
   } finally {
     delete process.env.MUSIC_PROVIDER_ANYACCOMP_URL;
-    delete process.env.MUSIC_PROVIDER_ANYACCOMP_CHECKPOINT_SHA256;
-    delete process.env.MUSIC_PROVIDER_ANYACCOMP_CONTAINER_DIGEST;
+    delete process.env.MUSIC_PROVIDER_ANYACCOMP_COMMERCIAL_USE_AUTHORIZED;
+    delete process.env.ANYACCOMP_COMMERCIAL_USE_AUTHORIZED;
+    delete process.env.MUSIC_PROVIDER_ANYACCOMP_PROMOTION_BUNDLE;
+    delete process.env.MUSIC_PROVIDER_ANYACCOMP_PROMOTION_PUBLIC_KEY;
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+test("AnyAccomp generation response retains its trusted provider audio artifact", () => {
+  const record = expectedGpuPromotionRecord("ANYACCOMP");
+  assert.ok(record);
+  const provider = new HttpMusicGenerationProvider({
+    id: "ANYACCOMP", displayName: "AnyAccomp", modelVersion: record.modelVersion,
+    tasks: ["ARRANGEMENT"], hardware: ["GPU"], speeds: ["BALANCED"],
+  }, `${record.endpointOrigin}/generate`, "test-token");
+  const runtimeProvenance = {
+    model: record.modelVersion, checkpointSha256: record.checkpointSha256,
+    revision: record.checkpointRevision, modalImageId: record.modalImageId,
+    sourceImageDigest: record.sourceImageDigest, cudaVersion: record.runtime.cuda,
+    pytorchVersion: record.runtime.pytorch, gpu: "NVIDIA L40S",
+  };
+  provider.attestedChecksum = record.checkpointSha256;
+  provider.readiness = { availability: "ready", runtimeProvenance };
+  const sha256 = "a".repeat(64);
+  const result = provider.normalizeResult({
+    provider: "ANYACCOMP", modelVersion: record.modelVersion,
+    checkpointSha256: record.checkpointSha256, revision: record.checkpointRevision,
+    modalImageId: record.modalImageId, sourceImageDigest: record.sourceImageDigest,
+    cudaVersion: record.runtime.cuda, pytorchVersion: record.runtime.pytorch,
+    gpu: "NVIDIA L40S", smokeTested: true,
+    candidates: [{ artifact: {
+      name: "accompaniment.wav",
+      url: `${record.endpointOrigin}/artifact/job/accompaniment.wav?expires=2000000000&capability=abc`,
+      contentType: "audio/wav", format: "wav", bytes: 48044, sha256,
+      durationSeconds: 1, sampleRate: 24000, channels: 1,
+    } }],
+  }, {
+    candidates: 1, parameters: {}, parentArtifactIds: [], tracks: [],
+    songModel: {}, arrangement: { energy: 0.5, density: 0.5 },
+  });
+  assert.equal(result.candidates[0].audioArtifact.sha256, sha256);
+  assert.equal(result.candidates[0].audioArtifact.format, "wav");
 });

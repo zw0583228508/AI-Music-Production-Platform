@@ -13,6 +13,7 @@ import socket
 import sys
 import time
 import urllib.request
+import wave
 from pathlib import Path
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -36,6 +37,18 @@ class GenerateRequest(BaseModel):
     provider: str
     prompt: str = ""
     vocalSource: dict
+
+
+def allowed_source_origins() -> set[str]:
+    origins = {
+        origin.strip().rstrip("/")
+        for origin in os.getenv("ANYACCOMP_ALLOWED_SOURCE_ORIGINS", "").split(",")
+        if origin.strip()
+    }
+    return {
+        origin for origin in origins
+        if re.fullmatch(r"https://[A-Za-z0-9.-]+", origin)
+    }
 
 
 def digest(path: Path) -> str:
@@ -93,7 +106,7 @@ def asset_state() -> dict:
             and LICENSE["environment_values_are_authorization_evidence"] is False
             and inventory["licenseStatus"] == "COMMERCIAL"
             and inventory["licenseEvidenceSha256"]
-            == digest(ROOT / SPEC["license_evidence"])
+            == LICENSE["license_evidence_sha256"]
         )
         authorization = json.loads(fixture_auth_path.read_text())
         fixture_ready = (
@@ -229,12 +242,14 @@ def health_payload() -> dict:
         and re.fullmatch(r"fu-[A-Za-z0-9]+", modal_function_id) is not None
         and modal_function_id != "fu-Pending"
     )
+    source_origins_ready = bool(allowed_source_origins())
     ready = (
         assets["assetsReady"]
         and assets["fixtureReady"]
         and assets["smokeTested"]
         and runtime["ready"]
         and identity_ready
+        and source_origins_ready
     )
     source_image_digest = runtime["runtime"]["sourceImageDigest"]
     modal_image_id = runtime["runtime"]["modalImageId"]
@@ -276,6 +291,7 @@ def health_payload() -> dict:
         "fixtureReady": assets["fixtureReady"],
         "smokeTested": assets["smokeTested"],
         "identityReady": identity_ready,
+        "sourceOriginsReady": source_origins_ready,
         "smokeEvidence": smoke_evidence,
     }
 
@@ -292,11 +308,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 def validate_source_url(value: str) -> str:
     parsed = urlparse(value)
-    allowed = {
-        origin.strip().rstrip("/")
-        for origin in os.getenv("ANYACCOMP_ALLOWED_SOURCE_ORIGINS", "").split(",")
-        if origin.strip()
-    }
+    allowed = allowed_source_origins()
     origin = f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
     if (
         parsed.scheme != "https"
@@ -337,8 +349,9 @@ def artifact_capability(name: str, expiry: int) -> str:
 
 
 @app.post("/generate", dependencies=[Depends(require_bearer)])
-def generate(body: GenerateRequest, request: Request) -> dict:
-    if body.provider != SPEC["provider"] or not health_payload()["ready"]:
+def generate(body: GenerateRequest) -> dict:
+    health = health_payload()
+    if body.provider != SPEC["provider"] or not health["ready"]:
         raise HTTPException(503, "AnyAccomp is not ready")
     source_url = body.vocalSource.get("url")
     if not isinstance(source_url, str) or not source_url:
@@ -356,15 +369,40 @@ def generate(body: GenerateRequest, request: Request) -> dict:
     expiry = int(time.time()) + CAPABILITY_TTL_SECONDS
     name = f"{work.name}/accompaniment.wav"
     cap = artifact_capability(name, expiry)
-    base = str(request.base_url).rstrip("/")
+    with wave.open(str(output), "rb") as rendered:
+        sample_rate = rendered.getframerate()
+        channels = rendered.getnchannels()
+        duration_seconds = rendered.getnframes() / sample_rate
+    base = os.getenv("ANYACCOMP_PUBLIC_ORIGIN", "").rstrip("/")
+    if not re.fullmatch(r"https://[A-Za-z0-9.-]+", base):
+        raise HTTPException(503, "AnyAccomp public origin is not configured")
     return {
         "provider": SPEC["provider"],
         "modelVersion": SPEC["model_version"],
         "checkpointSha256": SPEC["weights"]["checkpoint_set_sha256"],
+        "revision": health["revision"],
+        "modalImageId": health["modalImageId"],
+        "sourceImageDigest": health["sourceImageDigest"],
+        "cudaVersion": health["runtime"]["cudaVersion"],
+        "pytorchVersion": health["runtime"]["pytorchVersion"],
+        "gpu": health["runtime"]["gpu"],
+        "smokeTested": health["smokeTested"],
         "candidates": [{
             "id": str(uuid4()),
-            "audioUrl": f"{base}/artifact/{name}?exp={expiry}&cap={cap}",
-            "mimeType": "audio/wav",
+            "artifact": {
+                "name": "accompaniment.wav",
+                "url": (
+                    f"{base}/artifact/{name}"
+                    f"?expires={expiry}&capability={cap}"
+                ),
+                "contentType": "audio/wav",
+                "format": "wav",
+                "bytes": output.stat().st_size,
+                "sha256": digest(output),
+                "durationSeconds": duration_seconds,
+                "sampleRate": sample_rate,
+                "channels": channels,
+            },
             "sourceType": "provider-audio",
             "metadata": {
                 "conditioning": "source vocal only",
@@ -376,12 +414,12 @@ def generate(body: GenerateRequest, request: Request) -> dict:
 
 
 @app.get("/artifact/{job_id}/{filename}")
-def artifact(job_id: str, filename: str, exp: int, cap: str):
+def artifact(job_id: str, filename: str, expires: int, capability: str):
     name = f"{job_id}/{filename}"
-    expected = artifact_capability(name, exp)
+    expected = artifact_capability(name, expires)
     if (
-        exp < int(time.time())
-        or not hmac.compare_digest(cap, expected)
+        expires < int(time.time())
+        or not hmac.compare_digest(capability, expected)
         or not job_id.isalnum()
         or filename != "accompaniment.wav"
     ):

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
 import test from "node:test";
 import {
+  anyAccompCommercialUseAuthorized,
   canonicalGpuPromotionJson,
   expectedGpuPromotionRecord,
   gpuPromotionAttestationFailure,
@@ -215,6 +216,101 @@ test("the committed YOUR_MT3 promotion attests its exact captured runtime identi
       ) ?? "",
       /runtime identity/,
     );
+  }
+});
+
+test("the committed AnyAccomp promotion is signed, exact, and cannot be replaced by env", () => {
+  const record = expectedGpuPromotionRecord("ANYACCOMP");
+  assert.ok(record);
+  const previousBundle = process.env.MUSIC_PROVIDER_ANYACCOMP_PROMOTION_BUNDLE;
+  const previousPublicKey =
+    process.env.MUSIC_PROVIDER_ANYACCOMP_PROMOTION_PUBLIC_KEY;
+  const previousCommercial =
+    process.env.MUSIC_PROVIDER_ANYACCOMP_COMMERCIAL_USE_AUTHORIZED;
+  process.env.MUSIC_PROVIDER_ANYACCOMP_PROMOTION_BUNDLE = JSON.stringify({
+    record: { ...record, modalImageId: "im-EnvironmentOverride" },
+    signature: "A".repeat(88),
+  });
+  process.env.MUSIC_PROVIDER_ANYACCOMP_PROMOTION_PUBLIC_KEY =
+    "not-a-public-key";
+  process.env.MUSIC_PROVIDER_ANYACCOMP_COMMERCIAL_USE_AUTHORIZED = "false";
+  try {
+    assert.equal(anyAccompCommercialUseAuthorized(), true);
+    assert.deepEqual(expectedGpuPromotionRecord("ANYACCOMP"), record);
+    const health = {
+      provider: record.provider,
+      modalAppId: record.modalAppId,
+      modalDeploymentId: record.modalDeploymentId,
+      modalFunctionId: record.modalFunctionId,
+      modalImageId: record.modalImageId,
+      modelVersion: record.modelVersion,
+      checkpointSha256: record.checkpointSha256,
+      revision: record.checkpointRevision,
+      sourceRevision: record.sourceRevision,
+      sourceImageDigest: record.sourceImageDigest,
+      runtime: { pythonVersion: record.runtime.python },
+      framework: {
+        cuda_image: record.runtime.cudaImage,
+        cuda: record.runtime.cuda,
+        pytorch: record.runtime.pytorch,
+        torchvision: record.runtime.torchvision,
+        torchaudio: record.runtime.torchaudio,
+        torch_index_url: record.runtime.torchIndexUrl,
+        transformers: record.runtime.transformers,
+        accelerate: record.runtime.accelerate,
+      },
+    };
+    assert.equal(
+      gpuPromotionAttestationFailure(
+        "ANYACCOMP",
+        `${record.endpointOrigin}/health`,
+        health,
+      ),
+      null,
+    );
+    for (const [endpoint, drift] of [
+      ["https://other.example.test/health", {}],
+      [`${record.endpointOrigin}/health`, { modalAppId: "ap-Other" }],
+      [`${record.endpointOrigin}/health`, { modalDeploymentId: "v999" }],
+      [`${record.endpointOrigin}/health`, { modalFunctionId: "fu-Other" }],
+      [`${record.endpointOrigin}/health`, { modalImageId: "im-Other" }],
+      [`${record.endpointOrigin}/health`, { modelVersion: "other-model" }],
+      [`${record.endpointOrigin}/health`, { checkpointSha256: "0".repeat(64) }],
+      [`${record.endpointOrigin}/health`, { revision: "other-revision" }],
+      [`${record.endpointOrigin}/health`, { sourceRevision: "0".repeat(40) }],
+      [`${record.endpointOrigin}/health`, {
+        sourceImageDigest: `sha256:${"0".repeat(64)}`,
+      }],
+      [`${record.endpointOrigin}/health`, {
+        runtime: { pythonVersion: "3.11.0" },
+      }],
+    ] as const) {
+      assert.ok(
+        gpuPromotionAttestationFailure(
+          "ANYACCOMP",
+          endpoint,
+          { ...health, ...drift },
+        ),
+      );
+    }
+  } finally {
+    if (previousBundle === undefined) {
+      delete process.env.MUSIC_PROVIDER_ANYACCOMP_PROMOTION_BUNDLE;
+    } else {
+      process.env.MUSIC_PROVIDER_ANYACCOMP_PROMOTION_BUNDLE = previousBundle;
+    }
+    if (previousPublicKey === undefined) {
+      delete process.env.MUSIC_PROVIDER_ANYACCOMP_PROMOTION_PUBLIC_KEY;
+    } else {
+      process.env.MUSIC_PROVIDER_ANYACCOMP_PROMOTION_PUBLIC_KEY =
+        previousPublicKey;
+    }
+    if (previousCommercial === undefined) {
+      delete process.env.MUSIC_PROVIDER_ANYACCOMP_COMMERCIAL_USE_AUTHORIZED;
+    } else {
+      process.env.MUSIC_PROVIDER_ANYACCOMP_COMMERCIAL_USE_AUTHORIZED =
+        previousCommercial;
+    }
   }
 });
 

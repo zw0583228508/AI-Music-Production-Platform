@@ -126,6 +126,25 @@ class AnyAccompContractTests(unittest.TestCase):
         self.assertFalse(payload["checkpointReady"])
         self.assertFalse(payload["smokeTested"])
 
+    def test_health_requires_a_valid_nonempty_source_origin_allowlist(self):
+        app = load("anyapp_allowlist", "app.py")
+        with mock.patch.dict(
+            "os.environ", {"ANYACCOMP_ALLOWED_SOURCE_ORIGINS": ""}, clear=False
+        ):
+            self.assertFalse(app.health_payload()["sourceOriginsReady"])
+        with mock.patch.dict(
+            "os.environ",
+            {"ANYACCOMP_ALLOWED_SOURCE_ORIGINS": "http://storage.googleapis.com"},
+            clear=False,
+        ):
+            self.assertFalse(app.health_payload()["sourceOriginsReady"])
+        with mock.patch.dict(
+            "os.environ",
+            {"ANYACCOMP_ALLOWED_SOURCE_ORIGINS": "https://storage.googleapis.com"},
+            clear=False,
+        ):
+            self.assertTrue(app.health_payload()["sourceOriginsReady"])
+
     def test_artifact_capability_is_bound_to_name_and_expiry(self):
         app = load("anyapp_cap", "app.py")
         with mock.patch.dict("os.environ", {"ANYACCOMP_API_TOKEN": "test-token"}):
@@ -137,6 +156,70 @@ class AnyAccompContractTests(unittest.TestCase):
             self.assertNotEqual(
                 first, app.artifact_capability("job/accompaniment.wav", 101)
             )
+
+    def test_generation_result_has_attested_provenance_and_external_artifact_url(self):
+        app = load("anyapp_generate", "app.py")
+        runtime = {
+            "cudaVersion": "12.1",
+            "pytorchVersion": "2.3.1+cu121",
+            "gpu": "NVIDIA L40S",
+        }
+        health = {
+            "ready": True,
+            "revision": f"amphion/anyaccomp@{app.SPEC['weights']['revision']}",
+            "modalImageId": "im-TestImage",
+            "sourceImageDigest": "sha256:" + "a" * 64,
+            "smokeTested": True,
+            "runtime": runtime,
+        }
+        body = app.GenerateRequest(
+            provider="ANYACCOMP",
+            vocalSource={"url": "https://storage.example.test/vocal.wav"},
+        )
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+            app, "ARTIFACTS", Path(directory)
+        ), mock.patch.object(
+            app, "health_payload", return_value=health
+        ), mock.patch.object(
+            app, "download_source", side_effect=lambda _, path: path.write_bytes(b"in")
+        ), mock.patch.object(
+            app,
+            "run",
+            side_effect=lambda _, path, __, ___: __import__("wave").open(
+                str(path), "wb"
+            ),
+        ), mock.patch.dict(
+            "os.environ",
+            {
+                "ANYACCOMP_API_TOKEN": "test-token",
+                "ANYACCOMP_PUBLIC_ORIGIN": "https://windot100--anyaccomp.modal.run",
+            },
+        ):
+            with mock.patch.object(app, "run") as run:
+                def write_wav(_, path, __, ___):
+                    import wave
+                    with wave.open(str(path), "wb") as rendered:
+                        rendered.setnchannels(1)
+                        rendered.setsampwidth(2)
+                        rendered.setframerate(24000)
+                        rendered.writeframes(b"\0\0" * 24000)
+                run.side_effect = write_wav
+                payload = app.generate(body)
+        self.assertTrue(payload["smokeTested"])
+        self.assertEqual(payload["modalImageId"], "im-TestImage")
+        self.assertEqual(payload["cudaVersion"], "12.1")
+        self.assertTrue(
+            payload["candidates"][0]["artifact"]["url"].startswith(
+                "https://windot100--anyaccomp.modal.run/artifact/"
+            )
+        )
+        artifact = payload["candidates"][0]["artifact"]
+        self.assertIn("expires=", artifact["url"])
+        self.assertIn("capability=", artifact["url"])
+        self.assertEqual(artifact["sampleRate"], 24000)
+        self.assertEqual(artifact["channels"], 1)
+        self.assertEqual(artifact["format"], "wav")
+        self.assertEqual(len(artifact["sha256"]), 64)
 
 
 if __name__ == "__main__":

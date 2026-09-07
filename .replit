@@ -127,3 +127,4 @@ MCowBQYDK2VwAyEAvASjtY4ou/RMXIzWuyO68bT5/8fffxEbRcPOrU+J3wc=
 MUSIC_PROVIDER_ALL_IN_ONE_SOURCE_IMAGE_DIGEST = "sha256:cacdd8e47a225c61dc108c16abdb92222cdd1c3e670126cd96594cf46737c588"
 MUSIC_PROVIDER_ALL_IN_ONE_SOURCE_REVISION = "a04c3f14e12db9eede528b26ad64aeae21fbbbdc"
 MUSIC_PROVIDER_ALL_IN_ONE_URL = "https://windot100--all-in-one-isolated.modal.run"
+ANYACCOMP_API_URL = "https://windot100--anyaccomp.modal.run"

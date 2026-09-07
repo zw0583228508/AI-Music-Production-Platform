@@ -1,16 +1,22 @@
 """Dedicated AnyAccomp provisioning, smoke and bearer-only endpoint."""
 from __future__ import annotations
 
+import asyncio
+import http.client
 import os
 import json
+import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import modal
 
 APP_NAME = "anyaccomp-worker"
 ENDPOINT_LABEL = "anyaccomp"
+PUBLIC_ORIGIN = "https://windot100--anyaccomp.modal.run"
+ALLOWED_SOURCE_ORIGINS = "https://storage.googleapis.com"
 MODEL_VOLUME_NAME = "anyaccomp-models-private-v1"
 ARTIFACT_VOLUME_NAME = "anyaccomp-artifacts-private-v1"
 MODEL_MOUNT = "/var/lib/anyaccomp/models"
@@ -19,9 +25,171 @@ RUNTIME_SECRET_NAME = "anyaccomp-runtime-v1"
 PROMOTION_SECRET_NAME = "anyaccomp-promotion-identity-v1"
 WORKER_ROOT = Path(__file__).resolve().parent
 PINNED_PYTHON = "/opt/anyaccomp-venv/bin/python"
+PINNED_SERVER_HOST = "127.0.0.1"
+PINNED_SERVER_PORT = 8000
+MAX_PROXY_REQUEST_BYTES = 20 * 1024 * 1024
+MAX_PROXY_RESPONSE_BYTES = 256 * 1024 * 1024
+HOP_BY_HOP_HEADERS = {
+    b"connection",
+    b"keep-alive",
+    b"proxy-authenticate",
+    b"proxy-authorization",
+    b"te",
+    b"trailer",
+    b"transfer-encoding",
+    b"upgrade",
+}
+
+
+def _start_pinned_server(environment: dict[str, str]) -> subprocess.Popen:
+    process = subprocess.Popen(
+        [
+            PINNED_PYTHON,
+            "-m",
+            "uvicorn",
+            "app:app",
+            "--host",
+            PINNED_SERVER_HOST,
+            "--port",
+            str(PINNED_SERVER_PORT),
+        ],
+        cwd="/app",
+        env=environment,
+    )
+    deadline = time.monotonic() + 600
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise RuntimeError(
+                "AnyAccomp pinned Python web workload exited during startup"
+            )
+        try:
+            with socket.create_connection(
+                (PINNED_SERVER_HOST, PINNED_SERVER_PORT),
+                timeout=0.25,
+            ):
+                return process
+        except OSError:
+            time.sleep(0.25)
+    process.terminate()
+    process.wait(timeout=30)
+    raise RuntimeError("AnyAccomp pinned Python web workload did not start")
+
+
+def _proxy_request(
+    method: str,
+    path: str,
+    headers: list[tuple[bytes, bytes]],
+    body: bytes,
+) -> tuple[int, list[tuple[bytes, bytes]], bytes]:
+    connection = http.client.HTTPConnection(
+        PINNED_SERVER_HOST,
+        PINNED_SERVER_PORT,
+        timeout=1800,
+    )
+    try:
+        connection.putrequest(
+            method,
+            path,
+            skip_host=True,
+            skip_accept_encoding=True,
+        )
+        connection.putheader("Host", f"{PINNED_SERVER_HOST}:{PINNED_SERVER_PORT}")
+        for name, value in headers:
+            lowered = name.lower()
+            if (
+                lowered not in HOP_BY_HOP_HEADERS
+                and lowered not in {b"host", b"content-length"}
+            ):
+                connection.putheader(
+                    name.decode("latin-1"),
+                    value.decode("latin-1"),
+                )
+        connection.putheader("Content-Length", str(len(body)))
+        connection.endheaders(body)
+        response = connection.getresponse()
+        payload = response.read(MAX_PROXY_RESPONSE_BYTES + 1)
+        if len(payload) > MAX_PROXY_RESPONSE_BYTES:
+            raise RuntimeError("AnyAccomp proxied response exceeds size limit")
+        response_headers = [
+            (name.encode("latin-1"), value.encode("latin-1"))
+            for name, value in response.getheaders()
+            if name.lower().encode("latin-1") not in HOP_BY_HOP_HEADERS
+        ]
+        return response.status, response_headers, payload
+    finally:
+        connection.close()
+
+
+def _asgi_proxy(process: subprocess.Popen):
+    async def proxy(scope, receive, send):
+        if scope["type"] == "lifespan":
+            while True:
+                message = await receive()
+                if message["type"] == "lifespan.startup":
+                    await send({"type": "lifespan.startup.complete"})
+                elif message["type"] == "lifespan.shutdown":
+                    if process.poll() is None:
+                        process.terminate()
+                        process.wait(timeout=30)
+                    await send({"type": "lifespan.shutdown.complete"})
+                    return
+        if scope["type"] != "http":
+            return
+        body = bytearray()
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                return
+            if message["type"] != "http.request":
+                continue
+            body.extend(message.get("body", b""))
+            if len(body) > MAX_PROXY_REQUEST_BYTES:
+                await send(
+                    {
+                        "type": "http.response.start",
+                        "status": 413,
+                        "headers": [(b"content-type", b"application/json")],
+                    }
+                )
+                await send(
+                    {
+                        "type": "http.response.body",
+                        "body": b'{"detail":"request body too large"}',
+                    }
+                )
+                return
+            if not message.get("more_body", False):
+                break
+        raw_path = scope.get("raw_path", scope["path"].encode("utf-8"))
+        path = raw_path.decode("ascii")
+        query = scope.get("query_string", b"")
+        if query:
+            path += "?" + query.decode("ascii")
+        try:
+            status, headers, payload = await asyncio.to_thread(
+                _proxy_request,
+                scope["method"],
+                path,
+                scope.get("headers", []),
+                bytes(body),
+            )
+        except Exception:
+            status = 502
+            headers = [(b"content-type", b"application/json")]
+            payload = b'{"detail":"pinned worker proxy failure"}'
+        await send(
+            {
+                "type": "http.response.start",
+                "status": status,
+                "headers": headers,
+            }
+        )
+        await send({"type": "http.response.body", "body": payload})
+
+    return proxy
 
 app = modal.App(APP_NAME)
-SOURCE_IMAGE_DIGEST = "sha256:73ea0220b42826b7603162855ab2b6fdf5695a8b265403aa38462ae206690fd3"
+SOURCE_IMAGE_DIGEST = "sha256:aed30e61de548b1d9bb12c714697394ca61c888381c22de1ac498354b9873bde"
 image = modal.Image.from_dockerfile(
     WORKER_ROOT / "Dockerfile",
     context_dir=WORKER_ROOT.parent.parent,
@@ -127,34 +295,13 @@ print(json.dumps({
     max_containers=1,
 )
 class AnyAccompWorker:
-    @modal.web_server(port=8000, startup_timeout=600, label=ENDPOINT_LABEL)
+    @modal.asgi_app(label=ENDPOINT_LABEL)
     def endpoint(self):
         environment = {
             **os.environ,
             "ANYACCOMP_ASSET_ROOT": MODEL_MOUNT,
             "ANYACCOMP_ARTIFACT_ROOT": ARTIFACT_MOUNT,
+            "ANYACCOMP_PUBLIC_ORIGIN": PUBLIC_ORIGIN,
+            "ANYACCOMP_ALLOWED_SOURCE_ORIGINS": ALLOWED_SOURCE_ORIGINS,
         }
-        process = subprocess.Popen(
-            [
-                PINNED_PYTHON,
-                "-m",
-                "uvicorn",
-                "app:app",
-                "--host",
-                "0.0.0.0",
-                "--port",
-                "8000",
-            ],
-            cwd="/app",
-            env=environment,
-        )
-        try:
-            code = process.wait()
-            if code:
-                raise RuntimeError(
-                    "AnyAccomp pinned Python web workload exited unexpectedly"
-                )
-        finally:
-            if process.poll() is None:
-                process.terminate()
-                process.wait(timeout=30)
+        return _asgi_proxy(_start_pinned_server(environment))

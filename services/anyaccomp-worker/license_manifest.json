@@ -10,6 +10,7 @@
     "Provide CC-BY-4.0 attribution for the AnyAccomp model and indicate modifications."
   ],
   "license_evidence": "release-evidence/license-review.json",
+  "license_evidence_sha256": "a3a6f1bac872e24d4d7e6cb964add67682c35fcf28af7c75cab17dcebc9cbec4",
   "environment_values_are_authorization_evidence": false,
   "routing_status": "INSTALLATION_CANDIDATE"
 }
