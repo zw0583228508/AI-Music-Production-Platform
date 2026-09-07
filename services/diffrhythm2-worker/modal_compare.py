@@ -4,6 +4,7 @@ from __future__ import annotations
 import modal
 
 from comparison_resources import (
+    COMPARISON_CANCELLATION_WORK_SECONDS,
     COMPARISON_CONTAINER_MEMORY_MIB,
     COMPARISON_MAX_CONCURRENT_INPUTS,
 )
@@ -89,6 +90,39 @@ def drill_retained_smoke_comparison(control: str = "compare", readiness=None):
             "modalImageId": image_id,
         })
         time.sleep(120)
+    elif control == "cancel_execution":
+        if readiness is None:
+            raise RuntimeError(
+                "comparison cancellation lifecycle channel is required"
+            ) from None
+        readiness.put({
+            "outcome": "pre_work",
+            "startedUnixSeconds": started,
+            "modalImageId": image_id,
+        })
+        try:
+            comparison = signal_comparison(
+                Path(SMOKE_MOUNT) / "golden-30s.wav",
+                Path(MODEL_MOUNT) / "full-fixture-output.mp3",
+            )
+            if not comparison["passesNotSourceCopy"]:
+                raise RuntimeError("copy-like result")
+        except Exception:
+            readiness.put({
+                "outcome": "post_work",
+                "finishedUnixSeconds": time.time(),
+                "modalImageId": image_id,
+            })
+            raise RuntimeError(
+                "controlled comparison failed within the worker resource limit"
+            ) from None
+        elapsed = time.time() - started
+        time.sleep(max(0, COMPARISON_CANCELLATION_WORK_SECONDS - elapsed))
+        readiness.put({
+            "outcome": "post_work",
+            "finishedUnixSeconds": time.time(),
+            "modalImageId": image_id,
+        })
     elif control == "probe":
         return {
             "outcome": "completed",

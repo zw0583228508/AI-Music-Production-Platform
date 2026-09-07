@@ -24,7 +24,11 @@ import modal
 from modal.exception import RemoteError
 
 from modal_config import APP_NAME, PROMOTION_SECRET_NAME
-from comparison_resources import COMPARISON_MAX_CONCURRENT_INPUTS
+from comparison_resources import (
+    COMPARISON_CANCELLATION_WORK_SECONDS,
+    COMPARISON_EXECUTION_STOP_BOUND_SECONDS,
+    COMPARISON_MAX_CONCURRENT_INPUTS,
+)
 
 ROOT = Path(__file__).resolve().parent
 WORKSPACE = ROOT.parents[1]
@@ -43,8 +47,6 @@ COMPARISON_CANCEL_TIMEOUT_SECONDS = 0.25
 COMPARISON_STALL_START_BOUND_SECONDS = 60
 COMPARISON_CANCEL_ACK_BOUND_SECONDS = 30
 COMPARISON_RECOVERY_BOUND_SECONDS = 30
-
-
 def canonical(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
@@ -804,6 +806,123 @@ def validate_cancelled_comparison_capacity(proof: dict, metadata: dict) -> None:
         raise ValueError("DiffRhythm2 comparison cancellation evidence is invalid")
 
 
+def verify_cancelled_comparison_execution(metadata: dict) -> dict:
+    identity = observe_comparison()
+    comparison = modal.Function.from_name(
+        COMPARISON_APP_NAME, "drill_retained_smoke_comparison"
+    )
+    call = None
+    start = None
+    cancellation_acknowledged = False
+    post_work_marker_observed = False
+    operational_failure = False
+    with modal.Queue.ephemeral() as lifecycle:
+        try:
+            call = comparison.spawn("cancel_execution", lifecycle)
+            marker = lifecycle.get(timeout=COMPARISON_STALL_START_BOUND_SECONDS)
+            if (
+                isinstance(marker, dict)
+                and marker.get("outcome") == "pre_work"
+                and isinstance(marker.get("startedUnixSeconds"), (int, float))
+                and re.fullmatch(
+                    r"im-[A-Za-z0-9]+", str(marker.get("modalImageId", ""))
+                ) is not None
+                and set(marker) == {
+                    "outcome", "startedUnixSeconds", "modalImageId",
+                }
+            ):
+                start = marker
+                call.cancel()
+                try:
+                    call.get(timeout=COMPARISON_CANCEL_ACK_BOUND_SECONDS)
+                except RemoteError:
+                    cancellation_acknowledged = True
+                if cancellation_acknowledged:
+                    try:
+                        post_marker = lifecycle.get(
+                            timeout=COMPARISON_EXECUTION_STOP_BOUND_SECONDS
+                        )
+                    except queue.Empty:
+                        post_marker = None
+                    post_work_marker_observed = post_marker is not None
+        except Exception:
+            operational_failure = True
+    identity_unchanged = observe_comparison() == identity
+    valid = (
+        start is not None
+        and cancellation_acknowledged
+        and not post_work_marker_observed
+        and identity_unchanged
+        and not operational_failure
+    )
+    proof = {
+        "schemaVersion": 1,
+        "provider": "DIFFRHYTHM_2",
+        "workerModalDeploymentId": metadata["modalDeploymentId"],
+        "comparisonModalAppId": identity["modalAppId"],
+        "comparisonModalDeploymentId": identity["modalDeploymentId"],
+        "comparisonModalFunctionId": identity["modalFunctionId"],
+        "comparisonModalImageId": start["modalImageId"] if start else "",
+        "workSeconds": COMPARISON_CANCELLATION_WORK_SECONDS,
+        "observationBoundSeconds": COMPARISON_EXECUTION_STOP_BOUND_SECONDS,
+        "preWorkMarkerObserved": start is not None,
+        "cancellationAcknowledged": cancellation_acknowledged,
+        "postWorkMarkerObserved": post_work_marker_observed,
+        "executionStopped": valid,
+    }
+    atomic_json(
+        EVIDENCE / "live-comparison-execution-cancellation-proof.json", proof
+    )
+    if not valid:
+        if call is not None:
+            try:
+                call.cancel()
+            except Exception:
+                pass
+        raise RuntimeError(
+            "cancelled comparison execution did not stop within the safe bound"
+        ) from None
+    return proof
+
+
+def validate_cancelled_comparison_execution(proof: dict, metadata: dict) -> None:
+    if (
+        set(proof) != {
+            "schemaVersion", "provider", "workerModalDeploymentId",
+            "comparisonModalAppId", "comparisonModalDeploymentId",
+            "comparisonModalFunctionId", "comparisonModalImageId",
+            "workSeconds", "observationBoundSeconds", "preWorkMarkerObserved",
+            "cancellationAcknowledged", "postWorkMarkerObserved",
+            "executionStopped",
+        }
+        or proof.get("schemaVersion") != 1
+        or proof.get("provider") != "DIFFRHYTHM_2"
+        or proof.get("workerModalDeploymentId") != metadata["modalDeploymentId"]
+        or re.fullmatch(
+            r"ap-[A-Za-z0-9]+", str(proof.get("comparisonModalAppId", ""))
+        ) is None
+        or re.fullmatch(
+            r"v[1-9][0-9]*", str(proof.get("comparisonModalDeploymentId", ""))
+        ) is None
+        or re.fullmatch(
+            r"fu-[A-Za-z0-9]+", str(proof.get("comparisonModalFunctionId", ""))
+        ) is None
+        or re.fullmatch(
+            r"im-[A-Za-z0-9]+", str(proof.get("comparisonModalImageId", ""))
+        ) is None
+        or proof.get("workSeconds") != COMPARISON_CANCELLATION_WORK_SECONDS
+        or proof.get("observationBoundSeconds")
+        != COMPARISON_EXECUTION_STOP_BOUND_SECONDS
+        or proof.get("preWorkMarkerObserved") is not True
+        or proof.get("cancellationAcknowledged") is not True
+        or proof.get("postWorkMarkerObserved") is not False
+        or proof.get("executionStopped") is not True
+    ):
+        raise ValueError(
+            "DiffRhythm2 comparison execution cancellation evidence is invalid"
+        )
+
+
 def validate_release(release: dict) -> dict:
     metadata = {
         field: release.get(field)
@@ -816,7 +935,11 @@ def validate_release(release: dict) -> dict:
     proof = release.get("liveResearchGeneration")
     burst = release.get("liveComparisonBurst")
     cancellation = release.get("liveComparisonCancellation")
-    if not all(isinstance(item, dict) for item in (health, proof, burst, cancellation)):
+    execution_cancellation = release.get("liveComparisonExecutionCancellation")
+    if not all(
+        isinstance(item, dict)
+        for item in (health, proof, burst, cancellation, execution_cancellation)
+    ):
         raise ValueError(
             "DiffRhythm2 release lacks live health, generation, or comparison proof"
         )
@@ -835,6 +958,7 @@ def validate_release(release: dict) -> dict:
     validate_generation_proof(proof, metadata, health)
     validate_comparison_burst(burst, metadata)
     validate_cancelled_comparison_capacity(cancellation, metadata)
+    validate_cancelled_comparison_execution(execution_cancellation, metadata)
     codec_evidence = validate_codec_evidence(health)
     codec_path = EVIDENCE / "codec-threshold-evidence.json"
     if (
@@ -848,6 +972,10 @@ def validate_release(release: dict) -> dict:
         ("live-research-generation-proof.json", proof),
         ("live-comparison-burst-proof.json", burst),
         ("live-comparison-cancellation-proof.json", cancellation),
+        (
+            "live-comparison-execution-cancellation-proof.json",
+            execution_cancellation,
+        ),
     ):
         path = EVIDENCE / name
         if (
@@ -863,6 +991,7 @@ def capture(metadata: dict) -> dict:
     health = fetch_health(metadata)
     codec_evidence = validate_codec_evidence(health)
     cancellation = verify_cancelled_comparison_capacity(metadata)
+    execution_cancellation = verify_cancelled_comparison_execution(metadata)
     burst = verify_comparison_burst(metadata)
     generation = verify_research_generation(metadata, health)
     if observe() != metadata:
@@ -880,6 +1009,7 @@ def capture(metadata: dict) -> dict:
         "live-research-generation-proof.json",
         "live-comparison-burst-proof.json",
         "live-comparison-cancellation-proof.json",
+        "live-comparison-execution-cancellation-proof.json",
         "codec-threshold-evidence.json",
     )
     retained = {}
@@ -903,6 +1033,7 @@ def capture(metadata: dict) -> dict:
         "liveResearchGeneration": generation,
         "liveComparisonBurst": burst,
         "liveComparisonCancellation": cancellation,
+        "liveComparisonExecutionCancellation": execution_cancellation,
     }
     atomic_json(EVIDENCE / "release-evidence.json", release)
     return validate_release(release)
