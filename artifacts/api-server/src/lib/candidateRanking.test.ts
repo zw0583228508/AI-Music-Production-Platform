@@ -45,12 +45,16 @@ const privateFingerprintSentinels = [
   "private-track-role",
   987654321,
 ] as const;
+const futurePrivateSentinel = "future-private-evaluation-sentinel";
 
 for (const status of Object.keys(supportedStatuses) as CandidateEvaluationStatus[]) {
   test(`public candidate evaluation sanitizes ${status} status`, () => {
-    const evaluation: CandidateEvaluation = {
+    const evaluation: CandidateEvaluation & {
+      futureInternalEvaluation: { detail: string };
+    } = {
       status,
       providerScore: 0.77,
+      futureInternalEvaluation: { detail: futurePrivateSentinel },
       renderArtifactIds: [],
       artifacts: [],
       qualityReport: null,
@@ -88,6 +92,8 @@ for (const status of Object.keys(supportedStatuses) as CandidateEvaluationStatus
 
     const serialized = JSON.stringify(publicEvaluation);
     assert.equal(serialized.includes('"fingerprint"'), false);
+    assert.equal(serialized.includes(futurePrivateSentinel), false);
+    assert.equal("futureInternalEvaluation" in publicEvaluation, false);
     for (const sentinel of privateFingerprintSentinels) {
       assert.equal(serialized.includes(String(sentinel)), false);
     }

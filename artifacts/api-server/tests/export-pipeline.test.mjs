@@ -249,6 +249,7 @@ test("persisted stem bytes match the checksum in authorized artifact metadata", 
 
 test("downloadable export reports exclude private evaluation fingerprints", () => {
   const privateSentinel = "PRIVATE-FINGERPRINT-SENTINEL";
+  const futurePrivateSentinel = "FUTURE-PRIVATE-EVALUATION-SENTINEL";
   const project = {
     id: "private-evaluation-project",
     name: "Private Evaluation",
@@ -293,6 +294,9 @@ test("downloadable export reports exclude private evaluation fingerprints", () =
       evaluation: {
         status: "evaluated",
         providerScore: 0.77,
+        futureInternalEvaluation: {
+          detail: futurePrivateSentinel,
+        },
         renderArtifactIds: ["audio-safe"],
         artifacts: [],
         qualityReport: null,
@@ -334,12 +338,18 @@ test("downloadable export reports exclude private evaluation fingerprints", () =
     const serialized = data.toString("utf8");
     assert.equal(serialized.includes('"fingerprint"'), false, `${name} exposed a fingerprint key`);
     assert.equal(serialized.includes(privateSentinel), false, `${name} exposed private fingerprint data`);
+    assert.equal(
+      serialized.includes(futurePrivateSentinel),
+      false,
+      `${name} exposed an unknown evaluation field`,
+    );
   }
   const arrangementReport = JSON.parse(
     openStoredZip(bundle.zip).get("metadata/arrangement.json").toString("utf8"),
   );
   const evaluation = arrangementReport.arrangement.generationProvenance.evaluation;
   assert.equal(evaluation.musicCritic.score, 0.91);
+  assert.equal("futureInternalEvaluation" in evaluation, false);
   assert.deepEqual(evaluation.diversity, {
     comparedToCandidateId: "candidate-baseline",
     distance: 0.42,
