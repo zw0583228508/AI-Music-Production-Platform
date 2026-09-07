@@ -2077,7 +2077,8 @@ def evidence_errors(rows, root):
         source_hasher = hashlib.sha256()
         source_files = (
             "Dockerfile", "requirements.txt", "model_manifest.json", "app.py",
-            "inference.py", "upstream_runner.py", "modal_app.py", "modal_config.py",
+            "contract.py", "inference.py", "upstream_runner.py", "modal_app.py",
+            "modal_config.py",
         )
         for name in source_files:
             data = (root / base / name).read_bytes()

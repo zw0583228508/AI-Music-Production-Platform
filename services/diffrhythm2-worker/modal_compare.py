@@ -29,6 +29,11 @@ image = (
     )
     .add_local_file(WORKER_ROOT / "smoke.py", remote_path="/app/smoke.py", copy=True)
     .add_local_file(
+        WORKER_ROOT / "contract.py",
+        remote_path="/app/contract.py",
+        copy=True,
+    )
+    .add_local_file(
         WORKER_ROOT / "release-evidence/known-good-short-smoke-proof.json",
         remote_path="/app/known-good-short-smoke-proof.json",
         copy=True,

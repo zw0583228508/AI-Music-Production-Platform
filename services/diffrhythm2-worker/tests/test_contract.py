@@ -16,6 +16,8 @@ from smoke import (
 )
 ROOT=Path(__file__).parents[1]
 from scipy.signal import istft, stft
+from app import Generate
+from contract import MAX_DURATION_SECONDS
 
 def music_fixture(kind,sample_rate,channels):
  time=np.arange(sample_rate*4,dtype=np.float64)/sample_rate
@@ -47,6 +49,30 @@ def decode_with_ffmpeg(source,target):
  )
 
 class DiffRhythmContract(unittest.TestCase):
+ def test_api_and_provisioning_share_the_public_duration_ceiling(self):
+  self.assertEqual(
+   Generate.model_json_schema()["properties"]["duration"]["maximum"],
+   MAX_DURATION_SECONDS,
+  )
+  smoke=(ROOT/"smoke.py").read_text()
+  self.assertIn("duration <= MAX_DURATION_SECONDS",smoke)
+  self.assertNotIn("MAX_SUPPORTED_SMOKE_DURATION_SECONDS",smoke)
+  modal_app=(ROOT/"modal_app.py").read_text()
+  modal_compare=(ROOT/"modal_compare.py").read_text()
+  modal_config=(ROOT/"modal_config.py").read_text()
+  for source in (modal_app,modal_compare):
+   self.assertIn('WORKER_ROOT / "contract.py"',source)
+   self.assertIn('remote_path="/app/contract.py"',source)
+  self.assertIn('"contract.py"',modal_config)
+
+ def test_provisioning_script_defines_all_comparison_helpers_before_running(self):
+  smoke=(ROOT/"smoke.py").read_text()
+  entrypoint=smoke.index('if __name__=="__main__"')
+  self.assertGreater(entrypoint,smoke.index("def _chroma"))
+  self.assertGreater(entrypoint,smoke.index("def _strongest_chroma_match"))
+  provision=(ROOT/"modal_provision.py").read_text()
+  self.assertIn('["/opt/diffrhythm2-venv/bin/python", "smoke.py"]',provision)
+
  def test_immutable_manifest_and_license(self):
   m=json.loads((ROOT/"model_manifest.json").read_text())
   self.assertEqual(m["provider"],"DIFFRHYTHM_2")
@@ -203,7 +229,7 @@ class DiffRhythmContract(unittest.TestCase):
 
  def test_source_copy_detection_stays_bounded_at_maximum_smoke_duration(self):
   sample_rate=16000
-  duration=int(MAX_SUPPORTED_SMOKE_DURATION_SECONDS)
+  duration=int(MAX_DURATION_SECONDS)
   time=np.arange(sample_rate*duration,dtype=np.float64)/sample_rate
   source=(
    .38*np.sin(2*np.pi*(173*time+2.5*time*time))
@@ -233,6 +259,7 @@ print(json.dumps({"elapsedSeconds":elapsed,"peakResidentMiB":peak_kib/1024,"resu
    )
    measurement=json.loads(completed.stdout)
   self.assertFalse(measurement["result"]["passesNotSourceCopy"])
+  self.assertEqual(measurement["result"]["searchedTransformCount"],0)
   self.assertAlmostEqual(
    measurement["result"]["strongestOffsetSeconds"],2.0,delta=.02,
   )

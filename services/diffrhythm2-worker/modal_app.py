@@ -21,6 +21,11 @@ image = (
     modal.Image.from_id(DEPLOYMENT_BASE_IMAGE_ID)
     .add_local_file(WORKER_ROOT / "app.py", remote_path="/app/app.py", copy=True)
     .add_local_file(
+        WORKER_ROOT / "contract.py",
+        remote_path="/app/contract.py",
+        copy=True,
+    )
+    .add_local_file(
         WORKER_ROOT / "inference.py", remote_path="/app/inference.py", copy=True
     )
     .add_local_file(

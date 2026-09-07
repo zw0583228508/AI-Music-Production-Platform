@@ -7,6 +7,7 @@ import soundfile as sf
 from scipy.signal import correlate, correlation_lags, resample_poly, stft
 from app import ASSETS, SPEC, sha
 from inference import infer
+from contract import MAX_DURATION_SECONDS
 
 def describe(path: Path) -> dict:
     audio, sample_rate = sf.read(str(path), always_2d=True)
@@ -19,7 +20,6 @@ def describe(path: Path) -> dict:
 COMPARISON_SAMPLE_RATE = 8000
 MAX_OFFSET_SECONDS = 5.0
 MIN_OVERLAP_SECONDS = 1.0
-MAX_SUPPORTED_SMOKE_DURATION_SECONDS = 210.0
 COPY_LIKE_CORRELATION_THRESHOLD = 0.95
 COPY_LIKE_DIFFERENCE_THRESHOLD = 0.25
 TEMPO_RATIOS = (0.90, 0.95, 1.0, 1.05, 1.10)
@@ -172,10 +172,25 @@ def signal_comparison(source_path: Path, output_path: Path) -> dict:
                 match["outputProjection"] = output_label
                 waveform_matches.append(match)
     waveform = max(waveform_matches, key=lambda match: abs(match["correlation"]))
-    chroma = _strongest_chroma_match(source_mono, output_mono)
     strongest_correlation = waveform["correlation"]
     absolute_correlation = abs(strongest_correlation)
     normalized_difference = float(np.sqrt(max(0.0, 1.0 - absolute_correlation)))
+    waveform_is_copy = (
+        absolute_correlation >= COPY_LIKE_CORRELATION_THRESHOLD
+        or normalized_difference <= COPY_LIKE_DIFFERENCE_THRESHOLD
+    )
+    chroma = (
+        {
+            "correlation": 0.0,
+            "tempoRatio": waveform["tempoRatio"],
+            "pitchSemitones": 0,
+            "offsetSeconds": waveform["lag"] / COMPARISON_SAMPLE_RATE,
+            "searchedTransformCount": 0,
+            "searchedAlignmentCount": 0,
+        }
+        if waveform_is_copy
+        else _strongest_chroma_match(source_mono, output_mono)
+    )
     strongest_lag = waveform["lag"]
     compared_samples = waveform["overlap"]
     passes = (
@@ -233,10 +248,10 @@ def signal_comparison(source_path: Path, output_path: Path) -> dict:
 def main(fixture: Path) -> dict:
     if not fixture.is_file(): raise RuntimeError("a real rhythm fixture is required")
     duration=float(os.getenv("DIFFRHYTHM2_SMOKE_DURATION","12"))
-    if not 0 < duration <= MAX_SUPPORTED_SMOKE_DURATION_SECONDS:
+    if not 0 < duration <= MAX_DURATION_SECONDS:
         raise RuntimeError(
             f"smoke duration must be between 0 and "
-            f"{MAX_SUPPORTED_SMOKE_DURATION_SECONDS:g} seconds"
+            f"{MAX_DURATION_SECONDS:g} seconds"
         )
     label=os.getenv("DIFFRHYTHM2_SMOKE_LABEL","known-good-short")
     output=ASSETS/f"{label}-output.mp3"
@@ -257,7 +272,6 @@ def main(fixture: Path) -> dict:
            "runtimeDiagnostic":json.loads(diagnostic.read_text())}
     (ASSETS/SPEC["smoke_proof"]).write_text(json.dumps(proof,indent=2,sort_keys=True))
     return proof
-if __name__=="__main__": main(Path(os.environ["DIFFRHYTHM2_SMOKE_AUDIO"]))
 
 def _chroma(audio: np.ndarray) -> np.ndarray:
     _, _, spectrum = stft(
