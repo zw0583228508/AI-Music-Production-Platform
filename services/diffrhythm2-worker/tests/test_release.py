@@ -1965,6 +1965,93 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             for outcome in retained["outcomes"][1:]
         ))
 
+    def test_comparison_burst_cleanup_bounds_late_missing_and_failed_responses(self):
+        stalled = threading.Event()
+
+        class StalledCall:
+            def __init__(self, index):
+                self.index = index
+
+            def get(self):
+                stalled.wait()
+
+        class StalledComparison:
+            def __init__(self):
+                self.spawned = 0
+
+            def spawn(self):
+                call = StalledCall(self.spawned)
+                self.spawned += 1
+                return call
+
+        response_cases = {
+            "late": lambda deadline: (
+                time.sleep(max(0, deadline - time.monotonic()) + 0.01)
+                or [False] * release.COMPARISON_BURST_REQUESTS
+            ),
+            "missing": lambda _deadline: [],
+            "failed": lambda _deadline: [False] * release.COMPARISON_BURST_REQUESTS,
+        }
+        try:
+            for name, responses in response_cases.items():
+                with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                    cleanup_deadlines = []
+
+                    def cancel(calls, timeout, absolute_deadline=None):
+                        self.assertEqual(
+                            len(calls), release.COMPARISON_BURST_REQUESTS
+                        )
+                        self.assertIsNotNone(absolute_deadline)
+                        self.assertGreaterEqual(timeout, 0)
+                        self.assertLessEqual(
+                            timeout, release.COMPARISON_CANCEL_TIMEOUT_SECONDS
+                        )
+                        cleanup_deadlines.append(absolute_deadline)
+                        return responses(absolute_deadline)
+
+                    with patch.object(
+                        release, "EVIDENCE", Path(directory)
+                    ), patch.object(
+                        release, "COMPARISON_BURST_TIMEOUT_SECONDS", 0.01
+                    ), patch.object(
+                        release, "COMPARISON_CANCEL_TIMEOUT_SECONDS", 0.02
+                    ), patch.object(
+                        release.modal.Function,
+                        "from_name",
+                        return_value=StalledComparison(),
+                    ), patch.object(
+                        release,
+                        "observe_comparison",
+                        return_value={
+                            "modalAppId": "ap-Compare",
+                            "modalDeploymentId": "v3",
+                            "modalFunctionId": "fu-Compare",
+                        },
+                    ), patch.object(
+                        release,
+                        "cancel_calls_within_bound",
+                        side_effect=cancel,
+                    ):
+                        with self.assertRaisesRegex(
+                            RuntimeError,
+                            "^live comparison burst did not queue safely ",
+                        ):
+                            release.verify_comparison_burst(self.metadata)
+                        retained = json.loads(
+                            (
+                                Path(directory)
+                                / "live-comparison-burst-proof.json"
+                            ).read_text()
+                        )
+
+                    self.assertEqual(len(cleanup_deadlines), 1)
+                    self.assertTrue(all(
+                        outcome["outcome"] == "cancellation_failed"
+                        for outcome in retained["outcomes"]
+                    ))
+        finally:
+            stalled.set()
+
     def test_repeated_hung_cancellations_leave_no_live_workers(self):
         context = multiprocessing.get_context("spawn")
         release_hung_cancel = context.Event()
