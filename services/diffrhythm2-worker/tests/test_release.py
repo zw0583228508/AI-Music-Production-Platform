@@ -2052,6 +2052,108 @@ class DiffRhythmReleaseTests(unittest.TestCase):
         finally:
             stalled.set()
 
+    def test_repeated_comparison_burst_timeouts_reap_workers_and_bound_evidence(self):
+        context = multiprocessing.get_context("spawn")
+        release_hung_cancel = context.Event()
+        attempts = context.Array(
+            "i", release.COMPARISON_BURST_REQUESTS
+        )
+        stalled = threading.Event()
+        private_details = "/private/stalled/audio.wav " + "a" * 64
+
+        class StalledCall:
+            def __init__(self, index):
+                self.object_id = f"fc-Test{index}"
+
+            def get(self):
+                stalled.wait()
+                raise RuntimeError(private_details)
+
+        class StalledComparison:
+            def __init__(self):
+                self.spawned = 0
+
+            def spawn(self):
+                index = self.spawned % release.COMPARISON_BURST_REQUESTS
+                self.spawned += 1
+                return StalledCall(index)
+
+        def isolate(calls, timeout, absolute_deadline=None):
+            return release._run_cancel_workers_within_bound(
+                [call.object_id for call in calls],
+                timeout,
+                hung_cancel_worker,
+                (attempts, release_hung_cancel),
+                absolute_deadline,
+            )
+
+        identity = {
+            "modalAppId": "ap-Compare",
+            "modalDeploymentId": "v3",
+            "modalFunctionId": "fu-Compare",
+        }
+        baseline = {worker.pid for worker in multiprocessing.active_children()}
+        timeout = 0.05
+        cleanup_bound = 1.0
+        try:
+            with tempfile.TemporaryDirectory() as directory, patch.object(
+                release, "EVIDENCE", Path(directory)
+            ), patch.object(
+                release, "COMPARISON_BURST_TIMEOUT_SECONDS", timeout
+            ), patch.object(
+                release, "COMPARISON_CANCEL_TIMEOUT_SECONDS", cleanup_bound
+            ), patch.object(
+                release.modal.Function,
+                "from_name",
+                return_value=StalledComparison(),
+            ), patch.object(
+                release, "observe_comparison", return_value=identity
+            ), patch.object(
+                release, "cancel_calls_within_bound", side_effect=isolate
+            ):
+                for _ in range(3):
+                    started = time.monotonic()
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        "^live comparison burst did not queue safely within "
+                        "the worker resource limit$",
+                    ) as raised:
+                        release.verify_comparison_burst(self.metadata)
+                    elapsed = time.monotonic() - started
+                    retained = (
+                        Path(directory) / "live-comparison-burst-proof.json"
+                    ).read_text()
+
+                    self.assertLess(elapsed, timeout + cleanup_bound + 0.3)
+                    self.assertEqual(
+                        {worker.pid for worker in multiprocessing.active_children()},
+                        baseline,
+                    )
+                    self.assertLess(len(retained), 4096)
+                    surfaced = str(raised.exception) + retained
+                    self.assertNotIn(private_details, surfaced)
+                    self.assertNotRegex(
+                        surfaced.lower(),
+                        r"(private|sha256|audio|fixture|artifact|metadata)",
+                    )
+                    proof = json.loads(retained)
+                    self.assertEqual(
+                        proof["outcomes"],
+                        [
+                            {
+                                "requestIndex": index,
+                                "outcome": "cancellation_failed",
+                                "startedAfterSeconds": 0,
+                                "durationSeconds": timeout,
+                            }
+                            for index in range(release.COMPARISON_BURST_REQUESTS)
+                        ],
+                    )
+        finally:
+            stalled.set()
+
+        self.assertEqual(list(attempts), [3] * len(attempts))
+
     def test_repeated_hung_cancellations_leave_no_live_workers(self):
         context = multiprocessing.get_context("spawn")
         release_hung_cancel = context.Event()
