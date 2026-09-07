@@ -28,6 +28,8 @@ PITCH_SEMITONES = tuple(range(-4, 5))
 CHROMA_CORRELATION_THRESHOLD = 0.90
 MAX_CHANNEL_PROJECTIONS = 4
 MAX_DECODED_CHANNELS = 32
+DECODED_SAMPLE_BYTES = np.dtype(np.float64).itemsize
+MAX_DECODED_AUDIO_BYTES = 256 * 1024 * 1024
 
 def _read_bounded_audio(path: Path) -> tuple[np.ndarray, int]:
     metadata = sf.info(str(path))
@@ -44,6 +46,12 @@ def _read_bounded_audio(path: Path) -> tuple[np.ndarray, int]:
         raise RuntimeError(
             f"audio duration exceeds supported maximum of "
             f"{MAX_SUPPORTED_SMOKE_DURATION_SECONDS:g} seconds"
+        )
+    decoded_bytes = metadata.frames * channel_count * DECODED_SAMPLE_BYTES
+    if decoded_bytes > MAX_DECODED_AUDIO_BYTES:
+        raise RuntimeError(
+            f"audio decoded size exceeds supported maximum of "
+            f"{MAX_DECODED_AUDIO_BYTES // (1024 * 1024)} MiB"
         )
     return sf.read(str(path), always_2d=True)
 
