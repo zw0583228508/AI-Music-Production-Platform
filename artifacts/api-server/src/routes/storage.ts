@@ -139,7 +139,10 @@ router.get("/storage/objects/*path", async (req, res): Promise<void> => {
   }
   const downloadUrl = `/api/storage/objects/${path}`;
   const [registeredArtifact] = await db
-    .select({ id: musicArtifactsTable.id })
+    .select({
+      id: musicArtifactsTable.id,
+      type: musicArtifactsTable.type,
+    })
     .from(musicArtifactsTable)
     .innerJoin(
       musicProjectsTable,
@@ -160,11 +163,14 @@ router.get("/storage/objects/*path", async (req, res): Promise<void> => {
     return;
   }
   const [metadata] = await file.getMetadata();
+  const inlineAudio =
+    registeredArtifact.type === "AUDIO_TRACK" &&
+    (metadata.contentType === "audio/wav" || metadata.contentType === "audio/mpeg");
   res.setHeader("Content-Type", metadata.contentType || "application/octet-stream");
   res.setHeader("Content-Length", String(metadata.size || 0));
   res.setHeader(
     "Content-Disposition",
-    `attachment; filename="${file.name.split("/").pop() || "download"}"`,
+    `${inlineAudio ? "inline" : "attachment"}; filename="${file.name.split("/").pop() || "download"}"`,
   );
   res.setHeader("Cache-Control", "private, max-age=3600");
   file.createReadStream().on("error", (error) => {

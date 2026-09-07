@@ -52,6 +52,8 @@ import {
   Grid3X3,
   ShieldCheck,
   Wrench,
+  Play,
+  Pause,
 } from "lucide-react";
 
 import { EmptyState } from "@/components/ui/empty";
@@ -97,7 +99,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-
 function readHarmonyDecisions(value: unknown): HarmonyDecisionEvidence[] {
   if (!Array.isArray(value)) return [];
   return value.filter((decision): decision is HarmonyDecisionEvidence =>
@@ -273,6 +274,25 @@ export default function ProjectWorkspace() {
         : null),
     durationHint,
   );
+  const handleCandidatePlayback = useCallback((candidate: GenerationCandidate) => {
+    const audio = candidate.evaluation.artifacts.find(
+      (artifact) => artifact.type === "AUDIO_TRACK",
+    );
+    if (!audio) return;
+    if (candidatePreview?.id === candidate.id) {
+      transport.toggle();
+      return;
+    }
+    setCandidatePreview({
+      id: candidate.id,
+      label: candidate.label,
+      url: audio.url,
+    });
+  }, [candidatePreview?.id, transport]);
+  useEffect(() => {
+    if (!candidatePreview) return;
+    void transport.play();
+  }, [candidatePreview?.id, candidatePreview?.url, transport.play]);
   const runCopilot = useRunCopilot();
   const [copilotMessages, setCopilotMessages] = useState<Array<{
     role: 'user'|'assistant';
@@ -1534,35 +1554,35 @@ export default function ProjectWorkspace() {
                                   </div>
                                 </div>
                                 <div className="flex shrink-0 flex-col gap-2 sm:flex-row items-center sm:items-start">
+                                  {(() => {
+                                    const audio = candidate.evaluation.artifacts.find(
+                                      (artifact) => artifact.type === "AUDIO_TRACK",
+                                    );
+                                    const active = candidatePreview?.id === candidate.id;
+                                    const playing = active && transport.status === "playing";
+                                    return (
                                   <Button
                                     size="sm"
-                                    variant={
-                                      candidatePreview?.id === candidate.id
-                                        ? "secondary"
-                                        : "outline"
+                                    variant={active ? "secondary" : "outline"}
+                                    disabled={!audio || (active && transport.status === "loading")}
+                                    aria-label={
+                                      !audio
+                                        ? `${candidate.label} render unavailable`
+                                        : playing
+                                          ? `Pause ${candidate.label}`
+                                          : `Play ${candidate.label}`
                                     }
-                                    disabled={!candidate.evaluation.artifacts.some(
-                                      (artifact) => artifact.type === "AUDIO_TRACK",
-                                    )}
-                                    onClick={() => {
-                                      const audio = candidate.evaluation.artifacts.find(
-                                        (artifact) => artifact.type === "AUDIO_TRACK",
-                                      );
-                                      if (!audio) return;
-                                      transport.stop();
-                                      setCandidatePreview({
-                                        id: candidate.id,
-                                        label: candidate.label,
-                                        url: audio.url,
-                                      });
-                                      toast({
-                                        title: `${candidate.label} loaded`,
-                                        description: "Use the main transport to play and seek this provider render.",
-                                      });
-                                    }}
+                                    onClick={() => handleCandidatePlayback(candidate)}
                                   >
-                                    {candidatePreview?.id === candidate.id ? "In transport" : "Preview"}
+                                    {playing ? (
+                                      <Pause className="mr-2 h-4 w-4" />
+                                    ) : (
+                                      <Play className="mr-2 h-4 w-4" />
+                                    )}
+                                    {!audio ? "Unavailable" : playing ? "Pause" : "Play"}
                                   </Button>
+                                    );
+                                  })()}
                                   <div className="flex flex-col items-center gap-1">
                                     <span title={candidate.evaluation.diversity?.rejected ? `Rejected: ${candidate.evaluation.diversity.reason.replaceAll("_", " ")}` : undefined}>
                                       <Button
