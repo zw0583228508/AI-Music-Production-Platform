@@ -2072,6 +2072,12 @@ def evidence_errors(rows, root):
         live_generation = read_json(
             evidence_base / "live-research-generation-proof.json"
         )
+        live_burst = read_json(
+            evidence_base / "live-comparison-burst-proof.json"
+        )
+        live_cancellation = read_json(
+            evidence_base / "live-comparison-cancellation-proof.json"
+        )
         codec_evidence = read_json(evidence_base / "codec-threshold-evidence.json")
         bundle = read_json(evidence_base / "promotion-bundle.json")
         source_revision = "13a7b091f45124f611e36ee674973234f38d55b6"
@@ -2127,6 +2133,8 @@ def evidence_errors(rows, root):
             "full-fixture-output.mp3",
             "full-fixture-diagnostic.json",
             "live-research-generation-proof.json",
+            "live-comparison-burst-proof.json",
+            "live-comparison-cancellation-proof.json",
             "codec-threshold-evidence.json",
         )
         try:
@@ -2315,6 +2323,23 @@ def evidence_errors(rows, root):
             release.get("commercialUsePermitted") is False,
             all(release.get(field) == observed.get(field) for field in identity_fields),
             release.get("liveResearchGeneration") == live_generation,
+            release.get("liveComparisonBurst") == live_burst,
+            live_burst.get("workerModalDeploymentId")
+            == observed.get("modalDeploymentId"),
+            live_burst.get("queueObserved") is True,
+            release.get("liveComparisonCancellation") == live_cancellation,
+            live_cancellation.get("provider") == "DIFFRHYTHM_2",
+            live_cancellation.get("workerModalDeploymentId")
+            == observed.get("modalDeploymentId"),
+            live_cancellation.get("occupiedCapacity")
+            == live_cancellation.get("startedCapacity"),
+            live_cancellation.get("occupiedCapacity", 0) > 0,
+            live_cancellation.get("cancellationsAcknowledged")
+            == live_cancellation.get("occupiedCapacity"),
+            live_cancellation.get("cancellationRequested") is True,
+            live_cancellation.get("capacityReleased") is True,
+            0 <= live_cancellation.get("recoveredAfterSeconds", -1)
+            <= live_cancellation.get("recoveryBoundSeconds", -1),
             release.get("codecThresholdEvidence") == codec_evidence,
             health.get("codecThresholdEvidence") == codec_evidence,
             codec_evidence.get("schemaVersion") == 1,
@@ -2392,7 +2417,8 @@ def evidence_errors(rows, root):
             errors.append(
                 "DIFFRHYTHM_2: RESEARCH_READY lacks exact immutable asset, "
                 "short/full real smoke, CUDA diagnostic, live Modal identity, "
-                "authenticated generation/download canary, signed canonical "
+                "authenticated generation/download canary, cancellation recovery, "
+                "signed canonical "
                 "promotion, license, or API fail-closed evidence"
             )
     anyaccomp = by_name.get("ANYACCOMP", {})

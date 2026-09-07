@@ -153,6 +153,9 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             release, "verify_comparison_burst",
             return_value=self.burst_proof(),
         ) as burst, patch.object(
+            release, "verify_cancelled_comparison_capacity",
+            return_value=self.cancellation_proof(),
+        ) as cancellation, patch.object(
             release, "observe", return_value=self.metadata
         ):
             evidence = Path(directory)
@@ -169,9 +172,14 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             release.atomic_json(
                 evidence / "live-comparison-burst-proof.json", self.burst_proof()
             )
+            release.atomic_json(
+                evidence / "live-comparison-cancellation-proof.json",
+                self.cancellation_proof(),
+            )
             captured = release.capture(self.metadata)
             canary.assert_called_once_with(self.metadata, self.health)
             burst.assert_called_once_with(self.metadata)
+            cancellation.assert_called_once_with(self.metadata)
             self.assertEqual(captured["liveResearchGeneration"], proof)
             self.assertEqual(
                 captured["retainedEvidence"]["live-research-generation-proof.json"]["sha256"],
@@ -206,6 +214,232 @@ class DiffRhythmReleaseTests(unittest.TestCase):
                 for index in range(release.COMPARISON_BURST_REQUESTS)
             ],
         }
+
+    def cancellation_proof(self):
+        return {
+            "schemaVersion": 1,
+            "provider": "DIFFRHYTHM_2",
+            "workerModalDeploymentId": self.metadata["modalDeploymentId"],
+            "comparisonModalAppId": "ap-Compare",
+            "comparisonModalDeploymentId": "v3",
+            "comparisonModalFunctionId": "fu-Compare",
+            "comparisonModalImageId": "im-Compare",
+            "occupiedCapacity": release.COMPARISON_MAX_CONCURRENT_INPUTS,
+            "startedCapacity": release.COMPARISON_MAX_CONCURRENT_INPUTS,
+            "stallStartBoundSeconds": release.COMPARISON_STALL_START_BOUND_SECONDS,
+            "cancelAckBoundSeconds": release.COMPARISON_CANCEL_ACK_BOUND_SECONDS,
+            "cancellationsAcknowledged": release.COMPARISON_MAX_CONCURRENT_INPUTS,
+            "recoveryBoundSeconds": release.COMPARISON_RECOVERY_BOUND_SECONDS,
+            "recoveredAfterSeconds": 0.4,
+            "cancellationRequested": True,
+            "capacityReleased": True,
+        }
+
+    def test_cancelled_comparisons_release_every_slot_before_probe_bound(self):
+        class FakeQueue:
+            def __init__(self):
+                self.markers = []
+
+            def get(self, timeout=None):
+                return self.markers.pop(0) if self.markers else None
+
+        class FakeEphemeral:
+            def __init__(self, queue):
+                self.queue = queue
+
+            def __enter__(self):
+                return self.queue
+
+            def __exit__(self, *_):
+                return False
+
+        class FakeCall:
+            def __init__(self, comparison, control):
+                self.comparison = comparison
+                self.control = control
+                self.cancelled = False
+
+            def cancel(self):
+                self.comparison.cancelled += 1
+                self.cancelled = True
+
+            def get(self, timeout=None):
+                if self.control == "stall":
+                    self.comparison.cancel_timeouts.append(timeout)
+                    if self.cancelled:
+                        raise release.RemoteError(
+                            "Function call was cancelled by user or a failure."
+                        )
+                    raise AssertionError("uncancelled stall was awaited")
+                self.comparison.probe_timeout = timeout
+                now = time.time()
+                return {
+                    "outcome": "completed",
+                    "startedUnixSeconds": now,
+                    "finishedUnixSeconds": now,
+                    "modalImageId": "im-Compare",
+                }
+
+        class FakeComparison:
+            def __init__(self):
+                self.controls = []
+                self.cancelled = 0
+                self.cancel_timeouts = []
+                self.probe_timeout = None
+
+            def spawn(self, control, readiness=None):
+                self.controls.append(control)
+                if control == "stall":
+                    readiness.markers.append({
+                        "outcome": "started",
+                        "startedUnixSeconds": time.time(),
+                        "modalImageId": "im-Compare",
+                    })
+                return FakeCall(self, control)
+
+        comparison = FakeComparison()
+        identity = {
+            "modalAppId": "ap-Compare",
+            "modalDeploymentId": "v3",
+            "modalFunctionId": "fu-Compare",
+        }
+        readiness = FakeQueue()
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            release, "EVIDENCE", Path(directory)
+        ), patch.object(
+            release.modal.Queue, "ephemeral",
+            return_value=FakeEphemeral(readiness),
+        ), patch.object(
+            release.modal.Function, "from_name", return_value=comparison
+        ), patch.object(
+            release, "observe_comparison", return_value=identity
+        ):
+            proof = release.verify_cancelled_comparison_capacity(self.metadata)
+            retained = json.loads(
+                (
+                    Path(directory) / "live-comparison-cancellation-proof.json"
+                ).read_text()
+            )
+        self.assertEqual(proof, retained)
+        self.assertEqual(
+            comparison.controls,
+            ["stall"] * release.COMPARISON_MAX_CONCURRENT_INPUTS + ["probe"],
+        )
+        self.assertEqual(
+            comparison.cancelled, release.COMPARISON_MAX_CONCURRENT_INPUTS
+        )
+        self.assertEqual(
+            comparison.probe_timeout, release.COMPARISON_RECOVERY_BOUND_SECONDS
+        )
+        self.assertEqual(
+            comparison.cancel_timeouts,
+            [release.COMPARISON_CANCEL_ACK_BOUND_SECONDS]
+            * release.COMPARISON_MAX_CONCURRENT_INPUTS,
+        )
+        self.assertEqual(
+            proof["startedCapacity"], release.COMPARISON_MAX_CONCURRENT_INPUTS
+        )
+        self.assertEqual(
+            proof["cancellationsAcknowledged"],
+            release.COMPARISON_MAX_CONCURRENT_INPUTS,
+        )
+        self.assertTrue(proof["capacityReleased"])
+        self.assertNotRegex(
+            json.dumps(proof).lower(),
+            r"(path|sha|audio|fixture|artifact|error|message|input)",
+        )
+
+    def test_cancellation_drill_rejects_unstarted_capacity(self):
+        class EmptyQueue:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def get(self, timeout=None):
+                return None
+
+        class Call:
+            def cancel(self):
+                pass
+
+        class Comparison:
+            def spawn(self, control, readiness=None):
+                return Call()
+
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            release, "EVIDENCE", Path(directory)
+        ), patch.object(
+            release.modal.Queue, "ephemeral", return_value=EmptyQueue()
+        ), patch.object(
+            release.modal.Function, "from_name", return_value=Comparison()
+        ), patch.object(
+            release, "observe_comparison",
+            return_value={
+                "modalAppId": "ap-Compare",
+                "modalDeploymentId": "v3",
+                "modalFunctionId": "fu-Compare",
+            },
+        ):
+            with self.assertRaisesRegex(RuntimeError, "capacity was not released"):
+                release.verify_cancelled_comparison_capacity(self.metadata)
+            retained = json.loads(
+                (
+                    Path(directory) / "live-comparison-cancellation-proof.json"
+                ).read_text()
+            )
+        self.assertEqual(retained["startedCapacity"], 0)
+        self.assertFalse(retained["capacityReleased"])
+
+    def test_cancellation_drill_rejects_failed_cancellation(self):
+        class ReadyQueue:
+            def __init__(self):
+                self.remaining = release.COMPARISON_MAX_CONCURRENT_INPUTS
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def get(self, timeout=None):
+                self.remaining -= 1
+                return {
+                    "outcome": "started",
+                    "startedUnixSeconds": time.time(),
+                    "modalImageId": "im-Compare",
+                }
+
+        class Call:
+            def cancel(self):
+                raise RuntimeError("provider detail")
+
+        class Comparison:
+            def spawn(self, control, readiness=None):
+                return Call()
+
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            release, "EVIDENCE", Path(directory)
+        ), patch.object(
+            release.modal.Queue, "ephemeral", return_value=ReadyQueue()
+        ), patch.object(
+            release.modal.Function, "from_name", return_value=Comparison()
+        ), patch.object(
+            release, "observe_comparison",
+            return_value={
+                "modalAppId": "ap-Compare",
+                "modalDeploymentId": "v3",
+                "modalFunctionId": "fu-Compare",
+            },
+        ):
+            with self.assertRaisesRegex(RuntimeError, "capacity was not released"):
+                release.verify_cancelled_comparison_capacity(self.metadata)
+            retained = (
+                Path(directory) / "live-comparison-cancellation-proof.json"
+            ).read_text()
+        self.assertNotIn("provider detail", retained)
+        self.assertFalse(json.loads(retained)["capacityReleased"])
 
     def test_comparison_burst_submits_above_cap_and_retains_only_safe_fields(self):
         class FakeCall:

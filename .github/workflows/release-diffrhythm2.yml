@@ -43,7 +43,7 @@ jobs:
         run: |
           uv run python services/diffrhythm2-worker/release.py observe
           uv run python services/diffrhythm2-worker/release.py install-identity
-      - name: Capture health, burst comparison, and licensed generation canary
+      - name: Capture health, cancellation recovery, burst comparison, and licensed generation canary
         run: uv run python services/diffrhythm2-worker/release.py capture
       - name: Sign canary-bound release evidence
         run: uv run python services/diffrhythm2-worker/release.py promote

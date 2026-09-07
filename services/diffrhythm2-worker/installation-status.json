@@ -48,6 +48,8 @@
         "codecThresholdCorpusPassed": true,
         "codecThresholdFfmpegVersion": "ffmpeg version 4.4.2-0ubuntu0.22.04.1 Copyright (c) 2000-2021 the FFmpeg developers",
         "codecThresholdAudioRetained": false,
+        "liveComparisonCancellationVerified": true,
+        "liveComparisonCancellationEvidenceSource": "services/diffrhythm2-worker/release-evidence/live-comparison-cancellation-proof.json",
         "liveResearchGenerationVerified": true,
         "liveResearchGenerationEvidenceSource": "services/diffrhythm2-worker/release-evidence/live-research-generation-proof.json",
         "authenticatedArtifactRetrieved": true,

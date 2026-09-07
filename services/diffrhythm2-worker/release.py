@@ -21,6 +21,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import modal
+from modal.exception import RemoteError
 
 from modal_config import APP_NAME, PROMOTION_SECRET_NAME
 from comparison_resources import COMPARISON_MAX_CONCURRENT_INPUTS
@@ -39,6 +40,9 @@ COMPARISON_APP_NAME = f"{APP_NAME}-comparison"
 COMPARISON_BURST_REQUESTS = max(3, COMPARISON_MAX_CONCURRENT_INPUTS + 1)
 COMPARISON_BURST_TIMEOUT_SECONDS = 600
 COMPARISON_CANCEL_TIMEOUT_SECONDS = 0.25
+COMPARISON_STALL_START_BOUND_SECONDS = 60
+COMPARISON_CANCEL_ACK_BOUND_SECONDS = 30
+COMPARISON_RECOVERY_BOUND_SECONDS = 30
 
 
 def canonical(value: object) -> str:
@@ -648,6 +652,157 @@ def validate_comparison_burst(proof: dict, metadata: dict) -> None:
         ):
             raise ValueError("DiffRhythm2 comparison burst outcome is invalid")
 
+def verify_cancelled_comparison_capacity(metadata: dict) -> dict:
+    identity = observe_comparison()
+    comparison = modal.Function.from_name(
+        COMPARISON_APP_NAME, "drill_retained_smoke_comparison"
+    )
+    calls = []
+    starts = []
+    cancellation_acknowledged = 0
+    result = None
+    probe = None
+    cancellation_requested = time.time()
+    with modal.Queue.ephemeral() as readiness:
+        calls = [
+            comparison.spawn("stall", readiness)
+            for _ in range(COMPARISON_MAX_CONCURRENT_INPUTS)
+        ]
+        for _ in calls:
+            marker = readiness.get(timeout=COMPARISON_STALL_START_BOUND_SECONDS)
+            if (
+                not isinstance(marker, dict)
+                or marker.get("outcome") != "started"
+                or not isinstance(marker.get("startedUnixSeconds"), (int, float))
+                or re.fullmatch(
+                    r"im-[A-Za-z0-9]+", str(marker.get("modalImageId", ""))
+                ) is None
+                or set(marker) != {
+                    "outcome", "startedUnixSeconds", "modalImageId",
+                }
+            ):
+                break
+            starts.append(marker)
+        if len(starts) == COMPARISON_MAX_CONCURRENT_INPUTS:
+            cancellation_requested = time.time()
+            cancellation_succeeded = True
+            for call in calls:
+                try:
+                    call.cancel()
+                except Exception:
+                    cancellation_succeeded = False
+                    break
+            if cancellation_succeeded:
+                for call in calls:
+                    try:
+                        call.get(timeout=COMPARISON_CANCEL_ACK_BOUND_SECONDS)
+                    except RemoteError:
+                        cancellation_acknowledged += 1
+                if cancellation_acknowledged == len(calls):
+                    probe = comparison.spawn("probe")
+                    try:
+                        result = probe.get(timeout=COMPARISON_RECOVERY_BOUND_SECONDS)
+                    except Exception:
+                        result = None
+    observed = time.time()
+    image_ids = {marker["modalImageId"] for marker in starts}
+    valid = (
+        len(starts) == COMPARISON_MAX_CONCURRENT_INPUTS
+        and cancellation_acknowledged == COMPARISON_MAX_CONCURRENT_INPUTS
+        and len(image_ids) == 1
+        and
+        isinstance(result, dict)
+        and result.get("outcome") == "completed"
+        and isinstance(result.get("startedUnixSeconds"), (int, float))
+        and isinstance(result.get("finishedUnixSeconds"), (int, float))
+        and result["startedUnixSeconds"] <= result["finishedUnixSeconds"]
+        and result["startedUnixSeconds"] >= cancellation_requested
+        and result["startedUnixSeconds"] - cancellation_requested
+        <= COMPARISON_RECOVERY_BOUND_SECONDS
+        and re.fullmatch(
+            r"im-[A-Za-z0-9]+", str(result.get("modalImageId", ""))
+        ) is not None
+        and result["modalImageId"] in image_ids
+        and set(result) == {
+            "outcome", "startedUnixSeconds", "finishedUnixSeconds", "modalImageId",
+        }
+        and observe_comparison() == identity
+    )
+    proof = {
+        "schemaVersion": 1,
+        "provider": "DIFFRHYTHM_2",
+        "workerModalDeploymentId": metadata["modalDeploymentId"],
+        "comparisonModalAppId": identity["modalAppId"],
+        "comparisonModalDeploymentId": identity["modalDeploymentId"],
+        "comparisonModalFunctionId": identity["modalFunctionId"],
+        "comparisonModalImageId": result.get("modalImageId", "") if valid else "",
+        "occupiedCapacity": COMPARISON_MAX_CONCURRENT_INPUTS,
+        "startedCapacity": len(starts),
+        "stallStartBoundSeconds": COMPARISON_STALL_START_BOUND_SECONDS,
+        "cancelAckBoundSeconds": COMPARISON_CANCEL_ACK_BOUND_SECONDS,
+        "cancellationsAcknowledged": cancellation_acknowledged,
+        "recoveryBoundSeconds": COMPARISON_RECOVERY_BOUND_SECONDS,
+        "recoveredAfterSeconds": round(
+            max(0, float(result["startedUnixSeconds"]) - cancellation_requested), 3
+        ) if valid else round(max(0, observed - cancellation_requested), 3),
+        "cancellationRequested": True,
+        "capacityReleased": valid,
+    }
+    atomic_json(EVIDENCE / "live-comparison-cancellation-proof.json", proof)
+    if not valid:
+        for call in calls + ([probe] if probe is not None else []):
+            try:
+                call.cancel()
+            except Exception:
+                pass
+        raise RuntimeError(
+            "cancelled comparison capacity was not released within the safe bound"
+        ) from None
+    return proof
+
+
+def validate_cancelled_comparison_capacity(proof: dict, metadata: dict) -> None:
+    if (
+        set(proof) != {
+            "schemaVersion", "provider", "workerModalDeploymentId",
+            "comparisonModalAppId", "comparisonModalDeploymentId",
+            "comparisonModalFunctionId", "comparisonModalImageId",
+            "occupiedCapacity", "startedCapacity", "stallStartBoundSeconds",
+            "cancelAckBoundSeconds", "cancellationsAcknowledged",
+            "recoveryBoundSeconds", "recoveredAfterSeconds",
+            "cancellationRequested", "capacityReleased",
+        }
+        or proof.get("schemaVersion") != 1
+        or proof.get("provider") != "DIFFRHYTHM_2"
+        or proof.get("workerModalDeploymentId") != metadata["modalDeploymentId"]
+        or re.fullmatch(
+            r"ap-[A-Za-z0-9]+", str(proof.get("comparisonModalAppId", ""))
+        ) is None
+        or re.fullmatch(
+            r"v[1-9][0-9]*", str(proof.get("comparisonModalDeploymentId", ""))
+        ) is None
+        or re.fullmatch(
+            r"fu-[A-Za-z0-9]+", str(proof.get("comparisonModalFunctionId", ""))
+        ) is None
+        or re.fullmatch(
+            r"im-[A-Za-z0-9]+", str(proof.get("comparisonModalImageId", ""))
+        ) is None
+        or proof.get("occupiedCapacity") != COMPARISON_MAX_CONCURRENT_INPUTS
+        or proof.get("startedCapacity") != COMPARISON_MAX_CONCURRENT_INPUTS
+        or proof.get("stallStartBoundSeconds")
+        != COMPARISON_STALL_START_BOUND_SECONDS
+        or proof.get("cancelAckBoundSeconds")
+        != COMPARISON_CANCEL_ACK_BOUND_SECONDS
+        or proof.get("cancellationsAcknowledged")
+        != COMPARISON_MAX_CONCURRENT_INPUTS
+        or proof.get("recoveryBoundSeconds") != COMPARISON_RECOVERY_BOUND_SECONDS
+        or not isinstance(proof.get("recoveredAfterSeconds"), (int, float))
+        or not 0 <= proof["recoveredAfterSeconds"] <= COMPARISON_RECOVERY_BOUND_SECONDS
+        or proof.get("cancellationRequested") is not True
+        or proof.get("capacityReleased") is not True
+    ):
+        raise ValueError("DiffRhythm2 comparison cancellation evidence is invalid")
+
 
 def validate_release(release: dict) -> dict:
     metadata = {
@@ -660,7 +815,8 @@ def validate_release(release: dict) -> dict:
     health = release.get("liveHealth")
     proof = release.get("liveResearchGeneration")
     burst = release.get("liveComparisonBurst")
-    if not all(isinstance(item, dict) for item in (health, proof, burst)):
+    cancellation = release.get("liveComparisonCancellation")
+    if not all(isinstance(item, dict) for item in (health, proof, burst, cancellation)):
         raise ValueError(
             "DiffRhythm2 release lacks live health, generation, or comparison proof"
         )
@@ -678,6 +834,7 @@ def validate_release(release: dict) -> dict:
         raise ValueError("DiffRhythm2 release identity or readiness is invalid")
     validate_generation_proof(proof, metadata, health)
     validate_comparison_burst(burst, metadata)
+    validate_cancelled_comparison_capacity(cancellation, metadata)
     codec_evidence = validate_codec_evidence(health)
     codec_path = EVIDENCE / "codec-threshold-evidence.json"
     if (
@@ -690,6 +847,7 @@ def validate_release(release: dict) -> dict:
     for name, expected in (
         ("live-research-generation-proof.json", proof),
         ("live-comparison-burst-proof.json", burst),
+        ("live-comparison-cancellation-proof.json", cancellation),
     ):
         path = EVIDENCE / name
         if (
@@ -704,6 +862,7 @@ def validate_release(release: dict) -> dict:
 def capture(metadata: dict) -> dict:
     health = fetch_health(metadata)
     codec_evidence = validate_codec_evidence(health)
+    cancellation = verify_cancelled_comparison_capacity(metadata)
     burst = verify_comparison_burst(metadata)
     generation = verify_research_generation(metadata, health)
     if observe() != metadata:
@@ -720,6 +879,7 @@ def capture(metadata: dict) -> dict:
         "full-fixture-diagnostic.json",
         "live-research-generation-proof.json",
         "live-comparison-burst-proof.json",
+        "live-comparison-cancellation-proof.json",
         "codec-threshold-evidence.json",
     )
     retained = {}
@@ -742,6 +902,7 @@ def capture(metadata: dict) -> dict:
         "liveHealth": health,
         "liveResearchGeneration": generation,
         "liveComparisonBurst": burst,
+        "liveComparisonCancellation": cancellation,
     }
     atomic_json(EVIDENCE / "release-evidence.json", release)
     return validate_release(release)
