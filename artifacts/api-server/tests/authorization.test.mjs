@@ -1151,6 +1151,7 @@ test("project and export endpoints enforce owner authorization", async () => {
 
   const freshGenerationJobId = `fresh-auth-generation-job-${process.pid}`;
   const freshCandidateId = `fresh-auth-candidate-${process.pid}`;
+  const freshRejectedCandidateId = `fresh-rejected-auth-candidate-${process.pid}`;
   const freshAudioArtifactId = `fresh-auth-audio-${process.pid}`;
   const freshQualityArtifactId = `fresh-auth-quality-${process.pid}`;
   const freshMusicCritic = completeMusicCriticReport(0.88);
@@ -1260,6 +1261,45 @@ test("project and export endpoints enforce owner authorization", async () => {
     evaluatedStyleSpec: {},
     evaluation: freshSelectionEvaluation,
   });
+  const freshRejectedMusicCritic = completeMusicCriticReport(0.81);
+  await db.insert(musicGenerationCandidatesTable).values({
+    id: freshRejectedCandidateId,
+    jobId: freshGenerationJobId,
+    projectId,
+    arrangementId,
+    provider: "METEOR",
+    modelVersion: "current-model",
+    seed: 236,
+    rank: 2,
+    label: "Newly scored diversity-rejected candidate",
+    score: 0.81,
+    confidence: 0.9,
+    summary: "Current fully scored candidate rejected by diversity",
+    status: "diversity_rejected",
+    plan: { sections: [] },
+    trackModels: [],
+    evaluatedPlan: { sections: [] },
+    evaluatedStyleSpec: {},
+    evaluation: {
+      ...freshSelectionEvaluation,
+      providerScore: 0.82,
+      musicCritic: freshRejectedMusicCritic,
+      diversity: {
+        fingerprint: {
+          activeTracks: ["private-rejected-track"],
+          densityEnergy: [{ density: 0.63, energy: 0.72 }],
+          harmonySequence: ["private-rejected-harmony"],
+          trackRoleInstruments: ["private-rejected-role"],
+          noteShape: [13, 8, 5],
+        },
+        comparedToCandidateId: freshCandidateId,
+        distance: 0.12,
+        threshold: 0.25,
+        rejected: true,
+        reason: "near_duplicate",
+      },
+    },
+  });
 
   const freshCandidatesResponse = await request(
     `/api/generation-jobs/${freshGenerationJobId}/candidates`,
@@ -1267,8 +1307,9 @@ test("project and export endpoints enforce owner authorization", async () => {
   );
   assert.equal(freshCandidatesResponse.status, 200);
   const freshCandidates = await freshCandidatesResponse.json();
-  assert.equal(freshCandidates.length, 1);
-  const freshCandidatePreview = freshCandidates[0];
+  assert.equal(freshCandidates.length, 2);
+  const freshCandidatePreview = freshCandidates.find(({ id }) => id === freshCandidateId);
+  assert.ok(freshCandidatePreview);
   assert.equal(freshCandidatePreview.id, freshCandidateId);
   assert.deepEqual(freshCandidatePreview.evaluation.musicCritic, freshMusicCritic);
   assert.deepEqual(freshCandidatePreview.evaluation.diversity, {
@@ -1283,6 +1324,29 @@ test("project and export endpoints enforce owner authorization", async () => {
   assert.equal(freshCandidatePreviewJson.includes("private-fresh-track"), false);
   assert.equal(freshCandidatePreviewJson.includes("private-fresh-harmony"), false);
   assert.equal(freshCandidatePreviewJson.includes("private-fresh-role"), false);
+  const freshRejectedCandidatePreview = freshCandidates.find(
+    ({ id }) => id === freshRejectedCandidateId,
+  );
+  assert.ok(freshRejectedCandidatePreview);
+  assert.equal(freshRejectedCandidatePreview.status, "diversity_rejected");
+  assert.deepEqual(
+    freshRejectedCandidatePreview.evaluation.musicCritic,
+    freshRejectedMusicCritic,
+  );
+  assert.deepEqual(freshRejectedCandidatePreview.evaluation.diversity, {
+    comparedToCandidateId: freshCandidateId,
+    distance: 0.12,
+    threshold: 0.25,
+    rejected: true,
+    reason: "near_duplicate",
+  });
+  const freshRejectedCandidatePreviewJson = JSON.stringify(
+    freshRejectedCandidatePreview,
+  );
+  assert.equal(freshRejectedCandidatePreviewJson.includes('"fingerprint"'), false);
+  assert.equal(freshRejectedCandidatePreviewJson.includes("private-rejected-track"), false);
+  assert.equal(freshRejectedCandidatePreviewJson.includes("private-rejected-harmony"), false);
+  assert.equal(freshRejectedCandidatePreviewJson.includes("private-rejected-role"), false);
 
   const freshSelectionResponse = await request(
     `/api/generation-candidates/${freshCandidateId}/select`,
