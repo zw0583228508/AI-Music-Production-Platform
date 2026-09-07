@@ -1383,6 +1383,8 @@ export const CandidateEvaluationStatus = {
   render_failed: 'render_failed',
   analysis_failed: 'analysis_failed',
   diversity_rejected: 'diversity_rejected',
+  repair_not_improved: 'repair_not_improved',
+  repair_scope_violated: 'repair_scope_violated',
 } as const;
 
 export type CandidateEvaluationArtifactsItemType = typeof CandidateEvaluationArtifactsItemType[keyof typeof CandidateEvaluationArtifactsItemType];
@@ -1496,6 +1498,44 @@ export const CandidateEvaluationDiversityReason = {
   sufficiently_distinct: 'sufficiently_distinct',
 } as const;
 
+export type CandidateRepairEvidenceScope = {
+  affectedSections: string[];
+  /** @minimum 1 */
+  startBar: number;
+  /** @minimum 1 */
+  endBar: number;
+  affectedTrackIds: string[];
+};
+
+export interface CandidateRepairEvidence {
+  sourceCandidateId: string;
+  findingId: string;
+  /**
+     * @minimum 0
+     * @maximum 2147483647
+     */
+  seed: number;
+  /** @minimum 1 */
+  attempt: number;
+  /** @minimum 1 */
+  maxAttempts: number;
+  scope: CandidateRepairEvidenceScope;
+  musicalReason: string;
+  outsideScopePreserved: boolean;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  sourceQualityScore: number;
+  /**
+     * @minimum 0
+     * @maximum 1
+     * @nullable
+     */
+  repairedQualityScore: number | null;
+  improved: boolean;
+}
+
 export type CandidateEvaluationArtifactsItem = {
   id: string;
   type: CandidateEvaluationArtifactsItemType;
@@ -1540,6 +1580,7 @@ export interface CandidateEvaluation {
   error: string | null;
   strategy?: CandidateEvaluationStrategy;
   diversity?: CandidateEvaluationDiversity;
+  repair?: CandidateRepairEvidence;
 }
 
 export type GenerationProvenanceParameters = { [key: string]: unknown };
@@ -2151,6 +2192,36 @@ export interface GenerationJob {
   completedAt?: string | null;
 }
 
+export type CandidateRepairInputFinding = {
+  /** @minLength 1 */
+  id: string;
+  /**
+     * @minItems 1
+     * @items.minLength 1
+     */
+  affectedSections: string[];
+  /** @minimum 1 */
+  startBar: number;
+  /** @minimum 1 */
+  endBar: number;
+  /**
+     * @minItems 1
+     * @items.minLength 1
+     */
+  affectedTrackIds: string[];
+  /**
+     * @minLength 1
+     * @maxLength 2000
+     */
+  musicalReason: string;
+};
+
+export interface CandidateRepairInput {
+  /** @maxLength 200 */
+  idempotencyKey?: string;
+  finding: CandidateRepairInputFinding;
+}
+
 export type GenerationCandidateProvider = typeof GenerationCandidateProvider[keyof typeof GenerationCandidateProvider];
 
 
@@ -2180,6 +2251,7 @@ export const GenerationCandidateStatus = {
   selected: 'selected',
   rejected: 'rejected',
   diversity_rejected: 'diversity_rejected',
+  repair_not_improved: 'repair_not_improved',
 } as const;
 
 export type GenerationCandidateParameters = { [key: string]: unknown };
@@ -2835,3 +2907,4 @@ returnTo?: string;
 export type LogoutBrowserSessionParams = {
 returnTo?: string;
 };
+

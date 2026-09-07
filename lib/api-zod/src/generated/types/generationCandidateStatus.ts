@@ -14,4 +14,5 @@ export const GenerationCandidateStatus = {
   selected: 'selected',
   rejected: 'rejected',
   diversity_rejected: 'diversity_rejected',
+  repair_not_improved: 'repair_not_improved',
 } as const;

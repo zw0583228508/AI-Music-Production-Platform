@@ -18,4 +18,6 @@ export const CandidateEvaluationStatus = {
   render_failed: 'render_failed',
   analysis_failed: 'analysis_failed',
   diversity_rejected: 'diversity_rejected',
+  repair_not_improved: 'repair_not_improved',
+  repair_scope_violated: 'repair_scope_violated',
 } as const;

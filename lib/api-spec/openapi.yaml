@@ -789,6 +789,30 @@ paths:
                 $ref: "#/components/schemas/Arrangement"
         "404":
           $ref: "#/components/responses/NotFound"
+  /generation-candidates/{candidateId}/repair:
+    post:
+      operationId: repairGenerationCandidate
+      tags: [arrangements]
+      summary: Queue a bounded repair from a concrete Music Critic finding
+      parameters:
+        - $ref: "#/components/parameters/GenerationCandidateId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CandidateRepairInput"
+      responses:
+        "202":
+          description: Bounded repair job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerationJob"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: The critic finding is incomplete or does not match the candidate
   /music-providers:
     get:
       operationId: listGenerationProviders
@@ -2369,7 +2393,7 @@ components:
       properties:
         status:
           type: string
-          enum: [plan_received, rendering, render_succeeded, analyzing, evaluated, render_failed, analysis_failed, diversity_rejected]
+          enum: [plan_received, rendering, render_succeeded, analyzing, evaluated, render_failed, analysis_failed, diversity_rejected, repair_not_improved, repair_scope_violated]
         providerScore: { type: number }
         renderArtifactIds:
           type: array
@@ -2413,6 +2437,8 @@ components:
             threshold: { type: number, const: 0.25 }
             rejected: { type: boolean }
             reason: { type: string, enum: [baseline_retained, near_duplicate, sufficiently_distinct] }
+        repair:
+          $ref: "#/components/schemas/CandidateRepairEvidence"
     CandidateMusicCriticEvidence:
       type: object
       required: [source, summary, observations]
@@ -2457,6 +2483,51 @@ components:
             playability: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
             repetition: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
             styleAndControlAdherence: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
+    CandidateRepairInput:
+      type: object
+      required: [finding]
+      properties:
+        idempotencyKey:
+          type: string
+          maxLength: 200
+        finding:
+          type: object
+          required: [id, affectedSections, startBar, endBar, affectedTrackIds, musicalReason]
+          properties:
+            id: { type: string, minLength: 1 }
+            affectedSections:
+              type: array
+              minItems: 1
+              items: { type: string, minLength: 1 }
+            startBar: { type: number, minimum: 1 }
+            endBar: { type: number, minimum: 1 }
+            affectedTrackIds:
+              type: array
+              minItems: 1
+              items: { type: string, minLength: 1 }
+            musicalReason: { type: string, minLength: 1, maxLength: 2000 }
+    CandidateRepairEvidence:
+      type: object
+      required: [sourceCandidateId, findingId, seed, attempt, maxAttempts, scope, musicalReason, outsideScopePreserved, sourceQualityScore, repairedQualityScore, improved]
+      properties:
+        sourceCandidateId: { type: string }
+        findingId: { type: string }
+        seed: { type: number, minimum: 0, maximum: 2147483647 }
+        attempt: { type: number, minimum: 1 }
+        maxAttempts: { type: number, minimum: 1 }
+        scope:
+          type: object
+          required: [affectedSections, startBar, endBar, affectedTrackIds]
+          properties:
+            affectedSections: { type: array, items: { type: string } }
+            startBar: { type: number, minimum: 1 }
+            endBar: { type: number, minimum: 1 }
+            affectedTrackIds: { type: array, items: { type: string } }
+        musicalReason: { type: string }
+        outsideScopePreserved: { type: boolean }
+        sourceQualityScore: { type: number, minimum: 0, maximum: 1 }
+        repairedQualityScore: { type: [number, "null"], minimum: 0, maximum: 1 }
+        improved: { type: boolean }
     GenerationCandidate:
       type: object
       required: [id, jobId, provider, modelVersion, seed, rank, label, score, confidence, summary, status, parameters, parentArtifactIds, plan, trackModels, harmonyDecisions, evaluation, createdAt]
@@ -2480,7 +2551,7 @@ components:
         summary: { type: string }
         status:
           type: string
-          enum: [validated, selected, rejected, diversity_rejected]
+          enum: [validated, selected, rejected, diversity_rejected, repair_not_improved]
         parameters:
           type: object
           additionalProperties: true

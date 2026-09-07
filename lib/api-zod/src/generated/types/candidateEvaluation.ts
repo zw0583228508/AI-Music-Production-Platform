@@ -11,6 +11,7 @@ import type { CandidateEvaluationStatus } from './candidateEvaluationStatus';
 import type { CandidateEvaluationStrategy } from './candidateEvaluationStrategy';
 import type { CandidateMusicCriticReport } from './candidateMusicCriticReport';
 import type { CandidateQualityReport } from './candidateQualityReport';
+import type { CandidateRepairEvidence } from './candidateRepairEvidence';
 
 export interface CandidateEvaluation {
   status: CandidateEvaluationStatus;
@@ -23,4 +24,5 @@ export interface CandidateEvaluation {
   error: string | null;
   strategy?: CandidateEvaluationStrategy;
   diversity?: CandidateEvaluationDiversity;
+  repair?: CandidateRepairEvidence;
 }
