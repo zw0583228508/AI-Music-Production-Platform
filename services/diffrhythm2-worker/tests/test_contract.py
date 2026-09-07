@@ -1,10 +1,11 @@
-import json,subprocess,tempfile,unittest
+import json,subprocess,sys,tempfile,unittest
 from pathlib import Path
 import numpy as np
 import soundfile as sf
 from smoke import (
  COPY_LIKE_CORRELATION_THRESHOLD,
  COPY_LIKE_DIFFERENCE_THRESHOLD,
+ MAX_SUPPORTED_SMOKE_DURATION_SECONDS,
  signal_comparison,
 )
 ROOT=Path(__file__).parents[1]
@@ -155,6 +156,51 @@ class DiffRhythmContract(unittest.TestCase):
   self.assertTrue(results["unrelated.wav"]["passesNotSourceCopy"])
   self.assertLess(results["leading-silence.wav"]["strongestOffsetSeconds"],1.01)
   self.assertGreater(results["leading-silence.wav"]["strongestOffsetSeconds"],.99)
+
+ def test_source_copy_detection_stays_bounded_at_maximum_smoke_duration(self):
+  sample_rate=16000
+  duration=int(MAX_SUPPORTED_SMOKE_DURATION_SECONDS)
+  time=np.arange(sample_rate*duration,dtype=np.float64)/sample_rate
+  source=(
+   .38*np.sin(2*np.pi*(173*time+2.5*time*time))
+   +.17*np.sin(2*np.pi*521*time)
+   +.09*np.sin(2*np.pi*887*time)
+  )
+  shifted=np.concatenate((np.zeros(sample_rate*2),source[:-sample_rate*2]))*.61
+  with tempfile.TemporaryDirectory() as directory:
+   directory=Path(directory)
+   source_path=directory/"maximum-duration-source.wav"
+   output_path=directory/"maximum-duration-output.wav"
+   sf.write(source_path,source,sample_rate,subtype="PCM_16")
+   sf.write(output_path,shifted,sample_rate,subtype="PCM_16")
+   benchmark = """
+import json, resource, sys, time
+from pathlib import Path
+from smoke import signal_comparison
+started=time.perf_counter()
+result=signal_comparison(Path(sys.argv[1]),Path(sys.argv[2]))
+elapsed=time.perf_counter()-started
+peak_kib=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+print(json.dumps({"elapsedSeconds":elapsed,"peakResidentMiB":peak_kib/1024,"result":result}))
+"""
+   completed=subprocess.run(
+    [sys.executable,"-c",benchmark,str(source_path),str(output_path)],
+    cwd=ROOT,check=True,capture_output=True,text=True,timeout=30,
+   )
+   measurement=json.loads(completed.stdout)
+  self.assertFalse(measurement["result"]["passesNotSourceCopy"])
+  self.assertAlmostEqual(
+   measurement["result"]["strongestOffsetSeconds"],2.0,delta=.02,
+  )
+  self.assertLess(
+   measurement["elapsedSeconds"],15.0,
+   f"maximum-duration comparison took {measurement['elapsedSeconds']:.2f}s",
+  )
+  self.assertLess(
+   measurement["peakResidentMiB"],512.0,
+   f"maximum-duration comparison peaked at "
+   f"{measurement['peakResidentMiB']:.1f} MiB RSS",
+  )
 
  def test_source_copy_thresholds_have_margin_across_real_codecs(self):
   # These settings intentionally span the sample rates, layouts, and lossy

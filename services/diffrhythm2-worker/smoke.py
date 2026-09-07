@@ -20,6 +20,7 @@ def describe(path: Path) -> dict:
 COMPARISON_SAMPLE_RATE = 8000
 MAX_OFFSET_SECONDS = 5.0
 MIN_OVERLAP_SECONDS = 1.0
+MAX_SUPPORTED_SMOKE_DURATION_SECONDS = 210.0
 COPY_LIKE_CORRELATION_THRESHOLD = 0.95
 COPY_LIKE_DIFFERENCE_THRESHOLD = 0.25
 
@@ -126,6 +127,11 @@ def signal_comparison(source_path: Path, output_path: Path) -> dict:
 def main(fixture: Path) -> dict:
     if not fixture.is_file(): raise RuntimeError("a real rhythm fixture is required")
     duration=float(os.getenv("DIFFRHYTHM2_SMOKE_DURATION","12"))
+    if not 0 < duration <= MAX_SUPPORTED_SMOKE_DURATION_SECONDS:
+        raise RuntimeError(
+            f"smoke duration must be between 0 and "
+            f"{MAX_SUPPORTED_SMOKE_DURATION_SECONDS:g} seconds"
+        )
     label=os.getenv("DIFFRHYTHM2_SMOKE_LABEL","known-good-short")
     output=ASSETS/f"{label}-output.mp3"
     diagnostic=ASSETS/f"{label}-diagnostic.json"
