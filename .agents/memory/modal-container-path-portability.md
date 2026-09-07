@@ -24,4 +24,6 @@ FastAPI installed only in the isolated virtualenv.
 worker-root paths container-local, and verify the installed SDK signature
 before wiring local fixtures into a Modal function. For immutable derived
 images, copy changed `/app` modules explicitly and test imports through the same
-interpreter Modal uses to hydrate the function.
+interpreter Modal uses to hydrate the function. Include every overlay and its
+local imports in the source-identity digest so promotion evidence represents
+the runnable module set.

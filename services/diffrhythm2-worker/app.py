@@ -4,6 +4,7 @@ import base64, hashlib, hmac, importlib.metadata, json, os, re, subprocess, sys,
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel, Field
+from contract import MAX_DURATION_SECONDS
 from inference import infer
 
 ROOT=Path(__file__).parent; SPEC=json.loads((ROOT/"model_manifest.json").read_text())
@@ -81,7 +82,7 @@ def state():
         return False, None
 class Generate(BaseModel):
  lyrics:str=Field(min_length=1,max_length=12000); rhythmWavBase64:str=Field(min_length=16)
- stylePrompt:str=Field(min_length=1,max_length=1000); duration:float=Field(default=30,gt=0,le=210)
+ stylePrompt:str=Field(min_length=1,max_length=1000); duration:float=Field(default=30,gt=0,le=MAX_DURATION_SECONDS)
  steps:int=Field(default=16,ge=1,le=100); guidance:float=Field(default=2,ge=0,le=10)
 app=FastAPI(title="DiffRhythm 2 isolated provider")
 @app.get("/health")

@@ -10,7 +10,7 @@ ARTIFACT_MOUNT="/var/lib/diffrhythm2/artifacts"
 RUNTIME_SECRET_NAME="music-ai-worker-runtime"
 PROMOTION_SECRET_NAME="diffrhythm2-promotion-identity-v1"
 DEPLOYMENT_BASE_IMAGE_ID="im-XrLfUWkLKEWfFibBBtsWJ1"
-SOURCE_FILES=("Dockerfile","requirements.txt","model_manifest.json","app.py","inference.py",
+SOURCE_FILES=("Dockerfile","requirements.txt","model_manifest.json","app.py","contract.py","inference.py",
               "upstream_runner.py","modal_app.py","modal_config.py")
 def source_image_digest():
  digest=hashlib.sha256()
