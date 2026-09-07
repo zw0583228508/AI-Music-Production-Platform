@@ -1,4 +1,8 @@
 import { Router, type IRouter, type Request, type Response } from "express";
+import {
+  fetchAttestedClamp3Health,
+  forwardAttestedClamp3Similarity,
+} from "../lib/clamp3Attestation";
 
 const router: IRouter = Router();
 
@@ -20,12 +24,12 @@ router.get("/providers/clamp3/health", async (req: Request, res: Response) => {
     return;
   }
   try {
-    const response = await fetch(new URL("/health", runtime.endpoint), {
-      headers: { Authorization: `Bearer ${runtime.token}` },
-      signal: AbortSignal.timeout(300_000),
-    });
-    const payload = await response.json();
-    res.status(response.status).json(payload);
+    const health = await fetchAttestedClamp3Health(runtime);
+    if (!health.valid) {
+      res.status(503).json({ error: "CLAMP3 runtime identity or readiness attestation is invalid" });
+      return;
+    }
+    res.status(health.status).json(health.payload);
   } catch (error) {
     res.status(502).json({
       error: error instanceof Error ? `CLAMP3 health request failed: ${error.message}` : "CLAMP3 health request failed",
@@ -44,17 +48,8 @@ router.post("/providers/clamp3/similarity", async (req: Request, res: Response) 
     return;
   }
   try {
-    const response = await fetch(new URL("/v1/similarity", runtime.endpoint), {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${runtime.token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(req.body),
-      signal: AbortSignal.timeout(300_000),
-    });
-    const payload = await response.json();
-    res.status(response.status).json(payload);
+    const result = await forwardAttestedClamp3Similarity(runtime, req.body);
+    res.status(result.status).json(result.payload);
   } catch (error) {
     res.status(502).json({
       error: error instanceof Error ? `CLAMP3 request failed: ${error.message}` : "CLAMP3 request failed",

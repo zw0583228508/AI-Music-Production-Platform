@@ -120,6 +120,19 @@ class DiffRhythmContract(unittest.TestCase):
   self.assertIn('"commercialUsePermitted":False',app)
   self.assertNotIn('"license":"Apache-2.0"}',app)
 
+ def test_operator_canary_verifies_license_authenticated_artifact_and_audio(self):
+  release=(ROOT/"release.py").read_text()
+  self.assertIn("def verify_research_generation(",release)
+  self.assertIn('"licenseStatus") != "RESEARCH_ONLY"',release)
+  self.assertIn('"commercialUsePermitted") is not False',release)
+  self.assertIn("CC-BY-NC-4.0 MuQ-MuLan and MuQ weights",release)
+  self.assertIn('"Authorization": f"Bearer {token}"',release)
+  self.assertIn("observed_sha != result.get(\"artifactSha256\")",release)
+  self.assertIn("etag != observed_sha",release)
+  self.assertIn("rms <= 1e-5",release)
+  self.assertIn('"live-research-generation-proof.json"',release)
+  self.assertNotIn('"artifactUrl": artifact_url',release)
+
  def test_source_copy_detection_handles_transforms_and_offsets(self):
   sample_rate=16000
   time=np.arange(sample_rate*3,dtype=np.float64)/sample_rate

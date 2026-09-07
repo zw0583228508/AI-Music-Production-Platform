@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "provider": "CLAMP3",
-  "classification": "BLOCKED_NO_WEIGHTS",
+  "classification": "RESEARCH_READY",
   "licenses": [
     {
       "component": "CLaMP 3 source and weights",

@@ -20,6 +20,5 @@
     "services/music-ai-worker/app.py authenticates health and separation, verifies the installed package source tree and checkpoint before health and immediately before inference, and exposes exact source and license identity",
     "artifacts/api-server/src/lib/analysisProviderManifest.ts rejects Demucs health unless package artifact/tree, checkpoint, source revision and license identities all match",
     "artifacts/api-server/src/lib/analysisProviders.ts health-attests Demucs before source transfer and validates private stem responses"
-  ],
-  "blockers": []
+  ]
 }
