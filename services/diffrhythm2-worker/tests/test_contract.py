@@ -1,9 +1,43 @@
-import json,tempfile,unittest
+import json,subprocess,tempfile,unittest
 from pathlib import Path
 import numpy as np
 import soundfile as sf
-from smoke import signal_comparison
+from smoke import (
+ COPY_LIKE_CORRELATION_THRESHOLD,
+ COPY_LIKE_DIFFERENCE_THRESHOLD,
+ signal_comparison,
+)
 ROOT=Path(__file__).parents[1]
+
+def music_fixture(kind,sample_rate,channels):
+ time=np.arange(sample_rate*4,dtype=np.float64)/sample_rate
+ if kind=="melodic":
+  envelope=.35+.65*np.sin(np.pi*np.minimum(time%1.0,.999))**2
+  mono=envelope*(.38*np.sin(2*np.pi*(196*time+7*time*time))+
+                 .19*np.sin(2*np.pi*293.66*time)+
+                 .11*np.sin(2*np.pi*440*time))
+ else:
+  rng=np.random.default_rng(174)
+  phase=time%0.5
+  kick=np.sin(2*np.pi*(95*phase-55*phase*phase))*np.exp(-phase*15)
+  hats=rng.normal(0,1,len(time))*np.exp(-(time%0.25)*45)
+  mono=.52*kick+.055*hats
+ if channels==1:
+  return mono
+ delayed=np.concatenate((np.zeros(max(1,sample_rate//400)),mono))[:len(mono)]
+ return np.column_stack((mono,.82*delayed))
+
+def encode_with_ffmpeg(source,target,encoder,quality):
+ command=["ffmpeg","-hide_banner","-loglevel","error","-y","-i",str(source),
+          "-c:a",encoder,*quality,str(target)]
+ subprocess.run(command,check=True,capture_output=True,text=True)
+
+def decode_with_ffmpeg(source,target):
+ subprocess.run(
+  ["ffmpeg","-hide_banner","-loglevel","error","-y","-i",str(source),str(target)],
+  check=True,capture_output=True,text=True,
+ )
+
 class DiffRhythmContract(unittest.TestCase):
  def test_immutable_manifest_and_license(self):
   m=json.loads((ROOT/"model_manifest.json").read_text())
@@ -121,3 +155,62 @@ class DiffRhythmContract(unittest.TestCase):
   self.assertTrue(results["unrelated.wav"]["passesNotSourceCopy"])
   self.assertLess(results["leading-silence.wav"]["strongestOffsetSeconds"],1.01)
   self.assertGreater(results["leading-silence.wav"]["strongestOffsetSeconds"],.99)
+
+ def test_source_copy_thresholds_have_margin_across_real_codecs(self):
+  # These settings intentionally span the sample rates, layouts, and lossy
+  # quality modes shipped by the worker's apt-installed FFmpeg.
+  codec_cases=(
+   ("mp3-64k.mp3",16000,1,"libmp3lame",("-b:a","64k")),
+   ("mp3-v2.mp3",44100,2,"libmp3lame",("-q:a","2")),
+   ("aac-64k.aac",22050,1,"aac",("-b:a","64k")),
+   ("aac-160k.aac",44100,2,"aac",("-b:a","160k")),
+   ("opus-48k.ogg",24000,1,"libopus",("-b:a","48k")),
+   ("opus-128k.ogg",48000,2,"libopus",("-b:a","128k")),
+  )
+  copy_correlation_floor=.97
+  copy_difference_ceiling=.18
+  unrelated_correlation_ceiling=.35
+  unrelated_difference_floor=.80
+  self.assertGreater(
+   copy_correlation_floor-COPY_LIKE_CORRELATION_THRESHOLD,.019,
+   "copy corpus must retain at least 0.02 correlation margin",
+  )
+  self.assertGreater(
+   COPY_LIKE_DIFFERENCE_THRESHOLD-copy_difference_ceiling,.069,
+   "copy corpus must retain at least 0.07 difference margin",
+  )
+  with tempfile.TemporaryDirectory() as directory:
+   directory=Path(directory)
+   for fixture_kind in ("melodic","percussive"):
+    for filename,sample_rate,channels,encoder,quality in codec_cases:
+     label=f"{fixture_kind}-{filename}"
+     source=directory/f"{label}-source.wav"
+     encoded=directory/label
+     decoded=directory/f"{label}-decoded.wav"
+     unrelated=directory/f"{label}-unrelated.wav"
+     source_audio=music_fixture(fixture_kind,sample_rate,channels)
+     other_kind="percussive" if fixture_kind=="melodic" else "melodic"
+     unrelated_audio=music_fixture(other_kind,sample_rate,channels)
+     sf.write(source,source_audio,sample_rate,subtype="PCM_16")
+     sf.write(unrelated,unrelated_audio,sample_rate,subtype="PCM_16")
+     encode_with_ffmpeg(source,encoded,encoder,quality)
+     decode_with_ffmpeg(encoded,decoded)
+     copy_result=signal_comparison(source,decoded)
+     unrelated_result=signal_comparison(source,unrelated)
+     self.assertFalse(copy_result["passesNotSourceCopy"],label)
+     self.assertGreaterEqual(
+      copy_result["absoluteWaveformCorrelation"],copy_correlation_floor,label,
+     )
+     self.assertLessEqual(
+      copy_result["polarityInvariantNormalizedDifference"],
+      copy_difference_ceiling,label,
+     )
+     self.assertTrue(unrelated_result["passesNotSourceCopy"],label)
+     self.assertLessEqual(
+      unrelated_result["absoluteWaveformCorrelation"],
+      unrelated_correlation_ceiling,label,
+     )
+     self.assertGreaterEqual(
+      unrelated_result["polarityInvariantNormalizedDifference"],
+      unrelated_difference_floor,label,
+     )

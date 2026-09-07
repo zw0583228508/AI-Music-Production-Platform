@@ -1,6 +1,9 @@
 # Isolated only: never share this runtime with any existing music provider.
 FROM nvidia/cuda@sha256:59e0e4376a0f16d10b03d3a14344b80a866a1674cb4948cb318291387ac05010
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential cmake git ffmpeg espeak-ng python3.11 python3.11-dev python3.11-venv && rm -rf /var/lib/apt/lists/*
+RUN ffmpeg -hide_banner -encoders 2>&1 | grep -q libmp3lame && \
+    ffmpeg -hide_banner -encoders 2>&1 | grep -qE '(^|[[:space:]])aac([[:space:]]|$)' && \
+    ffmpeg -hide_banner -encoders 2>&1 | grep -q libopus
 RUN python3.11 -m venv /opt/diffrhythm2-venv
 RUN ln -s /opt/diffrhythm2-venv/bin/python /usr/local/bin/python && \
     ln -s /opt/diffrhythm2-venv/bin/python /usr/local/bin/python3 && \
