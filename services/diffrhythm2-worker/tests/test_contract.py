@@ -328,6 +328,45 @@ print(json.dumps({"elapsedSeconds":elapsed,"peakResidentMiB":peak_kib/1024,"resu
      abs(result["strongestOffsetSeconds"]),result["maxOffsetSeconds"],label,
     )
 
+ def test_source_copy_detection_rejects_lossy_stereo_channel_remixes_with_margin(self):
+  sample_rate=24000
+  source_audio=music_fixture("melodic",sample_rate,2)
+  unrelated_audio=music_fixture("percussive",sample_rate,2)
+  cases={
+   "channel-swap":source_audio[:,::-1],
+   "left-only":source_audio[:,0],
+   "channel-rebalance":source_audio*np.array([.18,1.0]),
+  }
+  correlation_margin=.02
+  difference_margin=.07
+  with tempfile.TemporaryDirectory() as directory:
+   directory=Path(directory)
+   source=directory/"source.wav"
+   unrelated=directory/"unrelated.wav"
+   sf.write(source,source_audio,sample_rate,subtype="PCM_16")
+   sf.write(unrelated,unrelated_audio,sample_rate,subtype="PCM_16")
+   for label,transformed in cases.items():
+    remix=directory/f"{label}.wav"
+    encoded=directory/f"{label}.ogg"
+    decoded=directory/f"{label}-decoded.wav"
+    sf.write(remix,transformed,sample_rate,subtype="PCM_16")
+    encode_with_ffmpeg(remix,encoded,"libopus",("-b:a","64k"))
+    decode_with_ffmpeg(encoded,decoded)
+    result=signal_comparison(source,decoded)
+    self.assertFalse(result["passesNotSourceCopy"],label)
+    self.assertGreaterEqual(
+     result["absoluteWaveformCorrelation"],
+     COPY_LIKE_CORRELATION_THRESHOLD+correlation_margin,
+     f"{label} must retain explicit correlation threshold margin",
+    )
+    self.assertLessEqual(
+     result["polarityInvariantNormalizedDifference"],
+     COPY_LIKE_DIFFERENCE_THRESHOLD-difference_margin,
+     f"{label} must retain explicit difference threshold margin",
+    )
+   unrelated_result=signal_comparison(source,unrelated)
+   self.assertTrue(unrelated_result["passesNotSourceCopy"])
+
 def time_stretch(audio,rate):
  _,_,spectrum=stft(audio,nperseg=1024,noverlap=768)
  steps=np.arange(0,spectrum.shape[1]-1,rate)
