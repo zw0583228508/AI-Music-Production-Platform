@@ -11,18 +11,10 @@ const requiredQualityChecks = [
 ];
 
 export function publicCandidateEvaluation(evaluation: CandidateEvaluation) {
-  const { fingerprint: _fingerprint, ...publicDiversity } =
-    evaluation.diversity ?? {
-      fingerprint: undefined,
-      comparedToCandidateId: null,
-      distance: null,
-      threshold: 0.25,
-      rejected: false,
-      reason: "baseline_retained" as const,
-    };
   const musicCritic = evaluation.musicCritic
     ? {
-        ...evaluation.musicCritic,
+        version: evaluation.musicCritic.version,
+        score: evaluation.musicCritic.score,
         coverage: evaluation.musicCritic.coverage ?? (() => {
           const availableDimensions = musicCriticDimensions.filter(
             (name) => evaluation.musicCritic?.dimensions[name]?.status === "available",
@@ -33,12 +25,93 @@ export function publicCandidateEvaluation(evaluation: CandidateEvaluation) {
             sparse: availableDimensions < musicCriticDimensions.length / 2,
           };
         })(),
+        dimensions: Object.fromEntries(
+          musicCriticDimensions.flatMap((name) => {
+            const dimension = evaluation.musicCritic?.dimensions[name];
+            return dimension
+              ? [[name, {
+                  status: dimension.status,
+                  score: dimension.score,
+                  evidence: dimension.evidence.map((evidence) => ({
+                    source: evidence.source,
+                    summary: evidence.summary,
+                    observations: { ...evidence.observations },
+                  })),
+                  explanation: dimension.explanation,
+                }]]
+              : [];
+          }),
+        ),
       }
     : null;
   return {
-    ...evaluation,
+    status: evaluation.status,
+    providerScore: evaluation.providerScore,
+    renderArtifactIds: [...evaluation.renderArtifactIds],
+    artifacts: evaluation.artifacts.map((artifact) => ({
+      id: artifact.id,
+      type: artifact.type,
+      label: artifact.label,
+      url: artifact.url,
+    })),
+    qualityReport: evaluation.qualityReport
+      ? {
+          score: evaluation.qualityReport.score,
+          checks: { ...evaluation.qualityReport.checks },
+          weights: { ...evaluation.qualityReport.weights },
+          strengths: [...evaluation.qualityReport.strengths],
+          weaknesses: [...evaluation.qualityReport.weaknesses],
+          warnings: [...evaluation.qualityReport.warnings],
+          evaluatedAt: evaluation.qualityReport.evaluatedAt,
+          renderArtifactIds: [...evaluation.qualityReport.renderArtifactIds],
+          lineageComplete: evaluation.qualityReport.lineageComplete,
+        }
+      : null,
     musicCritic,
-    ...(evaluation.diversity ? { diversity: publicDiversity } : {}),
+    error: evaluation.error,
+    ...(evaluation.strategy
+      ? {
+          strategy: {
+            name: evaluation.strategy.name,
+            index: evaluation.strategy.index,
+            baseSeed: evaluation.strategy.baseSeed,
+            seed: evaluation.strategy.seed,
+          },
+        }
+      : {}),
+    ...(evaluation.diversity
+      ? {
+          diversity: {
+            comparedToCandidateId: evaluation.diversity.comparedToCandidateId,
+            distance: evaluation.diversity.distance,
+            threshold: evaluation.diversity.threshold,
+            rejected: evaluation.diversity.rejected,
+            reason: evaluation.diversity.reason,
+          },
+        }
+      : {}),
+    ...(evaluation.repair
+      ? {
+          repair: {
+            sourceCandidateId: evaluation.repair.sourceCandidateId,
+            findingId: evaluation.repair.findingId,
+            seed: evaluation.repair.seed,
+            attempt: evaluation.repair.attempt,
+            maxAttempts: evaluation.repair.maxAttempts,
+            scope: {
+              affectedSections: [...evaluation.repair.scope.affectedSections],
+              startBar: evaluation.repair.scope.startBar,
+              endBar: evaluation.repair.scope.endBar,
+              affectedTrackIds: [...evaluation.repair.scope.affectedTrackIds],
+            },
+            musicalReason: evaluation.repair.musicalReason,
+            outsideScopePreserved: evaluation.repair.outsideScopePreserved,
+            sourceQualityScore: evaluation.repair.sourceQualityScore,
+            repairedQualityScore: evaluation.repair.repairedQualityScore,
+            improved: evaluation.repair.improved,
+          },
+        }
+      : {}),
   };
 }
 
