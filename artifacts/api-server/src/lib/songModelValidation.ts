@@ -4,8 +4,11 @@ import type {
   SongModelData,
   SongModelValidationIssue,
 } from "@workspace/db";
+import { createCanonicalTimeline, type CanonicalCoordinate } from "./canonicalTimeline";
 
-export const SONG_MODEL_CONTRACT_VERSION = "1.0" as const;
+export const SONG_MODEL_CONTRACT_VERSION = "2.0" as const;
+export const LEGACY_SONG_MODEL_CONTRACT_VERSION = "1.0" as const;
+export const CANONICAL_SONG_MODEL_PPQ = 960 as const;
 export const MIN_ARRANGEMENT_CONFIDENCE = 0.55;
 
 export type ProviderSongModelResponse = {
@@ -29,6 +32,176 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const isFiniteNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
+const isInteger = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value);
+
+function canonicalizeCoordinates(model: SongModelCore): SongModelCore {
+  const timeline = createCanonicalTimeline(model.tempoMap, model.meterMap);
+  const range = (start: number, end: number) => ({
+    start: timeline.coordinateAtSeconds(start),
+    end: timeline.coordinateAtSeconds(end),
+  });
+  return {
+    ...model,
+    tempoMap: model.tempoMap.map((event) => ({
+      ...event, coordinates: timeline.coordinateAtSeconds(event.time),
+    })),
+    meterMap: model.meterMap.map((event) => ({
+      ...event, coordinates: timeline.coordinateAtBar(event.bar),
+    })),
+    keyMap: model.keyMap.map((event) => ({
+      ...event, coordinates: timeline.coordinateAtSeconds(event.time),
+    })),
+    melody: model.melody.map((event) => ({ ...event, coordinates: range(event.start, event.end) })),
+    bass: model.bass?.map((event) => ({ ...event, coordinates: range(event.start, event.end) })),
+    chords: model.chords.map((event) => ({ ...event, coordinates: range(event.start, event.end) })),
+    sections: model.sections.map((event) => ({
+      ...event,
+      coordinates: {
+        start: timeline.coordinateAtBar(event.startBar),
+        end: timeline.coordinateAtBar(event.endBar + 1),
+      },
+    })),
+  };
+}
+
+function canonicalizeSongModelCoordinates(model: SongModelData): SongModelData {
+  const core = canonicalizeCoordinates(model);
+  const timeline = createCanonicalTimeline(core.tempoMap, core.meterMap);
+  return {
+    ...model,
+    tempoMap: core.tempoMap,
+    meterMap: core.meterMap,
+    keyMap: core.keyMap,
+    melody: core.melody,
+    bass: core.bass,
+    chords: core.chords,
+    sections: core.sections,
+    beats: (model.beats ?? []).map((event) => ({
+      ...event, coordinates: timeline.coordinateAtSeconds(event.time),
+    })),
+    bars: (model.bars ?? []).map((event) => ({
+      ...event,
+      coordinates: {
+        start: timeline.coordinateAtSeconds(event.start),
+        end: timeline.coordinateAtSeconds(event.end),
+      },
+    })),
+    // Energy/dynamics are un-timestamped sample arrays.  Deliberately leave
+    // them untouched rather than pretending their indices are musical events.
+    lyrics: (model.lyrics ?? []).map((event) => ({
+      ...event,
+      coordinates: {
+        start: timeline.coordinateAtSeconds(event.start),
+        end: timeline.coordinateAtSeconds(event.end),
+      },
+    })),
+  };
+}
+
+function coordinateMatches(
+  value: unknown,
+  expected: CanonicalCoordinate,
+  path: string,
+  issues: MutableIssue[],
+): void {
+  const tick = isRecord(value) ? value.tick : undefined;
+  const bar = isRecord(value) ? value.bar : undefined;
+  const beat = isRecord(value) ? value.beat : undefined;
+  const beatInBar = isRecord(value) ? value.beatInBar : undefined;
+  const seconds = isRecord(value) ? value.seconds : undefined;
+  if (!isRecord(value) ||
+    !isFiniteNumber(seconds) || !isInteger(tick) ||
+    !isInteger(beat) || !isInteger(bar) || !isInteger(beatInBar) ||
+    tick < 0 || bar < 1 || beat < 1 || beatInBar < 1 ||
+    Math.abs(seconds - expected.seconds) > 0.000_001 ||
+    tick !== expected.tick || beat !== expected.beat ||
+    bar !== expected.bar || beatInBar !== expected.beatInBar
+  ) {
+    issues.push(issue("CONTRADICTORY_COORDINATES", "error", path,
+      "Canonical coordinates must exactly match the Song Model tempo and meter maps."));
+  }
+}
+
+function validateV2Coordinates(input: Record<string, unknown>, issues: MutableIssue[]): void {
+  if (!Array.isArray(input.tempoMap) || !Array.isArray(input.meterMap)) return;
+  let timeline: ReturnType<typeof createCanonicalTimeline>;
+  try {
+    timeline = createCanonicalTimeline(
+      input.tempoMap.map((event) => isRecord(event) ? { time: event.time as number, bpm: event.bpm as number } : { time: -1, bpm: -1 }),
+      input.meterMap.map((event) => isRecord(event) ? { bar: event.bar as number, meter: event.meter as string } : { bar: 0, meter: "" }),
+    );
+  } catch (error) {
+    issues.push(issue("INVALID_CANONICAL_TIMELINE", "error", "tempoMap",
+      error instanceof Error ? error.message : "Tempo and meter maps cannot form a canonical timeline."));
+    return;
+  }
+  const pointEvents: Array<[string, unknown[], (event: Record<string, unknown>) => CanonicalCoordinate]> = [
+    ["tempoMap", input.tempoMap, (event) => timeline.coordinateAtSeconds(event.time as number)],
+    ["meterMap", input.meterMap, (event) => timeline.coordinateAtBar(event.bar as number)],
+    ["keyMap", Array.isArray(input.keyMap) ? input.keyMap : [], (event) => timeline.coordinateAtSeconds(event.time as number)],
+  ];
+  for (const [name, events, position] of pointEvents) {
+    events.forEach((event, index) => {
+      if (!isRecord(event)) return;
+      try { coordinateMatches(event.coordinates, position(event), `${name}.${index}.coordinates`, issues); } catch {
+        issues.push(issue("CONTRADICTORY_COORDINATES", "error", `${name}.${index}.coordinates`, "Coordinates cannot be resolved."));
+      }
+    });
+  }
+  const rangeEvents: Array<[string, unknown[]]> = [
+    ["melody", Array.isArray(input.melody) ? input.melody : []],
+    ["bass", Array.isArray(input.bass) ? input.bass : []],
+    ["chords", Array.isArray(input.chords) ? input.chords : []],
+    ["bars", Array.isArray(input.bars) ? input.bars : []],
+    ["lyrics", Array.isArray(input.lyrics) ? input.lyrics : []],
+  ];
+  for (const [name, events] of rangeEvents) {
+    let previousStartTick = -1;
+    events.forEach((event, index) => {
+      if (!isRecord(event) || !isFiniteNumber(event.start) || !isFiniteNumber(event.end)) return;
+      const coordinates = event.coordinates;
+      if (!isRecord(coordinates)) {
+        issues.push(issue("MISSING_CANONICAL_COORDINATES", "error", `${name}.${index}.coordinates`, "v2 timed events require canonical coordinates."));
+        return;
+      }
+      const expectedStart = timeline.coordinateAtSeconds(event.start);
+      if (expectedStart.tick < previousStartTick) {
+        issues.push(issue("UNORDERED_CANONICAL_COORDINATES", "error", `${name}.${index}.coordinates.start`,
+          "Timed v2 events must be ordered by canonical start tick."));
+      }
+      previousStartTick = Math.max(previousStartTick, expectedStart.tick);
+      coordinateMatches(coordinates.start, expectedStart, `${name}.${index}.coordinates.start`, issues);
+      coordinateMatches(coordinates.end, timeline.coordinateAtSeconds(event.end), `${name}.${index}.coordinates.end`, issues);
+    });
+  }
+  let previousBeatTick = -1;
+  (Array.isArray(input.beats) ? input.beats : []).forEach((event, index) => {
+    if (!isRecord(event) || !isFiniteNumber(event.time)) return;
+    const expected = timeline.coordinateAtSeconds(event.time);
+    if (expected.tick < previousBeatTick) {
+      issues.push(issue("UNORDERED_CANONICAL_COORDINATES", "error", `beats.${index}.coordinates`,
+        "Beat events must be ordered by canonical tick."));
+    }
+    previousBeatTick = Math.max(previousBeatTick, expected.tick);
+    coordinateMatches(event.coordinates, expected, `beats.${index}.coordinates`, issues);
+    if (Number.isInteger(event.bar) && event.bar !== expected.bar) {
+      issues.push(issue("CONTRADICTORY_COORDINATES", "error", `beats.${index}.bar`, "Beat bar contradicts the canonical meter timeline."));
+    }
+    if (Number.isInteger(event.beat) && event.beat !== expected.beatInBar) {
+      issues.push(issue("CONTRADICTORY_COORDINATES", "error", `beats.${index}.beat`, "Beat number contradicts the canonical meter timeline."));
+    }
+  });
+  (Array.isArray(input.sections) ? input.sections : []).forEach((event, index) => {
+    if (!isRecord(event) || !Number.isInteger(event.startBar) || !Number.isInteger(event.endBar)) return;
+    if (!isRecord(event.coordinates)) {
+      issues.push(issue("MISSING_CANONICAL_COORDINATES", "error", `sections.${index}.coordinates`, "v2 sections require canonical bar coordinates."));
+      return;
+    }
+    coordinateMatches(event.coordinates.start, timeline.coordinateAtBar(event.startBar as number), `sections.${index}.coordinates.start`, issues);
+    coordinateMatches(event.coordinates.end, timeline.coordinateAtBar((event.endBar as number) + 1), `sections.${index}.coordinates.end`, issues);
+  });
+}
 
 export function isLegacySongModel(input: unknown): boolean {
   return isRecord(input) && !("contractVersion" in input);
@@ -751,8 +924,13 @@ export function fuseProviderSongModels(
   ];
   const model = {
     ...(isRecord(selected.original) ? selected.original : {}),
-    ...selected.model,
+    ...canonicalizeCoordinates(selected.model),
     contractVersion: SONG_MODEL_CONTRACT_VERSION,
+    timebase: {
+      ppq: CANONICAL_SONG_MODEL_PPQ,
+      originSeconds: 0,
+      coordinateSystem: "seconds+ticks",
+    },
     validation: {
       status: selectedWarnings.length ? "flagged" : "accepted",
       issues: selectedWarnings,
@@ -763,7 +941,7 @@ export function fuseProviderSongModels(
       decisions,
     },
   } as SongModelData;
-  return { accepted: true, model, decisions };
+  return { accepted: true, model: canonicalizeSongModelCoordinates(model), decisions };
 }
 
 export function validateCanonicalSongModel(input: unknown): ValidationResult<SongModelData> {
@@ -776,13 +954,32 @@ export function validateCanonicalSongModel(input: unknown): ValidationResult<Son
     };
   }
   const issues = [...core.issues];
-  if (input.contractVersion !== SONG_MODEL_CONTRACT_VERSION) {
+  if (
+    input.contractVersion !== SONG_MODEL_CONTRACT_VERSION &&
+    input.contractVersion !== LEGACY_SONG_MODEL_CONTRACT_VERSION
+  ) {
     issues.push(issue(
       "UNSUPPORTED_CONTRACT_VERSION",
       "error",
       "contractVersion",
-      `Song Model contractVersion must be ${SONG_MODEL_CONTRACT_VERSION}.`,
+      `Song Model contractVersion must be ${LEGACY_SONG_MODEL_CONTRACT_VERSION} or ${SONG_MODEL_CONTRACT_VERSION}.`,
     ));
+  }
+  if (input.contractVersion === SONG_MODEL_CONTRACT_VERSION) {
+    if (
+      !isRecord(input.timebase) ||
+      input.timebase.ppq !== CANONICAL_SONG_MODEL_PPQ ||
+      input.timebase.originSeconds !== 0 ||
+      input.timebase.coordinateSystem !== "seconds+ticks"
+    ) {
+      issues.push(issue(
+        "INVALID_TIMEBASE",
+        "error",
+        "timebase",
+        `Song Model ${SONG_MODEL_CONTRACT_VERSION} requires PPQ ${CANONICAL_SONG_MODEL_PPQ}, zero-second origin, and seconds+ticks coordinates.`,
+      ));
+    }
+    validateV2Coordinates(input, issues);
   }
   if (!isRecord(input.validation) || !["accepted", "flagged"].includes(String(input.validation.status))) {
     issues.push(issue(

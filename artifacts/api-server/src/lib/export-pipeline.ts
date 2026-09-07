@@ -11,6 +11,7 @@ import {
   expectedGpuCheckpointSha256,
   isGpuAttestedProvider,
 } from "./gpuProviderAttestation";
+import { CANONICAL_PPQ, createCanonicalTimeline } from "./canonicalTimeline";
 
 type Project = {
   id: string;
@@ -86,6 +87,7 @@ type Arrangement = {
 };
 
 export type TrackPerformance = {
+  ppq?: number;
   tempoMap: Array<{ tick: number; bpm: number }>;
   meterMap: Array<{ tick: number; numerator: number; denominator: number }>;
   notes: Array<{ startTick: number; durationTicks: number; pitch: number; velocity: number }>;
@@ -146,7 +148,7 @@ export type ExportBundle = {
 const SAMPLE_RATE = 8_000;
 const CHANNELS = 1;
 const BITS_PER_SAMPLE = 16;
-const PPQ = 480;
+const LEGACY_PPQ = 480;
 const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
 
 const SFZ_PRESETS: Record<string, string> = {
@@ -292,19 +294,22 @@ function loadSfzSample(sampleName: string): Float32Array {
   return sample;
 }
 
-export function tickToSeconds(tick: number, tempoMap: TrackPerformance["tempoMap"]): number {
+export function tickToSeconds(
+  tick: number,
+  tempoMap: TrackPerformance["tempoMap"],
+  ppq = LEGACY_PPQ,
+): number {
   const map = [...tempoMap].sort((left, right) => left.tick - right.tick);
   if (map.length === 0 || map[0].tick !== 0) map.unshift({ tick: 0, bpm: 120 });
-  let elapsed = 0;
-  for (let index = 0; index < map.length; index += 1) {
-    const current = map[index];
-    const nextTick = map[index + 1]?.tick ?? tick;
-    if (tick <= current.tick) break;
-    const segmentEnd = Math.min(tick, nextTick);
-    elapsed += ((segmentEnd - current.tick) / PPQ) * (60 / current.bpm);
-    if (tick <= nextTick) break;
-  }
-  return elapsed;
+  const secondsMap = map.map((event, index) => ({
+    time: index
+      ? map.slice(0, index).reduce((seconds, previous, previousIndex) =>
+        seconds + (map[previousIndex + 1].tick - previous.tick) * 60 / (previous.bpm * ppq), 0)
+      : 0,
+    bpm: event.bpm,
+  }));
+  const timeline = createCanonicalTimeline(secondsMap, [{ bar: 1, meter: "4/4" }]);
+  return timeline.tickToSeconds(tick * CANONICAL_PPQ / ppq);
 }
 
 function expressionAt(tick: number, expression: TrackPerformance["expression"]): number {
@@ -386,7 +391,7 @@ export function createTrackPerformance(
     melody: 69,
   };
   const tempoMap = sections.map((section, index) => ({
-    tick: Math.max(0, section.startBar - 1) * numerator * PPQ,
+    tick: Math.max(0, section.startBar - 1) * numerator * CANONICAL_PPQ,
     bpm: Math.max(40, Math.round(project.bpm + (section.energy - 0.5) * 4 + (index % 2))),
   }));
   const notes: TrackPerformance["notes"] = [];
@@ -419,7 +424,7 @@ export function createTrackPerformance(
       })
     );
     if (!activeInSection) continue;
-    const sectionTick = Math.max(0, section.startBar - 1) * numerator * PPQ;
+    const sectionTick = Math.max(0, section.startBar - 1) * numerator * CANONICAL_PPQ;
     expression.push({
       tick: sectionTick,
       value: Math.max(24, Math.min(127, Math.round(42 + section.energy * 82))),
@@ -432,7 +437,7 @@ export function createTrackPerformance(
     });
     for (const point of section.automation ?? []) {
       expression.push({
-        tick: Math.max(0, point.bar - 1) * numerator * PPQ,
+        tick: Math.max(0, point.bar - 1) * numerator * CANONICAL_PPQ,
         value: Math.max(0, Math.min(127, Math.round(point.value * 127))),
       });
     }
@@ -442,7 +447,7 @@ export function createTrackPerformance(
         ? { notes: section.midiNotes, cc: section.cc ?? [] }
         : undefined);
     if (editor) {
-      const sectionDurationTicks = (section.endBar - section.startBar + 1) * numerator * PPQ;
+      const sectionDurationTicks = (section.endBar - section.startBar + 1) * numerator * CANONICAL_PPQ;
       for (const [ccIndex, value] of editor.cc.entries()) {
         expression.push({
           tick: sectionTick + Math.round((ccIndex / Math.max(1, editor.cc.length - 1)) * sectionDurationTicks),
@@ -450,10 +455,10 @@ export function createTrackPerformance(
         });
       }
       for (const note of editor.notes) {
-        const noteTick = sectionTick + Math.round(note.start * PPQ);
+        const noteTick = sectionTick + Math.round(note.start * CANONICAL_PPQ);
         notes.push({
           startTick: noteTick,
-          durationTicks: Math.max(1, Math.round(note.duration * PPQ)),
+          durationTicks: Math.max(1, Math.round(note.duration * CANONICAL_PPQ)),
           pitch: Math.max(0, Math.min(127, note.pitch + transpose)),
           velocity: Math.max(1, Math.min(127, Math.round(note.velocity))),
         });
@@ -466,8 +471,8 @@ export function createTrackPerformance(
     }
     if (track.role === "harmony" && section.chords?.length) {
       for (const chord of section.chords) {
-        const startTick = sectionTick + Math.round(chord.startBeat * PPQ);
-        const durationTicks = Math.max(1, Math.round(chord.durationBeats * PPQ));
+        const startTick = sectionTick + Math.round(chord.startBeat * CANONICAL_PPQ);
+        const durationTicks = Math.max(1, Math.round(chord.durationBeats * CANONICAL_PPQ));
         for (const pitch of chordPitches(chord, transpose)) {
           notes.push({
             startTick,
@@ -480,13 +485,13 @@ export function createTrackPerformance(
     }
     if (editor || (track.role === "harmony" && section.chords?.length)) continue;
     const stepsPerBar = track.role === "rhythm" ? numerator : track.role === "bass" ? 2 : 1;
-    const stepTicks = Math.max(PPQ, Math.round((numerator * PPQ) / stepsPerBar));
+    const stepTicks = Math.max(CANONICAL_PPQ, Math.round((numerator * CANONICAL_PPQ) / stepsPerBar));
     for (let bar = section.startBar; bar <= section.endBar; bar += 1) {
       for (let step = 0; step < stepsPerBar; step += 1) {
-        const startTick = ((bar - 1) * numerator * PPQ) + step * stepTicks;
+        const startTick = ((bar - 1) * numerator * CANONICAL_PPQ) + step * stepTicks;
         notes.push({
           startTick,
-          durationTicks: track.role === "rhythm" ? Math.round(PPQ * 0.35) : Math.round(stepTicks * 0.86),
+          durationTicks: track.role === "rhythm" ? Math.round(CANONICAL_PPQ * 0.35) : Math.round(stepTicks * 0.86),
           pitch: basePitch + ((bar + step + sectionIndex) % 4 === 0 ? 7 : (bar + sectionIndex) % 3) * (track.role === "rhythm" ? 0 : 2),
           velocity: Math.max(35, Math.min(127, Math.round(54 + section.energy * 64))),
         });
@@ -494,6 +499,7 @@ export function createTrackPerformance(
     }
   }
   return {
+    ppq: CANONICAL_PPQ,
     tempoMap,
     meterMap: [{ tick: 0, numerator, denominator }],
     notes,
@@ -512,6 +518,7 @@ export function performanceDurationSeconds(
       const noteEnd = tickToSeconds(
         note.startTick + note.durationTicks,
         track.performance.tempoMap,
+        track.performance.ppq ?? LEGACY_PPQ,
       );
       endSeconds = Math.max(endSeconds, noteEnd + release);
     }
@@ -519,7 +526,11 @@ export function performanceDurationSeconds(
   return endSeconds;
 }
 
-function arrangementEndTick(project: Project, arrangement: Arrangement): number {
+function arrangementEndTick(
+  project: Project,
+  arrangement: Arrangement,
+  ppq: number = CANONICAL_PPQ,
+): number {
   const numerator = Number(project.meter.split("/")[0]) || 4;
   const editedEndBars = arrangement.sections
     .map((section) => section.endBar)
@@ -529,7 +540,7 @@ function arrangementEndTick(project: Project, arrangement: Arrangement): number 
     : project.sections.length
       ? Math.max(...project.sections.map((section) => section.endBar))
       : arrangement.sections.length * 8;
-  return finalBar * numerator * PPQ;
+  return finalBar * numerator * ppq;
 }
 
 export function exportTimelineSeconds(
@@ -539,9 +550,11 @@ export function exportTimelineSeconds(
 ): number {
   const tempoMap = tracks.find((track) => track.performance.tempoMap.length)
     ?.performance.tempoMap ?? [{ tick: 0, bpm: project.bpm }];
+  const ppq = tracks.find((track) => track.performance.tempoMap.length)
+    ?.performance.ppq ?? LEGACY_PPQ;
   return Math.max(
     performanceDurationSeconds(tracks),
-    tickToSeconds(arrangementEndTick(project, arrangement), tempoMap),
+    tickToSeconds(arrangementEndTick(project, arrangement, ppq), tempoMap, ppq),
   );
 }
 
@@ -575,8 +588,13 @@ function renderTrack(track: Track, seconds: number): Float32Array {
   const sourceSample = loadSfzSample(preset.sample);
   const gain = Math.max(0.05, Math.min(1, 10 ** (track.volume / 20))) * (track.muted ? 0 : 0.18);
   for (const note of track.performance.notes) {
-    const startSeconds = tickToSeconds(note.startTick, track.performance.tempoMap);
-    const noteSeconds = tickToSeconds(note.startTick + note.durationTicks, track.performance.tempoMap) - startSeconds;
+    const ppq = track.performance.ppq ?? LEGACY_PPQ;
+    const startSeconds = tickToSeconds(note.startTick, track.performance.tempoMap, ppq);
+    const noteSeconds = tickToSeconds(
+      note.startTick + note.durationTicks,
+      track.performance.tempoMap,
+      ppq,
+    ) - startSeconds;
     const startSample = Math.max(0, Math.floor(startSeconds * SAMPLE_RATE));
     const endSample = Math.min(sampleCount, Math.ceil((startSeconds + noteSeconds + preset.release) * SAMPLE_RATE));
     const pitchRatio = 2 ** ((note.pitch - preset.key) / 12);
@@ -680,6 +698,7 @@ function timedMidiEvents(events: TimedMidiEvent[]): number[] {
 
 function renderMidi(project: Project, arrangement: Arrangement, tracks: Track[]): Buffer {
   const performance = tracks.find((track) => track.performance.tempoMap.length)?.performance;
+  const ppq = performance?.ppq ?? LEGACY_PPQ;
   const conductorTimed: TimedMidiEvent[] = [
     { tick: 0, order: 0, bytes: [0xff, 0x03, ...vlq(asciiBytes(`${project.name} · ${arrangement.name}`).length), ...asciiBytes(`${project.name} · ${arrangement.name}`)] },
   ];
@@ -705,7 +724,7 @@ function renderMidi(project: Project, arrangement: Arrangement, tracks: Track[])
   });
   const endLabel = asciiBytes("arrangement end");
   conductorTimed.push({
-    tick: arrangementEndTick(project, arrangement),
+    tick: arrangementEndTick(project, arrangement, ppq),
     order: 99,
     bytes: [0xff, 0x06, ...vlq(endLabel.length), ...endLabel],
   });
@@ -750,7 +769,7 @@ function renderMidi(project: Project, arrangement: Arrangement, tracks: Track[])
   header.writeUInt32BE(6, 4);
   header.writeUInt16BE(1, 8);
   header.writeUInt16BE(trackChunks.length, 10);
-  header.writeUInt16BE(PPQ, 12);
+  header.writeUInt16BE(ppq, 12);
   return Buffer.concat([header, ...trackChunks]);
 }
 

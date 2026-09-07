@@ -26,6 +26,76 @@ test("accepts a provider response that satisfies the canonical core contract", (
   assert.deepEqual(result.issues, []);
 });
 
+test("fusion emits a v2 canonical 960 PPQ timebase", () => {
+  const result = fuseProviderSongModels([
+    { provider: "analysis", output: validSongModel, confidence: 0.9 },
+  ]);
+  assert.equal(result.accepted, true);
+  if (!result.accepted) return;
+  assert.equal(result.model.contractVersion, "2.0");
+  assert.deepEqual(result.model.timebase, {
+    ppq: 960,
+    originSeconds: 0,
+    coordinateSystem: "seconds+ticks",
+  });
+  assert.equal(validateCanonicalSongModel(result.model).success, true);
+});
+
+test("v2 validation rejects a missing or drifted canonical timebase", () => {
+  const result = fuseProviderSongModels([
+    { provider: "analysis", output: validSongModel, confidence: 0.9 },
+  ]);
+  assert.equal(result.accepted, true);
+  if (!result.accepted) return;
+  for (const timebase of [
+    undefined,
+    { ppq: 480, originSeconds: 0, coordinateSystem: "seconds+ticks" },
+  ]) {
+    const invalid = { ...result.model, timebase } as any;
+    const validation = validateCanonicalSongModel(invalid);
+    assert.equal(validation.success, false);
+    assert.ok(issueCodes(validation).includes("INVALID_TIMEBASE"));
+  }
+});
+
+test("canonical validation keeps historical v1 models readable", () => {
+  const fused = fuseProviderSongModels([
+    { provider: "analysis", output: validSongModel, confidence: 0.9 },
+  ]);
+  assert.equal(fused.accepted, true);
+  if (!fused.accepted) return;
+  const legacy = {
+    ...fused.model,
+    contractVersion: "1.0",
+    timebase: undefined,
+  };
+  assert.equal(validateCanonicalSongModel(legacy).success, true);
+});
+
+test("v2 validation rejects coordinates that contradict the canonical timeline", () => {
+  const fused = fuseProviderSongModels([
+    { provider: "analysis", output: validSongModel, confidence: 0.9 },
+  ]);
+  assert.equal(fused.accepted, true);
+  if (!fused.accepted) return;
+  const contradictory = structuredClone(fused.model) as any;
+  contradictory.melody[0].coordinates.start.tick = 1;
+  const validation = validateCanonicalSongModel(contradictory);
+  assert.equal(validation.success, false);
+  assert.ok(issueCodes(validation).includes("CONTRADICTORY_COORDINATES"));
+});
+
+test("does not invent timed evidence for energy and dynamics sample arrays", () => {
+  const fused = fuseProviderSongModels([
+    { provider: "analysis", output: validSongModel, confidence: 0.9 },
+  ]);
+  assert.equal(fused.accepted, true);
+  if (!fused.accepted) return;
+  assert.deepEqual(fused.model.energy, validSongModel.energy);
+  assert.equal(Object.hasOwn(fused.model.energy, "coordinates"), false);
+  assert.ok(fused.model.dynamics === undefined || !Object.hasOwn(fused.model.dynamics, "coordinates"));
+});
+
 test("preserves observed bass evidence and its active-path metadata through fusion serialization", () => {
   const bass = [{ start: 0.25, end: 0.75, pitch: 38, confidence: 0.91, provider: "BASS" }];
   const candidate = {
@@ -55,14 +125,18 @@ test("preserves observed bass evidence and its active-path metadata through fusi
   assert.equal(fused.accepted, true);
   if (!fused.accepted) return;
   const persisted = JSON.parse(JSON.stringify(fused.model));
-  assert.deepEqual(persisted.bass, bass);
+  assert.deepEqual(persisted.bass.map(({ coordinates, ...note }: any) => note), bass);
+  assert.equal(persisted.bass[0].coordinates.start.tick, 480);
   assert.equal(persisted.confidenceByField.bass, 0.91);
   assert.deepEqual(persisted.fieldStatus.bass.providers, ["BASS"]);
   assert.deepEqual(persisted.provenance.bass, ["BASS"]);
   assert.equal(persisted.providerProvenance[0].provider, "BASS");
   assert.equal(persisted.fusion.selectedProvider, "BASS");
   assert.equal(validateCanonicalSongModel(persisted).success, true);
-  assert.deepEqual(refreshSongModelValidation(persisted).bass, bass);
+  assert.deepEqual(
+    refreshSongModelValidation(persisted).bass?.map(({ coordinates, ...note }: any) => note),
+    bass,
+  );
 });
 
 test("keeps absent bass evidence unavailable rather than inferring a fallback", () => {

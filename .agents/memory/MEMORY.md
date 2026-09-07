@@ -42,3 +42,4 @@
 - [Stable Audio 3 offline inference](stable-audio3-offline-inference.md) — local checkpoints must localize nested conditioners; exact inpainting boundaries require source-layout compositing.
 - [Consolidated cancellation evidence](consolidated-cancellation-evidence.md) — one full-capacity batch may prove three cancellation guarantees only with strict independent validation.
 - [Killed spawn-worker fixtures](killed-spawn-worker-fixtures.md) — use plain blocking work, not shared synchronization primitives, when tests intentionally kill spawned workers.
+- [Song Model timebase compatibility](song-model-timebase-compatibility.md) — v2 uses explicit 960 PPQ; historical performances without PPQ must remain interpreted at 480.
