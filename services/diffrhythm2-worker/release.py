@@ -662,9 +662,19 @@ def verify_cancelled_comparison_capacity(metadata: dict) -> dict:
     calls = []
     starts = []
     cancellation_acknowledged = 0
+    cancellation_requests_started = False
     result = None
     probe = None
     cancellation_requested = time.time()
+    cancellation_results = queue.Queue()
+
+    def cancel_call(call) -> None:
+        try:
+            call.cancel()
+            cancellation_results.put(True)
+        except Exception:
+            cancellation_results.put(False)
+
     with modal.Queue.ephemeral() as readiness:
         calls = [
             comparison.spawn("stall", readiness)
@@ -687,14 +697,27 @@ def verify_cancelled_comparison_capacity(metadata: dict) -> dict:
             starts.append(marker)
         if len(starts) == COMPARISON_MAX_CONCURRENT_INPUTS:
             cancellation_requested = time.time()
-            cancellation_succeeded = True
+            cancellation_requests_started = True
             for call in calls:
-                try:
-                    call.cancel()
-                except Exception:
-                    cancellation_succeeded = False
+                threading.Thread(
+                    target=cancel_call, args=(call,), daemon=True
+                ).start()
+            cancellation_deadline = (
+                time.monotonic() + COMPARISON_CANCEL_ACK_BOUND_SECONDS
+            )
+            cancellation_requests_succeeded = 0
+            for _ in calls:
+                remaining = cancellation_deadline - time.monotonic()
+                if remaining <= 0:
                     break
-            if cancellation_succeeded:
+                try:
+                    succeeded = cancellation_results.get(timeout=remaining)
+                except queue.Empty:
+                    break
+                if not succeeded:
+                    break
+                cancellation_requests_succeeded += 1
+            if cancellation_requests_succeeded == len(calls):
                 for call in calls:
                     try:
                         call.get(timeout=COMPARISON_CANCEL_ACK_BOUND_SECONDS)
@@ -752,11 +775,13 @@ def verify_cancelled_comparison_capacity(metadata: dict) -> dict:
     }
     atomic_json(EVIDENCE / "live-comparison-cancellation-proof.json", proof)
     if not valid:
-        for call in calls + ([probe] if probe is not None else []):
-            try:
-                call.cancel()
-            except Exception:
-                pass
+        if not cancellation_requests_started:
+            for call in calls:
+                threading.Thread(
+                    target=cancel_call, args=(call,), daemon=True
+                ).start()
+        if probe is not None:
+            threading.Thread(target=cancel_call, args=(probe,), daemon=True).start()
         raise RuntimeError(
             "cancelled comparison capacity was not released within the safe bound"
         ) from None
