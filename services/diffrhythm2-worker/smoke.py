@@ -40,6 +40,13 @@ MAX_COMPARISON_WORKING_BYTES = 700 * 1024 * 1024
 # library state so a NumPy/SciPy scratch-allocation increase fails before the
 # supported comparison boundary is consumed.
 MIN_COMPARISON_MEMORY_HEADROOM_BYTES = 32 * 1024 * 1024
+# Full-chroma CI uses a representative 30-second unrelated pair rather than the
+# maximum-duration copy fixture. This separately bounded whole-process RSS limit
+# catches STFT/chroma/alignment allocation drift while leaving predictable room
+# on a 512 MiB CI worker.
+FULL_CHROMA_CI_DURATION_SECONDS = 30
+FULL_CHROMA_CI_MAX_RSS_BYTES = 384 * 1024 * 1024
+FULL_CHROMA_CI_MAX_RUNTIME_SECONDS = 45.0
 
 if (
     MAX_COMPARISON_WORKING_BYTES - MIN_COMPARISON_MEMORY_HEADROOM_BYTES
