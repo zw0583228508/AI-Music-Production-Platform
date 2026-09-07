@@ -305,7 +305,11 @@ test("recurring recovery reclaims a lease that expires after startup and persist
   assert.equal(candidates[0].rank, 1);
   assert.equal(candidates[0].modelVersion, "meteor");
   assert.equal(candidates[0].reportedModelVersion, "meteor");
-  assert.equal(candidates[0].seed, 4242);
+   assert.deepEqual(candidates.map((candidate) => candidate.seed).sort((a, b) => a - b), [4242, 4243]);
+   assert.deepEqual(
+     candidates.map((candidate) => candidate.evaluation.strategy?.name).sort(),
+     ["balanced", "sparse"],
+   );
   assert.equal(candidates[0].parameters.temperature, 0.4);
   assert.equal(candidates[0].parameters.providerScore, 0.71);
   assert.equal(candidates[0].evaluation.status, "evaluated");

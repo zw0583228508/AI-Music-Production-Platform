@@ -13,4 +13,5 @@ export const GenerationCandidateStatus = {
   validated: 'validated',
   selected: 'selected',
   rejected: 'rejected',
+  diversity_rejected: 'diversity_rejected',
 } as const;

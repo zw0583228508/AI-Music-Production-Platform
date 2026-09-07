@@ -65,6 +65,12 @@ import {
   isSelectableCandidate,
   rankEvaluatedCandidates,
 } from "./candidateRanking";
+import {
+  diversityEvidence,
+  fingerprintCandidate,
+  seedForCandidate,
+  strategyForCandidate,
+} from "./candidateDiversity";
 
 const sha256 = (value: string | Buffer): string =>
   createHash("sha256").update(value).digest("hex");
@@ -973,7 +979,17 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
         speed: job.speed as GenerationSpeed,
         candidates: job.requestedCandidates,
         seed: job.seed,
-        parameters: job.parameters,
+        parameters: {
+          ...job.parameters,
+          candidateStrategies: Array.from(
+            { length: job.requestedCandidates },
+            (_, index) => ({
+              name: strategyForCandidate(index),
+              index,
+              seed: seedForCandidate(job.seed, index),
+            }),
+          ),
+        },
         operation: snapshot.operation ?? undefined,
         sourceAudio,
         instrument: snapshot.instrument ?? undefined,
@@ -1049,7 +1065,19 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
         score: number;
       }
     > = [];
-    for (const [providerIndex, candidate] of providerCandidates.entries()) {
+    for (const [providerIndex, providerCandidate] of providerCandidates.entries()) {
+      // Provider-provided seeds are metadata, not the source of candidate
+      // identity. The request seed and stable strategy rotation must survive a
+      // lease recovery and any provider retry unchanged.
+      const strategy = strategyForCandidate(providerIndex);
+      const candidate = {
+        ...providerCandidate,
+        seed: seedForCandidate(job.seed, providerIndex),
+        parameters: {
+          ...providerCandidate.parameters,
+          candidateStrategy: strategy,
+        },
+      };
       if (abortController.signal.aborted) {
         throw new ProviderCancellationAcknowledgedError(
           "Generation cancelled before candidate evaluation completed",
@@ -1086,6 +1114,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           providerScore: candidate.score,
           confidence: candidate.confidence,
           generationSeed: candidate.seed,
+          candidateStrategy: strategy,
           generationParameters: JSON.stringify(job.parameters),
           providerRuntimeProvenance: JSON.stringify(result.runtimeProvenance ?? null),
           ...(result.checkpointSha256
@@ -1258,6 +1287,12 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           ],
           qualityReport: quality,
           error: null,
+          strategy: {
+            name: strategy,
+            index: providerIndex,
+            baseSeed: job.seed,
+            seed: candidate.seed,
+          },
         };
         evaluationScore = quality.score;
         candidateStatus = "validated";
@@ -1381,6 +1416,12 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           artifacts: [],
           qualityReport: null,
           error: error instanceof Error ? error.message : "Candidate evaluation failed",
+          strategy: {
+            name: strategy,
+            index: providerIndex,
+            baseSeed: job.seed,
+            seed: candidate.seed,
+          },
         };
       }
       candidateRows.push({
@@ -1406,6 +1447,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           ...candidate.parameters,
           providerScore: candidate.score,
           harmonyDecisions: materializedHarmonyDecisions,
+          candidateStrategy: strategy,
         },
         parentArtifactIds: candidateParentIds,
         plan: candidate.plan,
@@ -1429,9 +1471,29 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           eq(musicGenerationJobsTable.status, "running"),
         ));
     }
+    const acceptedFingerprints: Array<{ id: string; fingerprint: ReturnType<typeof fingerprintCandidate> }> = [];
+    for (const candidate of candidateRows) {
+      if (!candidate.evaluatedPlan || !candidate.trackModels) continue;
+      const evidence = diversityEvidence(
+        fingerprintCandidate(candidate.evaluatedPlan, candidate.trackModels),
+        acceptedFingerprints,
+      );
+      candidate.evaluation = { ...candidate.evaluation, diversity: evidence };
+      if (evidence.rejected) {
+        candidate.status = "diversity_rejected";
+        candidate.rank = null;
+      } else {
+        acceptedFingerprints.push({ id: candidate.id, fingerprint: evidence.fingerprint });
+      }
+    }
     const ranked = rankEvaluatedCandidates(candidateRows);
     const allEvaluationsFailed = ranked.every((candidate) =>
       !hasCompleteQualityEvidence(candidate.evaluation));
+    const diversityEvaluated = ranked.filter((candidate) =>
+      candidate.evaluation.diversity !== undefined);
+    const insufficientDiversity = diversityEvaluated.length > 1 &&
+      diversityEvaluated.filter((candidate) =>
+        !candidate.evaluation.diversity?.rejected).length === 1;
     const now = new Date();
     await db.transaction(async (tx) => {
       const [completed] = await tx
@@ -1439,13 +1501,19 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
         .set({
           status: allEvaluationsFailed ? "failed" : "succeeded",
           progress: 100,
-          stage: allEvaluationsFailed ? "evaluation_failed" : "complete",
+          stage: allEvaluationsFailed
+            ? "evaluation_failed"
+            : insufficientDiversity
+              ? "insufficient_diversity"
+              : "complete",
           error: allEvaluationsFailed
             ? "No candidate produced complete render and quality evidence."
             : null,
           errorCode: allEvaluationsFailed
             ? "CANDIDATE_EVALUATION_FAILED"
-            : null,
+            : insufficientDiversity
+              ? "INSUFFICIENT_DIVERSITY"
+              : null,
           retryable: !allEvaluationsFailed,
           completedAt: now,
           leaseExpiresAt: null,
@@ -1477,7 +1545,9 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
         title: allEvaluationsFailed
           ? "Candidate evaluation failed"
           : "Rendered candidate evaluation completed",
-        detail: `${provider.definition.displayName} · ${ranked.filter((candidate) => candidate.status === "validated").length}/${ranked.length} candidates passed render and quality analysis`,
+          detail: insufficientDiversity
+            ? `${provider.definition.displayName} · insufficient_diversity: only the retained baseline is selectable`
+            : `${provider.definition.displayName} · ${ranked.filter((candidate) => candidate.status === "validated").length}/${ranked.length} candidates passed render and quality analysis`,
         type: "arrangement",
       });
     });

@@ -1000,7 +1000,8 @@ export type CandidateEvaluationStatus =
   | "analyzing"
   | "evaluated"
   | "render_failed"
-  | "analysis_failed";
+  | "analysis_failed"
+  | "diversity_rejected";
 export type CandidatePlan = {
   sections: ArrangementSection[];
   tracks?: Array<{
@@ -1291,6 +1292,30 @@ export type CandidateEvaluation = {
   artifacts: CandidateEvaluationArtifact[];
   qualityReport: CandidateQualityReport | null;
   error: string | null;
+  strategy?: CandidateStrategyEvidence;
+  diversity?: CandidateDiversityEvidence;
+};
+
+export type CandidateStrategyEvidence = {
+  name: "sparse" | "balanced" | "rhythmic" | "harmonic" | "orchestral";
+  index: number;
+  baseSeed: number;
+  seed: number;
+};
+
+export type CandidateDiversityEvidence = {
+  fingerprint: {
+    activeTracks: string[];
+    densityEnergy: Array<{ density: number; energy: number }>;
+    harmonySequence: string[];
+    trackRoleInstruments: string[];
+    noteShape: number[];
+  };
+  comparedToCandidateId: string | null;
+  distance: number | null;
+  threshold: number;
+  rejected: boolean;
+  reason: "baseline_retained" | "near_duplicate" | "sufficiently_distinct";
 };
 
 export type CandidateQualityReport = {

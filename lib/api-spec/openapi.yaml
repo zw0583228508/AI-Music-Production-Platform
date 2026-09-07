@@ -2247,7 +2247,7 @@ components:
             crossfadeSeconds: { type: number, minimum: 0, maximum: 10, default: 0.25 }
         provider:
           type: string
-          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, MUSICGEN, ANYACCOMP, SYMPHONYGEN, METEOR, MIDI_SAG]
+          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, MUSICGEN, ANYACCOMP, LADA_BAND, HAFM, SYMPHONYGEN, METEOR, MIDI_SAG, MUSE_CONTROL_LITE, STABLE_AUDIO_3_SMALL_MUSIC, STABLE_AUDIO_3_MEDIUM]
         task:
           type: string
           enum: [SEPARATION, TRANSCRIPTION, ACCOMPANIMENT, ORCHESTRATION, ARRANGEMENT]
@@ -2269,7 +2269,7 @@ components:
         candidateId: { type: string }
         provider:
           type: string
-          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, MUSICGEN, ANYACCOMP, SYMPHONYGEN, METEOR, MIDI_SAG]
+          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, MUSICGEN, ANYACCOMP, LADA_BAND, HAFM, SYMPHONYGEN, METEOR, MIDI_SAG, MUSE_CONTROL_LITE, STABLE_AUDIO_3_SMALL_MUSIC, STABLE_AUDIO_3_MEDIUM]
         modelVersion: { type: string }
         reportedModelVersion:
           type: [string, "null"]
@@ -2301,7 +2301,7 @@ components:
           enum: [queued, running, cancel_requested, cancelled, succeeded, failed]
         provider:
           type: string
-          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, MUSICGEN, ANYACCOMP, SYMPHONYGEN, METEOR, MIDI_SAG]
+          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, MUSICGEN, ANYACCOMP, LADA_BAND, HAFM, SYMPHONYGEN, METEOR, MIDI_SAG, MUSE_CONTROL_LITE, STABLE_AUDIO_3_SMALL_MUSIC, STABLE_AUDIO_3_MEDIUM]
         modelVersion: { type: string }
         providerRuntime:
           oneOf:
@@ -2369,7 +2369,7 @@ components:
       properties:
         status:
           type: string
-          enum: [plan_received, rendering, render_succeeded, analyzing, evaluated, render_failed, analysis_failed]
+          enum: [plan_received, rendering, render_succeeded, analyzing, evaluated, render_failed, analysis_failed, diversity_rejected]
         providerScore: { type: number }
         renderArtifactIds:
           type: array
@@ -2392,6 +2392,39 @@ components:
             - type: "null"
         error:
           type: [string, "null"]
+        strategy:
+          type: object
+          required: [name, index, baseSeed, seed]
+          properties:
+            name: { type: string, enum: [sparse, balanced, rhythmic, harmonic, orchestral] }
+            index: { type: number, minimum: 0 }
+            baseSeed: { type: number, minimum: 0, maximum: 2147483647 }
+            seed: { type: number, minimum: 0, maximum: 2147483647 }
+        diversity:
+          type: object
+          required: [fingerprint, comparedToCandidateId, distance, threshold, rejected, reason]
+          properties:
+            fingerprint:
+              type: object
+              required: [activeTracks, densityEnergy, harmonySequence, trackRoleInstruments, noteShape]
+              properties:
+                activeTracks: { type: array, items: { type: string } }
+                densityEnergy:
+                  type: array
+                  items:
+                    type: object
+                    required: [density, energy]
+                    properties:
+                      density: { type: number }
+                      energy: { type: number }
+                harmonySequence: { type: array, items: { type: string } }
+                trackRoleInstruments: { type: array, items: { type: string } }
+                noteShape: { type: array, items: { type: number } }
+            comparedToCandidateId: { type: [string, "null"] }
+            distance: { type: [number, "null"] }
+            threshold: { type: number, const: 0.25 }
+            rejected: { type: boolean }
+            reason: { type: string, enum: [baseline_retained, near_duplicate, sufficiently_distinct] }
     GenerationCandidate:
       type: object
       required: [id, jobId, provider, modelVersion, seed, rank, label, score, confidence, summary, status, parameters, parentArtifactIds, plan, trackModels, harmonyDecisions, evaluation, createdAt]
@@ -2400,7 +2433,7 @@ components:
         jobId: { type: string }
         provider:
           type: string
-          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, MUSICGEN, ANYACCOMP, SYMPHONYGEN, METEOR, MIDI_SAG]
+          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, MUSICGEN, ANYACCOMP, LADA_BAND, HAFM, SYMPHONYGEN, METEOR, MIDI_SAG, MUSE_CONTROL_LITE, STABLE_AUDIO_3_SMALL_MUSIC, STABLE_AUDIO_3_MEDIUM]
         modelVersion: { type: string }
         reportedModelVersion:
           type: [string, "null"]
@@ -2415,7 +2448,7 @@ components:
         summary: { type: string }
         status:
           type: string
-          enum: [validated, selected, rejected]
+          enum: [validated, selected, rejected, diversity_rejected]
         parameters:
           type: object
           additionalProperties: true
@@ -2494,7 +2527,7 @@ components:
       properties:
         id:
           type: string
-          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, MUSICGEN, ANYACCOMP, SYMPHONYGEN, METEOR, MIDI_SAG]
+          enum: [BS_ROFORMER, ALL_IN_ONE, MT3, BASIC_PITCH, ACE_STEP, MUSICGEN, ANYACCOMP, LADA_BAND, HAFM, SYMPHONYGEN, METEOR, MIDI_SAG, MUSE_CONTROL_LITE, STABLE_AUDIO_3_SMALL_MUSIC, STABLE_AUDIO_3_MEDIUM]
         name: { type: string }
         modelVersion: { type: string }
         tasks:

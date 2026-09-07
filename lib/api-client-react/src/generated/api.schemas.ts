@@ -1361,9 +1361,14 @@ export const GenerationProvenanceProvider = {
   ACE_STEP: 'ACE_STEP',
   MUSICGEN: 'MUSICGEN',
   ANYACCOMP: 'ANYACCOMP',
+  LADA_BAND: 'LADA_BAND',
+  HAFM: 'HAFM',
   SYMPHONYGEN: 'SYMPHONYGEN',
   METEOR: 'METEOR',
   MIDI_SAG: 'MIDI_SAG',
+  MUSE_CONTROL_LITE: 'MUSE_CONTROL_LITE',
+  STABLE_AUDIO_3_SMALL_MUSIC: 'STABLE_AUDIO_3_SMALL_MUSIC',
+  STABLE_AUDIO_3_MEDIUM: 'STABLE_AUDIO_3_MEDIUM',
 } as const;
 
 export type CandidateEvaluationStatus = typeof CandidateEvaluationStatus[keyof typeof CandidateEvaluationStatus];
@@ -1377,6 +1382,7 @@ export const CandidateEvaluationStatus = {
   evaluated: 'evaluated',
   render_failed: 'render_failed',
   analysis_failed: 'analysis_failed',
+  diversity_rejected: 'diversity_rejected',
 } as const;
 
 export type CandidateEvaluationArtifactsItemType = typeof CandidateEvaluationArtifactsItemType[keyof typeof CandidateEvaluationArtifactsItemType];
@@ -1408,11 +1414,71 @@ export interface CandidateQualityReport {
   lineageComplete: boolean;
 }
 
+export type CandidateEvaluationStrategyName = typeof CandidateEvaluationStrategyName[keyof typeof CandidateEvaluationStrategyName];
+
+
+export const CandidateEvaluationStrategyName = {
+  sparse: 'sparse',
+  balanced: 'balanced',
+  rhythmic: 'rhythmic',
+  harmonic: 'harmonic',
+  orchestral: 'orchestral',
+} as const;
+
+export type CandidateEvaluationDiversityReason = typeof CandidateEvaluationDiversityReason[keyof typeof CandidateEvaluationDiversityReason];
+
+
+export const CandidateEvaluationDiversityReason = {
+  baseline_retained: 'baseline_retained',
+  near_duplicate: 'near_duplicate',
+  sufficiently_distinct: 'sufficiently_distinct',
+} as const;
+
 export type CandidateEvaluationArtifactsItem = {
   id: string;
   type: CandidateEvaluationArtifactsItemType;
   label: string;
   url: string;
+};
+
+export type CandidateEvaluationStrategy = {
+  name: CandidateEvaluationStrategyName;
+  /** @minimum 0 */
+  index: number;
+  /**
+     * @minimum 0
+     * @maximum 2147483647
+     */
+  baseSeed: number;
+  /**
+     * @minimum 0
+     * @maximum 2147483647
+     */
+  seed: number;
+};
+
+export type CandidateEvaluationDiversityFingerprintDensityEnergyItem = {
+  density: number;
+  energy: number;
+};
+
+export type CandidateEvaluationDiversityFingerprint = {
+  activeTracks: string[];
+  densityEnergy: CandidateEvaluationDiversityFingerprintDensityEnergyItem[];
+  harmonySequence: string[];
+  trackRoleInstruments: string[];
+  noteShape: number[];
+};
+
+export type CandidateEvaluationDiversity = {
+  fingerprint: CandidateEvaluationDiversityFingerprint;
+  /** @nullable */
+  comparedToCandidateId: string | null;
+  /** @nullable */
+  distance: number | null;
+  threshold: 0.25;
+  rejected: boolean;
+  reason: CandidateEvaluationDiversityReason;
 };
 
 export interface CandidateEvaluation {
@@ -1423,6 +1489,8 @@ export interface CandidateEvaluation {
   qualityReport: CandidateQualityReport | null;
   /** @nullable */
   error: string | null;
+  strategy?: CandidateEvaluationStrategy;
+  diversity?: CandidateEvaluationDiversity;
 }
 
 export type GenerationProvenanceParameters = { [key: string]: unknown };
@@ -1800,9 +1868,14 @@ export const GenerationInputProvider = {
   ACE_STEP: 'ACE_STEP',
   MUSICGEN: 'MUSICGEN',
   ANYACCOMP: 'ANYACCOMP',
+  LADA_BAND: 'LADA_BAND',
+  HAFM: 'HAFM',
   SYMPHONYGEN: 'SYMPHONYGEN',
   METEOR: 'METEOR',
   MIDI_SAG: 'MIDI_SAG',
+  MUSE_CONTROL_LITE: 'MUSE_CONTROL_LITE',
+  STABLE_AUDIO_3_SMALL_MUSIC: 'STABLE_AUDIO_3_SMALL_MUSIC',
+  STABLE_AUDIO_3_MEDIUM: 'STABLE_AUDIO_3_MEDIUM',
 } as const;
 
 export type GenerationInputTask = typeof GenerationInputTask[keyof typeof GenerationInputTask];
@@ -1904,9 +1977,14 @@ export const GenerationJobProvider = {
   ACE_STEP: 'ACE_STEP',
   MUSICGEN: 'MUSICGEN',
   ANYACCOMP: 'ANYACCOMP',
+  LADA_BAND: 'LADA_BAND',
+  HAFM: 'HAFM',
   SYMPHONYGEN: 'SYMPHONYGEN',
   METEOR: 'METEOR',
   MIDI_SAG: 'MIDI_SAG',
+  MUSE_CONTROL_LITE: 'MUSE_CONTROL_LITE',
+  STABLE_AUDIO_3_SMALL_MUSIC: 'STABLE_AUDIO_3_SMALL_MUSIC',
+  STABLE_AUDIO_3_MEDIUM: 'STABLE_AUDIO_3_MEDIUM',
 } as const;
 
 export type GenerationJobHardware = typeof GenerationJobHardware[keyof typeof GenerationJobHardware];
@@ -2035,9 +2113,14 @@ export const GenerationCandidateProvider = {
   ACE_STEP: 'ACE_STEP',
   MUSICGEN: 'MUSICGEN',
   ANYACCOMP: 'ANYACCOMP',
+  LADA_BAND: 'LADA_BAND',
+  HAFM: 'HAFM',
   SYMPHONYGEN: 'SYMPHONYGEN',
   METEOR: 'METEOR',
   MIDI_SAG: 'MIDI_SAG',
+  MUSE_CONTROL_LITE: 'MUSE_CONTROL_LITE',
+  STABLE_AUDIO_3_SMALL_MUSIC: 'STABLE_AUDIO_3_SMALL_MUSIC',
+  STABLE_AUDIO_3_MEDIUM: 'STABLE_AUDIO_3_MEDIUM',
 } as const;
 
 export type GenerationCandidateStatus = typeof GenerationCandidateStatus[keyof typeof GenerationCandidateStatus];
@@ -2047,6 +2130,7 @@ export const GenerationCandidateStatus = {
   validated: 'validated',
   selected: 'selected',
   rejected: 'rejected',
+  diversity_rejected: 'diversity_rejected',
 } as const;
 
 export type GenerationCandidateParameters = { [key: string]: unknown };
@@ -2341,9 +2425,14 @@ export const GenerationProviderId = {
   ACE_STEP: 'ACE_STEP',
   MUSICGEN: 'MUSICGEN',
   ANYACCOMP: 'ANYACCOMP',
+  LADA_BAND: 'LADA_BAND',
+  HAFM: 'HAFM',
   SYMPHONYGEN: 'SYMPHONYGEN',
   METEOR: 'METEOR',
   MIDI_SAG: 'MIDI_SAG',
+  MUSE_CONTROL_LITE: 'MUSE_CONTROL_LITE',
+  STABLE_AUDIO_3_SMALL_MUSIC: 'STABLE_AUDIO_3_SMALL_MUSIC',
+  STABLE_AUDIO_3_MEDIUM: 'STABLE_AUDIO_3_MEDIUM',
 } as const;
 
 export type GenerationProviderTasksItem = typeof GenerationProviderTasksItem[keyof typeof GenerationProviderTasksItem];
