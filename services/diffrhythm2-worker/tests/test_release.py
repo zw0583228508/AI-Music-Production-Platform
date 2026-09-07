@@ -403,6 +403,102 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             r"(path|sha|audio|fixture|artifact|error|message|input)",
         )
 
+    def test_cancelled_comparison_batch_hung_cancel_stays_within_shared_bound(self):
+        private_detail = "/private/provider/input.wav " + "a" * 64
+        release_hung_cancel = threading.Event()
+
+        class Lifecycle:
+            def __init__(self):
+                self.markers = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def get(self, timeout=None):
+                if self.markers:
+                    return self.markers.pop(0)
+                raise release.queue.Empty
+
+        class Call:
+            def __init__(self, index, attempts):
+                self.index = index
+                self.attempts = attempts
+
+            def cancel(self):
+                self.attempts.append(self.index)
+                if self.index == 0:
+                    release_hung_cancel.wait()
+                    raise RuntimeError(private_detail)
+
+            def get(self, timeout=None):
+                raise release.RemoteError(private_detail)
+
+        class Comparison:
+            def __init__(self):
+                self.attempts = []
+                self.spawned = 0
+
+            def spawn(self, control, lifecycle):
+                index = self.spawned
+                self.spawned += 1
+                lifecycle.markers.append({
+                    "outcome": "pre_work",
+                    "startedUnixSeconds": time.time(),
+                    "modalImageId": "im-Compare",
+                })
+                return Call(index, self.attempts)
+
+        comparison = Comparison()
+        identity = {
+            "modalAppId": "ap-Compare",
+            "modalDeploymentId": "v3",
+            "modalFunctionId": "fu-Compare",
+        }
+        acknowledgement_bound = 0.05
+        try:
+            with tempfile.TemporaryDirectory() as directory, patch.object(
+                release, "EVIDENCE", Path(directory)
+            ), patch.object(
+                release, "COMPARISON_CANCEL_ACK_BOUND_SECONDS",
+                acknowledgement_bound,
+            ), patch.object(
+                release.modal.Queue, "ephemeral", return_value=Lifecycle()
+            ), patch.object(
+                release.modal.Function, "from_name", return_value=comparison
+            ), patch.object(
+                release, "observe_comparison", return_value=identity
+            ):
+                started = time.monotonic()
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "^cancelled comparison batch did not stop within the safe bound$",
+                ) as raised:
+                    release.verify_cancelled_comparison_batch_execution(
+                        self.metadata
+                    )
+                elapsed = time.monotonic() - started
+                retained = (
+                    Path(directory)
+                    / "live-comparison-batch-execution-cancellation-proof.json"
+                ).read_text()
+        finally:
+            release_hung_cancel.set()
+
+        self.assertLess(elapsed, acknowledgement_bound + 0.2)
+        self.assertEqual(
+            set(comparison.attempts),
+            set(range(release.COMPARISON_MAX_CONCURRENT_INPUTS)),
+        )
+        surfaced = str(raised.exception) + retained
+        self.assertNotIn(private_detail, surfaced)
+        self.assertLess(len(retained), 2048)
+        proof = json.loads(retained)
+        self.assertEqual(proof["cancellationsAcknowledged"], 0)
+        self.assertFalse(proof["allExecutionsStopped"])
+
     def test_cancelled_comparison_batch_rejects_one_post_work_marker(self):
         class Lifecycle:
             def __init__(self):

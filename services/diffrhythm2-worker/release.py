@@ -934,6 +934,7 @@ def verify_cancelled_comparison_batch_execution(metadata: dict) -> dict:
     post_work_markers_observed = 0
     operational_failure = False
     cancellation_results = queue.Queue()
+    cancellation_requests_started = False
 
     def cancel_call(call) -> None:
         try:
@@ -965,6 +966,7 @@ def verify_cancelled_comparison_batch_execution(metadata: dict) -> dict:
                     break
                 starts.append(marker)
             if len(starts) == len(calls):
+                cancellation_requests_started = True
                 for call in calls:
                     threading.Thread(
                         target=cancel_call, args=(call,), daemon=True
@@ -1040,11 +1042,11 @@ def verify_cancelled_comparison_batch_execution(metadata: dict) -> dict:
         EVIDENCE / "live-comparison-batch-execution-cancellation-proof.json", proof
     )
     if not valid:
-        for call in calls:
-            try:
-                call.cancel()
-            except Exception:
-                pass
+        if not cancellation_requests_started:
+            for call in calls:
+                threading.Thread(
+                    target=cancel_call, args=(call,), daemon=True
+                ).start()
         raise RuntimeError(
             "cancelled comparison batch did not stop within the safe bound"
         ) from None
