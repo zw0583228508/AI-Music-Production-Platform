@@ -9,6 +9,7 @@ from smoke import (
  signal_comparison,
 )
 ROOT=Path(__file__).parents[1]
+from scipy.signal import istft, stft
 
 def music_fixture(kind,sample_rate,channels):
  time=np.arange(sample_rate*4,dtype=np.float64)/sample_rate
@@ -102,7 +103,7 @@ class DiffRhythmContract(unittest.TestCase):
   self.assertIn('"rhythmConditioned":True',smoke)
   self.assertIn('"signalComparison":comparison',smoke)
   self.assertIn('absolute_correlation < COPY_LIKE_CORRELATION_THRESHOLD',smoke)
-  self.assertIn('"bounded-offset-normalized-cross-correlation-v2"',audit)
+  self.assertIn('"bounded-tempo-pitch-source-similarity-v3"',audit)
   self.assertNotIn('comparison.get("passesNotSourceCopy")',audit)
   self.assertIn("def smoke_real_audio():",provision)
   self.assertIn("smoke_image = image.add_local_file(",provision)
@@ -127,8 +128,11 @@ class DiffRhythmContract(unittest.TestCase):
    +.2*np.sin(2*np.pi*613*time)
    +.08*np.sin(2*np.pi*997*time)
   )
-  rng=np.random.default_rng(169)
-  unrelated=rng.normal(0,.25,len(source))
+  unrelated=(
+    .35*np.sin(2*np.pi*(277*time+8*time*time))
+    +.24*np.sin(2*np.pi*415*time)
+    +.12*np.sin(2*np.pi*733*time)
+   )*(.55+.45*np.sin(2*np.pi*1.7*time)**2)
   with tempfile.TemporaryDirectory() as directory:
    directory=Path(directory)
    source_path=directory/"source.wav"
@@ -139,6 +143,16 @@ class DiffRhythmContract(unittest.TestCase):
     "polarity-inversion.wav":-source,
     "leading-silence.wav":np.concatenate((np.zeros(sample_rate),source)),
     "time-shift.wav":np.concatenate((source[sample_rate//2:],np.zeros(sample_rate//2))),
+    "small-tempo.wav":time_stretch(source,1.05),
+    "moderate-tempo.wav":time_stretch(source,1.10),
+    "small-pitch.wav":(
+     .45*np.sin(2*np.pi*((180*2**(1/12))*time+(35*2**(1/12))*time*time))
+     +.2*np.sin(2*np.pi*(613*2**(1/12))*time)+.08*np.sin(2*np.pi*(997*2**(1/12))*time)
+    ),
+    "moderate-pitch.wav":(
+     .45*np.sin(2*np.pi*((180*2**(4/12))*time+(35*2**(4/12))*time*time))
+     +.2*np.sin(2*np.pi*(613*2**(4/12))*time)+.08*np.sin(2*np.pi*(997*2**(4/12))*time)
+    ),
     "unrelated.wav":unrelated,
    }
    results={}
@@ -151,9 +165,14 @@ class DiffRhythmContract(unittest.TestCase):
    results["reencoded.mp3"]=signal_comparison(source_path,mp3_path)
   for name in cases.keys()-{"unrelated.wav"}:
    self.assertFalse(results[name]["passesNotSourceCopy"],name)
-   self.assertGreaterEqual(results[name]["absoluteWaveformCorrelation"],.95,name)
+   self.assertTrue(
+    results[name]["absoluteWaveformCorrelation"] >= .95
+    or results[name]["strongestTransform"]["similarity"] >= .90,name
+   )
   self.assertFalse(results["reencoded.mp3"]["passesNotSourceCopy"])
   self.assertTrue(results["unrelated.wav"]["passesNotSourceCopy"])
+  self.assertEqual(results["moderate-pitch.wav"]["strongestTransform"]["pitchSemitones"],4)
+  self.assertAlmostEqual(results["moderate-tempo.wav"]["strongestTransform"]["tempoRatio"],1.10)
   self.assertLess(results["leading-silence.wav"]["strongestOffsetSeconds"],1.01)
   self.assertGreater(results["leading-silence.wav"]["strongestOffsetSeconds"],.99)
 
@@ -308,3 +327,19 @@ print(json.dumps({"elapsedSeconds":elapsed,"peakResidentMiB":peak_kib/1024,"resu
     self.assertLessEqual(
      abs(result["strongestOffsetSeconds"]),result["maxOffsetSeconds"],label,
     )
+
+def time_stretch(audio,rate):
+ _,_,spectrum=stft(audio,nperseg=1024,noverlap=768)
+ steps=np.arange(0,spectrum.shape[1]-1,rate)
+ result=np.empty((spectrum.shape[0],len(steps)),dtype=np.complex128)
+ phase=np.angle(spectrum[:,0])
+ advance=2*np.pi*256*np.arange(spectrum.shape[0])/1024
+ for column,step in enumerate(steps):
+  frame=int(step); fraction=step-frame
+  magnitude=(1-fraction)*abs(spectrum[:,frame])+fraction*abs(spectrum[:,frame+1])
+  delta=np.angle(spectrum[:,frame+1])-np.angle(spectrum[:,frame])-advance
+  delta-=2*np.pi*np.round(delta/(2*np.pi))
+  result[:,column]=magnitude*np.exp(1j*phase)
+  phase+=advance+delta
+ _,stretched=istft(result,nperseg=1024,noverlap=768)
+ return stretched

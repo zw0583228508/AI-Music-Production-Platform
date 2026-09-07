@@ -48,22 +48,50 @@
   },
   "signalComparison": {
     "absoluteWaveformCorrelation": 0.03647648739147287,
+    "chromaCorrelationThreshold": 0.9,
     "comparedSamples": 203071,
     "comparedSeconds": 25.383875,
     "comparisonSampleRate": 8000,
     "copyLikeCorrelationThreshold": 0.95,
     "copyLikeDifferenceThreshold": 0.25,
     "maxOffsetSeconds": 5.0,
-    "method": "bounded-offset-normalized-cross-correlation-v2",
+    "method": "bounded-tempo-pitch-source-similarity-v3",
     "minimumOverlapSeconds": 1.0,
     "outputSampleRate": 48000,
     "passesNotSourceCopy": true,
     "polarityInvariantNormalizedDifference": 0.9815923352433673,
     "searchedLagCount": 80001,
+    "searchedPitchSemitones": [
+      -4,
+      -3,
+      -2,
+      -1,
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "searchedTempoRatios": [
+      0.9,
+      0.95,
+      1.0,
+      1.05,
+      1.1
+    ],
+    "searchedTransformAlignmentCount": 7065,
+    "searchedTransformCount": 45,
     "sourceSampleRate": 44100,
     "strongestOffsetSamples": -36929,
     "strongestOffsetSeconds": -4.616125,
-    "strongestWaveformCorrelation": -0.03647648739147287
+    "strongestTransform": {
+      "offsetSeconds": -4.096,
+      "pitchSemitones": -3,
+      "similarity": 0.19107220260649643,
+      "tempoRatio": 0.9
+    },
+    "strongestWaveformCorrelation": -0.03647648739147287,
+    "strongestWaveformTempoRatio": 1.0
   },
   "sourceSha256": "3ac8afcf7f7b2f40b858f1274c5aa779266703d55123ab5d96f5e6041ad83dd1"
 }

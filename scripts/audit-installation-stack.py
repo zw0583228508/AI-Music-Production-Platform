@@ -2181,10 +2181,13 @@ def evidence_errors(rows, root):
                 output.get("sha256") != fixture_sha,
                 output.get("bytes") == file_sizes.get(output_name),
                 comparison.get("method")
-                == "bounded-offset-normalized-cross-correlation-v2",
+                == "bounded-tempo-pitch-source-similarity-v3",
                 comparison.get("comparisonSampleRate") == 8000,
                 comparison.get("maxOffsetSeconds") == 5.0,
                 comparison.get("minimumOverlapSeconds") == 1.0,
+                comparison.get("searchedTempoRatios") == [0.9, 0.95, 1.0, 1.05, 1.1],
+                comparison.get("searchedPitchSemitones") == list(range(-4, 5)),
+                comparison.get("searchedTransformCount") == 45,
                 comparison.get("searchedLagCount", 0) > 1,
                 abs(comparison.get("strongestOffsetSeconds", 6)) <= 5.0,
                 comparison.get("comparedSamples", 0)
@@ -2206,11 +2209,21 @@ def evidence_errors(rows, root):
                 comparison.get("polarityInvariantNormalizedDifference", 0) > 0.25,
                 comparison.get("copyLikeCorrelationThreshold") == 0.95,
                 comparison.get("copyLikeDifferenceThreshold") == 0.25,
+                comparison.get("chromaCorrelationThreshold") == 0.9,
+                comparison.get("strongestTransform", {}).get("tempoRatio")
+                in comparison.get("searchedTempoRatios", []),
+                comparison.get("strongestTransform", {}).get("pitchSemitones")
+                in comparison.get("searchedPitchSemitones", []),
+                abs(comparison.get("strongestTransform", {}).get("offsetSeconds", 6))
+                <= comparison.get("maxOffsetSeconds", 0),
+                0 <= comparison.get("strongestTransform", {}).get("similarity", -1) <= 1,
                 (
                     comparison.get("absoluteWaveformCorrelation", 1)
                     < comparison.get("copyLikeCorrelationThreshold", 0)
                     and comparison.get("polarityInvariantNormalizedDifference", 0)
                     > comparison.get("copyLikeDifferenceThreshold", 1)
+                    and comparison.get("strongestTransform", {}).get("similarity", 1)
+                    < comparison.get("chromaCorrelationThreshold", 0)
                 ),
             ])
         diagnostic_required = []
