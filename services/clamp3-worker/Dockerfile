@@ -20,12 +20,16 @@ RUN git clone https://github.com/sanderwood/clamp3.git /opt/clamp3 \
 COPY . /worker
 RUN groupadd --system --gid 10001 clamp3 \
     && useradd --system --uid 10001 --gid clamp3 --home-dir /nonexistent --shell /usr/sbin/nologin clamp3 \
-    && install -d --owner=clamp3 --group=clamp3 --mode=0700 /var/tmp/clamp3 \
+    && install -d --owner=clamp3 --group=clamp3 --mode=0700 \
+        /var/tmp/clamp3 /var/tmp/clamp3/audio-logs /var/tmp/clamp3/midi-logs \
+    && ln -s /var/tmp/clamp3/audio-logs /opt/clamp3/preprocessing/audio/logs \
+    && ln -s /var/tmp/clamp3/midi-logs /opt/clamp3/preprocessing/midi/logs \
     && chown -R root:root /worker /opt/clamp3 \
     && chmod -R a-w /worker /opt/clamp3 \
     && chmod 0755 /tmp /var/tmp
 ENV CLAMP3_ASSET_ROOT=/models/clamp3 \
     CLAMP3_SOURCE_ROOT=/opt/clamp3 \
+    CLAMP3_SCRATCH_ROOT=/var/tmp/clamp3 \
     HOME=/nonexistent \
     HF_HUB_OFFLINE=1 \
     TRANSFORMERS_OFFLINE=1 \

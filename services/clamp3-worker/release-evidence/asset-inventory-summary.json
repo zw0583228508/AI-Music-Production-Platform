@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "provider": "CLAMP3",
+  "volume": "music-clamp3-assets-v1",
+  "volumePath": "/models/clamp3/asset_inventory.json",
+  "inventorySha256": "7ef3b9b9999a9f5d8c87a6aaade8fb031844c8b7b7f8c4444958aadebcc92103",
+  "fileCount": 76,
+  "totalBytes": 26286098719,
+  "snapshots": [
+    {
+      "repository": "sander-wood/clamp3",
+      "revision": "355625cc1c6f73726bbcd0eb9276ac7152d56426"
+    },
+    {
+      "repository": "m-a-p/MERT-v1-95M",
+      "revision": "12af15fef9d0ac838c3f475bfbbf26d2060dd4f5"
+    },
+    {
+      "repository": "FacebookAI/xlm-roberta-base",
+      "revision": "e73636d4f797dec63c3081bb6ed5c7b0bb3f2089"
+    }
+  ],
+  "requiredAssets": [
+    {
+      "path": "hf/models--sander-wood--clamp3/snapshots/355625cc1c6f73726bbcd0eb9276ac7152d56426/weights_clamp3_saas_h_size_768_t_model_FacebookAI_xlm-roberta-base_t_length_128_a_size_768_a_layers_12_a_length_128_s_size_768_s_layers_12_p_size_64_p_length_512.pth",
+      "bytes": 2571027658,
+      "sha256": "5033f868e3977be3945ee416b5a1718d5589a173c7ba8982231d8c94a6441d80"
+    },
+    {
+      "path": "hf/models--m-a-p--MERT-v1-95M/snapshots/12af15fef9d0ac838c3f475bfbbf26d2060dd4f5/pytorch_model.bin",
+      "bytes": 377552987,
+      "sha256": "a2b8b747f72c06e0595aeae41ae5473f4364938c6b39b2c58be38c48e6bd3fcd"
+    },
+    {
+      "path": "hf/models--FacebookAI--xlm-roberta-base/snapshots/e73636d4f797dec63c3081bb6ed5c7b0bb3f2089/model.safetensors",
+      "bytes": 1115567652,
+      "sha256": "6fd4797bc397c3b8b55d6bb5740366b57e6a3ce91c04c77f22aafc0c128e6feb"
+    }
+  ],
+  "retention": "The complete per-file path, byte count and SHA-256 inventory remains committed on the provider-isolated Modal volume; this repository record binds that immutable inventory by SHA-256."
+}

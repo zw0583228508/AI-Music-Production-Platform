@@ -129,3 +129,4 @@ MUSIC_PROVIDER_ALL_IN_ONE_SOURCE_REVISION = "a04c3f14e12db9eede528b26ad64aeae21f
 MUSIC_PROVIDER_ALL_IN_ONE_URL = "https://windot100--all-in-one-isolated.modal.run"
 ANYACCOMP_API_URL = "https://windot100--anyaccomp-rename-drill.modal.run"
 DIFFRHYTHM2_API_URL = "https://windot100--diffrhythm2-worker-endpoint.modal.run"
+CLAMP3_API_URL = "https://windot100--music-clamp3-worker-api.modal.run"

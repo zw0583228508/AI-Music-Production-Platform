@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "provider": "CLAMP3",
+  "sourceRevision": "9016d2b0c8d12d1aa79c2e0ab201e6822bdc83a8",
+  "modelRevision": "355625cc1c6f73726bbcd0eb9276ac7152d56426",
+  "files": {
+    "Dockerfile": "d7719d8aa70423887136cac9a8e6d90d2d6ac4a642b2071c16455b23b4be66f7",
+    "app.py": "926bfd29432a32b5d962240e01bd8596ac5e1f013a2137f859377279775cca3e",
+    "bootstrap_assets.py": "b15e68a8853d10264f0c9948f8b5d960dde6137eab3b365f6556dd288b84fb27",
+    "inference.py": "3e0ff4e78079b6b88ae864e08cf4d2cde7df103616c5b9879991ae417808df0f",
+    "modal_app.py": "69820cc0e0a56c7493650a26aaddcecf2042bf5fd2c8b38053ffb0176022c031",
+    "modal_provision.py": "da16358416536d70a1924d349ac21e36ec205190b51e5fd4d0c30bed7a0c9ad1",
+    "runtime_user.py": "5cfb9a9c3b4c0ad1550ccc416e4ce3cedd6e9d7e7facaa956347d0ab18c6ab13",
+    "requirements.lock": "27a1212a12f15770e257b8a3fcda458efa49a463c0bb8d00517d588d410b7088",
+    "smoke.py": "cc1d9f47b33569d2656ee4ca3f95d229c92bf3245befa7b9c1a5204ae48ebb73"
+  }
+}

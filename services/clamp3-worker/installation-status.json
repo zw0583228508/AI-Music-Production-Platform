@@ -2,21 +2,53 @@
   "schemaVersion": 1,
   "providers": {
     "CLAMP3": {
-      "classification": "BLOCKED_NO_WEIGHTS",
+      "classification": "RESEARCH_READY",
       "evidence": {
         "modelManifest": "model_manifest.json",
         "licenseManifest": "license_manifest.json",
         "sourceRevisionPinned": true,
         "checkpointRevisionsPinned": true,
-        "bootstrapInventoryImplemented": true,
+        "assetsDownloaded": true,
+        "assetsChecksummed": true,
+        "completeInventoryRetained": true,
+        "assetIdentityEnforcedAtRuntime": true,
+        "sourceIdentityEnforcedAtRuntime": true,
+        "runtimeIdentityEnforcedAtRuntime": true,
+        "checkpointBindingEnforcedAtRuntime": true,
+        "nonRootRuntimeEnforced": true,
+        "platformNetworkIsolationEnforced": true,
+        "localModelAdapterEnforced": true,
+        "completeIdentityVerifiedPerRequest": true,
+        "upstreamScratchIsolatedFromSource": true,
+        "assetInventorySha256": "7ef3b9b9999a9f5d8c87a6aaade8fb031844c8b7b7f8c4444958aadebcc92103",
+        "assetFileCount": 76,
+        "assetTotalBytes": 26286098719,
+        "volumeProvisioned": true,
         "runtimeNetworkDisabled": true,
-        "realSemanticSmokeImplemented": true,
-        "persistedRealSmokeProofPresentInRepository": false
+        "realGpuSmokePassed": true,
+        "cudaDeviceVerified": true,
+        "smokeEvidenceSha256": "a2d625e2c8d5ae2126da18b61591aa2a02ac647643e8536dc62d7a9d142c1923",
+        "textAudioMatchingExceedsMismatch": true,
+        "midiAudioMatchingExceedsMismatch": true,
+        "persistedRealSmokeProofPresentInRepository": true,
+        "endpointDeployed": true,
+        "endpointConfigured": true,
+        "healthReady": true,
+        "liveSimilarityVerified": true,
+        "liveNodeRouteVerified": true,
+        "apiConnected": true,
+        "apiAttestationValidated": true,
+        "apiZeroPostMismatchRegression": true,
+        "promotionRequired": false,
+        "commercialUseAllowed": false,
+        "modalAppId": "ap-GkYuxZLE91KgdMUaIqyRp6",
+        "modalDeploymentId": "v12",
+        "modalFunctionId": "fu-WnNPHI5N7fI61DW9sB9aLg",
+        "modalBaseImageId": "im-YkEyLjsAkiMQt1NU0AaPpu",
+        "modalImageId": "im-s1MbLH6XDEwkpYMptSnMQ3",
+        "endpointOrigin": "https://windot100--music-clamp3-worker-api.modal.run"
       },
-      "blockers": [
-        "The approximately 5 GB CLaMP 3 assets were not provisioned and no GPU smoke was run in this workspace.",
-        "No deployed endpoint has been configured; a source scaffold and bootstrap implementation are not evidence of an installed provider."
-      ]
+      "blockers": []
     }
   }
 }

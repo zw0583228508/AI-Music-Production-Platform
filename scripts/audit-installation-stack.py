@@ -2,6 +2,7 @@
 """Validate the authoritative installation matrix without treating code as proof."""
 import hashlib
 import base64
+import gzip
 import json
 import math
 import re
@@ -119,6 +120,7 @@ ENDPOINT_KEYS = {
     "PYLOUDNORM": "PYLOUDNORM_API_URL", "SONGFORMER": "SONGFORMER_API_URL",
     "LADA_BAND": "LADA_BAND_API_URL", "ANYACCOMP": "ANYACCOMP_API_URL",
     "DIFFRHYTHM_2": "DIFFRHYTHM2_API_URL",
+    "CLAMP3": "CLAMP3_API_URL",
 }
 
 def report_errors(rows, report_text):
@@ -2150,10 +2152,11 @@ def evidence_errors(rows, root):
             api_test_source = (
                 root / "artifacts/api-server/tests/gpu-provider-attestation.test.mjs"
             ).read_text()
+            modal_app_source = (root / base / "modal_app.py").read_text()
         except (OSError, json.JSONDecodeError) as exc:
             errors.append(f"DIFFRHYTHM_2: retained evidence missing: {exc}")
             public_key, file_hashes, file_sizes, committed = "", {}, {}, {}
-            api_source, attestation_source, api_test_source = "", "", ""
+            api_source, attestation_source, api_test_source, modal_app_source = "", "", "", ""
         smoke_required = []
         for proof, label, duration, output_name in (
             (short, "known-good-short", 12.0, output_names[0]),
@@ -2263,6 +2266,11 @@ def evidence_errors(rows, root):
             evidence.get("notSourceCopyVerified") is True,
             evidence.get("apiAttestationValidated") is True,
             evidence.get("apiZeroPostMismatchRegression") is True,
+            all(
+                f'WORKER_ROOT / "{name}"' in modal_app_source
+                and f'remote_path="/app/{name}"' in modal_app_source
+                for name in ("app.py", "inference.py", "upstream_runner.py", "model_manifest.json")
+            ),
             diffrhythm.get("licenseStatus") == "RESEARCH_ONLY",
             diffrhythm.get("codeRevision") == source_revision,
             manifest.get("provider") == "DIFFRHYTHM_2",
@@ -2548,6 +2556,283 @@ def evidence_errors(rows, root):
             errors.append(
                 "ANYACCOMP: READY lacks exact retained source/license/checkpoint/"
                 "fixture/smoke/Modal/promotion/API evidence"
+            )
+    clamp3 = by_name.get("CLAMP3", {})
+    if clamp3.get("finalStatus") == "RESEARCH_READY":
+        base = Path("services/clamp3-worker")
+        evidence_base = base / "release-evidence"
+        status = read_json(base / "installation-status.json")
+        local = status.get("providers", {}).get("CLAMP3", {})
+        local_evidence = local.get("evidence", {})
+        manifest = read_json(base / "model_manifest.json")
+        license_manifest = read_json(base / "license_manifest.json")
+        inventory = read_json(evidence_base / "asset-inventory-summary.json")
+        smoke = read_json(evidence_base / "real-gpu-smoke.json")
+        health = read_json(evidence_base / "live-health.json")
+        live_similarity = read_json(evidence_base / "live-similarity.json")
+        api_path = read_json(evidence_base / "api-path-evidence.json")
+        observed = read_json(evidence_base / "observed-deployment.json")
+        runtime = read_json(evidence_base / "runtime-identity.json")
+        try:
+            route_source = (
+                root / "artifacts/api-server/src/routes/clamp3.ts"
+            ).read_text()
+            attestation_source = (
+                root / "artifacts/api-server/src/lib/clamp3Attestation.ts"
+            ).read_text()
+            attestation_test = (
+                root / "artifacts/api-server/src/lib/clamp3Attestation.test.ts"
+            ).read_text()
+            smoke_sha = hashlib.sha256(
+                (root / evidence_base / "real-gpu-smoke.json").read_bytes()
+            ).hexdigest()
+            full_inventory_raw = gzip.decompress(base64.b64decode(
+                (root / evidence_base / "asset-inventory.json.gz.b64")
+                .read_text().strip()
+            ))
+            full_inventory = json.loads(full_inventory_raw)
+            full_inventory_sha = hashlib.sha256(full_inventory_raw).hexdigest()
+            runtime_hashes_match = all(
+                (root / base / relative).is_file()
+                and hashlib.sha256((root / base / relative).read_bytes()).hexdigest()
+                == expected_sha
+                for relative, expected_sha in runtime.get("files", {}).items()
+            )
+        except OSError:
+            route_source = attestation_source = attestation_test = ""
+            smoke_sha = ""
+            full_inventory = {}
+            full_inventory_sha = ""
+            runtime_hashes_match = False
+        source_revision = "9016d2b0c8d12d1aa79c2e0ab201e6822bdc83a8"
+        model_revision = "355625cc1c6f73726bbcd0eb9276ac7152d56426"
+        inventory_sha = "7ef3b9b9999a9f5d8c87a6aaade8fb031844c8b7b7f8c4444958aadebcc92103"
+        source_tree_sha = "3845250edf79a8749f8862bf8683953e801b838614579a9b240c72980a14f54b"
+        runtime_identity_sha = "12fb9b2b668e5d0fb7b86c029ea07c03d7d248371553d1aeba26b7c1ba2f2087"
+        checkpoint_sha = "5033f868e3977be3945ee416b5a1718d5589a173c7ba8982231d8c94a6441d80"
+        adapter_sha = "c59ff9dea565a01b2a81a29fb10030adaed87c81411fa6d2f32a34d5bd9d4112"
+        models = {
+            model.get("repository"): model
+            for model in manifest.get("models", [])
+            if isinstance(model, dict)
+        }
+        comparisons = smoke.get("comparisons", {})
+        text_audio = comparisons.get("textAudio", {})
+        midi_audio = comparisons.get("midiAudio", {})
+        required_assets = inventory.get("requiredAssets", [])
+        full_files = full_inventory.get("files", [])
+        installation_identity = smoke.get("installationIdentity", {})
+        live_provenance = live_similarity.get("response", {}).get("provenance", {})
+        required = [
+            clamp3.get("licenseStatus") == "RESEARCH_ONLY",
+            clamp3.get("codeRevision") == source_revision,
+            clamp3.get("modelRevision")
+            == (
+                model_revision
+                + "+12af15fef9d0ac838c3f475bfbbf26d2060dd4f5"
+                + "+e73636d4f797dec63c3081bb6ed5c7b0bb3f2089"
+            ),
+            manifest.get("classification") == "RESEARCH_READY",
+            manifest.get("source", {}).get("revision") == source_revision,
+            manifest.get("source", {}).get("treeSha256") == source_tree_sha,
+            manifest.get("source", {}).get("license") == "MIT",
+            models.get("sander-wood/clamp3", {}).get("revision") == model_revision,
+            models.get("sander-wood/clamp3", {}).get("license") == "MIT",
+            models.get("m-a-p/MERT-v1-95M", {}).get("revision")
+            == "12af15fef9d0ac838c3f475bfbbf26d2060dd4f5",
+            models.get("m-a-p/MERT-v1-95M", {}).get("license") == "CC-BY-NC-4.0",
+            models.get("FacebookAI/xlm-roberta-base", {}).get("revision")
+            == "e73636d4f797dec63c3081bb6ed5c7b0bb3f2089",
+            manifest.get("assetInventory", {}).get("sha256") == inventory_sha,
+            manifest.get("runtime", {}).get("identitySha256") == runtime_identity_sha,
+            manifest.get("checkpointBinding", {}).get("sha256") == checkpoint_sha,
+            manifest.get("runtimeUser", {}).get("uid") == 10001,
+            manifest.get("runtimeUser", {}).get("gid") == 10001,
+            manifest.get("networkIsolation", {}).get("mechanism") == "modal-block-network-v1",
+            manifest.get("runtimeAdapter", {}).get("sha256") == adapter_sha,
+            manifest.get("networkAtRuntime") is False,
+            license_manifest.get("classification") == "RESEARCH_READY",
+            license_manifest.get("commercialUseAllowed") is False,
+            inventory.get("volume") == "music-clamp3-assets-v1",
+            inventory.get("inventorySha256") == inventory_sha,
+            inventory.get("fileCount") == 76,
+            inventory.get("totalBytes") == 26286098719,
+            full_inventory_sha == inventory_sha,
+            full_inventory.get("fileCount") == len(full_files) == 76,
+            full_inventory.get("totalBytes") == 26286098719,
+            len({item.get("path") for item in full_files}) == 76,
+            sum(item.get("bytes", -1) for item in full_files) == 26286098719,
+            all(
+                isinstance(item.get("path"), str)
+                and isinstance(item.get("bytes"), int)
+                and re.fullmatch(r"[a-f0-9]{64}", item.get("sha256", ""))
+                for item in full_files
+            ),
+            len(inventory.get("snapshots", [])) == 3,
+            len(required_assets) == 3,
+            all(
+                asset.get("bytes", 0) > 0
+                and re.fullmatch(r"[a-f0-9]{64}", asset.get("sha256", ""))
+                for asset in required_assets
+            ),
+            smoke_sha == local_evidence.get("smokeEvidenceSha256"),
+            smoke.get("ok") is True,
+            smoke.get("realInference") is True,
+            smoke.get("device", {}).get("type") == "cuda",
+            smoke.get("device", {}).get("accelerateDevice") == "cuda",
+            smoke.get("device", {}).get("name") == "NVIDIA L40S",
+            smoke.get("device", {}).get("count") == 1,
+            smoke.get("crossModal") == ["text-audio", "midi-audio"],
+            text_audio.get("matching", 0) > text_audio.get("mismatched", 0),
+            text_audio.get("margin", 0) > 0,
+            midi_audio.get("matching", 0) > midi_audio.get("mismatched", 0),
+            midi_audio.get("margin", 0) > 0,
+            smoke.get("assetInventorySha256") == inventory_sha,
+            installation_identity.get("assetInventorySha256") == inventory_sha,
+            installation_identity.get("assetFileCount") == 76,
+            installation_identity.get("assetTotalBytes") == 26286098719,
+            installation_identity.get("sourceRevision") == source_revision,
+            installation_identity.get("sourceTreeSha256") == source_tree_sha,
+            installation_identity.get("modelRevision") == model_revision,
+            installation_identity.get("runtimeIdentitySha256") == runtime_identity_sha,
+            installation_identity.get("checkpointBindingSha256") == checkpoint_sha,
+            installation_identity.get("effectiveUid") == 10001,
+            installation_identity.get("effectiveGid") == 10001,
+            installation_identity.get("runtimeUser") == "clamp3",
+            installation_identity.get("networkIsolation") == "modal-block-network-v1",
+            installation_identity.get("runtimeAdapterSha256") == adapter_sha,
+            installation_identity.get("networkAtRuntime") is False,
+            len(smoke.get("fixtures", {})) == 4,
+            all(
+                fixture.get("bytes", 0) > 0
+                and re.fullmatch(r"[a-f0-9]{64}", fixture.get("sha256", ""))
+                for fixture in smoke.get("fixtures", {}).values()
+            ),
+            health.get("ready") is True,
+            health.get("smokeTested") is True,
+            health.get("classification") == "RESEARCH_READY",
+            health.get("sourceRevision") == source_revision,
+            health.get("modelRevision") == model_revision,
+            health.get("networkAtRuntime") is False,
+            health.get("assetInventorySha256") == inventory_sha,
+            health.get("assetFileCount") == 76,
+            health.get("assetTotalBytes") == 26286098719,
+            health.get("sourceTreeSha256") == source_tree_sha,
+            health.get("runtimeIdentitySha256") == runtime_identity_sha,
+            health.get("checkpointBindingSha256") == checkpoint_sha,
+            health.get("effectiveUid") == 10001,
+            health.get("effectiveGid") == 10001,
+            health.get("runtimeUser") == "clamp3",
+            health.get("networkIsolation") == "modal-block-network-v1",
+            health.get("runtimeAdapterSha256") == adapter_sha,
+            live_similarity.get("endpointOrigin")
+            == "https://windot100--music-clamp3-worker-api.modal.run",
+            live_similarity.get("request", {}).get("leftSha256")
+            == "79a72189e338f5b9f3912b4213c4dd3b9040920b226eaf2db79610b58b145b93",
+            live_similarity.get("request", {}).get("rightSha256")
+            == "59de64a1496b289404a844cc9c07dc65d41f28521102b996ea1a7fc31cf474e1",
+            live_similarity.get("response", {}).get("similarity")
+            == 0.32551317484053377,
+            live_provenance.get("sourceRevision") == source_revision,
+            live_provenance.get("sourceTreeSha256") == source_tree_sha,
+            live_provenance.get("modelRevision") == model_revision,
+            live_provenance.get("assetInventorySha256") == inventory_sha,
+            live_provenance.get("runtimeIdentitySha256") == runtime_identity_sha,
+            live_provenance.get("checkpointBindingSha256") == checkpoint_sha,
+            live_provenance.get("effectiveUid") == 10001,
+            live_provenance.get("effectiveGid") == 10001,
+            live_provenance.get("runtimeUser") == "clamp3",
+            live_provenance.get("networkIsolation") == "modal-block-network-v1",
+            live_provenance.get("runtimeAdapterSha256") == adapter_sha,
+            live_provenance.get("networkAtRuntime") is False,
+            api_path.get("liveNodeRoute", {}).get("unauthenticatedStatus") == 401,
+            api_path.get("regression", {}).get(
+                "exactHealthAttestationRequiredBeforeSimilarityPost"
+            ) is True,
+            api_path.get("regression", {}).get(
+                "readinessSourceModelAndRuntimeNetworkDriftRejected"
+            ) is True,
+            api_path.get("regression", {}).get(
+                "assetSourceRuntimeIdentityDriftRejected"
+            ) is True,
+            api_path.get("regression", {}).get(
+                "zeroSimilarityPostsOnAttestationFailure"
+            ) is True,
+            observed.get("modalAppId") == "ap-GkYuxZLE91KgdMUaIqyRp6",
+            observed.get("modalDeploymentId") == "v12",
+            observed.get("modalFunctionId") == "fu-WnNPHI5N7fI61DW9sB9aLg",
+            observed.get("modalBaseImageId") == "im-YkEyLjsAkiMQt1NU0AaPpu",
+            observed.get("modalImageId") == "im-s1MbLH6XDEwkpYMptSnMQ3",
+            observed.get("endpointOrigin")
+            == "https://windot100--music-clamp3-worker-api.modal.run",
+            runtime.get("sourceRevision") == source_revision,
+            runtime.get("modelRevision") == model_revision,
+            runtime_hashes_match,
+            local.get("classification") == "RESEARCH_READY",
+            local_evidence.get("assetInventorySha256") == inventory_sha,
+            local_evidence.get("assetsChecksummed") is True,
+            local_evidence.get("completeInventoryRetained") is True,
+            local_evidence.get("assetIdentityEnforcedAtRuntime") is True,
+            local_evidence.get("sourceIdentityEnforcedAtRuntime") is True,
+            local_evidence.get("runtimeIdentityEnforcedAtRuntime") is True,
+            local_evidence.get("checkpointBindingEnforcedAtRuntime") is True,
+            local_evidence.get("completeIdentityVerifiedPerRequest") is True,
+            local_evidence.get("upstreamScratchIsolatedFromSource") is True,
+            local_evidence.get("realGpuSmokePassed") is True,
+            local_evidence.get("cudaDeviceVerified") is True,
+            local_evidence.get("textAudioMatchingExceedsMismatch") is True,
+            local_evidence.get("midiAudioMatchingExceedsMismatch") is True,
+            local_evidence.get("healthReady") is True,
+            local_evidence.get("liveSimilarityVerified") is True,
+            local_evidence.get("liveNodeRouteVerified") is True,
+            local_evidence.get("apiAttestationValidated") is True,
+            local_evidence.get("apiZeroPostMismatchRegression") is True,
+            local_evidence.get("commercialUseAllowed") is False,
+            "fetchAttestedClamp3Health" in route_source,
+            "forwardAttestedClamp3Similarity" in route_source,
+            'payload.classification === "RESEARCH_READY"' in attestation_source,
+            "payload.sourceRevision === CLAMP3_SOURCE_REVISION" in attestation_source,
+            "payload.modelRevision === CLAMP3_MODEL_REVISION" in attestation_source,
+            "payload.assetInventorySha256 === CLAMP3_ASSET_INVENTORY_SHA256"
+            in attestation_source,
+            "payload.sourceTreeSha256 === CLAMP3_SOURCE_TREE_SHA256"
+            in attestation_source,
+            "payload.runtimeIdentitySha256 === CLAMP3_RUNTIME_IDENTITY_SHA256"
+            in attestation_source,
+            "payload.checkpointBindingSha256 === CLAMP3_CHECKPOINT_BINDING_SHA256"
+            in attestation_source,
+            'payload.networkIsolation === "modal-block-network-v1"' in attestation_source,
+            "payload.runtimeAdapterSha256 === CLAMP3_RUNTIME_ADAPTER_SHA256"
+            in attestation_source,
+            "block_network=True" in (root / "services/clamp3-worker/modal_app.py").read_text(),
+            "block_network=True" in (root / "services/clamp3-worker/modal_provision.py").read_text(),
+            "payload.networkAtRuntime === false" in attestation_source,
+            "if (!health.valid)" in attestation_source,
+            "identity drift sends zero similarity POSTs" in attestation_test,
+            "calls.some((call) => call.url.endsWith(\"/v1/similarity\"))" in attestation_test,
+            "_verify_asset_inventory" in (
+                root / "services/clamp3-worker/inference.py"
+            ).read_text(),
+            "asset checksum drift detected" in (
+                root / "services/clamp3-worker/inference.py"
+            ).read_text(),
+            "@functools.lru_cache" not in (
+                root / "services/clamp3-worker/inference.py"
+            ).read_text(),
+            "verified_installation_identity()" in (
+                root / "services/clamp3-worker/inference.py"
+            ).read_text(),
+            "upstream runtime logs are not isolated" in (
+                root / "services/clamp3-worker/inference.py"
+            ).read_text(),
+            "same_size_content_drift" in (
+                root / "services/clamp3-worker/tests/test_contract.py"
+            ).read_text(),
+        ]
+        if not all(required):
+            errors.append(
+                "CLAMP3: RESEARCH_READY lacks exact retained asset/license/"
+                "GPU-smoke/deployment/live-health/API fail-closed evidence"
             )
     midi_sag = by_name.get("MIDI_SAG", {})
     muse_control = by_name.get("MUSE_CONTROL_LITE", {})

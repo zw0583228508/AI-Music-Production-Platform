@@ -15,7 +15,7 @@
 - [Structure-model smoke evidence](structure-model-smoke-evidence.md) — smoke fixtures need multi-bar rhythm/harmony; preserve evidence by trimming pickups to the first detected downbeat.
 - [MT3 adapter compatibility](mt3-adapter-compatibility.md) — trust real GPU inference over declared dependency ranges; bind any exact compatibility correction into provenance.
 - [BS-RoFormer adapter contract](bs-roformer-adapter-contract.md) — v0.1.5 exposes a folder API, not a session wrapper; explicit paths are required to prevent downloads.
-- [Provider-audio arrangement semantics](provider-audio-arrangement-semantics.md) — audio-only candidates need no fake MIDI; chained audio stays private with parent lineage.
+- [Provider-audio arrangement semantics](provider-audio-arrangement-semantics.md) — audio-only candidates stay selectable/exportable without fake MIDI; chained provider audio remains private with explicit parent lineage.
 - [Observable musical controls](observable-musical-controls.md) — producer controls and readiness claims must survive typed evidence flow and change shipped musical output, not just metadata.
 - [Pino regression harnesses](pino-regression-harnesses.md) — standalone logger tests should externalize Pino and emit inside the package tree rather than rebundling its workers.
 - [Historical export reconciliation](historical-export-reconciliation.md) — cleanup requires an aged current-package dry run and exact reviewed candidates; ambiguous export objects stay preserved.
@@ -32,6 +32,9 @@
 - [Checkpoint license provenance](checkpoint-license-provenance.md) — code/model-card licenses do not authorize external weights; invalid remote digests require direct byte hashing.
 - [Blocked-provider evidence preimages](blocked-provider-evidence-preimages.md) — retain hash preimages and keep provisioning manifest schemas identical to runtime validators.
 - [Attested generation I/O](attested-generation-response-urls.md) — results repeat health provenance; artifact origins and source allowlists are deployment gates, never request-host defaults.
-- [Focused API bundle boundaries](focused-api-bundle-boundaries.md) — no-route tests should alias database packages to throwing stubs, not bundle native clients.
+- [Focused API bundle boundaries](focused-api-bundle-boundaries.md) — no-route tests should alias database packages to throwing stubs rather than bundle native clients or externalize workspace source.
 - [DiffRhythm upstream recovery](diffrhythm-upstream-recovery.md) — bypass its unsafe boolean CLI path, install omitted G2P dependencies, and wire pinned local tokenizer/MuQ state explicitly.
 - [Codec threshold fixtures](codec-threshold-fixtures.md) — decode lossy codec fixtures through FFmpeg before waveform checks because worker libsndfile lacks AAC container support.
+- [Modal Docker USER behavior](modal-docker-user.md) — Modal skips Dockerfile USER; verify runtime UID instead of assuming container privilege dropping.
+- [CLaMP3 source scratch isolation](clamp3-source-scratch.md) — redirect upstream preprocessing logs outside the per-request attested source tree.
+- [CLaMP3 offline model resolution](clamp3-offline-model-resolution.md) — enforce egress denial and bind upstream model arguments to exact local snapshots.

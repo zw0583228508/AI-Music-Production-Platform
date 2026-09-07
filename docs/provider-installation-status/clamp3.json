@@ -1,16 +1,16 @@
 {
   "schemaVersion": 1,
   "provider": "CLAMP3",
-  "finalStatus": "BLOCKED_NO_WEIGHTS",
-  "checkedAt": "2026-09-06",
+  "finalStatus": "RESEARCH_READY",
+  "checkedAt": "2026-09-07",
   "evidence": [
     "Source: https://github.com/sanderwood/clamp3/tree/9016d2b0c8d12d1aa79c2e0ab201e6822bdc83a8 (MIT).",
     "CLaMP3 weights: https://huggingface.co/sander-wood/clamp3/tree/355625cc1c6f73726bbcd0eb9276ac7152d56426 (MIT).",
-    "Raw-audio dependency: https://huggingface.co/m-a-p/MERT-v1-95M/tree/12af15fef9d0ac838c3f475bfbbf26d2060dd4f5 (CC-BY-NC-4.0)."
+    "Raw-audio dependency: https://huggingface.co/m-a-p/MERT-v1-95M/tree/12af15fef9d0ac838c3f475bfbbf26d2060dd4f5 (CC-BY-NC-4.0).",
+    "The provider-isolated Modal volume retains a 76-file, 26,286,098,719-byte inventory with SHA-256 7ef3b9b9999a9f5d8c87a6aaade8fb031844c8b7b7f8c4444958aadebcc92103.",
+    "The complete canonical 76-entry inventory is retained in compressed base64 form; startup verifies every installed path, size and SHA-256 plus the pinned 42-file source tree and exact Python package identity.",
+    "Retained NVIDIA L40S inference records Accelerate resolving CUDA and proves matching text/audio and MIDI/audio pairs both score above mismatches.",
+    "Modal deployment v12 drops irreversibly to UID/GID 10001, blocks platform egress for serving and smoke, binds MERT to its exact local snapshot, verifies complete identities per request, and the Node route rejects drift before forwarding."
   ],
-  "reason": "The worker scaffold is installable but no asset inventory, real smoke proof, or configured deployed endpoint exists.",
-  "blockers": [
-    "Do not classify as RESEARCH_READY or READY until bootstrap has created its hash inventory and the real semantic smoke succeeds.",
-    "Raw-audio mode remains non-commercial because it requires MERT-v1-95M under CC-BY-NC-4.0."
-  ]
+  "reason": "The exact assets, real cross-modal GPU smoke, authenticated endpoint and fail-closed Node route are verified. Commercial READY remains prohibited by the MERT-v1-95M CC-BY-NC-4.0 dependency."
 }

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "provider": "CLAMP3",
+  "endpointOrigin": "https://windot100--music-clamp3-worker-api.modal.run",
+  "modalAppId": "ap-GkYuxZLE91KgdMUaIqyRp6",
+  "modalDeploymentId": "v12",
+  "modalFunctionId": "fu-WnNPHI5N7fI61DW9sB9aLg",
+  "modalBaseImageId": "im-YkEyLjsAkiMQt1NU0AaPpu",
+  "modalImageId": "im-s1MbLH6XDEwkpYMptSnMQ3",
+  "deployedAt": "2026-09-07T03:45:50Z",
+  "tag": null
+}

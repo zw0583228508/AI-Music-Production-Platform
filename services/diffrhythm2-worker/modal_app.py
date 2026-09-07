@@ -20,6 +20,19 @@ app = modal.App(APP_NAME)
 image = (
     modal.Image.from_id(DEPLOYMENT_BASE_IMAGE_ID)
     .add_local_file(WORKER_ROOT / "app.py", remote_path="/app/app.py", copy=True)
+    .add_local_file(
+        WORKER_ROOT / "inference.py", remote_path="/app/inference.py", copy=True
+    )
+    .add_local_file(
+        WORKER_ROOT / "upstream_runner.py",
+        remote_path="/app/upstream_runner.py",
+        copy=True,
+    )
+    .add_local_file(
+        WORKER_ROOT / "model_manifest.json",
+        remote_path="/app/model_manifest.json",
+        copy=True,
+    )
     .env({
         **environment(False),
         "PYTHONPATH": "/opt/diffrhythm2-venv/lib/python3.11/site-packages",

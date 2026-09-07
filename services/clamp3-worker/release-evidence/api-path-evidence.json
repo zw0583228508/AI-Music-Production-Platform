@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "provider": "CLAMP3",
+  "checkedAt": "2026-09-07T02:18:00Z",
+  "liveNodeRoute": {
+    "path": "/api/providers/clamp3/health",
+    "unauthenticatedStatus": 401,
+    "response": {
+      "error": "Unauthorized"
+    }
+  },
+  "regression": {
+    "exactHealthAttestationRequiredBeforeSimilarityPost": true,
+    "readinessSourceModelAndRuntimeNetworkDriftRejected": true,
+    "assetSourceRuntimeIdentityDriftRejected": true,
+    "checkpointBindingDriftRejected": true,
+    "runtimeUserDriftRejected": true,
+    "networkIsolationDriftRejected": true,
+    "runtimeAdapterDriftRejected": true,
+    "zeroSimilarityPostsOnAttestationFailure": true
+  }
+}
