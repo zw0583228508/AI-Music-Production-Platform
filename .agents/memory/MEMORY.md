@@ -41,3 +41,4 @@
 - [Modal concurrency queue drills](modal-concurrency-queue-drills.md) — max_inputs is per container; constrain the fleet and verify waiting from identity-bound timing evidence.
 - [Stable Audio 3 offline inference](stable-audio3-offline-inference.md) — local checkpoints must localize nested conditioners; exact inpainting boundaries require source-layout compositing.
 - [Consolidated cancellation evidence](consolidated-cancellation-evidence.md) — one full-capacity batch may prove three cancellation guarantees only with strict independent validation.
+- [Killed spawn-worker fixtures](killed-spawn-worker-fixtures.md) — use plain blocking work, not shared synchronization primitives, when tests intentionally kill spawned workers.
