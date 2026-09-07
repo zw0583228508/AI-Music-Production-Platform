@@ -10,12 +10,12 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import modal
 
 APP_NAME = "anyaccomp-worker"
 ENDPOINT_LABEL = "anyaccomp"
-PUBLIC_ORIGIN = "https://windot100--anyaccomp.modal.run"
 ALLOWED_SOURCE_ORIGINS = "https://storage.googleapis.com"
 MODEL_VOLUME_NAME = "anyaccomp-models-private-v1"
 ARTIFACT_VOLUME_NAME = "anyaccomp-artifacts-private-v1"
@@ -41,7 +41,34 @@ HOP_BY_HOP_HEADERS = {
 }
 
 
+def _canonical_origin(value: str) -> str:
+    parsed = urlsplit(value.strip())
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.path not in ("", "/")
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise RuntimeError("AnyAccomp public origin is not a valid HTTPS origin")
+    return f"https://{parsed.hostname.lower()}" + (
+        f":{parsed.port}" if parsed.port and parsed.port != 443 else ""
+    )
+
+
 def _start_pinned_server(environment: dict[str, str]) -> subprocess.Popen:
+    public_origin = _canonical_origin(
+        environment.get("ANYACCOMP_PUBLIC_ORIGIN", "")
+    )
+    promoted_origin = _canonical_origin(
+        environment.get("MUSIC_GPU_PROMOTION_ENDPOINT_ORIGIN", "")
+    )
+    if public_origin != promoted_origin:
+        raise RuntimeError(
+            "AnyAccomp public origin differs from promoted endpoint origin"
+        )
     process = subprocess.Popen(
         [
             PINNED_PYTHON,
@@ -189,7 +216,7 @@ def _asgi_proxy(process: subprocess.Popen):
     return proxy
 
 app = modal.App(APP_NAME)
-SOURCE_IMAGE_DIGEST = "sha256:aed30e61de548b1d9bb12c714697394ca61c888381c22de1ac498354b9873bde"
+SOURCE_IMAGE_DIGEST = "sha256:ebee9112737753c4f6aaa9001e6ef8397d097c6b365253cc639a3f2cc8ff62ff"
 image = modal.Image.from_dockerfile(
     WORKER_ROOT / "Dockerfile",
     context_dir=WORKER_ROOT.parent.parent,
@@ -301,7 +328,6 @@ class AnyAccompWorker:
             **os.environ,
             "ANYACCOMP_ASSET_ROOT": MODEL_MOUNT,
             "ANYACCOMP_ARTIFACT_ROOT": ARTIFACT_MOUNT,
-            "ANYACCOMP_PUBLIC_ORIGIN": PUBLIC_ORIGIN,
             "ANYACCOMP_ALLOWED_SOURCE_ORIGINS": ALLOWED_SOURCE_ORIGINS,
         }
         return _asgi_proxy(_start_pinned_server(environment))

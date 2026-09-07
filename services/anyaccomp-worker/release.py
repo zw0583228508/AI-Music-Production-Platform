@@ -128,6 +128,8 @@ def identity(metadata: dict) -> dict:
         "MUSIC_GPU_MODAL_APP_ID": metadata["modalAppId"],
         "MUSIC_GPU_MODAL_DEPLOYMENT_ID": metadata["modalDeploymentId"],
         "MUSIC_GPU_MODAL_FUNCTION_ID": metadata["modalFunctionId"],
+        "MUSIC_GPU_PROMOTION_ENDPOINT_ORIGIN": metadata["endpointOrigin"],
+        "ANYACCOMP_PUBLIC_ORIGIN": metadata["endpointOrigin"],
     }
 
 
@@ -368,6 +370,8 @@ def validate_release(value: object) -> dict:
         or health.get("checkpointReady") is not True
         or health.get("smokeTested") is not True
         or health.get("identityReady") is not True
+        or health.get("artifactOriginReady") is not True
+        or health.get("publicArtifactOrigin") != metadata["endpointOrigin"]
         or health.get("smokeEvidence") != smoke
     ):
         raise ValueError("AnyAccomp captured health is not fully ready")
@@ -432,6 +436,11 @@ def validate_release(value: object) -> dict:
         raise ValueError("AnyAccomp retained live generation proof is stale or invalid")
     if value["liveHealth"].get("sourceOriginsReady") is not True:
         raise ValueError("AnyAccomp live health did not attest source-origin readiness")
+    if (
+        value["liveHealth"].get("artifactOriginReady") is not True
+        or value["liveHealth"].get("publicArtifactOrigin") != value["endpointOrigin"]
+    ):
+        raise ValueError("AnyAccomp live health did not attest its promoted artifact origin")
     return value
 
 
