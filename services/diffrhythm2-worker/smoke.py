@@ -27,6 +27,16 @@ TEMPO_RATIOS = (0.90, 0.95, 1.0, 1.05, 1.10)
 PITCH_SEMITONES = tuple(range(-4, 5))
 CHROMA_CORRELATION_THRESHOLD = 0.90
 MAX_CHANNEL_PROJECTIONS = 4
+MAX_DECODED_CHANNELS = 32
+
+def _read_bounded_audio(path: Path) -> tuple[np.ndarray, int]:
+    channel_count = sf.info(str(path)).channels
+    if channel_count > MAX_DECODED_CHANNELS:
+        raise RuntimeError(
+            f"audio channel count {channel_count} exceeds supported maximum "
+            f"of {MAX_DECODED_CHANNELS}"
+        )
+    return sf.read(str(path), always_2d=True)
 
 def _resample(audio: np.ndarray, source_rate: int, target_rate: int) -> np.ndarray:
     if source_rate == target_rate:
@@ -115,8 +125,8 @@ def _channel_projections(audio: np.ndarray) -> list[tuple[str, np.ndarray]]:
     return [(f"channel-{index}", audio[:, index]) for index in indices]
 
 def signal_comparison(source_path: Path, output_path: Path) -> dict:
-    source, source_rate = sf.read(str(source_path), always_2d=True)
-    output, output_rate = sf.read(str(output_path), always_2d=True)
+    source, source_rate = _read_bounded_audio(source_path)
+    output, output_rate = _read_bounded_audio(output_path)
     source = _resample(source, source_rate, COMPARISON_SAMPLE_RATE)
     output = _resample(output, output_rate, COMPARISON_SAMPLE_RATE)
     source_mono = source.mean(axis=1)

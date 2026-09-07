@@ -1,4 +1,5 @@
 import json,subprocess,sys,tempfile,unittest
+from unittest import mock
 from pathlib import Path
 import numpy as np
 import soundfile as sf
@@ -6,6 +7,7 @@ from smoke import (
  COPY_LIKE_CORRELATION_THRESHOLD,
  COPY_LIKE_DIFFERENCE_THRESHOLD,
  MAX_CHANNEL_PROJECTIONS,
+ MAX_DECODED_CHANNELS,
  MAX_SUPPORTED_SMOKE_DURATION_SECONDS,
  signal_comparison,
 )
@@ -386,7 +388,7 @@ print(json.dumps({"elapsedSeconds":elapsed,"peakResidentMiB":peak_kib/1024,"resu
   time=np.arange(sample_rate*2,dtype=np.float64)/sample_rate
   copied=.44*np.sin(2*np.pi*(211*time+13*time*time))+.17*np.sin(2*np.pi*619*time)
   unrelated=.37*np.sin(2*np.pi*(307*time+5*time*time))+.13*np.sin(2*np.pi*881*time)
-  cases=(("surround",6,8),("malformed",24,31))
+  cases=(("surround",6,8),("maximum-supported",24,MAX_DECODED_CHANNELS))
   with tempfile.TemporaryDirectory() as directory:
    directory=Path(directory)
    for label,source_channels,output_channels in cases:
@@ -409,6 +411,26 @@ print(json.dumps({"elapsedSeconds":elapsed,"peakResidentMiB":peak_kib/1024,"resu
     self.assertEqual(policy["maximumPerAudio"],MAX_CHANNEL_PROJECTIONS)
     self.assertIn(f"channel-{source_channels-1}",policy["sourceProjections"],label)
     self.assertIn(f"channel-{output_channels-1}",policy["outputProjections"],label)
+
+ def test_source_copy_detection_rejects_extreme_channels_before_decode(self):
+  sample_rate=8000
+  extreme_channels=MAX_DECODED_CHANNELS+1
+  with tempfile.TemporaryDirectory() as directory:
+   directory=Path(directory)
+   extreme=directory/"extreme.wav"
+   normal=directory/"normal.wav"
+   sf.write(
+    extreme,np.zeros((32,extreme_channels)),sample_rate,subtype="PCM_16",
+   )
+   sf.write(normal,np.zeros(32),sample_rate,subtype="PCM_16")
+   with mock.patch("smoke.sf.read",wraps=sf.read) as decode:
+    with self.assertRaisesRegex(
+     RuntimeError,
+     rf"audio channel count {extreme_channels} exceeds supported maximum "
+     rf"of {MAX_DECODED_CHANNELS}",
+    ):
+     signal_comparison(extreme,normal)
+  decode.assert_not_called()
 
  def test_source_copy_detection_keeps_stereo_projection_behavior(self):
   sample_rate=8000
