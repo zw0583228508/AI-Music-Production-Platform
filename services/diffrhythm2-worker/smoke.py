@@ -31,6 +31,11 @@ DECODED_SAMPLE_BYTES = np.dtype(np.float64).itemsize
 MAX_DECODED_AUDIO_BYTES = 256 * 1024 * 1024
 MAX_INPUT_SAMPLE_RATE = 192000
 MAX_COMPARISON_WORKING_BYTES = 700 * 1024 * 1024
+# CI measures whole-process RSS, not only arrays attributed by
+# _comparison_working_bytes. Preserve room for the interpreter and native
+# library state so a NumPy/SciPy scratch-allocation increase fails before the
+# supported comparison boundary is consumed.
+MIN_COMPARISON_MEMORY_HEADROOM_BYTES = 32 * 1024 * 1024
 
 def _audio_metadata(path: Path):
     metadata = sf.info(str(path))
