@@ -21,6 +21,7 @@
     "test:export-lineage": "esbuild src/lib/exportLineage.test.ts --bundle --platform=node --format=esm --outfile=/tmp/music-studio-export-lineage.test.mjs && node --test /tmp/music-studio-export-lineage.test.mjs",
     "test:copilot": "esbuild src/lib/copilotInterpreter.test.ts --bundle --platform=node --format=esm --outfile=/tmp/music-studio-copilot.test.mjs && node --test /tmp/music-studio-copilot.test.mjs",
     "test:revisions": "esbuild src/lib/arrangementRevisions.test.ts --bundle --platform=node --format=esm --outfile=/tmp/music-studio-arrangement-revisions.test.mjs && node --test /tmp/music-studio-arrangement-revisions.test.mjs",
+    "pretypecheck": "tsc --build ../../lib/db/tsconfig.json ../../lib/api-zod/tsconfig.json --force",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
