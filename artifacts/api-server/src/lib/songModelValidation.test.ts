@@ -160,6 +160,50 @@ test("Song Model API serialization retains v2 canonical coordinates and timebase
   assert.deepEqual(serialized.melody[0].coordinates, fused.model.melody[0].coordinates);
   assert.deepEqual(serialized.chords[0].coordinates, fused.model.chords[0].coordinates);
   assert.deepEqual(serialized.sections[0].coordinates, fused.model.sections[0].coordinates);
+  assert.equal(serialized.vocalEvidence.status, "not_available");
+  assert.deepEqual(serialized.vocalEvidence.observedVoicedWindows, []);
+  assert.deepEqual(serialized.vocalEvidence.observedSilentWindows, []);
+  assert.match(serialized.vocalEvidence.reason ?? "", /No decoded vocal/i);
+});
+
+test("vocal evidence retains stem provenance and rejects overlapping or out-of-bounds observations", () => {
+  const fused = fuseProviderSongModels([
+    {
+      provider: "analysis",
+      confidence: 0.9,
+      output: {
+        ...validSongModel,
+        vocalEvidence: {
+          status: "detected",
+          reason: null,
+          provenance: {
+            sourceStemRole: "vocals",
+            objectPath: "/objects/analysis/project/job/vocals.flac",
+            provider: "DEMUCS",
+            contentChecksum: "a".repeat(64),
+          },
+          sampleRate: 8_000,
+          channels: 1,
+          frameSizeSamples: 800,
+          thresholds: { rms: .01, peak: .02, activitySample: .005, activityRatio: .1 },
+          observedVoicedWindows: [{ start: 1, end: 2 }],
+          observedSilentWindows: [{ start: 0, end: 1 }],
+        },
+      },
+    },
+  ]);
+  assert.equal(fused.accepted, true);
+  if (!fused.accepted) return;
+  assert.equal(fused.model.vocalEvidence?.provenance?.contentChecksum, "a".repeat(64));
+  assert.ok(fused.model.vocalEvidence?.observedVoicedWindows[0].coordinates);
+  assert.equal(validateCanonicalSongModel(fused.model).success, true);
+
+  const invalid = structuredClone(fused.model);
+  invalid.vocalEvidence!.observedSilentWindows = [{ start: 1.5, end: 20 }];
+  const validation = validateCanonicalSongModel(invalid);
+  assert.equal(validation.success, false);
+  assert.ok(issueCodes(validation).includes("INVALID_VOCAL_WINDOW"));
+  assert.ok(issueCodes(validation).includes("OVERLAPPING_VOCAL_WINDOWS"));
 });
 
 test("does not invent timed evidence for energy and dynamics sample arrays", () => {

@@ -6,11 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface SourceStem {
-  role: string;
+export interface VocalStemProvenance {
+  sourceStemRole: string;
   objectPath: string;
   provider: string;
-  confidence: number;
   /** @pattern ^[a-fA-F0-9]{64}$ */
-  checksum?: string;
+  contentChecksum?: string;
 }

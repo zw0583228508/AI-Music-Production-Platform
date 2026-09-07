@@ -22,6 +22,8 @@ export const HealthCheckResponse = zod.object({
   "queues": zod.record(zod.string(), zod.number()),
   "timestamp": zod.string()
 })
+
+
 /**
  * @summary Get studio dashboard
  */
@@ -1253,6 +1255,56 @@ export const getProjectSongModelResponseSectionsItemCoordinatesEndTickMin = 0;
 export const getProjectSongModelResponseStemsItemConfidenceMin = 0;
 export const getProjectSongModelResponseStemsItemConfidenceMax = 1;
 
+export const getProjectSongModelResponseSourceStemsItemChecksumRegExp = new RegExp('^[a-fA-F0-9]{64}$');
+export const getProjectSongModelResponseVocalEvidenceProvenanceOneContentChecksumRegExp = new RegExp('^[a-fA-F0-9]{64}$');
+
+
+
+export const getProjectSongModelResponseVocalEvidenceThresholdsOneRmsMin = 0;
+
+export const getProjectSongModelResponseVocalEvidenceThresholdsOnePeakMin = 0;
+
+export const getProjectSongModelResponseVocalEvidenceThresholdsOneActivitySampleMin = 0;
+
+export const getProjectSongModelResponseVocalEvidenceThresholdsOneActivityRatioMin = 0;
+export const getProjectSongModelResponseVocalEvidenceThresholdsOneActivityRatioMax = 1;
+
+export const getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemStartMin = 0;
+
+export const getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemEndMin = 0;
+
+export const getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesStartSecondsMin = 0;
+
+export const getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesStartTickMin = 0;
+
+
+
+
+export const getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesEndSecondsMin = 0;
+
+export const getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesEndTickMin = 0;
+
+
+
+
+export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemStartMin = 0;
+
+export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemEndMin = 0;
+
+export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesStartSecondsMin = 0;
+
+export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesStartTickMin = 0;
+
+
+
+
+export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndSecondsMin = 0;
+
+export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndTickMin = 0;
+
+
+
+
 export const getProjectSongModelResponseLyricsItemCoordinatesStartSecondsMin = 0;
 
 export const getProjectSongModelResponseLyricsItemCoordinatesStartTickMin = 0;
@@ -1580,8 +1632,68 @@ export const GetProjectSongModelResponse = zod.object({
   "role": zod.string(),
   "objectPath": zod.string(),
   "provider": zod.string(),
-  "confidence": zod.number()
+  "confidence": zod.number(),
+  "checksum": zod.string().regex(getProjectSongModelResponseSourceStemsItemChecksumRegExp).optional()
 })),
+  "vocalEvidence": zod.object({
+  "status": zod.enum(['detected', 'low_confidence', 'not_available', 'failed']),
+  "reason": zod.string().nullable(),
+  "provenance": zod.union([zod.object({
+  "sourceStemRole": zod.string(),
+  "objectPath": zod.string(),
+  "provider": zod.string(),
+  "contentChecksum": zod.string().regex(getProjectSongModelResponseVocalEvidenceProvenanceOneContentChecksumRegExp).optional()
+}),zod.null()]),
+  "sampleRate": zod.number().min(1).nullable(),
+  "channels": zod.number().min(1).nullable(),
+  "frameSizeSamples": zod.number().min(1).nullable(),
+  "thresholds": zod.union([zod.object({
+  "rms": zod.number().min(getProjectSongModelResponseVocalEvidenceThresholdsOneRmsMin),
+  "peak": zod.number().min(getProjectSongModelResponseVocalEvidenceThresholdsOnePeakMin),
+  "activitySample": zod.number().min(getProjectSongModelResponseVocalEvidenceThresholdsOneActivitySampleMin),
+  "activityRatio": zod.number().min(getProjectSongModelResponseVocalEvidenceThresholdsOneActivityRatioMin).max(getProjectSongModelResponseVocalEvidenceThresholdsOneActivityRatioMax)
+}),zod.null()]),
+  "observedVoicedWindows": zod.array(zod.object({
+  "start": zod.number().min(getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemStartMin),
+  "end": zod.number().min(getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemEndMin),
+  "coordinates": zod.object({
+  "start": zod.object({
+  "seconds": zod.number().min(getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesStartSecondsMin),
+  "tick": zod.number().min(getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesStartTickMin),
+  "beat": zod.number().min(1),
+  "bar": zod.number().min(1),
+  "beatInBar": zod.number().min(1)
+}),
+  "end": zod.object({
+  "seconds": zod.number().min(getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesEndSecondsMin),
+  "tick": zod.number().min(getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesEndTickMin),
+  "beat": zod.number().min(1),
+  "bar": zod.number().min(1),
+  "beatInBar": zod.number().min(1)
+})
+})
+})),
+  "observedSilentWindows": zod.array(zod.object({
+  "start": zod.number().min(getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemStartMin),
+  "end": zod.number().min(getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemEndMin),
+  "coordinates": zod.object({
+  "start": zod.object({
+  "seconds": zod.number().min(getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesStartSecondsMin),
+  "tick": zod.number().min(getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesStartTickMin),
+  "beat": zod.number().min(1),
+  "bar": zod.number().min(1),
+  "beatInBar": zod.number().min(1)
+}),
+  "end": zod.object({
+  "seconds": zod.number().min(getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndSecondsMin),
+  "tick": zod.number().min(getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndTickMin),
+  "beat": zod.number().min(1),
+  "bar": zod.number().min(1),
+  "beatInBar": zod.number().min(1)
+})
+})
+}))
+}),
   "lyrics": zod.array(zod.object({
   "start": zod.number(),
   "end": zod.number(),
@@ -1950,6 +2062,56 @@ export const correctProjectSongModelResponseSectionsItemCoordinatesEndTickMin = 
 export const correctProjectSongModelResponseStemsItemConfidenceMin = 0;
 export const correctProjectSongModelResponseStemsItemConfidenceMax = 1;
 
+export const correctProjectSongModelResponseSourceStemsItemChecksumRegExp = new RegExp('^[a-fA-F0-9]{64}$');
+export const correctProjectSongModelResponseVocalEvidenceProvenanceOneContentChecksumRegExp = new RegExp('^[a-fA-F0-9]{64}$');
+
+
+
+export const correctProjectSongModelResponseVocalEvidenceThresholdsOneRmsMin = 0;
+
+export const correctProjectSongModelResponseVocalEvidenceThresholdsOnePeakMin = 0;
+
+export const correctProjectSongModelResponseVocalEvidenceThresholdsOneActivitySampleMin = 0;
+
+export const correctProjectSongModelResponseVocalEvidenceThresholdsOneActivityRatioMin = 0;
+export const correctProjectSongModelResponseVocalEvidenceThresholdsOneActivityRatioMax = 1;
+
+export const correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemStartMin = 0;
+
+export const correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemEndMin = 0;
+
+export const correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesStartSecondsMin = 0;
+
+export const correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesStartTickMin = 0;
+
+
+
+
+export const correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesEndSecondsMin = 0;
+
+export const correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesEndTickMin = 0;
+
+
+
+
+export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemStartMin = 0;
+
+export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemEndMin = 0;
+
+export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesStartSecondsMin = 0;
+
+export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesStartTickMin = 0;
+
+
+
+
+export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndSecondsMin = 0;
+
+export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndTickMin = 0;
+
+
+
+
 export const correctProjectSongModelResponseLyricsItemCoordinatesStartSecondsMin = 0;
 
 export const correctProjectSongModelResponseLyricsItemCoordinatesStartTickMin = 0;
@@ -2277,8 +2439,68 @@ export const CorrectProjectSongModelResponse = zod.object({
   "role": zod.string(),
   "objectPath": zod.string(),
   "provider": zod.string(),
-  "confidence": zod.number()
+  "confidence": zod.number(),
+  "checksum": zod.string().regex(correctProjectSongModelResponseSourceStemsItemChecksumRegExp).optional()
 })),
+  "vocalEvidence": zod.object({
+  "status": zod.enum(['detected', 'low_confidence', 'not_available', 'failed']),
+  "reason": zod.string().nullable(),
+  "provenance": zod.union([zod.object({
+  "sourceStemRole": zod.string(),
+  "objectPath": zod.string(),
+  "provider": zod.string(),
+  "contentChecksum": zod.string().regex(correctProjectSongModelResponseVocalEvidenceProvenanceOneContentChecksumRegExp).optional()
+}),zod.null()]),
+  "sampleRate": zod.number().min(1).nullable(),
+  "channels": zod.number().min(1).nullable(),
+  "frameSizeSamples": zod.number().min(1).nullable(),
+  "thresholds": zod.union([zod.object({
+  "rms": zod.number().min(correctProjectSongModelResponseVocalEvidenceThresholdsOneRmsMin),
+  "peak": zod.number().min(correctProjectSongModelResponseVocalEvidenceThresholdsOnePeakMin),
+  "activitySample": zod.number().min(correctProjectSongModelResponseVocalEvidenceThresholdsOneActivitySampleMin),
+  "activityRatio": zod.number().min(correctProjectSongModelResponseVocalEvidenceThresholdsOneActivityRatioMin).max(correctProjectSongModelResponseVocalEvidenceThresholdsOneActivityRatioMax)
+}),zod.null()]),
+  "observedVoicedWindows": zod.array(zod.object({
+  "start": zod.number().min(correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemStartMin),
+  "end": zod.number().min(correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemEndMin),
+  "coordinates": zod.object({
+  "start": zod.object({
+  "seconds": zod.number().min(correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesStartSecondsMin),
+  "tick": zod.number().min(correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesStartTickMin),
+  "beat": zod.number().min(1),
+  "bar": zod.number().min(1),
+  "beatInBar": zod.number().min(1)
+}),
+  "end": zod.object({
+  "seconds": zod.number().min(correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesEndSecondsMin),
+  "tick": zod.number().min(correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesEndTickMin),
+  "beat": zod.number().min(1),
+  "bar": zod.number().min(1),
+  "beatInBar": zod.number().min(1)
+})
+})
+})),
+  "observedSilentWindows": zod.array(zod.object({
+  "start": zod.number().min(correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemStartMin),
+  "end": zod.number().min(correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemEndMin),
+  "coordinates": zod.object({
+  "start": zod.object({
+  "seconds": zod.number().min(correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesStartSecondsMin),
+  "tick": zod.number().min(correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesStartTickMin),
+  "beat": zod.number().min(1),
+  "bar": zod.number().min(1),
+  "beatInBar": zod.number().min(1)
+}),
+  "end": zod.object({
+  "seconds": zod.number().min(correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndSecondsMin),
+  "tick": zod.number().min(correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndTickMin),
+  "beat": zod.number().min(1),
+  "bar": zod.number().min(1),
+  "beatInBar": zod.number().min(1)
+})
+})
+}))
+}),
   "lyrics": zod.array(zod.object({
   "start": zod.number(),
   "end": zod.number(),
