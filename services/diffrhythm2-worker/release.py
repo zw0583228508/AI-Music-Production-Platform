@@ -47,6 +47,13 @@ COMPARISON_CANCEL_TIMEOUT_SECONDS = 0.25
 COMPARISON_STALL_START_BOUND_SECONDS = 60
 COMPARISON_CANCEL_ACK_BOUND_SECONDS = 30
 COMPARISON_RECOVERY_BOUND_SECONDS = 30
+COMPARISON_CANCELLATION_SUITE_BOUND_SECONDS = (
+    COMPARISON_STALL_START_BOUND_SECONDS * COMPARISON_MAX_CONCURRENT_INPUTS
+    + COMPARISON_CANCEL_ACK_BOUND_SECONDS
+    * (COMPARISON_MAX_CONCURRENT_INPUTS + 1)
+    + COMPARISON_EXECUTION_STOP_BOUND_SECONDS
+    + COMPARISON_RECOVERY_BOUND_SECONDS
+)
 def canonical(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
@@ -1151,6 +1158,234 @@ def validate_cancelled_comparison_batch_execution(
         )
 
 
+def validate_cancelled_comparison_timing(proof: dict, metadata: dict) -> None:
+    if (
+        set(proof) != {
+            "schemaVersion", "provider", "workerModalDeploymentId",
+            "controlledBatchCount", "proofCount", "wallDurationSeconds",
+            "wallDurationBoundSeconds",
+        }
+        or proof.get("schemaVersion") != 1
+        or proof.get("provider") != "DIFFRHYTHM_2"
+        or proof.get("workerModalDeploymentId") != metadata["modalDeploymentId"]
+        or proof.get("controlledBatchCount") != 1
+        or proof.get("proofCount") != 3
+        or proof.get("wallDurationBoundSeconds")
+        != COMPARISON_CANCELLATION_SUITE_BOUND_SECONDS
+        or not isinstance(proof.get("wallDurationSeconds"), (int, float))
+        or not 0 <= proof["wallDurationSeconds"] <= proof["wallDurationBoundSeconds"]
+    ):
+        raise ValueError("DiffRhythm2 cancellation timing evidence is invalid")
+
+
+def verify_cancelled_comparison_drills(metadata: dict) -> tuple[dict, dict, dict, dict]:
+    """Capture all cancellation guarantees from one controlled capacity batch."""
+    suite_started = time.monotonic()
+    identity = observe_comparison()
+    comparison = modal.Function.from_name(
+        COMPARISON_APP_NAME, "drill_retained_smoke_comparison"
+    )
+    calls = []
+    starts = []
+    cancellations_acknowledged = 0
+    post_work_markers_observed = 0
+    operational_failure = False
+    result = None
+    probe = None
+    cancellation_requested = time.time()
+    cancellation_results = queue.Queue()
+    cancellation_started = False
+
+    def cancel_call(call) -> None:
+        try:
+            call.cancel()
+            cancellation_results.put(True)
+        except Exception:
+            cancellation_results.put(False)
+
+    with modal.Queue.ephemeral() as lifecycle:
+        try:
+            for _ in range(COMPARISON_MAX_CONCURRENT_INPUTS):
+                calls.append(comparison.spawn("cancel_execution", lifecycle))
+            for _ in calls:
+                marker = lifecycle.get(timeout=COMPARISON_STALL_START_BOUND_SECONDS)
+                if (
+                    not isinstance(marker, dict)
+                    or marker.get("outcome") != "pre_work"
+                    or not isinstance(marker.get("startedUnixSeconds"), (int, float))
+                    or re.fullmatch(
+                        r"im-[A-Za-z0-9]+", str(marker.get("modalImageId", ""))
+                    ) is None
+                    or set(marker) != {
+                        "outcome", "startedUnixSeconds", "modalImageId",
+                    }
+                ):
+                    operational_failure = True
+                    break
+                starts.append(marker)
+            if len(starts) == len(calls):
+                cancellation_requested = time.time()
+                cancellation_started = True
+                for call in calls:
+                    threading.Thread(
+                        target=cancel_call, args=(call,), daemon=True
+                    ).start()
+                deadline = time.monotonic() + COMPARISON_CANCEL_ACK_BOUND_SECONDS
+                requests_succeeded = 0
+                for _ in calls:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        operational_failure = True
+                        break
+                    try:
+                        succeeded = cancellation_results.get(timeout=remaining)
+                    except queue.Empty:
+                        operational_failure = True
+                        break
+                    if not succeeded:
+                        operational_failure = True
+                        break
+                    requests_succeeded += 1
+                if requests_succeeded == len(calls):
+                    for call in calls:
+                        try:
+                            call.get(timeout=COMPARISON_CANCEL_ACK_BOUND_SECONDS)
+                        except RemoteError:
+                            cancellations_acknowledged += 1
+                if cancellations_acknowledged == len(calls):
+                    deadline = (
+                        time.monotonic() + COMPARISON_EXECUTION_STOP_BOUND_SECONDS
+                    )
+                    while True:
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            break
+                        try:
+                            marker = lifecycle.get(timeout=remaining)
+                        except queue.Empty:
+                            break
+                        if marker is None:
+                            break
+                        post_work_markers_observed += 1
+                    if post_work_markers_observed == 0:
+                        probe = comparison.spawn("probe")
+                        try:
+                            result = probe.get(timeout=COMPARISON_RECOVERY_BOUND_SECONDS)
+                        except Exception:
+                            result = None
+        except Exception:
+            operational_failure = True
+        if calls and not cancellation_started:
+            cancellation_started = True
+            for call in calls:
+                threading.Thread(
+                    target=cancel_call, args=(call,), daemon=True
+                ).start()
+
+    observed = time.time()
+    image_ids = {marker["modalImageId"] for marker in starts}
+    identity_unchanged = observe_comparison() == identity
+    batch_valid = (
+        len(starts) == COMPARISON_MAX_CONCURRENT_INPUTS
+        and cancellations_acknowledged == COMPARISON_MAX_CONCURRENT_INPUTS
+        and post_work_markers_observed == 0
+        and len(image_ids) == 1
+        and identity_unchanged
+        and not operational_failure
+    )
+    capacity_valid = (
+        batch_valid
+        and isinstance(result, dict)
+        and result.get("outcome") == "completed"
+        and isinstance(result.get("startedUnixSeconds"), (int, float))
+        and isinstance(result.get("finishedUnixSeconds"), (int, float))
+        and result["startedUnixSeconds"] <= result["finishedUnixSeconds"]
+        and result["startedUnixSeconds"] >= cancellation_requested
+        and result["startedUnixSeconds"] - cancellation_requested
+        <= COMPARISON_RECOVERY_BOUND_SECONDS
+        and result.get("modalImageId") in image_ids
+        and set(result) == {
+            "outcome", "startedUnixSeconds", "finishedUnixSeconds", "modalImageId",
+        }
+    )
+    comparison_image_id = next(iter(image_ids), "") if batch_valid else ""
+    capacity = {
+        "schemaVersion": 1,
+        "provider": "DIFFRHYTHM_2",
+        "workerModalDeploymentId": metadata["modalDeploymentId"],
+        "comparisonModalAppId": identity["modalAppId"],
+        "comparisonModalDeploymentId": identity["modalDeploymentId"],
+        "comparisonModalFunctionId": identity["modalFunctionId"],
+        "comparisonModalImageId": result.get("modalImageId", "") if capacity_valid else "",
+        "occupiedCapacity": COMPARISON_MAX_CONCURRENT_INPUTS,
+        "startedCapacity": len(starts),
+        "stallStartBoundSeconds": COMPARISON_STALL_START_BOUND_SECONDS,
+        "cancelAckBoundSeconds": COMPARISON_CANCEL_ACK_BOUND_SECONDS,
+        "cancellationsAcknowledged": cancellations_acknowledged,
+        "recoveryBoundSeconds": COMPARISON_RECOVERY_BOUND_SECONDS,
+        "recoveredAfterSeconds": round(
+            max(0, float(result["startedUnixSeconds"]) - cancellation_requested), 3
+        ) if capacity_valid else round(max(0, observed - cancellation_requested), 3),
+        "cancellationRequested": True,
+        "capacityReleased": capacity_valid,
+    }
+    execution = {
+        "schemaVersion": 1,
+        "provider": "DIFFRHYTHM_2",
+        "workerModalDeploymentId": metadata["modalDeploymentId"],
+        "comparisonModalAppId": identity["modalAppId"],
+        "comparisonModalDeploymentId": identity["modalDeploymentId"],
+        "comparisonModalFunctionId": identity["modalFunctionId"],
+        "comparisonModalImageId": comparison_image_id,
+        "workSeconds": COMPARISON_CANCELLATION_WORK_SECONDS,
+        "observationBoundSeconds": COMPARISON_EXECUTION_STOP_BOUND_SECONDS,
+        "preWorkMarkerObserved": bool(starts),
+        "cancellationAcknowledged": cancellations_acknowledged > 0,
+        "postWorkMarkerObserved": post_work_markers_observed > 0,
+        "executionStopped": batch_valid,
+    }
+    batch = {
+        "schemaVersion": 1,
+        "provider": "DIFFRHYTHM_2",
+        "workerModalDeploymentId": metadata["modalDeploymentId"],
+        "comparisonModalAppId": identity["modalAppId"],
+        "comparisonModalDeploymentId": identity["modalDeploymentId"],
+        "comparisonModalFunctionId": identity["modalFunctionId"],
+        "comparisonModalImageId": comparison_image_id,
+        "occupiedCapacity": COMPARISON_MAX_CONCURRENT_INPUTS,
+        "preWorkMarkersObserved": len(starts),
+        "cancellationsAcknowledged": cancellations_acknowledged,
+        "workSeconds": COMPARISON_CANCELLATION_WORK_SECONDS,
+        "observationBoundSeconds": COMPARISON_EXECUTION_STOP_BOUND_SECONDS,
+        "postWorkMarkersObserved": post_work_markers_observed,
+        "allExecutionsStopped": batch_valid,
+    }
+    timing = {
+        "schemaVersion": 1,
+        "provider": "DIFFRHYTHM_2",
+        "workerModalDeploymentId": metadata["modalDeploymentId"],
+        "controlledBatchCount": 1,
+        "proofCount": 3,
+        "wallDurationSeconds": round(time.monotonic() - suite_started, 3),
+        "wallDurationBoundSeconds": COMPARISON_CANCELLATION_SUITE_BOUND_SECONDS,
+    }
+    for name, proof in (
+        ("live-comparison-cancellation-proof.json", capacity),
+        ("live-comparison-execution-cancellation-proof.json", execution),
+        ("live-comparison-batch-execution-cancellation-proof.json", batch),
+        ("live-comparison-cancellation-timing-proof.json", timing),
+    ):
+        atomic_json(EVIDENCE / name, proof)
+    try:
+        validate_cancelled_comparison_capacity(capacity, metadata)
+        validate_cancelled_comparison_execution(execution, metadata)
+        validate_cancelled_comparison_batch_execution(batch, metadata)
+        validate_cancelled_comparison_timing(timing, metadata)
+    except ValueError:
+        raise RuntimeError(
+            "consolidated comparison cancellation drills failed within a safe bound"
+        ) from None
+    return capacity, execution, batch, timing
 def validate_release(release: dict) -> dict:
     metadata = {
         field: release.get(field)
@@ -1167,11 +1402,12 @@ def validate_release(release: dict) -> dict:
     batch_execution_cancellation = release.get(
         "liveComparisonBatchExecutionCancellation"
     )
+    cancellation_timing = release.get("liveComparisonCancellationTiming")
     if not all(
         isinstance(item, dict)
         for item in (
             health, proof, burst, cancellation, execution_cancellation,
-            batch_execution_cancellation,
+            batch_execution_cancellation, cancellation_timing,
         )
     ):
         raise ValueError(
@@ -1196,6 +1432,7 @@ def validate_release(release: dict) -> dict:
     validate_cancelled_comparison_batch_execution(
         batch_execution_cancellation, metadata
     )
+    validate_cancelled_comparison_timing(cancellation_timing, metadata)
     codec_evidence = validate_codec_evidence(health)
     codec_path = EVIDENCE / "codec-threshold-evidence.json"
     if (
@@ -1217,6 +1454,7 @@ def validate_release(release: dict) -> dict:
             "live-comparison-batch-execution-cancellation-proof.json",
             batch_execution_cancellation,
         ),
+        ("live-comparison-cancellation-timing-proof.json", cancellation_timing),
     ):
         path = EVIDENCE / name
         if (
@@ -1231,9 +1469,12 @@ def validate_release(release: dict) -> dict:
 def capture(metadata: dict) -> dict:
     health = fetch_health(metadata)
     codec_evidence = validate_codec_evidence(health)
-    cancellation = verify_cancelled_comparison_capacity(metadata)
-    execution_cancellation = verify_cancelled_comparison_execution(metadata)
-    batch_execution_cancellation = verify_cancelled_comparison_batch_execution(
+    (
+        cancellation,
+        execution_cancellation,
+        batch_execution_cancellation,
+        cancellation_timing,
+    ) = verify_cancelled_comparison_drills(
         metadata
     )
     burst = verify_comparison_burst(metadata)
@@ -1255,6 +1496,7 @@ def capture(metadata: dict) -> dict:
         "live-comparison-cancellation-proof.json",
         "live-comparison-execution-cancellation-proof.json",
         "live-comparison-batch-execution-cancellation-proof.json",
+        "live-comparison-cancellation-timing-proof.json",
         "codec-threshold-evidence.json",
     )
     retained = {}
@@ -1280,6 +1522,7 @@ def capture(metadata: dict) -> dict:
         "liveComparisonCancellation": cancellation,
         "liveComparisonExecutionCancellation": execution_cancellation,
         "liveComparisonBatchExecutionCancellation": batch_execution_cancellation,
+        "liveComparisonCancellationTiming": cancellation_timing,
     }
     atomic_json(EVIDENCE / "release-evidence.json", release)
     return validate_release(release)

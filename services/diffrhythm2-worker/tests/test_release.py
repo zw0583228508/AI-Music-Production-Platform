@@ -153,15 +153,14 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             release, "verify_comparison_burst",
             return_value=self.burst_proof(),
         ) as burst, patch.object(
-            release, "verify_cancelled_comparison_capacity",
-            return_value=self.cancellation_proof(),
-        ) as cancellation, patch.object(
-            release, "verify_cancelled_comparison_execution",
-            return_value=self.execution_cancellation_proof(),
-        ) as execution_cancellation, patch.object(
-            release, "verify_cancelled_comparison_batch_execution",
-            return_value=self.batch_execution_cancellation_proof(),
-        ) as batch_execution_cancellation, patch.object(
+            release, "verify_cancelled_comparison_drills",
+            return_value=(
+                self.cancellation_proof(),
+                self.execution_cancellation_proof(),
+                self.batch_execution_cancellation_proof(),
+                self.cancellation_timing_proof(),
+            ),
+        ) as cancellation_drills, patch.object(
             release, "observe", return_value=self.metadata
         ):
             evidence = Path(directory)
@@ -191,12 +190,14 @@ class DiffRhythmReleaseTests(unittest.TestCase):
                 / "live-comparison-batch-execution-cancellation-proof.json",
                 self.batch_execution_cancellation_proof(),
             )
+            release.atomic_json(
+                evidence / "live-comparison-cancellation-timing-proof.json",
+                self.cancellation_timing_proof(),
+            )
             captured = release.capture(self.metadata)
             canary.assert_called_once_with(self.metadata, self.health)
             burst.assert_called_once_with(self.metadata)
-            cancellation.assert_called_once_with(self.metadata)
-            execution_cancellation.assert_called_once_with(self.metadata)
-            batch_execution_cancellation.assert_called_once_with(self.metadata)
+            cancellation_drills.assert_called_once_with(self.metadata)
             self.assertEqual(captured["liveResearchGeneration"], proof)
             self.assertEqual(
                 captured["retainedEvidence"]["live-research-generation-proof.json"]["sha256"],
@@ -289,6 +290,272 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             "postWorkMarkersObserved": 0,
             "allExecutionsStopped": True,
         }
+
+    def cancellation_timing_proof(self):
+        return {
+            "schemaVersion": 1,
+            "provider": "DIFFRHYTHM_2",
+            "workerModalDeploymentId": self.metadata["modalDeploymentId"],
+            "controlledBatchCount": 1,
+            "proofCount": 3,
+            "wallDurationSeconds": 1.2,
+            "wallDurationBoundSeconds":
+                release.COMPARISON_CANCELLATION_SUITE_BOUND_SECONDS,
+        }
+
+    def test_consolidated_cancellation_drills_share_one_batch_and_probe(self):
+        class Lifecycle:
+            def __init__(self):
+                self.markers = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def get(self, timeout=None):
+                if self.markers:
+                    return self.markers.pop(0)
+                raise release.queue.Empty
+
+        class Call:
+            def __init__(self, control):
+                self.control = control
+                self.cancelled = False
+
+            def cancel(self):
+                self.cancelled = True
+
+            def get(self, timeout=None):
+                if self.control == "probe":
+                    now = time.time()
+                    return {
+                        "outcome": "completed",
+                        "startedUnixSeconds": now,
+                        "finishedUnixSeconds": now,
+                        "modalImageId": "im-Compare",
+                    }
+                if self.cancelled:
+                    raise release.RemoteError("cancelled")
+                raise AssertionError("execution was not cancelled")
+
+        class Comparison:
+            def __init__(self):
+                self.calls = []
+
+            def spawn(self, control, lifecycle=None):
+                call = Call(control)
+                self.calls.append(call)
+                if control == "cancel_execution":
+                    lifecycle.markers.append({
+                        "outcome": "pre_work",
+                        "startedUnixSeconds": time.time(),
+                        "modalImageId": "im-Compare",
+                    })
+                return call
+
+        comparison = Comparison()
+        identity = {
+            "modalAppId": "ap-Compare",
+            "modalDeploymentId": "v3",
+            "modalFunctionId": "fu-Compare",
+        }
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            release, "EVIDENCE", Path(directory)
+        ), patch.object(
+            release.modal.Queue, "ephemeral", return_value=Lifecycle()
+        ), patch.object(
+            release.modal.Function, "from_name", return_value=comparison
+        ), patch.object(
+            release, "observe_comparison", return_value=identity
+        ):
+            capacity, execution, batch, timing = (
+                release.verify_cancelled_comparison_drills(self.metadata)
+            )
+        self.assertEqual(
+            [call.control for call in comparison.calls],
+            ["cancel_execution"] * release.COMPARISON_MAX_CONCURRENT_INPUTS
+            + ["probe"],
+        )
+        self.assertTrue(all(
+            call.cancelled
+            for call in comparison.calls
+            if call.control == "cancel_execution"
+        ))
+        expected_capacity = self.cancellation_proof()
+        expected_capacity["recoveredAfterSeconds"] = capacity["recoveredAfterSeconds"]
+        self.assertEqual(capacity, expected_capacity)
+        self.assertEqual(execution, self.execution_cancellation_proof())
+        self.assertEqual(batch, self.batch_execution_cancellation_proof())
+        self.assertEqual(timing["controlledBatchCount"], 1)
+        self.assertEqual(timing["proofCount"], 3)
+        self.assertLessEqual(
+            timing["wallDurationSeconds"], timing["wallDurationBoundSeconds"]
+        )
+        self.assertLess(len(json.dumps(timing)), 1024)
+
+    def test_consolidated_drills_bound_a_hung_cancellation_without_retrying(self):
+        blocked = threading.Event()
+        cancel_started = threading.Event()
+
+        class Lifecycle:
+            def __init__(self):
+                self.markers = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def get(self, timeout=None):
+                if self.markers:
+                    return self.markers.pop(0)
+                raise release.queue.Empty
+
+        class Call:
+            def __init__(self):
+                self.cancel_attempts = 0
+
+            def cancel(self):
+                self.cancel_attempts += 1
+                cancel_started.set()
+                blocked.wait()
+
+        class Comparison:
+            def __init__(self):
+                self.calls = []
+
+            def spawn(self, control, lifecycle=None):
+                call = Call()
+                self.calls.append(call)
+                lifecycle.markers.append({
+                    "outcome": "pre_work",
+                    "startedUnixSeconds": time.time(),
+                    "modalImageId": "im-Compare",
+                })
+                return call
+
+        comparison = Comparison()
+        identity = {
+            "modalAppId": "ap-Compare",
+            "modalDeploymentId": "v3",
+            "modalFunctionId": "fu-Compare",
+        }
+        try:
+            with tempfile.TemporaryDirectory() as directory, patch.object(
+                release, "EVIDENCE", Path(directory)
+            ), patch.object(
+                release, "COMPARISON_CANCEL_ACK_BOUND_SECONDS", 0.05
+            ), patch.object(
+                release, "COMPARISON_CANCELLATION_SUITE_BOUND_SECONDS", 1
+            ), patch.object(
+                release.modal.Queue, "ephemeral", return_value=Lifecycle()
+            ), patch.object(
+                release.modal.Function, "from_name", return_value=comparison
+            ), patch.object(
+                release, "observe_comparison", return_value=identity
+            ):
+                started = time.monotonic()
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "^consolidated comparison cancellation drills failed "
+                    "within a safe bound$",
+                ):
+                    release.verify_cancelled_comparison_drills(self.metadata)
+                elapsed = time.monotonic() - started
+            self.assertTrue(cancel_started.is_set())
+            self.assertLess(elapsed, 0.5)
+            self.assertTrue(all(call.cancel_attempts == 1 for call in comparison.calls))
+        finally:
+            blocked.set()
+
+    def test_consolidated_drills_cancel_every_call_after_partial_markers(self):
+        all_cancelled = threading.Event()
+
+        class Lifecycle:
+            def __init__(self):
+                self.reads = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def get(self, timeout=None):
+                self.reads += 1
+                if self.reads == 1:
+                    return {
+                        "outcome": "pre_work",
+                        "startedUnixSeconds": time.time(),
+                        "modalImageId": "im-Compare",
+                    }
+                return {"outcome": "malformed"}
+
+        class Call:
+            def __init__(self, comparison):
+                self.comparison = comparison
+                self.cancel_attempts = 0
+
+            def cancel(self):
+                self.cancel_attempts += 1
+                with self.comparison.lock:
+                    self.comparison.cancelled += 1
+                    if (
+                        self.comparison.cancelled
+                        == release.COMPARISON_MAX_CONCURRENT_INPUTS
+                    ):
+                        all_cancelled.set()
+
+        class Comparison:
+            def __init__(self):
+                self.calls = []
+                self.cancelled = 0
+                self.lock = threading.Lock()
+
+            def spawn(self, control, lifecycle=None):
+                call = Call(self)
+                self.calls.append(call)
+                return call
+
+        comparison = Comparison()
+        identity = {
+            "modalAppId": "ap-Compare",
+            "modalDeploymentId": "v3",
+            "modalFunctionId": "fu-Compare",
+        }
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            release, "EVIDENCE", Path(directory)
+        ), patch.object(
+            release.modal.Queue, "ephemeral", return_value=Lifecycle()
+        ), patch.object(
+            release.modal.Function, "from_name", return_value=comparison
+        ), patch.object(
+            release, "observe_comparison", return_value=identity
+        ):
+            started = time.monotonic()
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "^consolidated comparison cancellation drills failed "
+                "within a safe bound$",
+            ):
+                release.verify_cancelled_comparison_drills(self.metadata)
+            elapsed = time.monotonic() - started
+        self.assertTrue(all_cancelled.wait(0.2))
+        self.assertLess(elapsed, 0.5)
+        self.assertEqual(
+            len(comparison.calls), release.COMPARISON_MAX_CONCURRENT_INPUTS
+        )
+        self.assertTrue(all(call.cancel_attempts == 1 for call in comparison.calls))
+
+    def test_cli_entrypoint_is_after_every_capture_validator(self):
+        source = (ROOT / "release.py").read_text()
+        self.assertLess(
+            source.index("def validate_cancelled_comparison_timing"),
+            source.index('if __name__ == "__main__":'),
+        )
 
     def test_cancelled_comparison_batch_never_reaches_post_work_marker(self):
         class FakeQueue:
