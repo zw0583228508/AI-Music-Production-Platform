@@ -30,11 +30,20 @@ MAX_CHANNEL_PROJECTIONS = 4
 MAX_DECODED_CHANNELS = 32
 
 def _read_bounded_audio(path: Path) -> tuple[np.ndarray, int]:
-    channel_count = sf.info(str(path)).channels
+    metadata = sf.info(str(path))
+    channel_count = metadata.channels
     if channel_count > MAX_DECODED_CHANNELS:
         raise RuntimeError(
             f"audio channel count {channel_count} exceeds supported maximum "
             f"of {MAX_DECODED_CHANNELS}"
+        )
+    maximum_frames = int(
+        metadata.samplerate * MAX_SUPPORTED_SMOKE_DURATION_SECONDS
+    )
+    if metadata.frames > maximum_frames:
+        raise RuntimeError(
+            f"audio duration exceeds supported maximum of "
+            f"{MAX_SUPPORTED_SMOKE_DURATION_SECONDS:g} seconds"
         )
     return sf.read(str(path), always_2d=True)
 
@@ -222,7 +231,7 @@ def main(fixture: Path) -> dict:
     infer(lyrics="[verse]\nA real voice follows the pulse\n[chorus]\nRhythm makes the song move",
            rhythm_wav=fixture.read_bytes(),output=output,style_prompt="acoustic pop",
            duration=duration,steps=16,guidance=2,diagnostic=diagnostic)
-    audio,_=sf.read(str(output)); rms=float((audio**2).mean()**.5) if len(audio) else 0
+    audio,_=_read_bounded_audio(output); rms=float((audio**2).mean()**.5) if len(audio) else 0
     copied=hashlib.sha256(fixture.read_bytes()).hexdigest()==sha(output)
     comparison=signal_comparison(fixture,output)
     if rms <= 1e-5 or copied or not comparison["passesNotSourceCopy"]:
