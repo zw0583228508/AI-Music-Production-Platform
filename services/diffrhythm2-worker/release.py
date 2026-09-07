@@ -629,12 +629,18 @@ def verify_comparison_burst(metadata: dict) -> dict:
         })
     cancellable = {index for index in pending if index in calls}
     cancellation_failed = set(pending - cancellable)
+    cancellation_deadline = time.monotonic() + COMPARISON_CANCEL_TIMEOUT_SECONDS
+    cancellable_indices = sorted(cancellable)
     cancellation_results = cancel_calls_within_bound(
-        [calls[index] for index in sorted(cancellable)],
-        COMPARISON_CANCEL_TIMEOUT_SECONDS,
+        [calls[index] for index in cancellable_indices],
+        max(0, cancellation_deadline - time.monotonic()),
+        absolute_deadline=cancellation_deadline,
     )
-    for index, succeeded in zip(sorted(cancellable), cancellation_results):
-        if not succeeded:
+    for offset, index in enumerate(cancellable_indices):
+        if (
+            offset >= len(cancellation_results)
+            or cancellation_results[offset] is not True
+        ):
             cancellation_failed.add(index)
     for index in pending:
         outcomes.append({
