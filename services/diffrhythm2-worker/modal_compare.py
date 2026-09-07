@@ -9,9 +9,9 @@ from comparison_resources import (
 )
 from modal_config import (
     APP_NAME,
-    DEPLOYMENT_BASE_IMAGE_ID,
     MODEL_MOUNT,
     MODEL_VOLUME_NAME,
+    REPOSITORY_ROOT,
     SMOKE_MOUNT,
     SMOKE_VOLUME_NAME,
     WORKER_ROOT,
@@ -20,11 +20,8 @@ from modal_config import (
 
 app = modal.App(f"{APP_NAME}-comparison")
 image = (
-    modal.Image.from_id(DEPLOYMENT_BASE_IMAGE_ID)
-    .add_local_file(
-        WORKER_ROOT / "modal_compare.py",
-        remote_path="/app/modal_compare.py",
-        copy=True,
+    modal.Image.from_dockerfile(
+        WORKER_ROOT / "Dockerfile", context_dir=REPOSITORY_ROOT
     )
     .add_local_file(
         WORKER_ROOT / "modal_config.py",

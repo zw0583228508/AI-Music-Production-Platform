@@ -7,10 +7,10 @@ from modal_config import (
     APP_NAME,
     ARTIFACT_MOUNT,
     ARTIFACT_VOLUME_NAME,
-    DEPLOYMENT_BASE_IMAGE_ID,
     MODEL_MOUNT,
     MODEL_VOLUME_NAME,
     PROMOTION_SECRET_NAME,
+    REPOSITORY_ROOT,
     RUNTIME_SECRET_NAME,
     WORKER_ROOT,
     environment,
@@ -18,25 +18,8 @@ from modal_config import (
 
 app = modal.App(APP_NAME)
 image = (
-    modal.Image.from_id(DEPLOYMENT_BASE_IMAGE_ID)
-    .add_local_file(WORKER_ROOT / "app.py", remote_path="/app/app.py", copy=True)
-    .add_local_file(
-        WORKER_ROOT / "contract.py",
-        remote_path="/app/contract.py",
-        copy=True,
-    )
-    .add_local_file(
-        WORKER_ROOT / "inference.py", remote_path="/app/inference.py", copy=True
-    )
-    .add_local_file(
-        WORKER_ROOT / "upstream_runner.py",
-        remote_path="/app/upstream_runner.py",
-        copy=True,
-    )
-    .add_local_file(
-        WORKER_ROOT / "model_manifest.json",
-        remote_path="/app/model_manifest.json",
-        copy=True,
+    modal.Image.from_dockerfile(
+        WORKER_ROOT / "Dockerfile", context_dir=REPOSITORY_ROOT
     )
     .env({
         **environment(False),

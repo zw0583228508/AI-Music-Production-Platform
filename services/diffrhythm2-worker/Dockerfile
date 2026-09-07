@@ -32,6 +32,7 @@ RUN /opt/diffrhythm2-venv/bin/pip install --no-cache-dir inflect==7.5.0 && \
 RUN /opt/diffrhythm2-venv/bin/pip install --no-cache-dir numpy==1.26.4 scipy==1.17.1 && \
     /opt/diffrhythm2-venv/bin/python -c 'import numpy, scipy; assert numpy.__version__ == "1.26.4"; assert scipy.__version__ == "1.17.1"'
 COPY services/diffrhythm2-worker /app
+RUN cd /app && /opt/diffrhythm2-venv/bin/python codec_threshold_corpus.py
 RUN useradd --system diffrhythm2 && mkdir -p /var/lib/diffrhythm2/{models,artifacts} && chown -R diffrhythm2:diffrhythm2 /app /var/lib/diffrhythm2
 USER diffrhythm2
 WORKDIR /app

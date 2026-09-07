@@ -8,6 +8,7 @@ from contract import MAX_DURATION_SECONDS
 from inference import infer
 
 ROOT=Path(__file__).parent; SPEC=json.loads((ROOT/"model_manifest.json").read_text())
+CODEC_EVIDENCE=ROOT/"codec-threshold-evidence.json"
 ASSETS=Path(os.getenv("DIFFRHYTHM2_ASSET_ROOT",SPEC["asset_root"]))
 OUT=Path(os.getenv("DIFFRHYTHM2_ARTIFACT_ROOT","/var/lib/diffrhythm2/artifacts"))
 def sha(p:Path)->str:return hashlib.sha256(p.read_bytes()).hexdigest()
@@ -48,6 +49,12 @@ def runtime_state():
 def state():
     try:
         if not runtime_state():
+            return False, None
+        codec_evidence=json.loads(CODEC_EVIDENCE.read_text())
+        if (codec_evidence.get("passed") is not True
+                or codec_evidence.get("audioRetained") is not False
+                or len(codec_evidence.get("cases",[])) != 12
+                or not all(case.get("passed") is True for case in codec_evidence["cases"])):
             return False, None
         inventory = json.loads((ASSETS / SPEC["asset_manifest"]).read_text())
         if inventory["source"] != SPEC["source"] or inventory["license"] != SPEC["license"]:
@@ -97,6 +104,7 @@ def health(request:Request):
  ready=ok and identity_ok
  runtime=SPEC["runtime"]
  checkpoint=sha(ASSETS/SPEC["asset_manifest"]) if inventory else None
+ codec_evidence=json.loads(CODEC_EVIDENCE.read_text()) if CODEC_EVIDENCE.is_file() else None
  return {"provider":"DIFFRHYTHM_2","status":"ready" if ready else "blocked","ready":ready,
          "healthy":ready,"retryable":False,"retryAfterSeconds":None,
          "runtimeReady":ok,"checkpointReady":ok,"packageReady":ok,"smokeTested":ok,
@@ -106,6 +114,11 @@ def health(request:Request):
          "checkpointSha256":checkpoint,"checksum":checkpoint,
          "sourceImageDigest":os.getenv("MUSIC_GPU_CONTAINER_DIGEST",""),
          "containerDigest":os.getenv("MUSIC_GPU_CONTAINER_DIGEST",""),
+         "codecThresholdEvidence":({
+             **codec_evidence,
+             "sourceImageDigest":os.getenv("MUSIC_GPU_CONTAINER_DIGEST",""),
+             "modalImageId":image_id,
+         } if codec_evidence else None),
          "modalImageId":image_id,"modalAppId":app_id,"modalDeploymentId":deployment_id,
          "modalFunctionId":function_id,
          "runtime":{"pythonVersion":runtime["python"],"pytorchVersion":runtime["pytorch"],

@@ -30,6 +30,8 @@ from comparison_resources import (
  COMPARISON_MEASURED_PEAK_MIB,
  COMPARISON_PER_INPUT_BUDGET_MIB,
 )
+from codec_threshold_corpus import run_corpus
+from release import validate_codec_evidence
 
 def music_fixture(kind,sample_rate,channels):
  time=np.arange(sample_rate*4,dtype=np.float64)/sample_rate
@@ -61,6 +63,18 @@ def decode_with_ffmpeg(source,target):
  )
 
 class DiffRhythmContract(unittest.TestCase):
+ def test_smoke_script_initializes_helpers_before_entrypoint(self):
+  completed=subprocess.run(
+   [sys.executable,str(ROOT/"smoke.py")],
+   cwd=ROOT,
+   env={
+    **dict(__import__("os").environ),
+    "DIFFRHYTHM2_SMOKE_ENTRYPOINT_CHECK":"1",
+   },
+   check=True,capture_output=True,text=True,timeout=30,
+  )
+  self.assertEqual(completed.stdout.strip(),"DiffRhythm2 smoke entrypoint ready")
+
  def test_comparison_deployment_concurrency_fits_measured_memory_budget(self):
   modal_compare=(ROOT/"modal_compare.py").read_text()
   self.assertEqual(
@@ -104,8 +118,9 @@ class DiffRhythmContract(unittest.TestCase):
   modal_compare=(ROOT/"modal_compare.py").read_text()
   modal_config=(ROOT/"modal_config.py").read_text()
   for source in (modal_app,modal_compare):
-   self.assertIn('WORKER_ROOT / "contract.py"',source)
-   self.assertIn('remote_path="/app/contract.py"',source)
+   self.assertIn("modal.Image.from_dockerfile(",source)
+   self.assertIn("context_dir=REPOSITORY_ROOT",source)
+  self.assertIn("COPY services/diffrhythm2-worker /app",(ROOT/"Dockerfile").read_text())
   self.assertIn('"contract.py"',modal_config)
 
  def test_provisioning_script_defines_all_comparison_helpers_before_running(self):
@@ -168,7 +183,8 @@ class DiffRhythmContract(unittest.TestCase):
   self.assertIn("assert sys.version_info[:2] == (3, 11)",docker)
   self.assertIn(f'CMD ["{target}","-m","uvicorn"',docker)
   self.assertIn("nvidia/cuda@sha256:",docker)
-  self.assertIn("modal.Image.from_id(DEPLOYMENT_BASE_IMAGE_ID)",modal_app)
+  self.assertIn("modal.Image.from_dockerfile(",modal_app)
+  self.assertIn("context_dir=REPOSITORY_ROOT",modal_app)
   self.assertIn("modal_app.py",(ROOT/"modal_config.py").read_text())
   self.assertIn("modal_config.py",(ROOT/"modal_config.py").read_text())
   self.assertIn('"PYTHONPATH": "/opt/diffrhythm2-venv/lib/python3.11/site-packages"',modal_app)
@@ -441,63 +457,11 @@ with tempfile.TemporaryDirectory() as directory:
    )
 
  def test_source_copy_thresholds_have_margin_across_real_codecs(self):
-  # These settings intentionally span the sample rates, layouts, and lossy
-  # quality modes shipped by the worker's apt-installed FFmpeg.
-  codec_cases=(
-   ("mp3-64k.mp3",16000,1,"libmp3lame",("-b:a","64k")),
-   ("mp3-v2.mp3",44100,2,"libmp3lame",("-q:a","2")),
-   ("aac-64k.aac",22050,1,"aac",("-b:a","64k")),
-   ("aac-160k.aac",44100,2,"aac",("-b:a","160k")),
-   ("opus-48k.ogg",24000,1,"libopus",("-b:a","48k")),
-   ("opus-128k.ogg",48000,2,"libopus",("-b:a","128k")),
-  )
-  copy_correlation_floor=.97
-  copy_difference_ceiling=.18
-  unrelated_correlation_ceiling=.35
-  unrelated_difference_floor=.80
-  self.assertGreater(
-   copy_correlation_floor-COPY_LIKE_CORRELATION_THRESHOLD,.019,
-   "copy corpus must retain at least 0.02 correlation margin",
-  )
-  self.assertGreater(
-   COPY_LIKE_DIFFERENCE_THRESHOLD-copy_difference_ceiling,.069,
-   "copy corpus must retain at least 0.07 difference margin",
-  )
-  with tempfile.TemporaryDirectory() as directory:
-   directory=Path(directory)
-   for fixture_kind in ("melodic","percussive"):
-    for filename,sample_rate,channels,encoder,quality in codec_cases:
-     label=f"{fixture_kind}-{filename}"
-     source=directory/f"{label}-source.wav"
-     encoded=directory/label
-     decoded=directory/f"{label}-decoded.wav"
-     unrelated=directory/f"{label}-unrelated.wav"
-     source_audio=music_fixture(fixture_kind,sample_rate,channels)
-     other_kind="percussive" if fixture_kind=="melodic" else "melodic"
-     unrelated_audio=music_fixture(other_kind,sample_rate,channels)
-     sf.write(source,source_audio,sample_rate,subtype="PCM_16")
-     sf.write(unrelated,unrelated_audio,sample_rate,subtype="PCM_16")
-     encode_with_ffmpeg(source,encoded,encoder,quality)
-     decode_with_ffmpeg(encoded,decoded)
-     copy_result=signal_comparison(source,decoded)
-     unrelated_result=signal_comparison(source,unrelated)
-     self.assertFalse(copy_result["passesNotSourceCopy"],label)
-     self.assertGreaterEqual(
-      copy_result["absoluteWaveformCorrelation"],copy_correlation_floor,label,
-     )
-     self.assertLessEqual(
-      copy_result["polarityInvariantNormalizedDifference"],
-      copy_difference_ceiling,label,
-     )
-     self.assertTrue(unrelated_result["passesNotSourceCopy"],label)
-     self.assertLessEqual(
-      unrelated_result["absoluteWaveformCorrelation"],
-      unrelated_correlation_ceiling,label,
-     )
-     self.assertGreaterEqual(
-      unrelated_result["polarityInvariantNormalizedDifference"],
-      unrelated_difference_floor,label,
-     )
+  evidence=run_corpus()
+  self.assertTrue(evidence["passed"])
+  self.assertFalse(evidence["audioRetained"])
+  self.assertEqual(len(evidence["cases"]),12)
+  self.assertTrue(evidence["ffmpegVersion"].startswith("ffmpeg version "))
 
  def test_source_copy_detection_rejects_reencoded_shifted_transforms_with_margin(self):
   sample_rate=24000
@@ -766,6 +730,40 @@ with tempfile.TemporaryDirectory() as directory:
    sf.write(output,.3*np.sin(2*np.pi*440*output_time),8000,subtype="PCM_16")
    result=signal_comparison(source,output)
   self.assertIn("passesNotSourceCopy",result)
+
+ def test_promotion_requires_digest_bound_codec_evidence(self):
+  app=(ROOT/"app.py").read_text()
+  release=(ROOT/"release.py").read_text()
+  self.assertIn('CODEC_EVIDENCE=ROOT/"codec-threshold-evidence.json"',app)
+  self.assertIn('"codecThresholdEvidence"',app)
+  self.assertIn('"codec-threshold-evidence.json"',release)
+  self.assertIn('codec_evidence.get("sourceImageDigest") != health["sourceImageDigest"]',release)
+  self.assertIn('codec_evidence.get("modalImageId") != health["modalImageId"]',release)
+  self.assertIn('codec_evidence.get("audioRetained") is not False',release)
+
+ def test_codec_evidence_validator_rejects_image_identity_drift(self):
+  evidence={
+   "passed":True,
+   "audioRetained":False,
+   "ffmpegVersion":"ffmpeg version 4.4.2",
+   "sourceImageDigest":"sha256:source",
+   "modalImageId":"im-built",
+  }
+  health={
+   "sourceImageDigest":"sha256:source",
+   "modalImageId":"im-built",
+   "codecThresholdEvidence":evidence,
+  }
+  self.assertIs(validate_codec_evidence(health),evidence)
+  for field,value in (
+   ("sourceImageDigest","sha256:other"),
+   ("modalImageId","im-other"),
+   ("audioRetained",True),
+   ("passed",False),
+  ):
+   changed={**evidence,field:value}
+   with self.assertRaisesRegex(ValueError,"codec threshold evidence"):
+    validate_codec_evidence({**health,"codecThresholdEvidence":changed})
 
 def time_stretch(audio,rate):
  _,_,spectrum=stft(audio,nperseg=1024,noverlap=768)

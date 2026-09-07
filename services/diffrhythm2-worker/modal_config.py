@@ -11,7 +11,8 @@ RUNTIME_SECRET_NAME="music-ai-worker-runtime"
 PROMOTION_SECRET_NAME="diffrhythm2-promotion-identity-v1"
 DEPLOYMENT_BASE_IMAGE_ID="im-XrLfUWkLKEWfFibBBtsWJ1"
 SOURCE_FILES=("Dockerfile","requirements.txt","model_manifest.json","app.py","contract.py","inference.py",
-              "upstream_runner.py","modal_app.py","modal_config.py")
+              "upstream_runner.py","modal_app.py","modal_config.py",
+              "codec_threshold_corpus.py")
 def source_image_digest():
  digest=hashlib.sha256()
  for name in SOURCE_FILES:
