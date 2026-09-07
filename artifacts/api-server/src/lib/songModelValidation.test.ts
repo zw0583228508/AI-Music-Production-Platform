@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { GetProjectSongModelResponse } from "@workspace/api-zod";
+import {
+  CorrectProjectSongModelResponse,
+  GetProjectSongModelResponse,
+} from "@workspace/api-zod";
 import {
   chordMelodyConflictSongModel,
   microNoteSongModel,
@@ -41,6 +44,69 @@ test("fusion emits a v2 canonical 960 PPQ timebase", () => {
     coordinateSystem: "seconds+ticks",
   });
   assert.equal(validateCanonicalSongModel(result.model).success, true);
+});
+
+test("API response parsers preserve canonical v2 coordinates", () => {
+  const fused = fuseProviderSongModels([
+    { provider: "analysis", output: validSongModel, confidence: 0.9 },
+  ]);
+  assert.equal(fused.accepted, true);
+  if (!fused.accepted) return;
+  const response = {
+    ...fused.model,
+    id: "model-1",
+    projectId: "project-1",
+    sourceId: "source-1",
+    version: 1,
+    status: "ready",
+    audio: {
+      ...fused.model.audio,
+      proxyObjectPath: null,
+      proxyContentType: null,
+      analysisStartSeconds: 0,
+      analysisDurationSeconds: fused.model.audio.durationSeconds,
+      analysisCoverage: "full",
+    },
+    analysisStartSeconds: 0,
+    analysisDurationSeconds: fused.model.audio.durationSeconds,
+    analysisCoverage: 1,
+    beats: [],
+    bars: [],
+    waveform: [],
+    stems: [],
+    dynamics: [],
+    sourceStems: [],
+    lyrics: [],
+    bass: fused.model.bass ?? [],
+    confidenceByField: {},
+    providerProvenance: [],
+    fieldStatus: Object.fromEntries(
+      ["tempo", "meter", "key", "melody", "bass", "harmony", "sections", "energy"]
+        .map((field) => [field, {
+          status: "detected",
+          confidence: 0.9,
+          providers: ["analysis"],
+          message: null,
+          edited: false,
+        }]),
+    ),
+    provenance: Object.fromEntries(
+      ["tempo", "meter", "key", "melody", "bass", "harmony", "sections", "energy"]
+        .map((field) => [field, ["analysis"]]),
+    ),
+    providers: ["analysis"],
+    confidence: fused.model.fusion.confidence,
+    createdAt: new Date(0).toISOString(),
+    parentModelId: null,
+    correction: null,
+  };
+
+  for (const parser of [GetProjectSongModelResponse, CorrectProjectSongModelResponse]) {
+    const parsed = parser.parse(response);
+    assert.equal(parsed.melody[0].coordinates?.start.beatInBar, 1);
+    assert.equal(parsed.melody[0].coordinates?.start.beatFraction, 0);
+    assert.equal(parsed.timebase?.ppq, 960);
+  }
 });
 
 test("v2 validation rejects a missing or drifted canonical timebase", () => {
@@ -334,6 +400,25 @@ test("revalidation removes a stale missing-sections issue after correction", () 
   const refreshed = refreshSongModelValidation(stale);
   assert.equal(refreshed.validation.status, "accepted");
   assert.equal(issueCodes(refreshed.validation).includes("MISSING_SECTIONS"), false);
+});
+
+test("v2 corrections rebuild coordinates after tempo, meter, and section edits", () => {
+  const fused = fuseProviderSongModels([
+    { provider: "valid", output: validSongModel, confidence: 0.9 },
+  ]);
+  assert.equal(fused.accepted, true);
+  if (!fused.accepted) return;
+  const corrected = refreshSongModelValidation({
+    ...fused.model,
+    tempoMap: [{ ...fused.model.tempoMap[0], bpm: 60 }],
+    meterMap: [{ ...fused.model.meterMap[0], meter: "6/8" }],
+    sections: [{ ...fused.model.sections[0], startBar: 1, endBar: 2 }],
+  });
+  const validation = validateCanonicalSongModel(corrected);
+  assert.equal(validation.success, true);
+  assert.equal(corrected.melody[0].coordinates?.end.tick, 480);
+  assert.equal(corrected.sections[0].coordinates?.end.tick, 5760);
+  assert.equal(corrected.sections[0].coordinates?.end.bar, 3);
 });
 
 test("rejects high-confidence chord and melody conflicts", () => {

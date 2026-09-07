@@ -1400,13 +1400,14 @@ components:
         coordinateSystem: { type: string, enum: [seconds+ticks] }
     CanonicalTimeCoordinate:
       type: object
-      required: [seconds, tick, beat, bar, beatInBar]
+      required: [seconds, tick, beat, bar, beatInBar, beatFraction]
       properties:
         seconds: { type: number, minimum: 0 }
         tick: { type: number, minimum: 0 }
         beat: { type: number, minimum: 1 }
         bar: { type: number, minimum: 1 }
         beatInBar: { type: number, minimum: 1 }
+        beatFraction: { type: number, minimum: 0, exclusiveMaximum: 1 }
     CanonicalTimeRange:
       type: object
       required: [start, end]

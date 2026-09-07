@@ -522,6 +522,11 @@ export interface CanonicalTimeCoordinate {
   bar: number;
   /** @minimum 1 */
   beatInBar: number;
+  /**
+     * @minimum 0
+     * @exclusiveMaximum 1
+     */
+  beatFraction: number;
 }
 
 export interface TempoEvent {

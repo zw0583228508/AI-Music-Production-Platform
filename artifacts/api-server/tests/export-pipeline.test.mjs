@@ -9,7 +9,7 @@ const bundlePath = `/tmp/music-export-pipeline-test-${process.pid}.mjs`;
 await build({
   stdin: {
     contents: `
-      export { createExportBundle, createTrackPerformance, tickToSeconds } from "./src/lib/export-pipeline";
+      export { createExportBundle, createTrackPerformance, normalizeMidiTick, tickToSeconds } from "./src/lib/export-pipeline";
       export { createStyleSpec } from "./src/lib/musicEngines";
       export { renderArrangementExport, rendererEvidenceTechnicalMetadata } from "./src/lib/exportEngine";
     `,
@@ -32,6 +32,7 @@ const {
   createTrackPerformance,
   renderArrangementExport,
   rendererEvidenceTechnicalMetadata,
+  normalizeMidiTick,
   tickToSeconds,
 } = await import(pathToFileURL(bundlePath).href);
 after(() => unlink(bundlePath).catch(() => undefined));
@@ -56,6 +57,12 @@ function openStoredZip(zip) {
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
+
+test("mixed legacy and v2 PPQ ticks normalize to one MIDI timeline", () => {
+  assert.equal(normalizeMidiTick(480, 480), 960);
+  assert.equal(normalizeMidiTick(960, 960), 960);
+  assert.equal(normalizeMidiTick(720, 480), 1440);
+});
 
 test("persisted stem bytes match the checksum in authorized artifact metadata", async () => {
   const provenance = {
@@ -406,6 +413,53 @@ test("export ZIP keeps MIDI and WAV timelines aligned with section activation", 
   };
   const hornPerformance = createTrackPerformance(horn, project, brassOutro, 2);
   assert.ok(hornPerformance.notes.some((note) => note.startTick >= 4 * 4 * 960));
+  const compoundPerformance = createTrackPerformance(
+    bass,
+    {
+      ...project,
+      meter: "6/8",
+      sections: [{ ...project.sections[0], startBar: 1, endBar: 2 }],
+    },
+    {
+      ...arrangement,
+      sections: [{ ...arrangement.sections[0], startBar: 1, endBar: 2 }],
+    },
+    0,
+  );
+  assert.deepEqual(compoundPerformance.meterMap[0], {
+    tick: 0,
+    numerator: 6,
+    denominator: 8,
+  });
+  assert.ok(compoundPerformance.notes.some((note) => note.startTick === 2880));
+  assert.ok(!compoundPerformance.notes.some((note) => note.startTick === 5760));
+  const lateBeatPerformance = createTrackPerformance(
+    piano,
+    {
+      ...project,
+      meter: "6/8",
+      sections: [{ ...project.sections[0], startBar: 1, endBar: 1 }],
+    },
+    {
+      ...arrangement,
+      sections: [{
+        ...arrangement.sections[0],
+        startBar: 1,
+        endBar: 1,
+        tracks: ["Piano"],
+        chords: [{
+          startBeat: 5,
+          durationBeats: 1,
+          symbol: "C",
+          quality: "major",
+          inversion: 0,
+        }],
+      }],
+    },
+    1,
+  );
+  assert.ok(lateBeatPerformance.notes.some((note) => note.startTick === 2400));
+  assert.ok(lateBeatPerformance.notes.every((note) => note.startTick + note.durationTicks <= 2880));
 
   const result = createExportBundle(
     project,

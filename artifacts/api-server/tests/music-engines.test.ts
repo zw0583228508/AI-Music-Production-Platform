@@ -250,8 +250,8 @@ test("provider bass evidence survives canonical fusion and changes harmony ratio
     bassEvidence,
   );
   assert.deepEqual(fused.model.bass?.[0]?.coordinates, {
-    start: { seconds: 0, tick: 0, beat: 1, bar: 1, beatInBar: 1 },
-    end: { seconds: 2, tick: 3840, beat: 5, bar: 2, beatInBar: 1 },
+    start: { seconds: 0, tick: 0, beat: 1, bar: 1, beatInBar: 1, beatFraction: 0 },
+    end: { seconds: 2, tick: 3840, beat: 5, bar: 2, beatInBar: 1, beatFraction: 0 },
   });
   const [decision] = new HarmonyEngine().generate(
     fused.model,

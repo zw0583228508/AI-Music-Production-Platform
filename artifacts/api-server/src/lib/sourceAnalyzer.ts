@@ -41,6 +41,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { logger } from "./logger";
 import { detectVocalActivity, isEffectivelySilent } from "./audioSignal";
 import { recordSheetSageCapacityRejection } from "./sheetSageCapacityAlerts";
+import { buildMeterAwareEvidence } from "./canonicalTimeline";
 
 export { isEffectivelySilent };
 
@@ -1397,8 +1398,15 @@ export async function analyzeProjectSource(
       bars = providerResults.structure.bars;
       sections = providerResults.structure.sections;
     }
-    bpm = midi?.bpm ?? tempoReconciliation?.value ?? 0;
-    meter = midi?.meterMap.length ? midi.meter : meterReconciliation?.value ?? "—";
+    bpm = midi?.bpm
+      ?? providerResults.structure?.tempoMap[0]?.bpm
+      ?? tempoReconciliation?.value
+      ?? 0;
+    meter = midi?.meterMap.length
+      ? midi.meter
+      : providerResults.structure?.meterMap[0]?.meter
+        ?? meterReconciliation?.value
+        ?? "—";
     key = midi?.keyMap.length ? midi.key : keyReconciliation?.value ?? "—";
     const melody = midi?.melody ??
       fuseCanonicalNotes(providerResults.transcriptions);
@@ -1531,14 +1539,18 @@ export async function analyzeProjectSource(
       analysisCoverage,
       tempoMap: midi?.tempoMap.length
         ? midi.tempoMap
-        : tempoReconciliation?.value !== null && tempoReconciliation?.value !== undefined
-          ? [{ time: 0, bpm: tempoReconciliation.value, confidence: tempoReconciliation.confidence ?? 0 }]
-          : [],
+        : providerResults.structure?.tempoMap.length
+          ? providerResults.structure.tempoMap
+          : tempoReconciliation?.value !== null && tempoReconciliation?.value !== undefined
+            ? [{ time: 0, bpm: tempoReconciliation.value, confidence: tempoReconciliation.confidence ?? 0 }]
+            : [],
       meterMap: midi?.meterMap.length
         ? midi.meterMap
-        : meterReconciliation?.value
-          ? [{ bar: 1, meter: meterReconciliation.value, confidence: meterReconciliation.confidence ?? 0 }]
-          : [],
+        : providerResults.structure?.meterMap.length
+          ? providerResults.structure.meterMap
+          : meterReconciliation?.value
+            ? [{ bar: 1, meter: meterReconciliation.value, confidence: meterReconciliation.confidence ?? 0 }]
+            : [],
       keyMap: midi?.keyMap.length
         ? midi.keyMap
         : keyReconciliation?.value
@@ -1619,27 +1631,14 @@ export async function analyzeProjectSource(
       output: candidate,
       confidence: candidateConfidence,
     }]);
-    const model: SongModelData = fusion.accepted ? fusion.model : {
-      ...candidate,
-      contractVersion: "2.0",
-      timebase: {
-        ppq: 960,
-        originSeconds: 0,
-        coordinateSystem: "seconds+ticks",
-      },
-      validation: { status: "flagged", issues: fusion.issues },
-      fusion: {
-        selectedProvider: null,
-        confidence: candidateConfidence,
-        decisions: fusion.decisions.length ? fusion.decisions : [{
-          provider: candidateProvider,
-          status: "rejected",
-          confidence: candidateConfidence,
-          compatibility: 0,
-          issues: fusion.issues,
-        }],
-      },
-    };
+    if (!fusion.accepted) {
+      throw new Error(
+        `Analysis providers returned an invalid Song Model. ${
+          fusion.issues.map((item) => item.message).join(" ")
+        }`,
+      );
+    }
+    const model: SongModelData = fusion.model;
     const persistedProviders = midi
       ? ["STANDARD_MIDI"]
       : [
@@ -1647,7 +1646,7 @@ export async function analyzeProjectSource(
           "LOCAL_SIGNAL_ANALYZER_V1",
           ...successfulAnalysisProviders,
         ];
-    const fusedConfidence = fusion.accepted ? model.fusion.confidence : candidateConfidence;
+    const fusedConfidence = model.fusion.confidence;
     await updateOwnedStage("persisting_song_model", 88);
     const songModelId = randomUUID();
     const now = new Date();
@@ -2088,17 +2087,18 @@ function parseMidi(path: string): Promise<MidiModelData> {
     const tempoMap = [{ time: 0, bpm: 120, confidence: 1 }, ...tempos.map((event) => ({ time: tickToSeconds(event.tick), bpm: Number((60e6 / ((event.data[0] << 16) | (event.data[1] << 8) | event.data[2])).toFixed(3)), confidence: 1 }))].filter((event, index, values) => index === values.length - 1 || event.time !== values[index + 1].time);
     const meters = ordered.filter((event) => event.type === "meter");
     const meterFor = (event?: MidiEvent) => event ? `${event.data[0]}/${2 ** event.data[1]}` : "4/4";
-    const meter = meterFor(meters[0]);
+    const meterEvidence = buildMeterAwareEvidence(
+      division,
+      finalTick,
+      meters.map((event) => ({ tick: event.tick, meter: meterFor(event) })),
+      tickToSeconds,
+    );
+    const meter = meterEvidence.meterMap[0]?.meter ?? "4/4";
     const keys = ordered.filter((event) => event.type === "key");
     const keyFor = (event?: MidiEvent) => { const sf = event ? (event.data[0] > 127 ? event.data[0] - 256 : event.data[0]) : 0; return `${midiKeyNames[(sf + 12) % 12]} ${event?.data[1] ? "minor" : "major"}`; };
     const key = keyFor(keys[0]);
     const durationSeconds = Math.max(0.01, tickToSeconds(finalTick));
     const bpm = tempoMap[0].bpm;
-    const beatsPerBar = Number.parseInt(meter, 10);
-    const secondsPerBeat = 60 / bpm;
-    const beatCount = Math.max(1, Math.ceil(durationSeconds / secondsPerBeat));
-    const beats = Array.from({ length: beatCount }, (_, index) => ({ time: Number((index * secondsPerBeat).toFixed(4)), beat: index % beatsPerBar + 1, bar: Math.floor(index / beatsPerBar) + 1, confidence: 1 }));
-    const bars = Array.from({ length: Math.ceil(beatCount / beatsPerBar) }, (_, index) => ({ bar: index + 1, start: Number((index * beatsPerBar * secondsPerBeat).toFixed(4)), end: Number(Math.min(durationSeconds, (index + 1) * beatsPerBar * secondsPerBeat).toFixed(4)), beats: beatsPerBar, confidence: 1 }));
     const melody = ordered.filter((event) => event.type === "note").map((event) => ({
       start: tickToSeconds(event.data[0]),
       end: Math.max(tickToSeconds(event.tick), tickToSeconds(event.data[0]) + 0.04),
@@ -2108,7 +2108,7 @@ function parseMidi(path: string): Promise<MidiModelData> {
       source: `MIDI_TRACK_${(event.track ?? 0) + 1}_CHANNEL_${event.channel! + 1}`,
     }));
     const channels = [...new Set(melody.map((note) => note.source))];
-    return { durationSeconds, sampleRate: 44_100, channels: channels.length || 1, bpm, meter, key, tempoMap, meterMap: meters.length ? meters.map((event) => ({ bar: Math.max(1, Math.floor(tickToSeconds(event.tick) / (secondsPerBeat * beatsPerBar)) + 1), meter: meterFor(event), confidence: 1 })) : [{ bar: 1, meter, confidence: 1 }], keyMap: [{ time: 0, key, confidence: 1 }, ...keys.map((event) => ({ time: tickToSeconds(event.tick), key: keyFor(event), confidence: 1 }))], beats, bars, melody, sourceStems: channels.map((role) => ({ role, objectPath: "", provider: "STANDARD_MIDI", confidence: 1 })) };
+    return { durationSeconds, sampleRate: 44_100, channels: channels.length || 1, bpm, meter, key, tempoMap, meterMap: meterEvidence.meterMap.map((event) => ({ ...event, confidence: 1 })), keyMap: [{ time: 0, key, confidence: 1 }, ...keys.map((event) => ({ time: tickToSeconds(event.tick), key: keyFor(event), confidence: 1 }))], beats: meterEvidence.beats, bars: meterEvidence.bars, melody, sourceStems: channels.map((role) => ({ role, objectPath: "", provider: "STANDARD_MIDI", confidence: 1 })) };
   });
 }
 
