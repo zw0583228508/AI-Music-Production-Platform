@@ -159,6 +159,9 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             release, "verify_cancelled_comparison_execution",
             return_value=self.execution_cancellation_proof(),
         ) as execution_cancellation, patch.object(
+            release, "verify_cancelled_comparison_batch_execution",
+            return_value=self.batch_execution_cancellation_proof(),
+        ) as batch_execution_cancellation, patch.object(
             release, "observe", return_value=self.metadata
         ):
             evidence = Path(directory)
@@ -183,11 +186,17 @@ class DiffRhythmReleaseTests(unittest.TestCase):
                 evidence / "live-comparison-execution-cancellation-proof.json",
                 self.execution_cancellation_proof(),
             )
+            release.atomic_json(
+                evidence
+                / "live-comparison-batch-execution-cancellation-proof.json",
+                self.batch_execution_cancellation_proof(),
+            )
             captured = release.capture(self.metadata)
             canary.assert_called_once_with(self.metadata, self.health)
             burst.assert_called_once_with(self.metadata)
             cancellation.assert_called_once_with(self.metadata)
             execution_cancellation.assert_called_once_with(self.metadata)
+            batch_execution_cancellation.assert_called_once_with(self.metadata)
             self.assertEqual(captured["liveResearchGeneration"], proof)
             self.assertEqual(
                 captured["retainedEvidence"]["live-research-generation-proof.json"]["sha256"],
@@ -260,6 +269,213 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             "postWorkMarkerObserved": False,
             "executionStopped": True,
         }
+
+    def batch_execution_cancellation_proof(self):
+        return {
+            "schemaVersion": 1,
+            "provider": "DIFFRHYTHM_2",
+            "workerModalDeploymentId": self.metadata["modalDeploymentId"],
+            "comparisonModalAppId": "ap-Compare",
+            "comparisonModalDeploymentId": "v3",
+            "comparisonModalFunctionId": "fu-Compare",
+            "comparisonModalImageId": "im-Compare",
+            "occupiedCapacity": release.COMPARISON_MAX_CONCURRENT_INPUTS,
+            "preWorkMarkersObserved": release.COMPARISON_MAX_CONCURRENT_INPUTS,
+            "cancellationsAcknowledged":
+                release.COMPARISON_MAX_CONCURRENT_INPUTS,
+            "workSeconds": release.COMPARISON_CANCELLATION_WORK_SECONDS,
+            "observationBoundSeconds":
+                release.COMPARISON_EXECUTION_STOP_BOUND_SECONDS,
+            "postWorkMarkersObserved": 0,
+            "allExecutionsStopped": True,
+        }
+
+    def test_cancelled_comparison_batch_never_reaches_post_work_marker(self):
+        class FakeQueue:
+            def __init__(self):
+                self.markers = []
+
+            def get(self, timeout=None):
+                if self.markers:
+                    return self.markers.pop(0)
+                raise release.queue.Empty
+
+        class FakeEphemeral:
+            def __init__(self, lifecycle):
+                self.lifecycle = lifecycle
+
+            def __enter__(self):
+                return self.lifecycle
+
+            def __exit__(self, *_):
+                return False
+
+        class FakeCall:
+            def __init__(self, comparison):
+                self.comparison = comparison
+                self.cancelled = False
+
+            def cancel(self):
+                with self.comparison.lock:
+                    self.comparison.active_cancellations += 1
+                    self.comparison.peak_cancellations = max(
+                        self.comparison.peak_cancellations,
+                        self.comparison.active_cancellations,
+                    )
+                    if (
+                        self.comparison.active_cancellations
+                        == release.COMPARISON_MAX_CONCURRENT_INPUTS
+                    ):
+                        self.comparison.all_cancelling.set()
+                if not self.comparison.all_cancelling.wait(1):
+                    raise AssertionError("cancellations did not overlap")
+                self.cancelled = True
+                with self.comparison.lock:
+                    self.comparison.active_cancellations -= 1
+
+            def get(self, timeout=None):
+                if self.cancelled:
+                    raise release.RemoteError("private provider detail")
+                raise AssertionError("execution was not cancelled")
+
+        class FakeComparison:
+            def __init__(self):
+                self.calls = []
+                self.lock = threading.Lock()
+                self.active_cancellations = 0
+                self.peak_cancellations = 0
+                self.all_cancelling = threading.Event()
+
+            def spawn(self, control, lifecycle):
+                self.control = control
+                lifecycle.markers.append({
+                    "outcome": "pre_work",
+                    "startedUnixSeconds": time.time(),
+                    "modalImageId": "im-Compare",
+                })
+                call = FakeCall(self)
+                self.calls.append(call)
+                return call
+
+        lifecycle = FakeQueue()
+        comparison = FakeComparison()
+        identity = {
+            "modalAppId": "ap-Compare",
+            "modalDeploymentId": "v3",
+            "modalFunctionId": "fu-Compare",
+        }
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            release, "EVIDENCE", Path(directory)
+        ), patch.object(
+            release.modal.Queue, "ephemeral",
+            return_value=FakeEphemeral(lifecycle),
+        ), patch.object(
+            release.modal.Function, "from_name", return_value=comparison
+        ), patch.object(
+            release, "observe_comparison", return_value=identity
+        ):
+            proof = release.verify_cancelled_comparison_batch_execution(
+                self.metadata
+            )
+            retained = json.loads(
+                (
+                    Path(directory)
+                    / "live-comparison-batch-execution-cancellation-proof.json"
+                ).read_text()
+            )
+        self.assertEqual(proof, retained)
+        self.assertEqual(comparison.control, "cancel_execution")
+        self.assertEqual(
+            len(comparison.calls), release.COMPARISON_MAX_CONCURRENT_INPUTS
+        )
+        self.assertTrue(all(call.cancelled for call in comparison.calls))
+        self.assertEqual(
+            comparison.peak_cancellations,
+            release.COMPARISON_MAX_CONCURRENT_INPUTS,
+        )
+        self.assertEqual(proof, self.batch_execution_cancellation_proof())
+        release.validate_cancelled_comparison_batch_execution(
+            proof, self.metadata
+        )
+        self.assertLess(len(json.dumps(proof)), 2048)
+        self.assertNotRegex(
+            json.dumps(proof).lower(),
+            r"(path|sha|audio|fixture|artifact|error|message|input)",
+        )
+
+    def test_cancelled_comparison_batch_rejects_one_post_work_marker(self):
+        class Lifecycle:
+            def __init__(self):
+                self.markers = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def get(self, timeout=None):
+                return self.markers.pop(0) if self.markers else None
+
+        class Call:
+            def __init__(self):
+                self.cancelled = False
+
+            def cancel(self):
+                self.cancelled = True
+
+            def get(self, timeout=None):
+                raise release.RemoteError("cancelled")
+
+        class Comparison:
+            def __init__(self):
+                self.spawned = 0
+
+            def spawn(self, control, lifecycle):
+                self.spawned += 1
+                lifecycle.markers.append({
+                    "outcome": "pre_work",
+                    "startedUnixSeconds": time.time(),
+                    "modalImageId": "im-Compare",
+                })
+                if self.spawned == release.COMPARISON_MAX_CONCURRENT_INPUTS:
+                    lifecycle.markers.append({
+                        "outcome": "post_work",
+                        "finishedUnixSeconds": time.time(),
+                        "modalImageId": "im-Compare",
+                    })
+                return Call()
+
+        identity = {
+            "modalAppId": "ap-Compare",
+            "modalDeploymentId": "v3",
+            "modalFunctionId": "fu-Compare",
+        }
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            release, "EVIDENCE", Path(directory)
+        ), patch.object(
+            release.modal.Queue, "ephemeral", return_value=Lifecycle()
+        ), patch.object(
+            release.modal.Function, "from_name", return_value=Comparison()
+        ), patch.object(
+            release, "observe_comparison", return_value=identity
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "^cancelled comparison batch did not stop within the safe bound$",
+            ):
+                release.verify_cancelled_comparison_batch_execution(
+                    self.metadata
+                )
+            retained = json.loads(
+                (
+                    Path(directory)
+                    / "live-comparison-batch-execution-cancellation-proof.json"
+                ).read_text()
+            )
+        self.assertEqual(retained["postWorkMarkersObserved"], 1)
+        self.assertFalse(retained["allExecutionsStopped"])
+        self.assertLess(len(json.dumps(retained)), 2048)
 
     def test_cancelled_comparison_never_reaches_post_work_marker(self):
         class FakeQueue:
