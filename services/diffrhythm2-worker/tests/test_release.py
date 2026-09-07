@@ -156,6 +156,9 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             release, "verify_cancelled_comparison_capacity",
             return_value=self.cancellation_proof(),
         ) as cancellation, patch.object(
+            release, "verify_cancelled_comparison_execution",
+            return_value=self.execution_cancellation_proof(),
+        ) as execution_cancellation, patch.object(
             release, "observe", return_value=self.metadata
         ):
             evidence = Path(directory)
@@ -176,10 +179,15 @@ class DiffRhythmReleaseTests(unittest.TestCase):
                 evidence / "live-comparison-cancellation-proof.json",
                 self.cancellation_proof(),
             )
+            release.atomic_json(
+                evidence / "live-comparison-execution-cancellation-proof.json",
+                self.execution_cancellation_proof(),
+            )
             captured = release.capture(self.metadata)
             canary.assert_called_once_with(self.metadata, self.health)
             burst.assert_called_once_with(self.metadata)
             cancellation.assert_called_once_with(self.metadata)
+            execution_cancellation.assert_called_once_with(self.metadata)
             self.assertEqual(captured["liveResearchGeneration"], proof)
             self.assertEqual(
                 captured["retainedEvidence"]["live-research-generation-proof.json"]["sha256"],
@@ -234,6 +242,174 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             "cancellationRequested": True,
             "capacityReleased": True,
         }
+
+    def execution_cancellation_proof(self):
+        return {
+            "schemaVersion": 1,
+            "provider": "DIFFRHYTHM_2",
+            "workerModalDeploymentId": self.metadata["modalDeploymentId"],
+            "comparisonModalAppId": "ap-Compare",
+            "comparisonModalDeploymentId": "v3",
+            "comparisonModalFunctionId": "fu-Compare",
+            "comparisonModalImageId": "im-Compare",
+            "workSeconds": release.COMPARISON_CANCELLATION_WORK_SECONDS,
+            "observationBoundSeconds":
+                release.COMPARISON_EXECUTION_STOP_BOUND_SECONDS,
+            "preWorkMarkerObserved": True,
+            "cancellationAcknowledged": True,
+            "postWorkMarkerObserved": False,
+            "executionStopped": True,
+        }
+
+    def test_cancelled_comparison_never_reaches_post_work_marker(self):
+        class FakeQueue:
+            def __init__(self):
+                self.markers = []
+                self.timeouts = []
+
+            def get(self, timeout=None):
+                self.timeouts.append(timeout)
+                return self.markers.pop(0) if self.markers else None
+
+        class FakeEphemeral:
+            def __init__(self, queue):
+                self.queue = queue
+
+            def __enter__(self):
+                return self.queue
+
+            def __exit__(self, *_):
+                return False
+
+        class FakeCall:
+            def __init__(self):
+                self.cancelled = False
+
+            def cancel(self):
+                self.cancelled = True
+
+            def get(self, timeout=None):
+                if self.cancelled:
+                    raise release.RemoteError("private provider detail")
+                raise AssertionError("execution was not cancelled")
+
+        class FakeComparison:
+            def __init__(self):
+                self.call = FakeCall()
+                self.control = None
+
+            def spawn(self, control, lifecycle):
+                self.control = control
+                lifecycle.markers.append({
+                    "outcome": "pre_work",
+                    "startedUnixSeconds": time.time(),
+                    "modalImageId": "im-Compare",
+                })
+                return self.call
+
+        lifecycle = FakeQueue()
+        comparison = FakeComparison()
+        identity = {
+            "modalAppId": "ap-Compare",
+            "modalDeploymentId": "v3",
+            "modalFunctionId": "fu-Compare",
+        }
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            release, "EVIDENCE", Path(directory)
+        ), patch.object(
+            release.modal.Queue, "ephemeral",
+            return_value=FakeEphemeral(lifecycle),
+        ), patch.object(
+            release.modal.Function, "from_name", return_value=comparison
+        ), patch.object(
+            release, "observe_comparison", return_value=identity
+        ):
+            proof = release.verify_cancelled_comparison_execution(self.metadata)
+            retained = json.loads(
+                (
+                    Path(directory)
+                    / "live-comparison-execution-cancellation-proof.json"
+                ).read_text()
+            )
+        self.assertEqual(proof, retained)
+        self.assertEqual(comparison.control, "cancel_execution")
+        self.assertTrue(comparison.call.cancelled)
+        self.assertEqual(
+            lifecycle.timeouts,
+            [
+                release.COMPARISON_STALL_START_BOUND_SECONDS,
+                release.COMPARISON_EXECUTION_STOP_BOUND_SECONDS,
+            ],
+        )
+        self.assertTrue(proof["preWorkMarkerObserved"])
+        self.assertFalse(proof["postWorkMarkerObserved"])
+        self.assertTrue(proof["executionStopped"])
+        self.assertNotRegex(
+            json.dumps(proof).lower(),
+            r"(path|sha|audio|fixture|artifact|error|message|input)",
+        )
+
+    def test_execution_cancellation_channel_failure_is_redacted(self):
+        private_detail = "/private/fixture.wav " + "a" * 64
+
+        class BrokenQueue:
+            def __init__(self):
+                self.reads = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def get(self, timeout=None):
+                self.reads += 1
+                if self.reads == 1:
+                    return {
+                        "outcome": "pre_work",
+                        "startedUnixSeconds": time.time(),
+                        "modalImageId": "im-Compare",
+                    }
+                raise RuntimeError(private_detail)
+
+        class Call:
+            def cancel(self):
+                pass
+
+            def get(self, timeout=None):
+                raise release.RemoteError("cancelled")
+
+        class Comparison:
+            def spawn(self, control, lifecycle):
+                return Call()
+
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            release, "EVIDENCE", Path(directory)
+        ), patch.object(
+            release.modal.Queue, "ephemeral", return_value=BrokenQueue()
+        ), patch.object(
+            release.modal.Function, "from_name", return_value=Comparison()
+        ), patch.object(
+            release, "observe_comparison",
+            return_value={
+                "modalAppId": "ap-Compare",
+                "modalDeploymentId": "v3",
+                "modalFunctionId": "fu-Compare",
+            },
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "^cancelled comparison execution did not stop within the safe bound$",
+            ) as raised:
+                release.verify_cancelled_comparison_execution(self.metadata)
+            retained = (
+                Path(directory)
+                / "live-comparison-execution-cancellation-proof.json"
+            ).read_text()
+        surfaced = str(raised.exception) + retained
+        self.assertNotIn(private_detail, surfaced)
+        self.assertLess(len(retained), 2048)
+        self.assertFalse(json.loads(retained)["executionStopped"])
 
     def test_cancelled_comparisons_release_every_slot_before_probe_bound(self):
         class FakeQueue:
