@@ -455,3 +455,114 @@ test("performance remains byte/event stable and every generated pitch is playabl
     assert.equal(track.notes.length, track.articulations.length);
   }
 });
+
+test("detected canonical vocal occupancy leaves accompaniment space without changing vocals", () => {
+  const coordinates = (start: number, end: number) => ({
+    start: { seconds: start, tick: start * 1920, beat: start * 2 + 1, bar: 1, beatInBar: 1 },
+    end: { seconds: end, tick: end * 1920, beat: end * 2 + 1, bar: 1, beatInBar: 1 },
+  });
+  const base = song({
+    contractVersion: "2.0",
+    melody: [{ start: .25, end: 1.75, pitch: 69, velocity: .8, confidence: .9, source: "provider" }],
+  });
+  const detected = {
+    ...base,
+    vocalEvidence: {
+      status: "detected" as const,
+      reason: null,
+      provenance: null,
+      sampleRate: 44_100,
+      channels: 1,
+      frameSizeSamples: 1024,
+      thresholds: { rms: .1, peak: .1, activitySample: .1, activityRatio: .1 },
+      observedVoicedWindows: [{ start: .25, end: 1.75, coordinates: coordinates(.25, 1.75) }],
+      observedSilentWindows: [{ start: 1.75, end: 4, coordinates: coordinates(1.75, 4) }],
+    },
+  };
+  const tracks = [
+    { id: "piano", name: "Piano", role: "harmony" },
+    { id: "drums", name: "Drums", role: "rhythm" },
+    { id: "voice", name: "Voice", role: "vocal" },
+  ];
+  const baselinePlan = planFor(base);
+  baselinePlan.sections[0].activeTracks = tracks.map((track) => track.id);
+  const detectedPlan = planFor(detected);
+  detectedPlan.sections[0].activeTracks = tracks.map((track) => track.id);
+  const input = (songModel: SongModelData, plan: ReturnType<typeof planFor>) => ({
+    songModel, plan, style: plan.style, tracks, seed: 81,
+  });
+  const baseline = buildTrackModels(input(base, baselinePlan));
+  const first = buildTrackModels(input(detected, detectedPlan));
+  const second = buildTrackModels(input(detected, detectedPlan));
+  const overlaps = (models: typeof first) => models
+    .filter((track) => track.id !== "voice")
+    .flatMap((track) => track.notes)
+    .filter((note) => note.start < 1.75 && note.start + note.duration > .25).length;
+  assert.ok(overlaps(first) < overlaps(baseline));
+  assert.equal(overlaps(first), 0);
+  assert.deepEqual(first.find((track) => track.id === "voice")?.notes,
+    baseline.find((track) => track.id === "voice")?.notes);
+  assert.deepEqual(first, second);
+});
+
+test("vocal space mapping is a no-op without detected canonical v2 observations", () => {
+  const coordinates = {
+    start: { seconds: 0, tick: 0, beat: 1, bar: 1, beatInBar: 1 },
+    end: { seconds: 1, tick: 1920, beat: 3, bar: 1, beatInBar: 3 },
+  };
+  const model = song({ contractVersion: "2.0" });
+  const unavailable = {
+    ...model,
+    vocalEvidence: {
+      status: "low_confidence" as const, reason: "weak stem", provenance: null,
+      sampleRate: null, channels: null, frameSizeSamples: null, thresholds: null,
+      observedVoicedWindows: [{ start: 0, end: 1, coordinates }],
+      observedSilentWindows: [],
+    },
+  };
+  const tracks = [{ id: "piano", name: "Piano", role: "harmony" }];
+  const plainPlan = planFor(model);
+  const unavailablePlan = planFor(unavailable);
+  assert.deepEqual(
+    buildTrackModels({ songModel: model, plan: plainPlan, style: plainPlan.style, tracks, seed: 12 }),
+    buildTrackModels({ songModel: unavailable, plan: unavailablePlan, style: unavailablePlan.style, tracks, seed: 12 }),
+  );
+});
+
+test("canonical vocal windows clip independently at unusual-meter section boundaries", () => {
+  const coordinate = (seconds: number, tick: number, bar: number) => ({
+    seconds, tick, beat: tick / 960 + 1, bar, beatInBar: 1,
+  });
+  const model = song({
+    contractVersion: "2.0",
+    meterMap: [{ bar: 1, meter: "7/8", confidence: 1 }],
+    sections: [
+      { name: "A", startBar: 1, endBar: 1, energy: .7 },
+      { name: "B", startBar: 2, endBar: 2, energy: .7 },
+    ],
+    vocalEvidence: {
+      status: "detected", reason: null, provenance: null, sampleRate: 44_100,
+      channels: 1, frameSizeSamples: 1024,
+      thresholds: { rms: .1, peak: .1, activitySample: .1, activityRatio: .1 },
+      // 120 BPM 7/8 bars are 1.75 seconds. This observation crosses, rather
+      // than assumes, that non-4/4 arrangement boundary.
+      observedVoicedWindows: [{
+        start: 1.7, end: 1.8,
+        coordinates: { start: coordinate(1.7, 3264, 1), end: coordinate(1.8, 3456, 2) },
+      }],
+      observedSilentWindows: [{
+        start: 0, end: 1.7,
+        coordinates: { start: coordinate(0, 0, 1), end: coordinate(1.7, 3264, 1) },
+      }],
+    },
+  });
+  const plan = planFor(model);
+  plan.sections[0].activeTracks = ["piano"];
+  plan.sections[1].activeTracks = ["piano"];
+  const [piano] = buildTrackModels({
+    songModel: model, plan, style: plan.style, seed: 4,
+    tracks: [{ id: "piano", name: "Piano", role: "harmony" }],
+  });
+  assert.equal(piano.notes.some((note) => note.start < 1.8 && note.start + note.duration > 1.7), false);
+  assert.ok(piano.notes.some((note) => note.start < 1.7)); // observed silence remains usable
+});

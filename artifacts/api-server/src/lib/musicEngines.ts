@@ -687,12 +687,117 @@ export class HarmonyEngine {
   }
 }
 
+/**
+ * Internal-only arrangement occupancy.  It is deliberately built only from
+ * the v2 separation observation; melody, lyrics, and section templates are
+ * not evidence of a vocal rest (or of a breath).
+ */
+type ArrangementSpaceMap = {
+  voiced: Array<{ start: number; end: number; section: string }>;
+  silent: Array<{ start: number; end: number; section: string }>;
+};
+
+type CanonicalVocalWindow = {
+  start: number;
+  end: number;
+  coordinates?: {
+    start: { seconds: number; tick: number };
+    end: { seconds: number; tick: number };
+  };
+};
+
+function hasCanonicalWindow(
+  window: CanonicalVocalWindow,
+): window is CanonicalVocalWindow & { coordinates: NonNullable<CanonicalVocalWindow["coordinates"]> } {
+  return Number.isFinite(window.start) && Number.isFinite(window.end) &&
+    window.end > window.start &&
+    Number.isFinite(window.coordinates?.start.seconds) &&
+    Number.isFinite(window.coordinates?.end.seconds) &&
+    Number.isFinite(window.coordinates?.start.tick) &&
+    Number.isFinite(window.coordinates?.end.tick);
+}
+
+function arrangementSectionSeconds(
+  songModel: SongModelData,
+  section: Pick<ArrangementPlanSection, "section" | "startBar" | "endBar">,
+  fallbackBarSeconds: number,
+): { start: number; end: number } {
+  const source = songModel.sections.find((candidate) =>
+    candidate.startBar === section.startBar && candidate.endBar === section.endBar)
+    ?? songModel.sections.find((candidate) =>
+      candidate.name.toLowerCase().replace(/\s+/g, "_") === section.section);
+  if (source?.coordinates &&
+    Number.isFinite(source.coordinates.start.seconds) &&
+    Number.isFinite(source.coordinates.end.seconds) &&
+    source.coordinates.end.seconds > source.coordinates.start.seconds) {
+    return {
+      start: source.coordinates.start.seconds,
+      end: source.coordinates.end.seconds,
+    };
+  }
+  const bars = songModel.bars
+    .filter((bar) => bar.bar >= section.startBar && bar.bar <= section.endBar)
+    .sort((left, right) => left.bar - right.bar);
+  if (bars.length) {
+    const start = bars[0].coordinates?.start.seconds ?? bars[0].start;
+    const end = bars.at(-1)!.coordinates?.end.seconds ?? bars.at(-1)!.end;
+    if (Number.isFinite(start) && Number.isFinite(end) && end > start) return { start, end };
+  }
+  return {
+    start: (section.startBar - 1) * fallbackBarSeconds,
+    end: section.endBar * fallbackBarSeconds,
+  };
+}
+
+function createArrangementSpaceMap(
+  songModel: SongModelData,
+  plan: ArrangementPlan,
+  fallbackBarSeconds: number,
+): ArrangementSpaceMap | undefined {
+  const evidence = songModel.contractVersion === "2.0" ? songModel.vocalEvidence : undefined;
+  // A detected status is not enough: use only windows represented on the
+  // canonical timeline, and require actual observed voiced occupancy.
+  if (evidence?.status !== "detected" ||
+    !evidence.observedVoicedWindows.some(hasCanonicalWindow) ||
+    ![...evidence.observedVoicedWindows, ...evidence.observedSilentWindows].every(hasCanonicalWindow)) {
+    return undefined;
+  }
+  const clip = (
+    windows: typeof evidence.observedVoicedWindows,
+  ) => plan.sections.flatMap((section) => {
+    const bounds = arrangementSectionSeconds(songModel, section, fallbackBarSeconds);
+    return windows.flatMap((window) => {
+      // Coordinates are the canonical source of timing for this v2-only
+      // behavior; the duplicated second fields are retained for compatibility.
+      const start = Math.max(bounds.start, window.coordinates!.start.seconds);
+      const end = Math.min(bounds.end, window.coordinates!.end.seconds);
+      return end > start ? [{ start: round(start), end: round(end), section: section.section }] : [];
+    });
+  }).sort((left, right) => left.start - right.start || left.end - right.end ||
+    left.section.localeCompare(right.section));
+  return {
+    // These arrays remain independently observed states: silence is never
+    // synthesized as the complement of voice.
+    voiced: clip(evidence.observedVoicedWindows),
+    silent: clip(evidence.observedSilentWindows),
+  };
+}
+
+function intersectsObservedVoice(
+  start: number,
+  end: number,
+  spaceMap: ArrangementSpaceMap | undefined,
+): boolean {
+  return Boolean(spaceMap?.voiced.some((window) => start < window.end && end > window.start));
+}
+
 export class CompositionEngine {
   compose(input: {
     songModel: SongModelData;
     plan: ArrangementPlan;
     tracks: Array<{ id: string; name: string; role: string; instrument?: string }>;
     harmony: ReturnType<HarmonyEngine["generate"]>;
+    spaceMap?: ArrangementSpaceMap;
   }): Array<TrackModel> {
     const bpm = Math.max(40, input.songModel.tempoMap[0]?.bpm || 92);
     const beat = 60 / bpm;
@@ -788,20 +893,27 @@ export class CompositionEngine {
             pitch = Math.max(definition.playableRange.min, Math.min(definition.playableRange.max, pitch));
             const isEntry = Math.abs(time - sectionStart) < .001;
             const isExit = time + step >= sectionEnd;
-            notes.push({
-              id: `${track.id}-${sectionIndex}-${beatIndex}`,
-              start: round(time),
-              duration: round(Math.min(
-                step * (identity.includes("pad") ? 1.8 : isExit ? .65 : .9),
-                sectionEnd - time,
-              )),
-              pitch: midi(pitch),
-              velocity: midi(42 + (directive?.dynamicTarget ?? section.energy) * 66 +
-                (isEntry ? 6 : 0) + (directive?.transition === "build" ? beatIndex * .5 : 0) +
-                (beatIndex % 4 === 0 ? 8 : 0)),
-              voice: identity.includes("bass") ? "bass" : identity.includes("drum") ? "percussion" : "harmony",
-            });
-            if (directive?.fill && (identity.includes("drum") || identity.includes("rhythm")) && isExit) {
+            const duration = round(Math.min(
+              step * (identity.includes("pad") ? 1.8 : isExit ? .65 : .9),
+              sectionEnd - time,
+            ));
+            // Do not replace a measured vocal rest with a guessed one. The
+            // observed silent map is intentionally permissive; only measured
+            // voiced occupancy removes a phrase/fill event.
+            if (!intersectsObservedVoice(time, time + duration, input.spaceMap)) {
+              notes.push({
+                id: `${track.id}-${sectionIndex}-${beatIndex}`,
+                start: round(time),
+                duration,
+                pitch: midi(pitch),
+                velocity: midi(42 + (directive?.dynamicTarget ?? section.energy) * 66 +
+                  (isEntry ? 6 : 0) + (directive?.transition === "build" ? beatIndex * .5 : 0) +
+                  (beatIndex % 4 === 0 ? 8 : 0)),
+                voice: identity.includes("bass") ? "bass" : identity.includes("drum") ? "percussion" : "harmony",
+              });
+            }
+            if (directive?.fill && (identity.includes("drum") || identity.includes("rhythm")) && isExit &&
+              !intersectsObservedVoice(Math.max(sectionStart, sectionEnd - beat * .5), sectionEnd - beat * .28, input.spaceMap)) {
               notes.push({
                 id: `${track.id}-${sectionIndex}-${beatIndex}-fill`,
                 start: round(Math.max(sectionStart, sectionEnd - beat * .5)),
@@ -913,7 +1025,12 @@ export class VoiceLeadingEngine {
 }
 
 export class PerformanceEngine {
-  perform(track: TrackModel, style: StyleSpec, seed = 0): TrackModel {
+  perform(
+    track: TrackModel,
+    style: StyleSpec,
+    seed = 0,
+    spaceMap?: ArrangementSpaceMap,
+  ): TrackModel {
     const profile: PerformanceProfile = /vocal|voice|melody/i.test(track.role)
       // Section-gated source melody must not be humanized across a hard
       // arrangement boundary; its evidence timing is preserved exactly.
@@ -949,7 +1066,19 @@ export class PerformanceEngine {
       const articulation = track.instrumentDefinition.articulations.includes(directedArticulation ?? preferredArticulation)
         ? directedArticulation ?? preferredArticulation
         : track.instrumentDefinition.articulations[0] ?? "normal";
-      notes.push({ ...note, start: Math.max(0, round(note.start + offset)), duration: round(note.duration + (articulation === "legato" ? profile.legatoOverlap : 0)), velocity });
+      const performed = {
+        ...note,
+        start: Math.max(0, round(note.start + offset)),
+        duration: round(note.duration + (articulation === "legato" ? profile.legatoOverlap : 0)),
+        velocity,
+      };
+      // Timing variation/legato must not reintroduce an intersection that
+      // composition deliberately removed. Vocal events are never filtered.
+      if (!/vocal|voice|melody/i.test(track.role) &&
+        intersectsObservedVoice(performed.start, performed.start + performed.duration, spaceMap)) {
+        return;
+      }
+      notes.push(performed);
       articulations.push({
         time: Math.max(0, round(note.start + offset)),
         name: articulation,
@@ -1484,8 +1613,15 @@ export function buildTrackModels(input: {
   seed?: number;
 }): TrackModel[] {
   const harmony = new HarmonyEngine().generate(input.songModel, input.plan);
-  const composed = new CompositionEngine().compose({ songModel: input.songModel, plan: input.plan, tracks: input.tracks, harmony });
   const bpm = input.songModel.tempoMap[0]?.bpm ?? 92;
+  const spaceMap = createArrangementSpaceMap(
+    input.songModel,
+    input.plan,
+    secondsPerBar(bpm, input.songModel.meterMap[0]?.meter),
+  );
+  const composed = new CompositionEngine().compose({
+    songModel: input.songModel, plan: input.plan, tracks: input.tracks, harmony, spaceMap,
+  });
   const modulated = applyPlanModulations(
     composed,
     input.plan,
@@ -1498,7 +1634,8 @@ export function buildTrackModels(input: {
   const deterministicSeed = hashSeed(
     `${input.plan.id}:song-model:${input.plan.songModelVersion}:${input.seed ?? 0}`,
   );
-  return voiced.map((track) => new PerformanceEngine().perform(track, input.style, deterministicSeed));
+  return voiced.map((track) =>
+    new PerformanceEngine().perform(track, input.style, deterministicSeed, spaceMap));
 }
 
 function chordPitchClasses(symbol: string): number[] {

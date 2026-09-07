@@ -27,6 +27,7 @@ import {
   Hash,
   Loader2,
   Layers,
+  Mic,
   Music2,
   Plus,
   RefreshCw,
@@ -537,6 +538,119 @@ export function SongModelInspector({ projectId }: SongModelInspectorProps) {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="shadow-sm" data-testid="card-vocal-evidence">
+        <CardHeader className="p-4 pb-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+              <Mic className="h-3.5 w-3.5" /> Vocal Evidence
+            </CardTitle>
+            <Badge
+              variant="outline"
+              className={cn(
+                "capitalize font-mono text-[10px]",
+                model.vocalEvidence?.status === "detected" ? "bg-sky-500/10 text-sky-700 border-sky-500/30" :
+                model.vocalEvidence?.status === "low_confidence" ? "bg-amber-500/10 text-amber-700 border-amber-500/30" :
+                model.vocalEvidence?.status === "failed" ? "bg-destructive/10 text-destructive border-destructive/30" :
+                "bg-muted text-muted-foreground border-border"
+              )}
+            >
+              {model.vocalEvidence?.status?.replace("_", " ") ?? "Not available"}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="p-4 pt-0">
+          {!model.vocalEvidence || model.vocalEvidence.status === "not_available" ? (
+            <p className="text-xs text-muted-foreground italic text-center py-4 border border-dashed rounded mt-1">
+              {model.vocalEvidence?.reason || "No vocal evidence was computed for this source."}
+            </p>
+          ) : model.vocalEvidence.status === "failed" ? (
+            <div className="flex flex-col items-center justify-center py-4 border border-dashed border-destructive/30 rounded bg-destructive/5 text-destructive space-y-1 mt-1">
+              <AlertTriangle className="h-4 w-4 mb-1" />
+              <p className="text-xs font-medium">Vocal analysis failed</p>
+              <p className="text-[10px] opacity-80">{model.vocalEvidence.reason || "An error occurred during detection."}</p>
+            </div>
+          ) : (
+            <div className="space-y-4 mt-2">
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                <div className="space-y-2">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Provenance</div>
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-xs">
+                    <span className="text-muted-foreground">Provider</span>
+                    <span className="font-mono text-right truncate" title={model.vocalEvidence.provenance?.provider}>
+                      {model.vocalEvidence.provenance?.provider || "—"}
+                    </span>
+                    <span className="text-muted-foreground">Stem Role</span>
+                    <span className="font-mono text-right capitalize truncate">
+                      {model.vocalEvidence.provenance?.sourceStemRole || "—"}
+                    </span>
+                    <span className="text-muted-foreground">Checksum</span>
+                    <span className="font-mono text-right truncate" title={model.vocalEvidence.provenance?.contentChecksum}>
+                      {model.vocalEvidence.provenance?.contentChecksum?.substring(0, 8) || "—"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Context & Thresholds</div>
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-xs">
+                    <span className="text-muted-foreground">Sample Rate</span>
+                    <span className="font-mono text-right">{model.vocalEvidence.sampleRate ? `${model.vocalEvidence.sampleRate} Hz` : "—"}</span>
+                    <span className="text-muted-foreground">Activity Ratio</span>
+                    <span className="font-mono text-right">{model.vocalEvidence.thresholds?.activityRatio != null ? `${Math.round(model.vocalEvidence.thresholds.activityRatio * 100)}%` : "—"}</span>
+                    <span className="text-muted-foreground">RMS Threshold</span>
+                    <span className="font-mono text-right">{model.vocalEvidence.thresholds?.rms != null ? model.vocalEvidence.thresholds.rms.toFixed(3) : "—"}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2 lg:col-span-1 md:col-span-2">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Timeline Windows</div>
+                  <div className="flex gap-2">
+                    <div className="flex-1 rounded border bg-sky-500/5 border-sky-500/20 p-2 text-center">
+                      <div className="text-lg font-mono text-sky-600 font-semibold leading-none">{model.vocalEvidence.observedVoicedWindows?.length ?? 0}</div>
+                      <div className="text-[10px] uppercase tracking-wider text-sky-600/70 mt-1">Voiced</div>
+                    </div>
+                    <div className="flex-1 rounded border bg-muted/30 p-2 text-center">
+                      <div className="text-lg font-mono text-muted-foreground font-semibold leading-none">{model.vocalEvidence.observedSilentWindows?.length ?? 0}</div>
+                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground mt-1">Silent</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {(model.vocalEvidence.observedVoicedWindows?.length > 0 || model.vocalEvidence.observedSilentWindows?.length > 0) && (
+                <div className="space-y-1.5">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Vocal Activity Timeline</div>
+                  <div className="relative h-6 w-full bg-card rounded overflow-hidden border">
+                    {model.vocalEvidence.observedSilentWindows?.map((w, i) => (
+                      <div
+                        key={`silent-${i}`}
+                        className="absolute h-full bg-muted/40"
+                        style={{
+                          left: `${(w.start / (model.audio.durationSeconds || 1)) * 100}%`,
+                          width: `${((w.end - w.start) / (model.audio.durationSeconds || 1)) * 100}%`
+                        }}
+                        title={`Silent: ${formatTime(w.start)} - ${formatTime(w.end)}`}
+                      />
+                    ))}
+                    {model.vocalEvidence.observedVoicedWindows?.map((w, i) => (
+                      <div
+                        key={`voiced-${i}`}
+                        className="absolute h-full bg-sky-500/40 border-x border-sky-500/50"
+                        style={{
+                          left: `${(w.start / (model.audio.durationSeconds || 1)) * 100}%`,
+                          width: `${((w.end - w.start) / (model.audio.durationSeconds || 1)) * 100}%`
+                        }}
+                        title={`Voiced: ${formatTime(w.start)} - ${formatTime(w.end)}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="rounded-md border bg-card px-4 py-3" data-testid="field-provenance">
         <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
