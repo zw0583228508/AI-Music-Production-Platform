@@ -474,8 +474,8 @@ function normalizeSongModelSnapshot(value: unknown): SongModelData {
     ? value as Partial<SongModelData>
     : {};
   return {
-    contractVersion: raw.contractVersion ?? "2.0",
-    ...(raw.contractVersion === "1.0"
+    contractVersion: raw.contractVersion ?? "1.0",
+    ...(raw.contractVersion === undefined || raw.contractVersion === "1.0"
       ? {}
       : {
           timebase: raw.timebase ?? {

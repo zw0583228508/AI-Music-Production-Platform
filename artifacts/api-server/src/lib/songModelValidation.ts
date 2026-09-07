@@ -122,14 +122,18 @@ function coordinateMatches(
   const bar = isRecord(value) ? value.bar : undefined;
   const beat = isRecord(value) ? value.beat : undefined;
   const beatInBar = isRecord(value) ? value.beatInBar : undefined;
+  const beatFraction = isRecord(value) ? value.beatFraction : undefined;
   const seconds = isRecord(value) ? value.seconds : undefined;
   if (!isRecord(value) ||
     !isFiniteNumber(seconds) || !isInteger(tick) ||
     !isInteger(beat) || !isInteger(bar) || !isInteger(beatInBar) ||
+    !isFiniteNumber(beatFraction) ||
     tick < 0 || bar < 1 || beat < 1 || beatInBar < 1 ||
+    beatFraction < 0 || beatFraction >= 1 ||
     Math.abs(seconds - expected.seconds) > 0.000_001 ||
     tick !== expected.tick || beat !== expected.beat ||
-    bar !== expected.bar || beatInBar !== expected.beatInBar
+    bar !== expected.bar || beatInBar !== expected.beatInBar ||
+    Math.abs(beatFraction - expected.beatFraction) > 0.000_001
   ) {
     issues.push(issue("CONTRADICTORY_COORDINATES", "error", path,
       "Canonical coordinates must exactly match the Song Model tempo and meter maps."));
@@ -1183,9 +1187,14 @@ export function validateCanonicalSongModel(input: unknown): ValidationResult<Son
 }
 
 export function refreshSongModelValidation(model: SongModelData): SongModelData {
-  const validation = validateSongModelCore(model);
+  const coordinated = model.contractVersion === SONG_MODEL_CONTRACT_VERSION
+    ? canonicalizeSongModelCoordinates(model)
+    : model;
+  const validation = model.contractVersion === SONG_MODEL_CONTRACT_VERSION
+    ? validateCanonicalSongModel(coordinated)
+    : validateSongModelCore(coordinated);
   return {
-    ...model,
+    ...coordinated,
     validation: {
       status: validation.issues.length ? "flagged" : "accepted",
       issues: validation.issues,

@@ -13,7 +13,81 @@ export type CanonicalCoordinate = {
   beat: number;
   bar: number;
   beatInBar: number;
+  beatFraction: number;
 };
+
+export type SourceMeterChange = { tick: number; meter: string };
+
+export function buildMeterAwareEvidence(
+  division: number,
+  finalTick: number,
+  changes: SourceMeterChange[],
+  tickToSeconds: (tick: number) => number,
+) {
+  if (!Number.isInteger(division) || division <= 0 || finalTick < 0) {
+    throw new Error("MIDI timeline requires a positive PPQ division and final tick.");
+  }
+  const ordered = changes
+    .slice()
+    .sort((left, right) => left.tick - right.tick)
+    .filter((event, index, values) =>
+      index === values.length - 1 || event.tick !== values[index + 1].tick);
+  const events = ordered[0]?.tick === 0
+    ? ordered
+    : [{ tick: 0, meter: "4/4" }, ...ordered];
+  const meterMap: Array<{ bar: number; meter: string }> = [];
+  let bar = 1;
+  events.forEach((event, index) => {
+    const parsed = parseMeter(event.meter);
+    if (event.tick < 0 || event.tick > finalTick) {
+      throw new Error("MIDI meter changes must occur inside the source timeline.");
+    }
+    if (index > 0) {
+      const previous = events[index - 1];
+      const previousMeter = parseMeter(previous.meter);
+      const previousBarTicks = previousMeter.numerator * division * 4 / previousMeter.denominator;
+      const elapsedBars = (event.tick - previous.tick) / previousBarTicks;
+      if (Math.abs(elapsedBars - Math.round(elapsedBars)) > 1e-9) {
+        throw new Error("MIDI meter changes must occur on a bar boundary.");
+      }
+      bar += Math.round(elapsedBars);
+    }
+    if (!Number.isInteger(parsed.numerator * division * 4 / parsed.denominator)) {
+      throw new Error("MIDI meter cannot be represented exactly at the source PPQ.");
+    }
+    meterMap.push({ bar, meter: event.meter });
+  });
+  const beats: Array<{ time: number; beat: number; bar: number; confidence: number }> = [];
+  const bars: Array<{ bar: number; start: number; end: number; beats: number; confidence: number }> = [];
+  events.forEach((event, index) => {
+    const meter = parseMeter(event.meter);
+    const beatTicks = division * 4 / meter.denominator;
+    const barTicks = meter.numerator * beatTicks;
+    const segmentEnd = events[index + 1]?.tick ?? finalTick;
+    const segmentBar = meterMap[index].bar;
+    for (let tick = event.tick; tick < segmentEnd || (index === events.length - 1 && tick <= finalTick); tick += beatTicks) {
+      const beatOffset = Math.floor((tick - event.tick) / beatTicks);
+      beats.push({
+        time: tickToSeconds(tick),
+        beat: beatOffset % meter.numerator + 1,
+        bar: segmentBar + Math.floor(beatOffset / meter.numerator),
+        confidence: 1,
+      });
+    }
+    for (let tick = event.tick; tick < segmentEnd || (index === events.length - 1 && tick < finalTick); tick += barTicks) {
+      const endTick = Math.min(segmentEnd, finalTick, tick + barTicks);
+      if (endTick <= tick) break;
+      bars.push({
+        bar: segmentBar + Math.round((tick - event.tick) / barTicks),
+        start: tickToSeconds(tick),
+        end: tickToSeconds(endTick),
+        beats: meter.numerator,
+        confidence: 1,
+      });
+    }
+  });
+  return { meterMap, beats, bars };
+}
 
 type Meter = { numerator: number; denominator: number };
 
@@ -120,6 +194,7 @@ export function createCanonicalTimeline(
       bar: meter.bar + Math.floor(beatOffset / meter.numerator),
       beatInBar: (beatOffset % meter.numerator) + 1,
       beat: beatAtMeter[index] + beatOffset + 1,
+      beatFraction: (offset - beatOffset * ticksPerBeat) / ticksPerBeat,
     };
   };
   const coordinateAtSeconds = (seconds: number): CanonicalCoordinate => {

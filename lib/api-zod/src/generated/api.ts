@@ -402,10 +402,6 @@ export const LogoutBrowserSessionResponse = zod.void()
  */
 
 
-
-
-
-
 export const ExchangeMobileAuthorizationCodeBody = zod.object({
   "code": zod.string().min(1),
   "code_verifier": zod.string().min(1),
@@ -435,8 +431,6 @@ export const LogoutMobileSessionResponse = zod.object({
 export const requestSourceUploadUrlBodySizeMax = 524288000;
 
 
-
-
 export const RequestSourceUploadUrlBody = zod.object({
   "projectId": zod.string().min(1),
   "name": zod.string().min(1),
@@ -445,10 +439,7 @@ export const RequestSourceUploadUrlBody = zod.object({
 })
 
 
-
 export const requestSourceUploadUrlResponseMetadataSizeMax = 524288000;
-
-
 
 
 export const RequestSourceUploadUrlResponse = zod.object({
@@ -485,7 +476,6 @@ export const ListProjectsResponse = zod.array(ListProjectsResponseItem)
  */
 
 
-
 export const CreateProjectBody = zod.object({
   "name": zod.string().min(1),
   "sourceType": zod.enum(['FULL_SONG', 'VOCAL_ONLY', 'SOLO_INSTRUMENT', 'INSTRUMENTAL', 'MIDI', 'VIDEO']),
@@ -516,16 +506,12 @@ export const getProjectResponseAnalysisSectionsItemCoordinatesStartSecondsMin = 
 
 export const getProjectResponseAnalysisSectionsItemCoordinatesStartTickMin = 0;
 
-
-
-
+export const getProjectResponseAnalysisSectionsItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectResponseAnalysisSectionsItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectResponseAnalysisSectionsItemCoordinatesEndTickMin = 0;
 
-
-
-
+export const getProjectResponseAnalysisSectionsItemCoordinatesEndBeatFractionMin = 0;
 export const getProjectResponseArrangementsItemSectionsItemChordsItemInversionMin = 0;
 export const getProjectResponseArrangementsItemSectionsItemChordsItemInversionMax = 3;
 
@@ -563,7 +549,6 @@ export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluation
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
 
 
-
 export const GetProjectResponse = zod.object({
   "project": zod.object({
   "id": zod.string(),
@@ -592,14 +577,16 @@ export const GetProjectResponse = zod.object({
   "tick": zod.number().min(getProjectResponseAnalysisSectionsItemCoordinatesStartTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(getProjectResponseAnalysisSectionsItemCoordinatesStartBeatFractionMin).lt(getProjectResponseAnalysisSectionsItemCoordinatesStartBeatFractionExclusiveMax)
 }),
   "end": zod.object({
   "seconds": zod.number().min(getProjectResponseAnalysisSectionsItemCoordinatesEndSecondsMin),
   "tick": zod.number().min(getProjectResponseAnalysisSectionsItemCoordinatesEndTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(getProjectResponseAnalysisSectionsItemCoordinatesEndBeatFractionMin).lt(getProjectResponseAnalysisSectionsItemCoordinatesEndBeatFractionExclusiveMax)
 })
 }).optional()
 })),
@@ -791,7 +778,6 @@ export const deleteProjectResponseAttemptsMin = 0;
 export const deleteProjectResponsePendingObjectCountMin = 0;
 
 
-
 export const DeleteProjectResponse = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -817,7 +803,6 @@ export const getProjectDeletionResponseAttemptsMin = 0;
 export const getProjectDeletionResponsePendingObjectCountMin = 0;
 
 
-
 export const GetProjectDeletionResponse = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -841,7 +826,6 @@ export const RetryProjectDeletionParams = zod.object({
 export const retryProjectDeletionResponseAttemptsMin = 0;
 
 export const retryProjectDeletionResponsePendingObjectCountMin = 0;
-
 
 
 export const RetryProjectDeletionResponse = zod.object({
@@ -874,18 +858,12 @@ export const analyzeProjectResponseSectionsItemCoordinatesStartSecondsMin = 0;
 
 export const analyzeProjectResponseSectionsItemCoordinatesStartTickMin = 0;
 
-
-
-
+export const analyzeProjectResponseSectionsItemCoordinatesStartBeatFractionMin = 0;
 export const analyzeProjectResponseSectionsItemCoordinatesEndSecondsMin = 0;
 
 export const analyzeProjectResponseSectionsItemCoordinatesEndTickMin = 0;
 
-
-
-
-
-
+export const analyzeProjectResponseSectionsItemCoordinatesEndBeatFractionMin = 0;
 export const AnalyzeProjectResponse = zod.object({
   "bpm": zod.number(),
   "meter": zod.string(),
@@ -902,14 +880,16 @@ export const AnalyzeProjectResponse = zod.object({
   "tick": zod.number().min(analyzeProjectResponseSectionsItemCoordinatesStartTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(analyzeProjectResponseSectionsItemCoordinatesStartBeatFractionMin).lt(analyzeProjectResponseSectionsItemCoordinatesStartBeatFractionExclusiveMax)
 }),
   "end": zod.object({
   "seconds": zod.number().min(analyzeProjectResponseSectionsItemCoordinatesEndSecondsMin),
   "tick": zod.number().min(analyzeProjectResponseSectionsItemCoordinatesEndTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(analyzeProjectResponseSectionsItemCoordinatesEndBeatFractionMin).lt(analyzeProjectResponseSectionsItemCoordinatesEndBeatFractionExclusiveMax)
 })
 }).optional()
 })),
@@ -930,7 +910,6 @@ export const listProjectSourcesResponseProgressMax = 100;
 
 export const listProjectSourcesResponseAttemptsItemProgressMin = 0;
 export const listProjectSourcesResponseAttemptsItemProgressMax = 100;
-
 
 
 export const ListProjectSourcesResponseItem = zod.object({
@@ -972,10 +951,7 @@ export const RegisterProjectSourceParams = zod.object({
 })
 
 
-
 export const registerProjectSourceBodySizeMax = 524288000;
-
-
 
 
 export const RegisterProjectSourceBody = zod.object({
@@ -991,7 +967,6 @@ export const registerProjectSourceResponseProgressMax = 100;
 
 export const registerProjectSourceResponseAttemptsItemProgressMin = 0;
 export const registerProjectSourceResponseAttemptsItemProgressMax = 100;
-
 
 
 export const RegisterProjectSourceResponse = zod.object({
@@ -1037,7 +1012,6 @@ export const retryProjectSourceAnalysisResponseProgressMax = 100;
 
 export const retryProjectSourceAnalysisResponseAttemptsItemProgressMin = 0;
 export const retryProjectSourceAnalysisResponseAttemptsItemProgressMax = 100;
-
 
 
 export const RetryProjectSourceAnalysisResponse = zod.object({
@@ -1087,9 +1061,7 @@ export const getProjectSongModelResponseFusionDecisionsItemCompatibilityMin = 0;
 export const getProjectSongModelResponseFusionDecisionsItemCompatibilityMax = 1;
 
 
-
 export const getProjectSongModelResponseAudioDurationSecondsExclusiveMin = 0;
-
 
 
 export const getProjectSongModelResponseAnalysisStartSecondsMin = 0;
@@ -1110,9 +1082,7 @@ export const getProjectSongModelResponseTempoMapItemCoordinatesSecondsMin = 0;
 
 export const getProjectSongModelResponseTempoMapItemCoordinatesTickMin = 0;
 
-
-
-
+export const getProjectSongModelResponseTempoMapItemCoordinatesBeatFractionMin = 0;
 export const getProjectSongModelResponseMeterMapItemConfidenceMin = 0;
 export const getProjectSongModelResponseMeterMapItemConfidenceMax = 1;
 
@@ -1120,9 +1090,7 @@ export const getProjectSongModelResponseMeterMapItemCoordinatesSecondsMin = 0;
 
 export const getProjectSongModelResponseMeterMapItemCoordinatesTickMin = 0;
 
-
-
-
+export const getProjectSongModelResponseMeterMapItemCoordinatesBeatFractionMin = 0;
 export const getProjectSongModelResponseKeyMapItemConfidenceMin = 0;
 export const getProjectSongModelResponseKeyMapItemConfidenceMax = 1;
 
@@ -1130,44 +1098,32 @@ export const getProjectSongModelResponseKeyMapItemCoordinatesSecondsMin = 0;
 
 export const getProjectSongModelResponseKeyMapItemCoordinatesTickMin = 0;
 
-
-
-
+export const getProjectSongModelResponseKeyMapItemCoordinatesBeatFractionMin = 0;
 export const getProjectSongModelResponseBeatsItemCoordinatesSecondsMin = 0;
 
 export const getProjectSongModelResponseBeatsItemCoordinatesTickMin = 0;
 
-
-
-
+export const getProjectSongModelResponseBeatsItemCoordinatesBeatFractionMin = 0;
 export const getProjectSongModelResponseBarsItemCoordinatesStartSecondsMin = 0;
 
 export const getProjectSongModelResponseBarsItemCoordinatesStartTickMin = 0;
 
-
-
-
+export const getProjectSongModelResponseBarsItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseBarsItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseBarsItemCoordinatesEndTickMin = 0;
 
-
-
-
+export const getProjectSongModelResponseBarsItemCoordinatesEndBeatFractionMin = 0;
 export const getProjectSongModelResponseMelodyItemCoordinatesStartSecondsMin = 0;
 
 export const getProjectSongModelResponseMelodyItemCoordinatesStartTickMin = 0;
 
-
-
-
+export const getProjectSongModelResponseMelodyItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseMelodyItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseMelodyItemCoordinatesEndTickMin = 0;
 
-
-
-
+export const getProjectSongModelResponseMelodyItemCoordinatesEndBeatFractionMin = 0;
 export const getProjectSongModelResponseBassItemStartMin = 0;
 
 export const getProjectSongModelResponseBassItemEndMin = 0;
@@ -1182,16 +1138,12 @@ export const getProjectSongModelResponseBassItemCoordinatesStartSecondsMin = 0;
 
 export const getProjectSongModelResponseBassItemCoordinatesStartTickMin = 0;
 
-
-
-
+export const getProjectSongModelResponseBassItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseBassItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseBassItemCoordinatesEndTickMin = 0;
 
-
-
-
+export const getProjectSongModelResponseBassItemCoordinatesEndBeatFractionMin = 0;
 export const getProjectSongModelResponseChordsItemInversionMin = 0;
 
 export const getProjectSongModelResponseChordsItemTimingStartBeatMin = 0;
@@ -1227,37 +1179,27 @@ export const getProjectSongModelResponseChordsItemCoordinatesStartSecondsMin = 0
 
 export const getProjectSongModelResponseChordsItemCoordinatesStartTickMin = 0;
 
-
-
-
+export const getProjectSongModelResponseChordsItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseChordsItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseChordsItemCoordinatesEndTickMin = 0;
 
-
-
-
+export const getProjectSongModelResponseChordsItemCoordinatesEndBeatFractionMin = 0;
 export const getProjectSongModelResponseSectionsItemCoordinatesStartSecondsMin = 0;
 
 export const getProjectSongModelResponseSectionsItemCoordinatesStartTickMin = 0;
 
-
-
-
+export const getProjectSongModelResponseSectionsItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseSectionsItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseSectionsItemCoordinatesEndTickMin = 0;
 
-
-
-
-
+export const getProjectSongModelResponseSectionsItemCoordinatesEndBeatFractionMin = 0;
 export const getProjectSongModelResponseStemsItemConfidenceMin = 0;
 export const getProjectSongModelResponseStemsItemConfidenceMax = 1;
 
 export const getProjectSongModelResponseSourceStemsItemChecksumRegExp = new RegExp('^[a-fA-F0-9]{64}$');
 export const getProjectSongModelResponseVocalEvidenceProvenanceOneContentChecksumRegExp = new RegExp('^[a-fA-F0-9]{64}$');
-
 
 
 export const getProjectSongModelResponseVocalEvidenceThresholdsOneRmsMin = 0;
@@ -1278,13 +1220,9 @@ export const getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCo
 export const getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesStartTickMin = 0;
 
 
-
-
 export const getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesEndTickMin = 0;
-
-
 
 
 export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemStartMin = 0;
@@ -1296,29 +1234,21 @@ export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCo
 export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesStartTickMin = 0;
 
 
-
-
 export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndTickMin = 0;
-
-
 
 
 export const getProjectSongModelResponseLyricsItemCoordinatesStartSecondsMin = 0;
 
 export const getProjectSongModelResponseLyricsItemCoordinatesStartTickMin = 0;
 
-
-
-
+export const getProjectSongModelResponseLyricsItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseLyricsItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseLyricsItemCoordinatesEndTickMin = 0;
 
-
-
-
+export const getProjectSongModelResponseLyricsItemCoordinatesEndBeatFractionMin = 0;
 export const getProjectSongModelResponseProviderProvenanceItemAttemptsMin = 0;
 
 export const getProjectSongModelResponseRhythmEvidenceItemBeatsItemMin = 0;
@@ -1356,7 +1286,6 @@ export const getProjectSongModelResponseLoudnessOneSamplePeakMin = 0;
 
 export const getProjectSongModelResponseConfidenceMin = 0;
 export const getProjectSongModelResponseConfidenceMax = 1;
-
 
 
 export const GetProjectSongModelResponse = zod.object({
@@ -1423,7 +1352,8 @@ export const GetProjectSongModelResponse = zod.object({
   "tick": zod.number().min(getProjectSongModelResponseTempoMapItemCoordinatesTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(getProjectSongModelResponseTempoMapItemCoordinatesBeatFractionMin).lt(getProjectSongModelResponseTempoMapItemCoordinatesBeatFractionExclusiveMax)
 }).optional()
 })),
   "meterMap": zod.array(zod.object({
@@ -1435,7 +1365,8 @@ export const GetProjectSongModelResponse = zod.object({
   "tick": zod.number().min(getProjectSongModelResponseMeterMapItemCoordinatesTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(getProjectSongModelResponseMeterMapItemCoordinatesBeatFractionMin).lt(getProjectSongModelResponseMeterMapItemCoordinatesBeatFractionExclusiveMax)
 }).optional()
 })),
   "keyMap": zod.array(zod.object({
@@ -1447,7 +1378,8 @@ export const GetProjectSongModelResponse = zod.object({
   "tick": zod.number().min(getProjectSongModelResponseKeyMapItemCoordinatesTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(getProjectSongModelResponseKeyMapItemCoordinatesBeatFractionMin).lt(getProjectSongModelResponseKeyMapItemCoordinatesBeatFractionExclusiveMax)
 }).optional()
 })),
   "beats": zod.array(zod.object({
@@ -1460,7 +1392,8 @@ export const GetProjectSongModelResponse = zod.object({
   "tick": zod.number().min(getProjectSongModelResponseBeatsItemCoordinatesTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(getProjectSongModelResponseBeatsItemCoordinatesBeatFractionMin).lt(getProjectSongModelResponseBeatsItemCoordinatesBeatFractionExclusiveMax)
 }).optional()
 })),
   "bars": zod.array(zod.object({
@@ -1475,14 +1408,16 @@ export const GetProjectSongModelResponse = zod.object({
   "tick": zod.number().min(getProjectSongModelResponseBarsItemCoordinatesStartTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(getProjectSongModelResponseBarsItemCoordinatesStartBeatFractionMin).lt(getProjectSongModelResponseBarsItemCoordinatesStartBeatFractionExclusiveMax)
 }),
   "end": zod.object({
   "seconds": zod.number().min(getProjectSongModelResponseBarsItemCoordinatesEndSecondsMin),
   "tick": zod.number().min(getProjectSongModelResponseBarsItemCoordinatesEndTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(getProjectSongModelResponseBarsItemCoordinatesEndBeatFractionMin).lt(getProjectSongModelResponseBarsItemCoordinatesEndBeatFractionExclusiveMax)
 })
 }).optional()
 })),
@@ -1499,14 +1434,16 @@ export const GetProjectSongModelResponse = zod.object({
   "tick": zod.number().min(getProjectSongModelResponseMelodyItemCoordinatesStartTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(getProjectSongModelResponseMelodyItemCoordinatesStartBeatFractionMin).lt(getProjectSongModelResponseMelodyItemCoordinatesStartBeatFractionExclusiveMax)
 }),
   "end": zod.object({
   "seconds": zod.number().min(getProjectSongModelResponseMelodyItemCoordinatesEndSecondsMin),
   "tick": zod.number().min(getProjectSongModelResponseMelodyItemCoordinatesEndTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(getProjectSongModelResponseMelodyItemCoordinatesEndBeatFractionMin).lt(getProjectSongModelResponseMelodyItemCoordinatesEndBeatFractionExclusiveMax)
 })
 }).optional()
 })),
@@ -1525,14 +1462,16 @@ export const GetProjectSongModelResponse = zod.object({
   "tick": zod.number().min(getProjectSongModelResponseBassItemCoordinatesStartTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(getProjectSongModelResponseBassItemCoordinatesStartBeatFractionMin).lt(getProjectSongModelResponseBassItemCoordinatesStartBeatFractionExclusiveMax)
 }),
   "end": zod.object({
   "seconds": zod.number().min(getProjectSongModelResponseBassItemCoordinatesEndSecondsMin),
   "tick": zod.number().min(getProjectSongModelResponseBassItemCoordinatesEndTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(getProjectSongModelResponseBassItemCoordinatesEndBeatFractionMin).lt(getProjectSongModelResponseBassItemCoordinatesEndBeatFractionExclusiveMax)
 })
 }).optional()
 })).describe('Observed bass evidence. An empty array means no provider bass evidence was available.'),
@@ -1585,14 +1524,16 @@ export const GetProjectSongModelResponse = zod.object({
   "tick": zod.number().min(getProjectSongModelResponseChordsItemCoordinatesStartTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(getProjectSongModelResponseChordsItemCoordinatesStartBeatFractionMin).lt(getProjectSongModelResponseChordsItemCoordinatesStartBeatFractionExclusiveMax)
 }),
   "end": zod.object({
   "seconds": zod.number().min(getProjectSongModelResponseChordsItemCoordinatesEndSecondsMin),
   "tick": zod.number().min(getProjectSongModelResponseChordsItemCoordinatesEndTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(getProjectSongModelResponseChordsItemCoordinatesEndBeatFractionMin).lt(getProjectSongModelResponseChordsItemCoordinatesEndBeatFractionExclusiveMax)
 })
 }).optional()
 })),
@@ -1607,14 +1548,16 @@ export const GetProjectSongModelResponse = zod.object({
   "tick": zod.number().min(getProjectSongModelResponseSectionsItemCoordinatesStartTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(getProjectSongModelResponseSectionsItemCoordinatesStartBeatFractionMin).lt(getProjectSongModelResponseSectionsItemCoordinatesStartBeatFractionExclusiveMax)
 }),
   "end": zod.object({
   "seconds": zod.number().min(getProjectSongModelResponseSectionsItemCoordinatesEndSecondsMin),
   "tick": zod.number().min(getProjectSongModelResponseSectionsItemCoordinatesEndTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(getProjectSongModelResponseSectionsItemCoordinatesEndBeatFractionMin).lt(getProjectSongModelResponseSectionsItemCoordinatesEndBeatFractionExclusiveMax)
 })
 }).optional()
 })),
@@ -1705,14 +1648,16 @@ export const GetProjectSongModelResponse = zod.object({
   "tick": zod.number().min(getProjectSongModelResponseLyricsItemCoordinatesStartTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(getProjectSongModelResponseLyricsItemCoordinatesStartBeatFractionMin).lt(getProjectSongModelResponseLyricsItemCoordinatesStartBeatFractionExclusiveMax)
 }),
   "end": zod.object({
   "seconds": zod.number().min(getProjectSongModelResponseLyricsItemCoordinatesEndSecondsMin),
   "tick": zod.number().min(getProjectSongModelResponseLyricsItemCoordinatesEndTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(getProjectSongModelResponseLyricsItemCoordinatesEndBeatFractionMin).lt(getProjectSongModelResponseLyricsItemCoordinatesEndBeatFractionExclusiveMax)
 })
 }).optional()
 })),
@@ -1868,10 +1813,6 @@ export const correctProjectSongModelBodyMeterRegExp = new RegExp('^[1-9][0-9]*/[
 export const correctProjectSongModelBodySectionsItemNameMax = 120;
 
 
-
-
-
-
 export const CorrectProjectSongModelBody = zod.object({
   "baseVersion": zod.number().min(1),
   "bpm": zod.number().min(correctProjectSongModelBodyBpmMin).max(correctProjectSongModelBodyBpmMax).optional(),
@@ -1894,9 +1835,7 @@ export const correctProjectSongModelResponseFusionDecisionsItemCompatibilityMin 
 export const correctProjectSongModelResponseFusionDecisionsItemCompatibilityMax = 1;
 
 
-
 export const correctProjectSongModelResponseAudioDurationSecondsExclusiveMin = 0;
-
 
 
 export const correctProjectSongModelResponseAnalysisStartSecondsMin = 0;
@@ -1917,9 +1856,7 @@ export const correctProjectSongModelResponseTempoMapItemCoordinatesSecondsMin = 
 
 export const correctProjectSongModelResponseTempoMapItemCoordinatesTickMin = 0;
 
-
-
-
+export const correctProjectSongModelResponseTempoMapItemCoordinatesBeatFractionMin = 0;
 export const correctProjectSongModelResponseMeterMapItemConfidenceMin = 0;
 export const correctProjectSongModelResponseMeterMapItemConfidenceMax = 1;
 
@@ -1927,9 +1864,7 @@ export const correctProjectSongModelResponseMeterMapItemCoordinatesSecondsMin = 
 
 export const correctProjectSongModelResponseMeterMapItemCoordinatesTickMin = 0;
 
-
-
-
+export const correctProjectSongModelResponseMeterMapItemCoordinatesBeatFractionMin = 0;
 export const correctProjectSongModelResponseKeyMapItemConfidenceMin = 0;
 export const correctProjectSongModelResponseKeyMapItemConfidenceMax = 1;
 
@@ -1937,44 +1872,32 @@ export const correctProjectSongModelResponseKeyMapItemCoordinatesSecondsMin = 0;
 
 export const correctProjectSongModelResponseKeyMapItemCoordinatesTickMin = 0;
 
-
-
-
+export const correctProjectSongModelResponseKeyMapItemCoordinatesBeatFractionMin = 0;
 export const correctProjectSongModelResponseBeatsItemCoordinatesSecondsMin = 0;
 
 export const correctProjectSongModelResponseBeatsItemCoordinatesTickMin = 0;
 
-
-
-
+export const correctProjectSongModelResponseBeatsItemCoordinatesBeatFractionMin = 0;
 export const correctProjectSongModelResponseBarsItemCoordinatesStartSecondsMin = 0;
 
 export const correctProjectSongModelResponseBarsItemCoordinatesStartTickMin = 0;
 
-
-
-
+export const correctProjectSongModelResponseBarsItemCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseBarsItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseBarsItemCoordinatesEndTickMin = 0;
 
-
-
-
+export const correctProjectSongModelResponseBarsItemCoordinatesEndBeatFractionMin = 0;
 export const correctProjectSongModelResponseMelodyItemCoordinatesStartSecondsMin = 0;
 
 export const correctProjectSongModelResponseMelodyItemCoordinatesStartTickMin = 0;
 
-
-
-
+export const correctProjectSongModelResponseMelodyItemCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseMelodyItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseMelodyItemCoordinatesEndTickMin = 0;
 
-
-
-
+export const correctProjectSongModelResponseMelodyItemCoordinatesEndBeatFractionMin = 0;
 export const correctProjectSongModelResponseBassItemStartMin = 0;
 
 export const correctProjectSongModelResponseBassItemEndMin = 0;
@@ -1989,16 +1912,12 @@ export const correctProjectSongModelResponseBassItemCoordinatesStartSecondsMin =
 
 export const correctProjectSongModelResponseBassItemCoordinatesStartTickMin = 0;
 
-
-
-
+export const correctProjectSongModelResponseBassItemCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseBassItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseBassItemCoordinatesEndTickMin = 0;
 
-
-
-
+export const correctProjectSongModelResponseBassItemCoordinatesEndBeatFractionMin = 0;
 export const correctProjectSongModelResponseChordsItemInversionMin = 0;
 
 export const correctProjectSongModelResponseChordsItemTimingStartBeatMin = 0;
@@ -2034,37 +1953,27 @@ export const correctProjectSongModelResponseChordsItemCoordinatesStartSecondsMin
 
 export const correctProjectSongModelResponseChordsItemCoordinatesStartTickMin = 0;
 
-
-
-
+export const correctProjectSongModelResponseChordsItemCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseChordsItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseChordsItemCoordinatesEndTickMin = 0;
 
-
-
-
+export const correctProjectSongModelResponseChordsItemCoordinatesEndBeatFractionMin = 0;
 export const correctProjectSongModelResponseSectionsItemCoordinatesStartSecondsMin = 0;
 
 export const correctProjectSongModelResponseSectionsItemCoordinatesStartTickMin = 0;
 
-
-
-
+export const correctProjectSongModelResponseSectionsItemCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseSectionsItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseSectionsItemCoordinatesEndTickMin = 0;
 
-
-
-
-
+export const correctProjectSongModelResponseSectionsItemCoordinatesEndBeatFractionMin = 0;
 export const correctProjectSongModelResponseStemsItemConfidenceMin = 0;
 export const correctProjectSongModelResponseStemsItemConfidenceMax = 1;
 
 export const correctProjectSongModelResponseSourceStemsItemChecksumRegExp = new RegExp('^[a-fA-F0-9]{64}$');
 export const correctProjectSongModelResponseVocalEvidenceProvenanceOneContentChecksumRegExp = new RegExp('^[a-fA-F0-9]{64}$');
-
 
 
 export const correctProjectSongModelResponseVocalEvidenceThresholdsOneRmsMin = 0;
@@ -2085,13 +1994,9 @@ export const correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsIt
 export const correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesStartTickMin = 0;
 
 
-
-
 export const correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesEndTickMin = 0;
-
-
 
 
 export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemStartMin = 0;
@@ -2103,29 +2008,21 @@ export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsIt
 export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesStartTickMin = 0;
 
 
-
-
 export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndTickMin = 0;
-
-
 
 
 export const correctProjectSongModelResponseLyricsItemCoordinatesStartSecondsMin = 0;
 
 export const correctProjectSongModelResponseLyricsItemCoordinatesStartTickMin = 0;
 
-
-
-
+export const correctProjectSongModelResponseLyricsItemCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseLyricsItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseLyricsItemCoordinatesEndTickMin = 0;
 
-
-
-
+export const correctProjectSongModelResponseLyricsItemCoordinatesEndBeatFractionMin = 0;
 export const correctProjectSongModelResponseProviderProvenanceItemAttemptsMin = 0;
 
 export const correctProjectSongModelResponseRhythmEvidenceItemBeatsItemMin = 0;
@@ -2163,7 +2060,6 @@ export const correctProjectSongModelResponseLoudnessOneSamplePeakMin = 0;
 
 export const correctProjectSongModelResponseConfidenceMin = 0;
 export const correctProjectSongModelResponseConfidenceMax = 1;
-
 
 
 export const CorrectProjectSongModelResponse = zod.object({
@@ -2230,7 +2126,8 @@ export const CorrectProjectSongModelResponse = zod.object({
   "tick": zod.number().min(correctProjectSongModelResponseTempoMapItemCoordinatesTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(correctProjectSongModelResponseTempoMapItemCoordinatesBeatFractionMin).lt(correctProjectSongModelResponseTempoMapItemCoordinatesBeatFractionExclusiveMax)
 }).optional()
 })),
   "meterMap": zod.array(zod.object({
@@ -2242,7 +2139,8 @@ export const CorrectProjectSongModelResponse = zod.object({
   "tick": zod.number().min(correctProjectSongModelResponseMeterMapItemCoordinatesTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(correctProjectSongModelResponseMeterMapItemCoordinatesBeatFractionMin).lt(correctProjectSongModelResponseMeterMapItemCoordinatesBeatFractionExclusiveMax)
 }).optional()
 })),
   "keyMap": zod.array(zod.object({
@@ -2254,7 +2152,8 @@ export const CorrectProjectSongModelResponse = zod.object({
   "tick": zod.number().min(correctProjectSongModelResponseKeyMapItemCoordinatesTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(correctProjectSongModelResponseKeyMapItemCoordinatesBeatFractionMin).lt(correctProjectSongModelResponseKeyMapItemCoordinatesBeatFractionExclusiveMax)
 }).optional()
 })),
   "beats": zod.array(zod.object({
@@ -2267,7 +2166,8 @@ export const CorrectProjectSongModelResponse = zod.object({
   "tick": zod.number().min(correctProjectSongModelResponseBeatsItemCoordinatesTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(correctProjectSongModelResponseBeatsItemCoordinatesBeatFractionMin).lt(correctProjectSongModelResponseBeatsItemCoordinatesBeatFractionExclusiveMax)
 }).optional()
 })),
   "bars": zod.array(zod.object({
@@ -2282,14 +2182,16 @@ export const CorrectProjectSongModelResponse = zod.object({
   "tick": zod.number().min(correctProjectSongModelResponseBarsItemCoordinatesStartTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(correctProjectSongModelResponseBarsItemCoordinatesStartBeatFractionMin).lt(correctProjectSongModelResponseBarsItemCoordinatesStartBeatFractionExclusiveMax)
 }),
   "end": zod.object({
   "seconds": zod.number().min(correctProjectSongModelResponseBarsItemCoordinatesEndSecondsMin),
   "tick": zod.number().min(correctProjectSongModelResponseBarsItemCoordinatesEndTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(correctProjectSongModelResponseBarsItemCoordinatesEndBeatFractionMin).lt(correctProjectSongModelResponseBarsItemCoordinatesEndBeatFractionExclusiveMax)
 })
 }).optional()
 })),
@@ -2306,14 +2208,16 @@ export const CorrectProjectSongModelResponse = zod.object({
   "tick": zod.number().min(correctProjectSongModelResponseMelodyItemCoordinatesStartTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(correctProjectSongModelResponseMelodyItemCoordinatesStartBeatFractionMin).lt(correctProjectSongModelResponseMelodyItemCoordinatesStartBeatFractionExclusiveMax)
 }),
   "end": zod.object({
   "seconds": zod.number().min(correctProjectSongModelResponseMelodyItemCoordinatesEndSecondsMin),
   "tick": zod.number().min(correctProjectSongModelResponseMelodyItemCoordinatesEndTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(correctProjectSongModelResponseMelodyItemCoordinatesEndBeatFractionMin).lt(correctProjectSongModelResponseMelodyItemCoordinatesEndBeatFractionExclusiveMax)
 })
 }).optional()
 })),
@@ -2332,14 +2236,16 @@ export const CorrectProjectSongModelResponse = zod.object({
   "tick": zod.number().min(correctProjectSongModelResponseBassItemCoordinatesStartTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(correctProjectSongModelResponseBassItemCoordinatesStartBeatFractionMin).lt(correctProjectSongModelResponseBassItemCoordinatesStartBeatFractionExclusiveMax)
 }),
   "end": zod.object({
   "seconds": zod.number().min(correctProjectSongModelResponseBassItemCoordinatesEndSecondsMin),
   "tick": zod.number().min(correctProjectSongModelResponseBassItemCoordinatesEndTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(correctProjectSongModelResponseBassItemCoordinatesEndBeatFractionMin).lt(correctProjectSongModelResponseBassItemCoordinatesEndBeatFractionExclusiveMax)
 })
 }).optional()
 })).describe('Observed bass evidence. An empty array means no provider bass evidence was available.'),
@@ -2392,14 +2298,16 @@ export const CorrectProjectSongModelResponse = zod.object({
   "tick": zod.number().min(correctProjectSongModelResponseChordsItemCoordinatesStartTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(correctProjectSongModelResponseChordsItemCoordinatesStartBeatFractionMin).lt(correctProjectSongModelResponseChordsItemCoordinatesStartBeatFractionExclusiveMax)
 }),
   "end": zod.object({
   "seconds": zod.number().min(correctProjectSongModelResponseChordsItemCoordinatesEndSecondsMin),
   "tick": zod.number().min(correctProjectSongModelResponseChordsItemCoordinatesEndTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(correctProjectSongModelResponseChordsItemCoordinatesEndBeatFractionMin).lt(correctProjectSongModelResponseChordsItemCoordinatesEndBeatFractionExclusiveMax)
 })
 }).optional()
 })),
@@ -2414,14 +2322,16 @@ export const CorrectProjectSongModelResponse = zod.object({
   "tick": zod.number().min(correctProjectSongModelResponseSectionsItemCoordinatesStartTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(correctProjectSongModelResponseSectionsItemCoordinatesStartBeatFractionMin).lt(correctProjectSongModelResponseSectionsItemCoordinatesStartBeatFractionExclusiveMax)
 }),
   "end": zod.object({
   "seconds": zod.number().min(correctProjectSongModelResponseSectionsItemCoordinatesEndSecondsMin),
   "tick": zod.number().min(correctProjectSongModelResponseSectionsItemCoordinatesEndTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(correctProjectSongModelResponseSectionsItemCoordinatesEndBeatFractionMin).lt(correctProjectSongModelResponseSectionsItemCoordinatesEndBeatFractionExclusiveMax)
 })
 }).optional()
 })),
@@ -2512,14 +2422,16 @@ export const CorrectProjectSongModelResponse = zod.object({
   "tick": zod.number().min(correctProjectSongModelResponseLyricsItemCoordinatesStartTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(correctProjectSongModelResponseLyricsItemCoordinatesStartBeatFractionMin).lt(correctProjectSongModelResponseLyricsItemCoordinatesStartBeatFractionExclusiveMax)
 }),
   "end": zod.object({
   "seconds": zod.number().min(correctProjectSongModelResponseLyricsItemCoordinatesEndSecondsMin),
   "tick": zod.number().min(correctProjectSongModelResponseLyricsItemCoordinatesEndTickMin),
   "beat": zod.number().min(1),
   "bar": zod.number().min(1),
-  "beatInBar": zod.number().min(1)
+  "beatInBar": zod.number().min(1),
+  "beatFraction": zod.number().min(correctProjectSongModelResponseLyricsItemCoordinatesEndBeatFractionMin).lt(correctProjectSongModelResponseLyricsItemCoordinatesEndBeatFractionExclusiveMax)
 })
 }).optional()
 })),
@@ -2756,7 +2668,6 @@ export const listArrangementsResponseGenerationProvenanceOneEvaluationQualityRep
 export const listArrangementsResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
 
 
-
 export const ListArrangementsResponseItem = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -2880,7 +2791,6 @@ export const CreateArrangementParams = zod.object({
 export const createArrangementBodyHarmonyComplexityMax = 10;
 
 
-
 export const CreateArrangementBody = zod.object({
   "name": zod.string().min(1),
   "style": zod.string(),
@@ -2923,7 +2833,6 @@ export const createArrangementResponseSectionsItemTransposeSemitonesMax = 24;
 
 export const createArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin = 0;
 export const createArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
-
 
 
 export const CreateArrangementResponse = zod.object({
@@ -3093,7 +3002,6 @@ export const updateArrangementBodySectionsItemTransposeSemitonesMin = -24;
 export const updateArrangementBodySectionsItemTransposeSemitonesMax = 24;
 
 
-
 export const UpdateArrangementBody = zod.object({
   "name": zod.string().optional(),
   "harmonyComplexity": zod.number().min(1).max(updateArrangementBodyHarmonyComplexityMax).optional(),
@@ -3188,7 +3096,6 @@ export const updateArrangementResponseSectionsItemTransposeSemitonesMax = 24;
 
 export const updateArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin = 0;
 export const updateArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
-
 
 
 export const UpdateArrangementResponse = zod.object({
@@ -3351,7 +3258,6 @@ export const listArrangementRevisionsResponseSummaryNoteChangesMin = 0;
 export const listArrangementRevisionsResponseSummaryCcChangesMin = 0;
 
 
-
 export const ListArrangementRevisionsResponseItem = zod.object({
   "id": zod.string(),
   "arrangementId": zod.string(),
@@ -3437,8 +3343,6 @@ export const RestoreArrangementRevisionParams = zod.object({
 })
 
 
-
-
 export const RestoreArrangementRevisionBody = zod.object({
   "expectedVersion": zod.number().min(1)
 })
@@ -3478,7 +3382,6 @@ export const restoreArrangementRevisionResponseSectionsItemTransposeSemitonesMax
 
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin = 0;
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
-
 
 
 export const RestoreArrangementRevisionResponse = zod.object({
@@ -3616,7 +3519,6 @@ export const generateArrangementBodyRegionCrossfadeSecondsMin = 0;
 export const generateArrangementBodyRegionCrossfadeSecondsMax = 10;
 
 
-
 export const GenerateArrangementBody = zod.object({
   "candidates": zod.number().min(1).max(generateArrangementBodyCandidatesMax).optional(),
   "idempotencyKey": zod.string().min(1).max(generateArrangementBodyIdempotencyKeyMax).optional(),
@@ -3644,8 +3546,6 @@ export const generateArrangementResponseProgressMin = 0;
 export const generateArrangementResponseProgressMax = 100;
 
 export const generateArrangementResponseAttemptMin = 0;
-
-
 
 
 export const GenerateArrangementResponse = zod.object({
@@ -3716,8 +3616,6 @@ export const getGenerationJobResponseProgressMax = 100;
 export const getGenerationJobResponseAttemptMin = 0;
 
 
-
-
 export const GetGenerationJobResponse = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -3786,8 +3684,6 @@ export const cancelGenerationJobResponseProgressMax = 100;
 export const cancelGenerationJobResponseAttemptMin = 0;
 
 
-
-
 export const CancelGenerationJobResponse = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -3854,8 +3750,6 @@ export const retryGenerationJobResponseProgressMin = 0;
 export const retryGenerationJobResponseProgressMax = 100;
 
 export const retryGenerationJobResponseAttemptMin = 0;
-
-
 
 
 export const RetryGenerationJobResponse = zod.object({
@@ -3972,7 +3866,6 @@ export const listGenerationCandidatesResponseTrackModelsItemDirectiveExitBeatMin
 export const listGenerationCandidatesResponseTrackModelsItemDirectiveExitDurationBeatsExclusiveMin = 0;
 
 
-
 export const listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemStartMin = 0;
 
 export const listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemEndMin = 0;
@@ -4026,7 +3919,6 @@ export const listGenerationCandidatesResponseHarmonyDecisionsItemBassSupportEvid
 
 export const listGenerationCandidatesResponseEvaluationQualityReportOneScoreMin = 0;
 export const listGenerationCandidatesResponseEvaluationQualityReportOneScoreMax = 1;
-
 
 
 export const ListGenerationCandidatesResponseItem = zod.object({
@@ -4345,7 +4237,6 @@ export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationQ
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
 
 
-
 export const SelectGenerationCandidateResponse = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -4511,7 +4402,6 @@ export const ExportArrangementParams = zod.object({
 export const exportArrangementBodyIdempotencyKeyMax = 200;
 
 
-
 export const ExportArrangementBody = zod.object({
   "idempotencyKey": zod.string().min(1).max(exportArrangementBodyIdempotencyKeyMax).optional(),
   "arrangementId": zod.string().nullish(),
@@ -4630,7 +4520,6 @@ export const CreateProjectExportParams = zod.object({
 })
 
 export const createProjectExportBodyIdempotencyKeyMax = 200;
-
 
 
 export const CreateProjectExportBody = zod.object({
@@ -4770,10 +4659,6 @@ export const RunCopilotParams = zod.object({
 })
 
 
-
-
-
-
 export const RunCopilotBody = zod.object({
   "command": zod.string().min(1),
   "arrangementId": zod.string().optional(),
@@ -4782,9 +4667,6 @@ export const RunCopilotBody = zod.object({
   "startBar": zod.number().min(1).optional(),
   "endBar": zod.number().min(1).optional()
 })
-
-
-
 
 
 export const RunCopilotResponse = zod.object({
@@ -4800,3 +4682,75 @@ export const RunCopilotResponse = zod.object({
   "affectedSections": zod.array(zod.string()),
   "interpreter": zod.enum(['openai', 'deterministic'])
 })
+
+export const getProjectSongModelResponseBassItemCoordinatesStartBeatFractionExclusiveMax = 1;
+
+export const correctProjectSongModelResponseBassItemCoordinatesStartBeatFractionExclusiveMax = 1;
+
+export const getProjectSongModelResponseMeterMapItemCoordinatesBeatFractionExclusiveMax = 1;
+
+export const getProjectSongModelResponseChordsItemCoordinatesEndBeatFractionExclusiveMax = 1;
+
+export const getProjectResponseAnalysisSectionsItemCoordinatesStartBeatFractionExclusiveMax = 1;
+
+export const getProjectSongModelResponseTempoMapItemCoordinatesBeatFractionExclusiveMax = 1;
+
+export const getProjectSongModelResponseBeatsItemCoordinatesBeatFractionExclusiveMax = 1;
+
+export const getProjectResponseAnalysisSectionsItemCoordinatesEndBeatFractionExclusiveMax = 1;
+
+export const getProjectSongModelResponseBarsItemCoordinatesEndBeatFractionExclusiveMax = 1;
+
+export const getProjectSongModelResponseSectionsItemCoordinatesStartBeatFractionExclusiveMax = 1;
+
+export const getProjectSongModelResponseLyricsItemCoordinatesEndBeatFractionExclusiveMax = 1;
+
+export const correctProjectSongModelResponseMelodyItemCoordinatesEndBeatFractionExclusiveMax = 1;
+
+export const getProjectSongModelResponseChordsItemCoordinatesStartBeatFractionExclusiveMax = 1;
+
+export const correctProjectSongModelResponseTempoMapItemCoordinatesBeatFractionExclusiveMax = 1;
+
+export const correctProjectSongModelResponseBeatsItemCoordinatesBeatFractionExclusiveMax = 1;
+
+export const analyzeProjectResponseSectionsItemCoordinatesStartBeatFractionExclusiveMax = 1;
+
+export const correctProjectSongModelResponseSectionsItemCoordinatesStartBeatFractionExclusiveMax = 1;
+
+export const correctProjectSongModelResponseBassItemCoordinatesEndBeatFractionExclusiveMax = 1;
+
+export const correctProjectSongModelResponseSectionsItemCoordinatesEndBeatFractionExclusiveMax = 1;
+
+export const getProjectSongModelResponseBassItemCoordinatesEndBeatFractionExclusiveMax = 1;
+
+export const correctProjectSongModelResponseBarsItemCoordinatesStartBeatFractionExclusiveMax = 1;
+
+export const getProjectSongModelResponseKeyMapItemCoordinatesBeatFractionExclusiveMax = 1;
+
+export const correctProjectSongModelResponseKeyMapItemCoordinatesBeatFractionExclusiveMax = 1;
+
+export const getProjectSongModelResponseMelodyItemCoordinatesEndBeatFractionExclusiveMax = 1;
+
+export const correctProjectSongModelResponseChordsItemCoordinatesEndBeatFractionExclusiveMax = 1;
+
+export const correctProjectSongModelResponseLyricsItemCoordinatesEndBeatFractionExclusiveMax = 1;
+
+export const getProjectSongModelResponseMelodyItemCoordinatesStartBeatFractionExclusiveMax = 1;
+
+export const correctProjectSongModelResponseMeterMapItemCoordinatesBeatFractionExclusiveMax = 1;
+
+export const correctProjectSongModelResponseBarsItemCoordinatesEndBeatFractionExclusiveMax = 1;
+
+export const correctProjectSongModelResponseChordsItemCoordinatesStartBeatFractionExclusiveMax = 1;
+
+export const analyzeProjectResponseSectionsItemCoordinatesEndBeatFractionExclusiveMax = 1;
+
+export const getProjectSongModelResponseSectionsItemCoordinatesEndBeatFractionExclusiveMax = 1;
+
+export const correctProjectSongModelResponseMelodyItemCoordinatesStartBeatFractionExclusiveMax = 1;
+
+export const getProjectSongModelResponseBarsItemCoordinatesStartBeatFractionExclusiveMax = 1;
+
+export const correctProjectSongModelResponseLyricsItemCoordinatesStartBeatFractionExclusiveMax = 1;
+
+export const getProjectSongModelResponseLyricsItemCoordinatesStartBeatFractionExclusiveMax = 1;

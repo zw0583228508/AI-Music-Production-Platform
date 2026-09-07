@@ -25,6 +25,7 @@ export type CanonicalTimeCoordinate = {
   beat: number;
   bar: number;
   beatInBar: number;
+  beatFraction: number;
 };
 
 export type CanonicalTimeRange = {

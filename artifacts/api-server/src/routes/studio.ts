@@ -2048,6 +2048,14 @@ router.patch("/projects/:projectId/song-model", async (req, res): Promise<void> 
       ? canonicalizeSongModelCoordinates(correctedModelDraft)
       : correctedModelDraft,
   );
+  const correctedValidation = validateCanonicalSongModel(correctedModel);
+  if (!correctedValidation.success) {
+    res.status(400).json({
+      error: "The correction produced an invalid Song Model timeline.",
+      issues: correctedValidation.issues,
+    });
+    return;
+  }
 
   const created = await db.transaction(async (tx) => {
     await tx.execute(
@@ -2207,7 +2215,10 @@ router.patch("/arrangements/:arrangementId", async (req, res): Promise<void> => 
     return;
   }
   const [ownedArrangement] = await db
-    .select({ projectId: arrangementsTable.projectId })
+    .select({
+      projectId: arrangementsTable.projectId,
+      meter: musicProjectsTable.meter,
+    })
     .from(arrangementsTable)
     .innerJoin(
       musicProjectsTable,
@@ -2246,6 +2257,7 @@ router.patch("/arrangements/:arrangementId", async (req, res): Promise<void> => 
     return;
   }
   if (updateData.sections) {
+    const beatsPerBar = Number.parseInt(ownedArrangement.meter, 10) || 4;
     let previousEnd = 0;
     for (const section of updateData.sections) {
       if (
@@ -2265,7 +2277,7 @@ router.patch("/arrangements/:arrangementId", async (req, res): Promise<void> => 
           chord.startBeat < 0 ||
           !Number.isFinite(chord.durationBeats) ||
           chord.durationBeats <= 0 ||
-          chord.startBeat + chord.durationBeats > (section.endBar! - section.startBar! + 1) * 4
+          chord.startBeat + chord.durationBeats > (section.endBar! - section.startBar! + 1) * beatsPerBar
         )
       ) {
         res.status(400).json({ error: "Chord events must stay inside their section and have a positive duration" });
@@ -2290,7 +2302,7 @@ router.patch("/arrangements/:arrangementId", async (req, res): Promise<void> => 
             note.pitch > 127 ||
             note.start < 0 ||
             note.duration <= 0 ||
-            note.start + note.duration > (section.endBar! - section.startBar! + 1) * 4 ||
+            note.start + note.duration > (section.endBar! - section.startBar! + 1) * beatsPerBar ||
             note.velocity < 1 ||
             note.velocity > 127
           ) ||
