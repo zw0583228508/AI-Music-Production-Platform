@@ -4,13 +4,17 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import io
 import json
+import math
 import os
 import re
+import struct
 import subprocess
 import tempfile
 import time
 import urllib.request
+import wave
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -24,6 +28,10 @@ EVIDENCE = ROOT / "release-evidence"
 GENERATED = WORKSPACE / "artifacts/api-server/src/lib/gpuPromotions.generated.ts"
 KEY_DERIVATION_DOMAIN = b"MUSIC_GPU Modal promotion v1\0"
 ED25519_PKCS8_PREFIX = bytes.fromhex("302e020100300506032b657004220420")
+RESEARCH_LICENSE = (
+    "Apache-2.0 source and DiffRhythm2 weights; "
+    "CC-BY-NC-4.0 MuQ-MuLan and MuQ weights"
+)
 
 
 def canonical(value: object) -> str:
@@ -218,8 +226,203 @@ def fetch_health(metadata: dict) -> dict:
     return health
 
 
+def research_rhythm_wav() -> bytes:
+    sample_rate = 16000
+    duration_seconds = 4
+    frames = bytearray()
+    for index in range(sample_rate * duration_seconds):
+        time_seconds = index / sample_rate
+        beat_phase = time_seconds % 0.5
+        pulse = math.exp(-beat_phase * 28) * math.sin(2 * math.pi * 110 * time_seconds)
+        frames.extend(struct.pack("<h", round(max(-1, min(1, pulse * 0.45)) * 32767)))
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as fixture:
+        fixture.setnchannels(1)
+        fixture.setsampwidth(2)
+        fixture.setframerate(sample_rate)
+        fixture.writeframes(frames)
+    return buffer.getvalue()
+
+
+def describe_audio(audio: bytes) -> dict:
+    with tempfile.NamedTemporaryFile(suffix=".mp3") as handle:
+        handle.write(audio)
+        handle.flush()
+        probe = subprocess.run(
+            [
+                "ffprobe", "-v", "error", "-show_entries",
+                "format=duration", "-of", "json", handle.name,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        decoded = subprocess.run(
+            [
+                "ffmpeg", "-v", "error", "-i", handle.name, "-f", "s16le",
+                "-ac", "1", "-ar", "16000", "pipe:1",
+            ],
+            capture_output=True,
+            check=False,
+        )
+    if probe.returncode or decoded.returncode:
+        raise RuntimeError("DiffRhythm2 canary artifact is not decodable audio")
+    try:
+        duration = float(json.loads(probe.stdout)["format"]["duration"])
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise RuntimeError("DiffRhythm2 canary duration is unavailable") from exc
+    samples = struct.iter_unpack("<h", decoded.stdout)
+    sample_count = 0
+    square_sum = 0
+    for (sample,) in samples:
+        sample_count += 1
+        square_sum += sample * sample
+    rms = math.sqrt(square_sum / sample_count) / 32768 if sample_count else 0
+    if duration < 1 or rms <= 1e-5:
+        raise RuntimeError("DiffRhythm2 canary artifact is silent or too short")
+    return {"durationSeconds": duration, "rmsAmplitude": rms}
+
+
+def verify_research_generation(metadata: dict, health: dict | None = None) -> dict:
+    token = os.getenv("MUSIC_AI_WORKER_TOKEN", "").strip()
+    if not token:
+        raise ValueError("music worker token is unavailable")
+    health = health or fetch_health(metadata)
+    body = canonical({
+        "lyrics": "[verse]\nA short research canary follows the beat",
+        "rhythmWavBase64": base64.b64encode(research_rhythm_wav()).decode(),
+        "stylePrompt": "minimal acoustic pop",
+        "duration": 8,
+        "steps": 16,
+        "guidance": 2,
+    }).encode()
+    generation_url = f"{metadata['endpointOrigin']}/generate"
+    request = urllib.request.Request(
+        generation_url,
+        data=body,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+    opener = urllib.request.build_opener(NoRedirect)
+    with opener.open(request, timeout=1800) as response:
+        if response.status != 200 or response.geturl() != generation_url:
+            raise RuntimeError("DiffRhythm2 canary generation did not return directly")
+        result = json.loads(response.read(2 * 1024 * 1024))
+    if (
+        result.get("provider") != "DIFFRHYTHM_2"
+        or result.get("licenseStatus") != "RESEARCH_ONLY"
+        or result.get("commercialUsePermitted") is not False
+        or result.get("license") != RESEARCH_LICENSE
+    ):
+        raise ValueError("DiffRhythm2 canary response lost its research license terms")
+    artifact_path = str(result.get("artifactUrl", ""))
+    if re.fullmatch(r"/artifacts/[a-f0-9]{32}", artifact_path) is None:
+        raise ValueError("DiffRhythm2 canary returned an untrusted artifact path")
+    artifact_url = f"{metadata['endpointOrigin']}{artifact_path}"
+    artifact_request = urllib.request.Request(
+        artifact_url, headers={"Authorization": f"Bearer {token}"}
+    )
+    with opener.open(artifact_request, timeout=1800) as response:
+        if response.status != 200 or response.geturl() != artifact_url:
+            raise RuntimeError("DiffRhythm2 canary artifact was not directly retrievable")
+        audio = response.read(128 * 1024 * 1024 + 1)
+        etag = response.headers.get("ETag", "").strip('"')
+    if len(audio) > 128 * 1024 * 1024:
+        raise ValueError("DiffRhythm2 canary artifact exceeds verification limit")
+    observed_sha = hashlib.sha256(audio).hexdigest()
+    if observed_sha != result.get("artifactSha256") or etag != observed_sha:
+        raise ValueError("DiffRhythm2 canary artifact hash differs from response metadata")
+    description = describe_audio(audio)
+    proof = {
+        "schemaVersion": 1,
+        "provider": "DIFFRHYTHM_2",
+        "modalDeploymentId": metadata["modalDeploymentId"],
+        "modalImageId": health["modalImageId"],
+        "licenseStatus": "RESEARCH_ONLY",
+        "commercialUsePermitted": False,
+        "license": RESEARCH_LICENSE,
+        "outputSha256": observed_sha,
+        "bytes": len(audio),
+        **description,
+        "artifactHashVerified": True,
+        "authenticatedArtifactRetrieved": True,
+        "artifactOrigin": metadata["endpointOrigin"],
+    }
+    atomic_json(EVIDENCE / "live-research-generation-proof.json", proof)
+    return proof
+
+
+def validate_generation_proof(proof: dict, metadata: dict, health: dict) -> None:
+    exact = {
+        "schemaVersion": 1,
+        "provider": "DIFFRHYTHM_2",
+        "modalDeploymentId": metadata["modalDeploymentId"],
+        "modalImageId": health["modalImageId"],
+        "licenseStatus": "RESEARCH_ONLY",
+        "commercialUsePermitted": False,
+        "license": RESEARCH_LICENSE,
+        "artifactHashVerified": True,
+        "authenticatedArtifactRetrieved": True,
+        "artifactOrigin": metadata["endpointOrigin"],
+    }
+    if any(proof.get(field) != expected for field, expected in exact.items()):
+        raise ValueError("DiffRhythm2 retained generation proof is stale or invalid")
+    if (
+        re.fullmatch(r"[a-f0-9]{64}", str(proof.get("outputSha256", ""))) is None
+        or not isinstance(proof.get("bytes"), int)
+        or proof["bytes"] <= 0
+        or not isinstance(proof.get("durationSeconds"), (int, float))
+        or proof["durationSeconds"] < 1
+        or not isinstance(proof.get("rmsAmplitude"), (int, float))
+        or proof["rmsAmplitude"] <= 1e-5
+    ):
+        raise ValueError("DiffRhythm2 retained generation audio evidence is invalid")
+
+
+def validate_release(release: dict) -> dict:
+    metadata = {
+        field: release.get(field)
+        for field in (
+            "provider", "modalAppId", "modalDeploymentId",
+            "modalFunctionId", "endpointOrigin",
+        )
+    }
+    health = release.get("liveHealth")
+    proof = release.get("liveResearchGeneration")
+    if not isinstance(health, dict) or not isinstance(proof, dict):
+        raise ValueError("DiffRhythm2 release lacks live health or generation proof")
+    if (
+        release.get("provider") != "DIFFRHYTHM_2"
+        or release.get("licenseStatus") != "RESEARCH_ONLY"
+        or release.get("commercialUsePermitted") is not False
+        or any(
+            health.get(field) != release.get(field)
+            for field in ("modalAppId", "modalDeploymentId", "modalFunctionId", "modalImageId")
+        )
+        or health.get("ready") is not True
+        or health.get("healthy") is not True
+    ):
+        raise ValueError("DiffRhythm2 release identity or readiness is invalid")
+    validate_generation_proof(proof, metadata, health)
+    path = EVIDENCE / "live-research-generation-proof.json"
+    if (
+        json.loads(path.read_text()) != proof
+        or release.get("retainedEvidence", {}).get(path.name)
+        != {"sha256": sha256(path), "bytes": path.stat().st_size}
+    ):
+        raise ValueError("DiffRhythm2 generation proof digest is not retained")
+    return release
+
+
 def capture(metadata: dict) -> dict:
     health = fetch_health(metadata)
+    generation = verify_research_generation(metadata, health)
+    if observe() != metadata:
+        raise ValueError("DiffRhythm2 deployment identity changed during capture")
     atomic_json(EVIDENCE / "live-health.json", health)
     retained_names = (
         "model-assets.json",
@@ -229,6 +432,7 @@ def capture(metadata: dict) -> dict:
         "full-fixture-smoke-proof.json",
         "full-fixture-output.mp3",
         "full-fixture-diagnostic.json",
+        "live-research-generation-proof.json",
     )
     retained = {}
     for name in retained_names:
@@ -247,9 +451,10 @@ def capture(metadata: dict) -> dict:
         "commercialUsePermitted": False,
         "retainedEvidence": retained,
         "liveHealth": health,
+        "liveResearchGeneration": generation,
     }
     atomic_json(EVIDENCE / "release-evidence.json", release)
-    return release
+    return validate_release(release)
 
 
 def private_key() -> tuple[Path, bool]:
@@ -305,6 +510,7 @@ def sign(record: dict, key: Path) -> str:
 
 
 def promote(release: dict) -> tuple[dict, str]:
+    validate_release(release)
     health = release["liveHealth"]
     record = {
         "schemaVersion": 1,
@@ -350,7 +556,12 @@ def promote(release: dict) -> tuple[dict, str]:
     return bundle, public
 
 
-def activate(bundle: dict, public: str) -> None:
+def activate(bundle: dict, public: str, release: dict) -> None:
+    validate_release(release)
+    if bundle.get("record", {}).get("releaseEvidenceSha256") != hashlib.sha256(
+        canonical(release).encode()
+    ).hexdigest():
+        raise ValueError("DiffRhythm2 promotion does not bind retained release evidence")
     match = re.fullmatch(
         r"/\* Generated by the fail-closed generic Modal release workflow\. \*/\n"
         r"export const committedGpuPromotionsJson = (.+);\n",
@@ -372,7 +583,9 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "command",
-        choices=("observe", "install-identity", "capture", "promote", "activate"),
+        choices=(
+            "observe", "install-identity", "capture", "canary", "promote", "activate"
+        ),
     )
     args = parser.parse_args()
     metadata_path = EVIDENCE / "observed-deployment.json"
@@ -382,12 +595,15 @@ def main() -> None:
         install_identity(json.loads(metadata_path.read_text()))
     elif args.command == "capture":
         capture(json.loads(metadata_path.read_text()))
+    elif args.command == "canary":
+        verify_research_generation(json.loads(metadata_path.read_text()))
     elif args.command == "promote":
         promote(json.loads((EVIDENCE / "release-evidence.json").read_text()))
     else:
         activate(
             json.loads((EVIDENCE / "promotion-bundle.json").read_text()),
             (EVIDENCE / "promotion-public-key.pem").read_text(),
+            json.loads((EVIDENCE / "release-evidence.json").read_text()),
         )
 
 
