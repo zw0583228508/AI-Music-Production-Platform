@@ -145,6 +145,32 @@ class AnyAccompContractTests(unittest.TestCase):
         ):
             self.assertTrue(app.health_payload()["sourceOriginsReady"])
 
+    def test_health_fails_closed_when_public_artifact_origin_drifts(self):
+        app = load("anyapp_origin_drift", "app.py")
+        with mock.patch.dict(
+            "os.environ",
+            {
+                "ANYACCOMP_PUBLIC_ORIGIN": "https://stale.example.test",
+                "MUSIC_GPU_PROMOTION_ENDPOINT_ORIGIN": "https://current.example.test",
+            },
+            clear=False,
+        ):
+            payload = app.health_payload()
+        self.assertFalse(payload["artifactOriginReady"])
+        self.assertFalse(payload["ready"])
+        self.assertEqual(
+            payload["publicArtifactOrigin"], "https://stale.example.test"
+        )
+
+    def test_modal_startup_rejects_public_origin_drift(self):
+        modal_app = load("anymodal_origin_drift", "modal_app.py")
+        with self.assertRaisesRegex(RuntimeError, "differs from promoted"):
+            modal_app._start_pinned_server({
+                "ANYACCOMP_PUBLIC_ORIGIN": "https://stale.example.test",
+                "MUSIC_GPU_PROMOTION_ENDPOINT_ORIGIN":
+                    "https://current.example.test",
+            })
+
     def test_artifact_capability_is_bound_to_name_and_expiry(self):
         app = load("anyapp_cap", "app.py")
         with mock.patch.dict("os.environ", {"ANYACCOMP_API_TOKEN": "test-token"}):
@@ -157,7 +183,7 @@ class AnyAccompContractTests(unittest.TestCase):
                 first, app.artifact_capability("job/accompaniment.wav", 101)
             )
 
-    def test_generation_result_has_attested_provenance_and_external_artifact_url(self):
+    def test_generation_uses_promoted_origin_and_ignores_forwarded_headers(self):
         app = load("anyapp_generate", "app.py")
         runtime = {
             "cudaVersion": "12.1",
@@ -192,7 +218,10 @@ class AnyAccompContractTests(unittest.TestCase):
             "os.environ",
             {
                 "ANYACCOMP_API_TOKEN": "test-token",
-                "ANYACCOMP_PUBLIC_ORIGIN": "https://windot100--anyaccomp.modal.run",
+                "ANYACCOMP_PUBLIC_ORIGIN": "https://current.example.test",
+                "MUSIC_GPU_PROMOTION_ENDPOINT_ORIGIN": "https://current.example.test",
+                "HTTP_X_FORWARDED_HOST": "attacker.example.test",
+                "HTTP_X_FORWARDED_PROTO": "http",
             },
         ):
             with mock.patch.object(app, "run") as run:
@@ -210,8 +239,12 @@ class AnyAccompContractTests(unittest.TestCase):
         self.assertEqual(payload["cudaVersion"], "12.1")
         self.assertTrue(
             payload["candidates"][0]["artifact"]["url"].startswith(
-                "https://windot100--anyaccomp.modal.run/artifact/"
+                "https://current.example.test/artifact/"
             )
+        )
+        self.assertNotIn(
+            "attacker.example.test",
+            payload["candidates"][0]["artifact"]["url"],
         )
         artifact = payload["candidates"][0]["artifact"]
         self.assertIn("expires=", artifact["url"])

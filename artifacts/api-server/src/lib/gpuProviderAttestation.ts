@@ -279,6 +279,11 @@ export function gpuPromotionAttestationFailure(
   if (originOf(endpoint) !== bundle.record.endpointOrigin) {
     return "GPU provider endpoint origin does not match the promoted deployment.";
   }
+  if (providerId === "ANYACCOMP" &&
+      (payload["artifactOriginReady"] !== true ||
+       payload["publicArtifactOrigin"] !== bundle.record.endpointOrigin)) {
+    return "GPU worker artifact origin does not match the promoted deployment record.";
+  }
   if (payload["provider"] !== providerId ||
       payload["modalAppId"] !== bundle.record.modalAppId ||
       payload["modalDeploymentId"] !== bundle.record.modalDeploymentId ||

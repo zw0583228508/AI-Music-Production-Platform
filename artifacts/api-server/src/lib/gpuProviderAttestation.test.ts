@@ -259,6 +259,8 @@ test("the committed AnyAccomp promotion is signed, exact, and cannot be replaced
         transformers: record.runtime.transformers,
         accelerate: record.runtime.accelerate,
       },
+      publicArtifactOrigin: record.endpointOrigin,
+      artifactOriginReady: true,
     };
     assert.equal(
       gpuPromotionAttestationFailure(
@@ -284,6 +286,10 @@ test("the committed AnyAccomp promotion is signed, exact, and cannot be replaced
       [`${record.endpointOrigin}/health`, {
         runtime: { pythonVersion: "3.11.0" },
       }],
+      [`${record.endpointOrigin}/health`, {
+        publicArtifactOrigin: "https://stale.example.test",
+      }],
+      [`${record.endpointOrigin}/health`, { artifactOriginReady: false }],
     ] as const) {
       assert.ok(
         gpuPromotionAttestationFailure(

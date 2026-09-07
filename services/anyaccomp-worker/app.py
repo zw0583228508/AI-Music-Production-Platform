@@ -51,6 +51,34 @@ def allowed_source_origins() -> set[str]:
     }
 
 
+def canonical_public_origin(value: str) -> str | None:
+    parsed = urlparse(value.strip())
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.path not in ("", "/")
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+    ):
+        return None
+    return f"https://{parsed.hostname.lower()}" + (
+        f":{parsed.port}" if parsed.port and parsed.port != 443 else ""
+    )
+
+
+def public_artifact_origin_state() -> tuple[str, bool]:
+    configured = canonical_public_origin(
+        os.getenv("ANYACCOMP_PUBLIC_ORIGIN", "")
+    )
+    promoted = canonical_public_origin(
+        os.getenv("MUSIC_GPU_PROMOTION_ENDPOINT_ORIGIN", "")
+    )
+    return configured or "", configured is not None and configured == promoted
+
+
 def digest(path: Path) -> str:
     value = hashlib.sha256()
     with path.open("rb") as handle:
@@ -243,6 +271,7 @@ def health_payload() -> dict:
         and modal_function_id != "fu-Pending"
     )
     source_origins_ready = bool(allowed_source_origins())
+    public_artifact_origin, artifact_origin_ready = public_artifact_origin_state()
     ready = (
         assets["assetsReady"]
         and assets["fixtureReady"]
@@ -250,6 +279,7 @@ def health_payload() -> dict:
         and runtime["ready"]
         and identity_ready
         and source_origins_ready
+        and artifact_origin_ready
     )
     source_image_digest = runtime["runtime"]["sourceImageDigest"]
     modal_image_id = runtime["runtime"]["modalImageId"]
@@ -292,6 +322,8 @@ def health_payload() -> dict:
         "smokeTested": assets["smokeTested"],
         "identityReady": identity_ready,
         "sourceOriginsReady": source_origins_ready,
+        "publicArtifactOrigin": public_artifact_origin,
+        "artifactOriginReady": artifact_origin_ready,
         "smokeEvidence": smoke_evidence,
     }
 
@@ -373,9 +405,11 @@ def generate(body: GenerateRequest) -> dict:
         sample_rate = rendered.getframerate()
         channels = rendered.getnchannels()
         duration_seconds = rendered.getnframes() / sample_rate
-    base = os.getenv("ANYACCOMP_PUBLIC_ORIGIN", "").rstrip("/")
-    if not re.fullmatch(r"https://[A-Za-z0-9.-]+", base):
-        raise HTTPException(503, "AnyAccomp public origin is not configured")
+    base, artifact_origin_ready = public_artifact_origin_state()
+    if not artifact_origin_ready:
+        raise HTTPException(
+            503, "AnyAccomp public origin does not match promoted deployment"
+        )
     return {
         "provider": SPEC["provider"],
         "modelVersion": SPEC["model_version"],
