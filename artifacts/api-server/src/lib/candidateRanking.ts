@@ -18,6 +18,7 @@ const requiredQualityChecks = [
 export function hasCompleteQualityEvidence(evaluation: CandidateEvaluation): boolean {
   if (
     evaluation.status !== "evaluated" ||
+    evaluation.diversity?.rejected ||
     evaluation.error !== null ||
     !evaluation.qualityReport ||
     !evaluation.qualityReport.lineageComplete

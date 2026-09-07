@@ -17,4 +17,5 @@ export const CandidateEvaluationStatus = {
   evaluated: 'evaluated',
   render_failed: 'render_failed',
   analysis_failed: 'analysis_failed',
+  diversity_rejected: 'diversity_rejected',
 } as const;

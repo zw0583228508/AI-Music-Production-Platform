@@ -6,7 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { CandidateEvaluationArtifactsItem } from './candidateEvaluationArtifactsItem';
+import type { CandidateEvaluationDiversity } from './candidateEvaluationDiversity';
 import type { CandidateEvaluationStatus } from './candidateEvaluationStatus';
+import type { CandidateEvaluationStrategy } from './candidateEvaluationStrategy';
 import type { CandidateQualityReport } from './candidateQualityReport';
 
 export interface CandidateEvaluation {
@@ -17,4 +19,6 @@ export interface CandidateEvaluation {
   qualityReport: CandidateQualityReport | null;
   /** @nullable */
   error: string | null;
+  strategy?: CandidateEvaluationStrategy;
+  diversity?: CandidateEvaluationDiversity;
 }

@@ -14,7 +14,14 @@ await build({
         createStyleSpec,
         renderMusicPipeline,
       } from "./src/lib/musicEngines";
-      export { hasCompleteQualityEvidence, isSelectableCandidate, rankEvaluatedCandidates } from "./src/lib/candidateRanking";
+       export { hasCompleteQualityEvidence, isSelectableCandidate, rankEvaluatedCandidates } from "./src/lib/candidateRanking";
+       export {
+         candidateDistance,
+         diversityEvidence,
+         fingerprintCandidate,
+         seedForCandidate,
+         strategyForCandidate,
+       } from "./src/lib/candidateDiversity";
     `,
     resolveDir: apiDirectory,
     sourcefile: "candidate-quality-harness.ts",
@@ -31,6 +38,11 @@ const {
   rankEvaluatedCandidates,
   hasCompleteQualityEvidence,
   isSelectableCandidate,
+   candidateDistance,
+   diversityEvidence,
+   fingerprintCandidate,
+   seedForCandidate,
+   strategyForCandidate,
 } =
   await import(pathToFileURL(bundlePath).href);
 after(() => unlink(bundlePath).catch(() => undefined));
@@ -384,4 +396,63 @@ test("an evaluated row without complete quality evidence is unranked", () => {
     evaluatedPlan: {},
     evaluatedStyleSpec: {},
   }), false);
+});
+
+test("diversity-rejected candidates are neither ranked nor selectable", () => {
+  const evaluation = {
+    status: "evaluated", providerScore: 1, renderArtifactIds: ["audio"],
+    artifacts: [
+      { id: "audio", type: "AUDIO_TRACK", label: "Audio", url: "export-object://audio" },
+      { id: "quality", type: "QUALITY_REPORT", label: "Quality", url: "export-object://quality" },
+    ],
+    qualityReport: {
+      score: 1,
+      checks: { silence: 1, clipping: 1, notePlayability: 1, timing: 1, sectionCoverage: 1, lineage: 1 },
+      weights: { silence: .15, clipping: .15, notePlayability: .2, timing: .15, sectionCoverage: .15, lineage: .2 },
+      strengths: [], weaknesses: [], warnings: [], evaluatedAt: "2026-08-30T00:00:00.000Z",
+      renderArtifactIds: ["audio"], lineageComplete: true,
+    },
+    error: null,
+    diversity: { rejected: true },
+  };
+  assert.equal(rankEvaluatedCandidates([{ score: 1, evaluation }])[0].rank, null);
+  assert.equal(isSelectableCandidate({
+    status: "diversity_rejected", evaluation, trackModels: [], evaluatedPlan: {}, evaluatedStyleSpec: {},
+  }), false);
+});
+
+test("canonical diversity fingerprints use deterministic strategies, seeds, and the weighted duplicate threshold", () => {
+  assert.deepEqual(
+    Array.from({ length: 6 }, (_, index) => strategyForCandidate(index)),
+    ["sparse", "balanced", "rhythmic", "harmonic", "orchestral", "sparse"],
+  );
+  assert.deepEqual([0, 1, 2].map((index) => seedForCandidate(2_147_483_646, index)),
+    [2_147_483_646, 0, 1]);
+  const canonicalPlan = {
+    sections: [{
+      section: "verse", startBar: 1, endBar: 4, energy: .5, density: .4,
+      tracks: { piano: "main_harmony" }, activeTracks: ["piano"], operations: [],
+    }],
+  };
+  const canonicalTracks = [{
+    id: "piano", role: "harmony", instrument: "piano",
+    notes: [{ start: 0, duration: 1, pitch: 60 }],
+  }];
+  const baseline = fingerprintCandidate(canonicalPlan, canonicalTracks);
+  assert.equal(candidateDistance(baseline, fingerprintCandidate(canonicalPlan, canonicalTracks)), 0);
+  assert.equal(
+    diversityEvidence(baseline, [{ id: "baseline", fingerprint: baseline }]).rejected,
+    true,
+  );
+  const distinct = fingerprintCandidate({
+    ...canonicalPlan,
+    sections: [{
+      ...canonicalPlan.sections[0], energy: 1, density: 1,
+      tracks: { drums: "rhythm" }, activeTracks: ["drums"],
+    }],
+  }, [{ id: "drums", role: "rhythm", instrument: "drums", notes: [] }]);
+  assert.equal(
+    diversityEvidence(distinct, [{ id: "baseline", fingerprint: baseline }]).rejected,
+    false,
+  );
 });

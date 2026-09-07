@@ -1386,23 +1386,33 @@ export default function ProjectWorkspace() {
                                   <div>
                                     <div className="flex flex-wrap items-center gap-2">
                                       <div className="font-semibold">{candidate.label}</div>
-                                      <Badge variant={candidate.rank === 1 && evaluated ? "default" : "outline"}>
+                                      <Badge variant={candidate.rank === 1 && evaluated && !candidate.evaluation.diversity?.rejected ? "default" : "outline"}>
                                         {candidate.rank === null ? "Unranked" : `#${candidate.rank}`}
                                       </Badge>
                                       <Badge variant={evaluated ? "secondary" : "destructive"}>
                                         {candidate.evaluation.status.replaceAll("_", " ")}
                                       </Badge>
+                                      {candidate.evaluation.strategy && (
+                                        <Badge variant="outline" className="capitalize">
+                                          {candidate.evaluation.strategy.name}
+                                        </Badge>
+                                      )}
+                                      {candidate.evaluation.diversity && (
+                                        <Badge variant={candidate.evaluation.diversity.rejected ? "secondary" : "outline"} className="capitalize">
+                                          {candidate.evaluation.diversity.rejected ? "Rejected" : "Accepted"}: {candidate.evaluation.diversity.reason.replaceAll("_", " ")}
+                                        </Badge>
+                                      )}
                                     </div>
                                     <div className="mt-1 text-xs text-muted-foreground">
                                       {candidate.provider} · {candidate.modelVersion} · provider score {Math.round(candidate.evaluation.providerScore * 100)}
                                     </div>
                                     <p className="mt-2 max-w-xl text-sm">{candidate.summary}</p>
                                     <div className="mt-2 text-xs text-muted-foreground">
-                                      {candidate.plan.sections.length} sections · {Math.round(candidate.confidence * 100)}% confidence · seed {candidate.seed}
+                                      {candidate.plan.sections.length} sections · {Math.round(candidate.confidence * 100)}% confidence · {candidate.evaluation.strategy?.seed ? `derived seed ${candidate.evaluation.strategy.seed}` : `seed ${candidate.seed}`}
                                     </div>
                                   </div>
                                 </div>
-                                <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+                                <div className="flex shrink-0 flex-col gap-2 sm:flex-row items-center sm:items-start">
                                   <Button
                                     size="sm"
                                     variant={
@@ -1432,17 +1442,27 @@ export default function ProjectWorkspace() {
                                   >
                                     {candidatePreview?.id === candidate.id ? "In transport" : "Preview"}
                                   </Button>
-                                  <Button
-                                    size="sm"
-                                    disabled={
-                                      candidate.status !== "validated" ||
-                                      !evaluated ||
-                                      selectGenerationCandidate.isPending
-                                    }
-                                    onClick={() => handleSelectCandidate(candidate)}
-                                  >
-                                    {candidate.status === "selected" ? "Selected" : "Select"}
-                                  </Button>
+                                  <div className="flex flex-col items-center gap-1">
+                                    <span title={candidate.evaluation.diversity?.rejected ? `Rejected: ${candidate.evaluation.diversity.reason.replaceAll("_", " ")}` : undefined}>
+                                      <Button
+                                        size="sm"
+                                        disabled={
+                                          candidate.status !== "validated" ||
+                                          !evaluated ||
+                                          selectGenerationCandidate.isPending ||
+                                          candidate.evaluation.diversity?.rejected
+                                        }
+                                        onClick={() => handleSelectCandidate(candidate)}
+                                      >
+                                        {candidate.status === "selected" ? "Selected" : "Select"}
+                                      </Button>
+                                    </span>
+                                    {candidate.evaluation.diversity?.rejected && (
+                                      <span className="text-[10px] text-muted-foreground max-w-[80px] text-center leading-tight">
+                                        Omitted for diversity
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                               {evaluated ? (
