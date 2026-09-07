@@ -1027,6 +1027,93 @@ test("project and export endpoints enforce owner authorization", async () => {
   assertProducerSafeEvaluation(candidates[0].evaluation);
   assert.equal(JSON.stringify(candidates[0]).includes("private-track"), false);
 
+  const selectedCandidateId = `selected-auth-candidate-${process.pid}`;
+  const selectedArrangementId = `selected-auth-arrangement-${process.pid}`;
+  const historicalSelectionEvaluation = {
+    status: "evaluated",
+    providerScore: 0.91,
+    renderArtifactIds: [],
+    artifacts: [],
+    qualityReport: null,
+    error: null,
+    diversity: {
+      fingerprint: {
+        activeTracks: ["private-selected-track"],
+        densityEnergy: [{ density: 0.6, energy: 0.7 }],
+        harmonySequence: ["private-selected-harmony"],
+        trackRoleInstruments: ["private-selected-role"],
+        noteShape: [3, 2, 1],
+      },
+      comparedToCandidateId: "selected-baseline-candidate",
+      distance: 0.42,
+      threshold: 0.25,
+      rejected: false,
+      reason: "sufficiently_distinct",
+    },
+  };
+  await db.insert(musicGenerationCandidatesTable).values({
+    id: selectedCandidateId,
+    jobId: generationJobId,
+    projectId,
+    arrangementId,
+    provider: "METEOR",
+    modelVersion: "historical-model",
+    seed: 234,
+    rank: 1,
+    label: "Previously eligible candidate",
+    score: 0.91,
+    confidence: 0.9,
+    summary: "Eligible candidate selected before Music Critic reports were retained",
+    status: "selected",
+    plan: { sections: [] },
+    trackModels: [],
+    evaluatedPlan: { sections: [] },
+    evaluatedStyleSpec: {},
+    evaluation: historicalSelectionEvaluation,
+  });
+  await db.insert(arrangementsTable).values({
+    id: selectedArrangementId,
+    projectId,
+    name: "Private arrangement · Previously eligible candidate",
+    style: "Test",
+    mode: "STUDIO",
+    version: 2,
+    status: "ready",
+    sections: [],
+    sourceGenerationJobId: generationJobId,
+    sourceCandidateId: selectedCandidateId,
+    parentArrangementId: arrangementId,
+    generationProvenance: {
+      jobId: generationJobId,
+      candidateId: selectedCandidateId,
+      provider: "METEOR",
+      modelVersion: "historical-model",
+      reportedModelVersion: null,
+      providerRequestId: null,
+      songModelVersion: null,
+      seed: 234,
+      parameters: {},
+      parentArtifactIds: [],
+      evaluation: historicalSelectionEvaluation,
+    },
+  });
+
+  const selectedCandidateResponse = await request(
+    `/api/generation-candidates/${selectedCandidateId}/select`,
+    ownerSession,
+    { method: "POST" },
+  );
+  assert.equal(selectedCandidateResponse.status, 200);
+  const selectedArrangement = await selectedCandidateResponse.json();
+  const selectedEvaluation = selectedArrangement.generationProvenance.evaluation;
+  assert.equal(selectedArrangement.id, selectedArrangementId);
+  assert.equal(selectedEvaluation.musicCritic, null);
+  assert.equal(selectedEvaluation.diversity.reason, "sufficiently_distinct");
+  assert.equal(selectedEvaluation.diversity.distance, 0.42);
+  assert.equal(selectedEvaluation.diversity.rejected, false);
+  assert.equal("fingerprint" in selectedEvaluation.diversity, false);
+  assert.equal(JSON.stringify(selectedArrangement).includes("private-selected-track"), false);
+
   const crossUserExport = await request(`/api/projects/${projectId}/export`, otherSession, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
