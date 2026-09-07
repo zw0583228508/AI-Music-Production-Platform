@@ -7,13 +7,7 @@
  */
 import type { CanonicalTimeCoordinate } from './canonicalTimeCoordinate';
 
-export interface MeterEvent {
-  bar: number;
-  meter: string;
-  /**
-     * @minimum 0
-     * @maximum 1
-     */
-  confidence: number;
-  coordinates?: CanonicalTimeCoordinate;
+export interface CanonicalTimeRange {
+  start: CanonicalTimeCoordinate;
+  end: CanonicalTimeCoordinate;
 }

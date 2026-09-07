@@ -5,6 +5,7 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { CanonicalTimeCoordinate } from './canonicalTimeCoordinate';
 
 export interface TempoEvent {
   time: number;
@@ -18,4 +19,5 @@ export interface TempoEvent {
      * @maximum 1
      */
   confidence: number;
+  coordinates?: CanonicalTimeCoordinate;
 }

@@ -5,10 +5,12 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { CanonicalTimeCoordinate } from './canonicalTimeCoordinate';
 
 export interface BeatEvent {
   time: number;
   beat: number;
   bar: number;
   confidence: number;
+  coordinates?: CanonicalTimeCoordinate;
 }

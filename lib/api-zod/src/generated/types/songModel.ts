@@ -8,6 +8,7 @@
 import type { BarEvent } from './barEvent';
 import type { BassEvidenceEvent } from './bassEvidenceEvent';
 import type { BeatEvent } from './beatEvent';
+import type { CanonicalTimebase } from './canonicalTimebase';
 import type { ChordEvent } from './chordEvent';
 import type { KeyEvent } from './keyEvent';
 import type { LyricEvent } from './lyricEvent';
@@ -40,6 +41,7 @@ export interface SongModel {
   version: number;
   status: SongModelStatus;
   contractVersion: SongModelContractVersion;
+  timebase?: CanonicalTimebase;
   validation: SongModelValidation;
   fusion: SongModelFusion;
   audio: SongModelAudio;

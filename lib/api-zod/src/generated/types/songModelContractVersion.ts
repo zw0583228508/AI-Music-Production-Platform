@@ -11,4 +11,5 @@ export type SongModelContractVersion = typeof SongModelContractVersion[keyof typ
 
 export const SongModelContractVersion = {
   '10': '1.0',
+  '20': '2.0',
 } as const;

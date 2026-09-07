@@ -65,7 +65,7 @@ function canonicalizeCoordinates(model: SongModelCore): SongModelCore {
   };
 }
 
-function canonicalizeSongModelCoordinates(model: SongModelData): SongModelData {
+export function canonicalizeSongModelCoordinates(model: SongModelData): SongModelData {
   const core = canonicalizeCoordinates(model);
   const timeline = createCanonicalTimeline(core.tempoMap, core.meterMap);
   return {

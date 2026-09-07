@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { GetProjectSongModelResponse } from "@workspace/api-zod";
 import {
   chordMelodyConflictSongModel,
   microNoteSongModel,
@@ -12,6 +13,7 @@ import {
   evaluateArrangementEligibility,
   fuseProviderSongModels,
   isLegacySongModel,
+  canonicalizeSongModelCoordinates,
   refreshSongModelValidation,
   validateCanonicalSongModel,
   validateSongModelCore,
@@ -83,6 +85,81 @@ test("v2 validation rejects coordinates that contradict the canonical timeline",
   const validation = validateCanonicalSongModel(contradictory);
   assert.equal(validation.success, false);
   assert.ok(issueCodes(validation).includes("CONTRADICTORY_COORDINATES"));
+});
+
+test("rehydrates every v2 coordinate on correction/versioning paths without changing events", () => {
+  const fused = fuseProviderSongModels([
+    { provider: "analysis", output: validSongModel, confidence: 0.9 },
+  ]);
+  assert.equal(fused.accepted, true);
+  if (!fused.accepted) return;
+  const coordinateStripped = structuredClone(fused.model) as any;
+  for (const collection of ["tempoMap", "meterMap", "keyMap", "melody", "chords", "sections"]) {
+    for (const event of coordinateStripped[collection]) delete event.coordinates;
+  }
+  const rehydrated = canonicalizeSongModelCoordinates(coordinateStripped);
+  assert.equal(validateCanonicalSongModel(rehydrated).success, true);
+  assert.deepEqual(
+    rehydrated.melody.map(({ coordinates, ...event }) => event),
+    fused.model.melody.map(({ coordinates, ...event }) => event),
+  );
+  assert.ok(rehydrated.tempoMap.every((event) => event.coordinates));
+  assert.ok(rehydrated.meterMap.every((event) => event.coordinates));
+  assert.ok(rehydrated.keyMap.every((event) => event.coordinates));
+  assert.ok(rehydrated.melody.every((event) => event.coordinates?.start && event.coordinates.end));
+  assert.ok(rehydrated.chords.every((event) => event.coordinates?.start && event.coordinates.end));
+  assert.ok(rehydrated.sections.every((event) => event.coordinates?.start && event.coordinates.end));
+});
+
+test("Song Model API serialization retains v2 canonical coordinates and timebase", () => {
+  const fused = fuseProviderSongModels([
+    { provider: "analysis", output: validSongModel, confidence: 0.9 },
+  ]);
+  assert.equal(fused.accepted, true);
+  if (!fused.accepted) return;
+  const fields = ["tempo", "meter", "key", "melody", "bass", "harmony", "sections", "energy"] as const;
+  const serialized = GetProjectSongModelResponse.parse({
+    ...fused.model,
+    id: "model-1",
+    projectId: "project-1",
+    sourceId: "source-1",
+    version: 2,
+    status: "ready",
+    audio: {
+      ...fused.model.audio,
+      proxyObjectPath: null,
+      proxyContentType: null,
+      analysisStartSeconds: 0,
+      analysisDurationSeconds: 16,
+      analysisCoverage: "full",
+    },
+    analysisStartSeconds: 0,
+    analysisDurationSeconds: 16,
+    analysisCoverage: 1,
+    beats: [],
+    bars: [],
+    bass: [],
+    dynamics: [],
+    waveform: [],
+    stems: [],
+    sourceStems: [],
+    lyrics: [],
+    confidenceByField: {},
+    providerProvenance: [],
+    fieldStatus: Object.fromEntries(fields.map((field) => [field, {
+      status: "detected", confidence: 0.9, providers: ["analysis"], message: null, edited: false,
+    }])),
+    provenance: Object.fromEntries(fields.map((field) => [field, ["analysis"]])),
+    providers: ["analysis"],
+    confidence: 0.9,
+    createdAt: "2025-01-01T00:00:00.000Z",
+  });
+  assert.deepEqual(serialized.timebase, fused.model.timebase);
+  assert.deepEqual(serialized.tempoMap[0].coordinates, fused.model.tempoMap[0].coordinates);
+  assert.deepEqual(serialized.meterMap[0].coordinates, fused.model.meterMap[0].coordinates);
+  assert.deepEqual(serialized.melody[0].coordinates, fused.model.melody[0].coordinates);
+  assert.deepEqual(serialized.chords[0].coordinates, fused.model.chords[0].coordinates);
+  assert.deepEqual(serialized.sections[0].coordinates, fused.model.sections[0].coordinates);
 });
 
 test("does not invent timed evidence for energy and dynamics sample arrays", () => {

@@ -386,7 +386,35 @@ export type SongModelContractVersion = typeof SongModelContractVersion[keyof typ
 
 export const SongModelContractVersion = {
   '10': '1.0',
+  '20': '2.0',
 } as const;
+
+export type CanonicalTimebasePpq = typeof CanonicalTimebasePpq[keyof typeof CanonicalTimebasePpq];
+
+
+export const CanonicalTimebasePpq = {
+  NUMBER_960: 960,
+} as const;
+
+export type CanonicalTimebaseOriginSeconds = typeof CanonicalTimebaseOriginSeconds[keyof typeof CanonicalTimebaseOriginSeconds];
+
+
+export const CanonicalTimebaseOriginSeconds = {
+  NUMBER_0: 0,
+} as const;
+
+export type CanonicalTimebaseCoordinateSystem = typeof CanonicalTimebaseCoordinateSystem[keyof typeof CanonicalTimebaseCoordinateSystem];
+
+
+export const CanonicalTimebaseCoordinateSystem = {
+  'seconds+ticks': 'seconds+ticks',
+} as const;
+
+export interface CanonicalTimebase {
+  ppq: CanonicalTimebasePpq;
+  originSeconds: CanonicalTimebaseOriginSeconds;
+  coordinateSystem: CanonicalTimebaseCoordinateSystem;
+}
 
 export type SongModelValidationStatus = typeof SongModelValidationStatus[keyof typeof SongModelValidationStatus];
 
@@ -483,6 +511,19 @@ export interface SongModelAudio {
   analysisCoverage: SongModelAudioAnalysisCoverage;
 }
 
+export interface CanonicalTimeCoordinate {
+  /** @minimum 0 */
+  seconds: number;
+  /** @minimum 0 */
+  tick: number;
+  /** @minimum 1 */
+  beat: number;
+  /** @minimum 1 */
+  bar: number;
+  /** @minimum 1 */
+  beatInBar: number;
+}
+
 export interface TempoEvent {
   time: number;
   /**
@@ -495,6 +536,7 @@ export interface TempoEvent {
      * @maximum 1
      */
   confidence: number;
+  coordinates?: CanonicalTimeCoordinate;
 }
 
 export interface MeterEvent {
@@ -505,6 +547,7 @@ export interface MeterEvent {
      * @maximum 1
      */
   confidence: number;
+  coordinates?: CanonicalTimeCoordinate;
 }
 
 export interface KeyEvent {
@@ -515,6 +558,7 @@ export interface KeyEvent {
      * @maximum 1
      */
   confidence: number;
+  coordinates?: CanonicalTimeCoordinate;
 }
 
 export interface BeatEvent {
@@ -522,6 +566,12 @@ export interface BeatEvent {
   beat: number;
   bar: number;
   confidence: number;
+  coordinates?: CanonicalTimeCoordinate;
+}
+
+export interface CanonicalTimeRange {
+  start: CanonicalTimeCoordinate;
+  end: CanonicalTimeCoordinate;
 }
 
 export interface BarEvent {
@@ -530,6 +580,7 @@ export interface BarEvent {
   end: number;
   beats: number;
   confidence: number;
+  coordinates?: CanonicalTimeRange;
 }
 
 export interface NoteEvent {
@@ -539,6 +590,7 @@ export interface NoteEvent {
   velocity: number;
   confidence: number;
   source: string;
+  coordinates?: CanonicalTimeRange;
 }
 
 export type BassEvidenceEventSourceStemProvider = typeof BassEvidenceEventSourceStemProvider[keyof typeof BassEvidenceEventSourceStemProvider];
@@ -568,6 +620,7 @@ export interface BassEvidenceEvent {
   sourceStem?: string;
   sourceStemProvider?: BassEvidenceEventSourceStemProvider;
   providers?: string[];
+  coordinates?: CanonicalTimeRange;
 }
 
 export interface ChordTiming {
@@ -665,6 +718,7 @@ export interface ChordEvent {
      * @maxItems 16
      */
   bassSupportEvidence?: ChordBassSupportEvidence[];
+  coordinates?: CanonicalTimeRange;
 }
 
 export interface Section {
@@ -672,6 +726,7 @@ export interface Section {
   startBar: number;
   endBar: number;
   energy: number;
+  coordinates?: CanonicalTimeRange;
 }
 
 export interface SongModelStem {
@@ -699,6 +754,7 @@ export interface LyricEvent {
   end: number;
   text: string;
   confidence: number;
+  coordinates?: CanonicalTimeRange;
 }
 
 export type ProviderProvenanceStatus = typeof ProviderProvenanceStatus[keyof typeof ProviderProvenanceStatus];
@@ -787,6 +843,7 @@ export interface SongModel {
   version: number;
   status: SongModelStatus;
   contractVersion: SongModelContractVersion;
+  timebase?: CanonicalTimebase;
   validation: SongModelValidation;
   fusion: SongModelFusion;
   audio: SongModelAudio;

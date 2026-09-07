@@ -5,6 +5,7 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { CanonicalTimeRange } from './canonicalTimeRange';
 
 export interface NoteEvent {
   start: number;
@@ -13,4 +14,5 @@ export interface NoteEvent {
   velocity: number;
   confidence: number;
   source: string;
+  coordinates?: CanonicalTimeRange;
 }

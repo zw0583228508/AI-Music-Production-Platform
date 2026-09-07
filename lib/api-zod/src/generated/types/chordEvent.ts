@@ -5,6 +5,7 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { CanonicalTimeRange } from './canonicalTimeRange';
 import type { ChordBassSupportEvidence } from './chordBassSupportEvidence';
 import type { ChordCandidateProvenance } from './chordCandidateProvenance';
 import type { ChordTiming } from './chordTiming';
@@ -37,4 +38,5 @@ export interface ChordEvent {
      * @maxItems 16
      */
   bassSupportEvidence?: ChordBassSupportEvidence[];
+  coordinates?: CanonicalTimeRange;
 }

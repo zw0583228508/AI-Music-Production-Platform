@@ -5,10 +5,12 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { CanonicalTimeRange } from './canonicalTimeRange';
 
 export interface Section {
   name: string;
   startBar: number;
   endBar: number;
   energy: number;
+  coordinates?: CanonicalTimeRange;
 }

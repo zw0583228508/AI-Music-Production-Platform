@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { BassEvidenceEventSourceStemProvider } from './bassEvidenceEventSourceStemProvider';
+import type { CanonicalTimeRange } from './canonicalTimeRange';
 
 export interface BassEvidenceEvent {
   /** @minimum 0 */
@@ -27,4 +28,5 @@ export interface BassEvidenceEvent {
   sourceStem?: string;
   sourceStemProvider?: BassEvidenceEventSourceStemProvider;
   providers?: string[];
+  coordinates?: CanonicalTimeRange;
 }
