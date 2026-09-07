@@ -14,7 +14,8 @@ await build({
         createStyleSpec,
         renderMusicPipeline,
       } from "./src/lib/musicEngines";
-       export { hasCompleteQualityEvidence, isSelectableCandidate, rankEvaluatedCandidates } from "./src/lib/candidateRanking";
+       export { hasCompleteQualityEvidence, isSelectableCandidate, publicCandidateEvaluation, rankEvaluatedCandidates } from "./src/lib/candidateRanking";
+       export { evaluateCandidateMusicalFit } from "./src/lib/candidateQuality";
        export {
          candidateDistance,
          diversityEvidence,
@@ -38,11 +39,13 @@ const {
   rankEvaluatedCandidates,
   hasCompleteQualityEvidence,
   isSelectableCandidate,
+  publicCandidateEvaluation,
    candidateDistance,
    diversityEvidence,
    fingerprintCandidate,
    seedForCandidate,
    strategyForCandidate,
+  evaluateCandidateMusicalFit,
 } =
   await import(pathToFileURL(bundlePath).href);
 after(() => unlink(bundlePath).catch(() => undefined));
@@ -108,6 +111,35 @@ const track = {
     createdBy: "test",
   },
 };
+
+const criticDimensionNames = [
+  "vocalFit",
+  "harmony",
+  "development",
+  "contrastAndTransitions",
+  "registerCollisions",
+  "playability",
+  "repetition",
+  "styleAndControlAdherence",
+];
+
+const musicCritic = (score, overrides = {}) => ({
+  version: "music-critic-v1",
+  score,
+  dimensions: Object.fromEntries(criticDimensionNames.map((name) => [
+    name,
+    overrides[name] ?? {
+      status: "available",
+      score,
+      evidence: [{
+        source: "section_plan",
+        summary: `${name} evidence`,
+        observations: { observed: true },
+      }],
+      explanation: `${name} explanation`,
+    },
+  ])),
+});
 
 test("quality analysis reports every required weighted dimension", () => {
   const audibleMix = new Float32Array(8_000).fill(0.2);
@@ -284,6 +316,7 @@ test("failed quality evidence is unranked regardless of provider score", () => {
         renderArtifactIds: ["audio", "midi"],
         lineageComplete: true,
       },
+      musicCritic: musicCritic(score),
       error: null,
     },
   });
@@ -349,6 +382,33 @@ test("verified provider audio is selectable without inventing symbolic TrackMode
       renderArtifactIds: ["audio"],
       lineageComplete: true,
     },
+    musicCritic: musicCritic(0.82, {
+      vocalFit: {
+        status: "unavailable", score: null,
+        evidence: [{ source: "vocal_activity", summary: "Unavailable", observations: {} }],
+        explanation: "Unavailable",
+      },
+      harmony: {
+        status: "unavailable", score: null,
+        evidence: [{ source: "harmony_decisions", summary: "Unavailable", observations: {} }],
+        explanation: "Unavailable",
+      },
+      registerCollisions: {
+        status: "unavailable", score: null,
+        evidence: [{ source: "track_notes", summary: "Unavailable", observations: {} }],
+        explanation: "Unavailable",
+      },
+      playability: {
+        status: "unavailable", score: null,
+        evidence: [{ source: "instrument_constraints", summary: "Unavailable", observations: {} }],
+        explanation: "Unavailable",
+      },
+      repetition: {
+        status: "unavailable", score: null,
+        evidence: [{ source: "track_notes", summary: "Unavailable", observations: {} }],
+        explanation: "Unavailable",
+      },
+    }),
     error: null,
   };
   assert.equal(hasCompleteQualityEvidence(evaluation), true);
@@ -419,6 +479,142 @@ test("diversity-rejected candidates are neither ranked nor selectable", () => {
   assert.equal(isSelectableCandidate({
     status: "diversity_rejected", evaluation, trackModels: [], evaluatedPlan: {}, evaluatedStyleSpec: {},
   }), false);
+});
+
+test("music critic reports every rubric dimension with typed unavailable evidence", () => {
+  const songModel = {
+    vocalEvidence: {
+      status: "not_available",
+      reason: "No verified vocal stem",
+      provenance: null,
+      sampleRate: null,
+      channels: null,
+      frameSizeSamples: null,
+      thresholds: null,
+      observedVoicedWindows: [],
+      observedSilentWindows: [],
+    },
+  };
+  const report = evaluateCandidateMusicalFit({
+    songModel,
+    plan: {
+      ...plan,
+      style: {
+        genre: "orchestral", subgenre: "cinematic", era: "modern",
+        tempoCharacter: "steady",
+        rhythm: { swing: 0, syncopation: 0.2, subdivision: "eighth" },
+        harmony: { complexity: 0.5, tension: 0.4, voicing: "open" },
+        instrumentation: { preferredFamilies: ["keys"], avoid: [] },
+        orchestration: { density: 0.5, registerSpread: 0.5, dynamics: "shaped" },
+        production: { stereoWidth: 0.5, room: "hall", mixProfile: "balanced" },
+        dynamics: { range: 0.5, accentStrength: 0.5 },
+      },
+    },
+    tracks: [track],
+    harmonyDecisions: [],
+  });
+  assert.deepEqual(Object.keys(report.dimensions), criticDimensionNames);
+  assert.equal(report.dimensions.vocalFit.status, "unavailable");
+  assert.equal(report.dimensions.vocalFit.score, null);
+  assert.equal(report.dimensions.harmony.status, "unavailable");
+  assert.ok(Number.isFinite(report.score));
+  for (const result of Object.values(report.dimensions)) {
+    assert.ok(result.evidence.length > 0);
+    assert.equal(typeof result.explanation, "string");
+  }
+});
+
+test("a failed critic dimension fences quality evidence", () => {
+  const evaluated = {
+    status: "evaluated",
+    providerScore: 1,
+    renderArtifactIds: ["audio"],
+    artifacts: [
+      { id: "audio", type: "AUDIO_TRACK", label: "Audio", url: "export-object://audio" },
+      { id: "quality", type: "QUALITY_REPORT", label: "Quality", url: "export-object://quality" },
+    ],
+    qualityReport: {
+      score: 1,
+      checks: { silence: 1, clipping: 1, notePlayability: 1, timing: 1, sectionCoverage: 1, lineage: 1 },
+      weights: { silence: .15, clipping: .15, notePlayability: .2, timing: .15, sectionCoverage: .15, lineage: .2 },
+      strengths: [], weaknesses: [], warnings: [], evaluatedAt: "2026-08-30T00:00:00.000Z",
+      renderArtifactIds: ["audio"], lineageComplete: true,
+    },
+    musicCritic: musicCritic(0.9, {
+      playability: {
+        status: "failed", score: null,
+        evidence: [{ source: "instrument_constraints", summary: "Malformed constraints", observations: {} }],
+        explanation: "Malformed constraints",
+      },
+    }),
+    error: null,
+  };
+  assert.equal(hasCompleteQualityEvidence(evaluated), false);
+});
+
+test("public candidate evidence hides internal diversity fingerprints and normalizes historical critics", () => {
+  const evaluation = {
+    status: "evaluated",
+    providerScore: 0.8,
+    renderArtifactIds: [],
+    artifacts: [],
+    qualityReport: null,
+    error: null,
+    diversity: {
+      fingerprint: {
+        activeTracks: ["secret-track"],
+        densityEnergy: [{ density: 0.5, energy: 0.5 }],
+        harmonySequence: ["secret-harmony"],
+        trackRoleInstruments: ["secret-role"],
+        noteShape: [1, 2, 3],
+      },
+      comparedToCandidateId: "baseline",
+      distance: 0.1,
+      threshold: 0.25,
+      rejected: true,
+      reason: "near_duplicate",
+    },
+  };
+  const publicEvaluation = publicCandidateEvaluation(evaluation);
+  assert.equal(publicEvaluation.musicCritic, null);
+  assert.equal("fingerprint" in publicEvaluation.diversity, false);
+  assert.equal(publicEvaluation.diversity.reason, "near_duplicate");
+});
+
+test("critic dimensions outrank provider preference and ties are stable by candidate id", () => {
+  const makeCandidate = (id, criticScore, providerScore) => ({
+    id,
+    score: criticScore,
+    evaluation: {
+      status: "evaluated",
+      providerScore,
+      renderArtifactIds: [`audio-${id}`],
+      artifacts: [
+        { id: `audio-${id}`, type: "AUDIO_TRACK", label: "Audio", url: `export-object://audio-${id}` },
+        { id: `quality-${id}`, type: "QUALITY_REPORT", label: "Quality", url: `export-object://quality-${id}` },
+      ],
+      qualityReport: {
+        score: 1,
+        checks: { silence: 1, clipping: 1, notePlayability: 1, timing: 1, sectionCoverage: 1, lineage: 1 },
+        weights: { silence: .15, clipping: .15, notePlayability: .2, timing: .15, sectionCoverage: .15, lineage: .2 },
+        strengths: [], weaknesses: [], warnings: [], evaluatedAt: "2026-08-30T00:00:00.000Z",
+        renderArtifactIds: [`audio-${id}`], lineageComplete: true,
+      },
+      musicCritic: musicCritic(criticScore),
+      error: null,
+    },
+  });
+  const highProvider = makeCandidate("z-provider", 0.7, 1);
+  const musicalFit = makeCandidate("m-fit", 0.9, 0.1);
+  const tieA = makeCandidate("a-tie", 0.7, 1);
+  assert.deepEqual(
+    rankEvaluatedCandidates([highProvider, musicalFit, tieA]).map(({ id }) => id),
+    ["m-fit", "a-tie", "z-provider"],
+  );
+  assert.deepEqual(
+    rankEvaluatedCandidates([tieA, highProvider, musicalFit]).map(({ id }) => id),
+    ["m-fit", "a-tie", "z-provider"],
+  );
 });
 
 test("canonical diversity fingerprints use deterministic strategies, seeds, and the weighted duplicate threshold", () => {

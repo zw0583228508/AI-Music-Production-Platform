@@ -1414,6 +1414,68 @@ export interface CandidateQualityReport {
   lineageComplete: boolean;
 }
 
+export type CandidateMusicCriticDimensionResultStatus = typeof CandidateMusicCriticDimensionResultStatus[keyof typeof CandidateMusicCriticDimensionResultStatus];
+
+
+export const CandidateMusicCriticDimensionResultStatus = {
+  available: 'available',
+  unavailable: 'unavailable',
+  failed: 'failed',
+} as const;
+
+export type CandidateMusicCriticEvidenceSource = typeof CandidateMusicCriticEvidenceSource[keyof typeof CandidateMusicCriticEvidenceSource];
+
+
+export const CandidateMusicCriticEvidenceSource = {
+  vocal_activity: 'vocal_activity',
+  harmony_decisions: 'harmony_decisions',
+  section_plan: 'section_plan',
+  track_notes: 'track_notes',
+  instrument_constraints: 'instrument_constraints',
+  style_and_directives: 'style_and_directives',
+} as const;
+
+export type CandidateMusicCriticEvidenceObservations = {[key: string]: string | number | boolean};
+
+export interface CandidateMusicCriticEvidence {
+  source: CandidateMusicCriticEvidenceSource;
+  summary: string;
+  observations: CandidateMusicCriticEvidenceObservations;
+}
+
+export interface CandidateMusicCriticDimensionResult {
+  status: CandidateMusicCriticDimensionResultStatus;
+  /**
+     * @minimum 0
+     * @maximum 1
+     * @nullable
+     */
+  score: number | null;
+  evidence: CandidateMusicCriticEvidence[];
+  explanation: string;
+}
+
+export type CandidateMusicCriticReportDimensions = {
+  vocalFit: CandidateMusicCriticDimensionResult;
+  harmony: CandidateMusicCriticDimensionResult;
+  development: CandidateMusicCriticDimensionResult;
+  contrastAndTransitions: CandidateMusicCriticDimensionResult;
+  registerCollisions: CandidateMusicCriticDimensionResult;
+  playability: CandidateMusicCriticDimensionResult;
+  repetition: CandidateMusicCriticDimensionResult;
+  styleAndControlAdherence: CandidateMusicCriticDimensionResult;
+};
+
+export interface CandidateMusicCriticReport {
+  version: 'music-critic-v1';
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  score: number;
+  dimensions: CandidateMusicCriticReportDimensions;
+}
+
 export type CandidateEvaluationStrategyName = typeof CandidateEvaluationStrategyName[keyof typeof CandidateEvaluationStrategyName];
 
 
@@ -1457,21 +1519,7 @@ export type CandidateEvaluationStrategy = {
   seed: number;
 };
 
-export type CandidateEvaluationDiversityFingerprintDensityEnergyItem = {
-  density: number;
-  energy: number;
-};
-
-export type CandidateEvaluationDiversityFingerprint = {
-  activeTracks: string[];
-  densityEnergy: CandidateEvaluationDiversityFingerprintDensityEnergyItem[];
-  harmonySequence: string[];
-  trackRoleInstruments: string[];
-  noteShape: number[];
-};
-
 export type CandidateEvaluationDiversity = {
-  fingerprint: CandidateEvaluationDiversityFingerprint;
   /** @nullable */
   comparedToCandidateId: string | null;
   /** @nullable */
@@ -1487,6 +1535,7 @@ export interface CandidateEvaluation {
   renderArtifactIds: string[];
   artifacts: CandidateEvaluationArtifactsItem[];
   qualityReport: CandidateQualityReport | null;
+  musicCritic: CandidateMusicCriticReport | null;
   /** @nullable */
   error: string | null;
   strategy?: CandidateEvaluationStrategy;

@@ -2365,7 +2365,7 @@ components:
         lineageComplete: { type: boolean }
     CandidateEvaluation:
       type: object
-      required: [status, providerScore, renderArtifactIds, artifacts, qualityReport, error]
+      required: [status, providerScore, renderArtifactIds, artifacts, qualityReport, musicCritic, error]
       properties:
         status:
           type: string
@@ -2390,6 +2390,10 @@ components:
           oneOf:
             - $ref: "#/components/schemas/CandidateQualityReport"
             - type: "null"
+        musicCritic:
+          oneOf:
+            - $ref: "#/components/schemas/CandidateMusicCriticReport"
+            - type: "null"
         error:
           type: [string, "null"]
         strategy:
@@ -2402,29 +2406,57 @@ components:
             seed: { type: number, minimum: 0, maximum: 2147483647 }
         diversity:
           type: object
-          required: [fingerprint, comparedToCandidateId, distance, threshold, rejected, reason]
+          required: [comparedToCandidateId, distance, threshold, rejected, reason]
           properties:
-            fingerprint:
-              type: object
-              required: [activeTracks, densityEnergy, harmonySequence, trackRoleInstruments, noteShape]
-              properties:
-                activeTracks: { type: array, items: { type: string } }
-                densityEnergy:
-                  type: array
-                  items:
-                    type: object
-                    required: [density, energy]
-                    properties:
-                      density: { type: number }
-                      energy: { type: number }
-                harmonySequence: { type: array, items: { type: string } }
-                trackRoleInstruments: { type: array, items: { type: string } }
-                noteShape: { type: array, items: { type: number } }
             comparedToCandidateId: { type: [string, "null"] }
             distance: { type: [number, "null"] }
             threshold: { type: number, const: 0.25 }
             rejected: { type: boolean }
             reason: { type: string, enum: [baseline_retained, near_duplicate, sufficiently_distinct] }
+    CandidateMusicCriticEvidence:
+      type: object
+      required: [source, summary, observations]
+      properties:
+        source:
+          type: string
+          enum: [vocal_activity, harmony_decisions, section_plan, track_notes, instrument_constraints, style_and_directives]
+        summary: { type: string }
+        observations:
+          type: object
+          additionalProperties:
+            oneOf:
+              - { type: string }
+              - { type: number }
+              - { type: boolean }
+    CandidateMusicCriticDimensionResult:
+      type: object
+      required: [status, score, evidence, explanation]
+      properties:
+        status: { type: string, enum: [available, unavailable, failed] }
+        score: { type: [number, "null"], minimum: 0, maximum: 1 }
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/CandidateMusicCriticEvidence"
+        explanation: { type: string }
+    CandidateMusicCriticReport:
+      type: object
+      required: [version, score, dimensions]
+      properties:
+        version: { type: string, const: music-critic-v1 }
+        score: { type: number, minimum: 0, maximum: 1 }
+        dimensions:
+          type: object
+          required: [vocalFit, harmony, development, contrastAndTransitions, registerCollisions, playability, repetition, styleAndControlAdherence]
+          properties:
+            vocalFit: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
+            harmony: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
+            development: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
+            contrastAndTransitions: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
+            registerCollisions: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
+            playability: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
+            repetition: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
+            styleAndControlAdherence: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
     GenerationCandidate:
       type: object
       required: [id, jobId, provider, modelVersion, seed, rank, label, score, confidence, summary, status, parameters, parentArtifactIds, plan, trackModels, harmonyDecisions, evaluation, createdAt]
