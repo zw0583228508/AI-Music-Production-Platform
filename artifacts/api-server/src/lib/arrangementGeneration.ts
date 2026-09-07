@@ -42,6 +42,7 @@ import {
 } from "./musicProviders";
 import {
   applyPlanModulations,
+  buildArrangementBrain,
   buildTrackModels,
   createArrangementPlan,
   createStyleSpec,
@@ -303,6 +304,16 @@ function materializeCandidate(input: CandidateMaterializationInput): {
     orchestraSize: source.orchestraSize,
     rhythmIntensity: source.rhythmIntensity,
   });
+  // The global pass is deliberately completed before local plan construction,
+  // so every candidate section receives one consistent whole-song direction.
+  const arrangementBrain = buildArrangementBrain({
+    songModel,
+    controls: {
+      energy: source.energy,
+      density: source.density,
+      orchestraSize: source.orchestraSize,
+    },
+  });
   const generatedPlan = createArrangementPlan({
     arrangementId: input.candidateId,
     version: input.version,
@@ -311,6 +322,7 @@ function materializeCandidate(input: CandidateMaterializationInput): {
     tracks,
     parameters: { ...engineParameters, arrangementId: input.candidateId },
     parentIds: candidate.parentArtifactIds,
+    arrangementBrain,
   });
   const providerSections = new Map(
     candidate.plan.sections.map((section) => [section.name.toLowerCase(), section]),
@@ -341,6 +353,11 @@ function materializeCandidate(input: CandidateMaterializationInput): {
         section.section.replaceAll("_", " ").toLowerCase(),
       );
       if (!providerSection) return section;
+      // Provider section suggestions are local descriptions. Once the brain
+      // has sufficient observed-form evidence, membership and operations stay
+      // with its coordinated plan rather than reintroducing independent
+      // section-level layer choices.
+      if (arrangementBrain.enabled) return section;
       const enabled = new Set(providerSection.tracks.flatMap((track) =>
         [...(descriptorByToken.get(track.toLowerCase()) ?? [])]));
         const roleOperations = Object.fromEntries(

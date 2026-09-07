@@ -406,6 +406,114 @@ function operationForTrack(
   return section.energy > 0.7 ? "rhythmic_harmony" : "main_harmony";
 }
 
+export type ArrangementBrainSection = {
+  function: "intro" | "verse" | "prechorus" | "chorus" | "bridge" | "outro" | "neutral";
+  targetEnergy: number;
+  targetDensity: number;
+  development: "initial" | "development" | "reprise" | "neutral";
+};
+
+export type ArrangementBrain = {
+  version: "1.0.0";
+  enabled: boolean;
+  sections: ArrangementBrainSection[];
+};
+
+/**
+ * A deliberately small, evidence-bound global arranger. It only interprets
+ * names already present in the Song Model and its measured relative energy;
+ * it never adds, moves, or renames sections.
+ */
+export function buildArrangementBrain(input: {
+  songModel: SongModelData;
+  controls: { energy: number; density: number; orchestraSize?: number };
+}): ArrangementBrain {
+  const sections = input.songModel.sections;
+  const neutral = (): ArrangementBrain => ({
+    version: "1.0.0",
+    enabled: false,
+    sections: sections.map(() => ({
+      function: "neutral",
+      targetEnergy: 0,
+      targetDensity: 0,
+      development: "neutral",
+    })),
+  });
+  if (sections.length < 2) return neutral();
+  const classify = (name: string): ArrangementBrainSection["function"] => {
+    const value = name.toLowerCase().replace(/[_-]/g, " ");
+    if (/\bintro\b|\bopening\b/.test(value)) return "intro";
+    if (/\b(pre[\s ]?chorus|build|riser)\b/.test(value)) return "prechorus";
+    if (/\b(chorus|drop|hook)\b/.test(value)) return "chorus";
+    if (/\b(bridge|breakdown|break)\b/.test(value)) return "bridge";
+    if (/\b(outro|ending|coda)\b/.test(value)) return "outro";
+    if (/\bverse\b/.test(value)) return "verse";
+    return "neutral";
+  };
+  const functions = sections.map((section) => classify(section.name));
+  const recognized = functions.filter((value) => value !== "neutral").length;
+  const observed = sections.map((section) => clamp(Number(section.energy)));
+  const range = Math.max(...observed) - Math.min(...observed);
+  // A single familiar label is insufficient to impose an invented arc. Names
+  // must describe a meaningful portion of the observed form, or repeat with
+  // actual energy contrast.
+  const chorusCount = functions.filter((value) => value === "chorus").length;
+  if (recognized < 2 && !(chorusCount >= 2 && range >= .12)) return neutral();
+
+  const controlEnergy = clamp(input.controls.energy);
+  const controlDensity = clamp(input.controls.density);
+  const raw = sections.map((section, index) => {
+    const fn = functions[index];
+    const functionOffset = fn === "intro" ? -.18 : fn === "verse" ? -.06
+      : fn === "prechorus" ? .06 : fn === "chorus" ? .16
+        : fn === "bridge" ? -.14 : fn === "outro" ? -.1 : 0;
+    return clamp(observed[index] * .6 + controlEnergy * .4 + functionOffset);
+  });
+  const lastClimax = functions.reduce((last, fn, index) => fn === "chorus" ? index : last, -1);
+  if (lastClimax >= 0) raw[lastClimax] = Math.max(raw[lastClimax], ...raw) ;
+  // Maintain an intelligible whole-song contour rather than allowing each
+  // local section to make a discontinuous independent decision.
+  const targetEnergy = raw.reduce<number[]>((result, value) => {
+    if (!result.length) return [value];
+    const previous = result[result.length - 1];
+    result.push(clamp(value, previous - .28, previous + .28));
+    return result;
+  }, []);
+  const occurrences = new Map<ArrangementBrainSection["function"], number>();
+  const drafts = targetEnergy.map((energy, index) => {
+      const fn = functions[index];
+      const occurrence = occurrences.get(fn) ?? 0;
+      occurrences.set(fn, occurrence + 1);
+      const development: ArrangementBrainSection["development"] = fn === "chorus" && occurrence > 0
+        ? (occurrence === 1 ? "development" : "reprise")
+        : fn === "neutral" ? "neutral" : "initial";
+      const developedEnergy = development === "development" || development === "reprise"
+        ? clamp(energy + .04) : energy;
+      return { function: fn, energy: developedEnergy, development };
+    });
+  const continuous = drafts.reduce<Array<typeof drafts[number]>>((result, draft) => {
+    const previous = result.at(-1);
+    result.push({
+      ...draft,
+      energy: previous ? clamp(draft.energy, previous.energy - .28, previous.energy + .28) : draft.energy,
+    });
+    return result;
+  }, []);
+  return {
+    version: "1.0.0",
+    enabled: true,
+    sections: continuous.map(({ function: fn, energy, development }) => ({
+      function: fn,
+      targetEnergy: round(energy),
+      targetDensity: round(clamp(
+        controlDensity * .5 + energy * .5 +
+        (development === "development" || development === "reprise" ? .04 : 0),
+      )),
+      development,
+    })),
+  };
+}
+
 export function createArrangementPlan(input: {
   arrangementId: string;
   version: number;
@@ -414,6 +522,7 @@ export function createArrangementPlan(input: {
   tracks: Array<{ id?: string; name: string; role: string }>;
   parameters: Record<string, number | string | boolean>;
   parentIds?: string[];
+  arrangementBrain?: ArrangementBrain;
 }): ArrangementPlan {
   const sourceSections = input.songModel.sections.length
     ? input.songModel.sections
@@ -421,17 +530,35 @@ export function createArrangementPlan(input: {
   const modulationSemitones = Number(input.parameters.modulationSemitones ?? 0);
   const orchestraSize = clamp(Number(input.parameters.orchestraSize ?? .5));
   const rhythmIntensity = clamp(Number(input.parameters.rhythmIntensity ?? .6));
+  const arrangementBrain = input.arrangementBrain ?? buildArrangementBrain({
+    songModel: input.songModel,
+    controls: {
+      energy: Number(input.parameters.energy ?? input.style.dynamics.accentStrength),
+      density: Number(input.parameters.density ?? input.style.orchestration.density),
+      orchestraSize,
+    },
+  });
+  let priorLayerCount: number | undefined;
   const sections: ArrangementPlanSection[] = sourceSections.map((section, index) => {
-    const operations = section.energy > 0.75
+    const brainSection = arrangementBrain.enabled ? arrangementBrain.sections[index] : undefined;
+    const plannedEnergy = brainSection?.targetEnergy ?? section.energy;
+    const plannedDensity = brainSection?.targetDensity ??
+      clamp(input.style.orchestration.density * 0.65 + section.energy * 0.35);
+    const operations = plannedEnergy > 0.75
       ? ["build_up", "countermelody"]
-      : section.energy < 0.3
+      : plannedEnergy < 0.3
         ? ["break"]
         : ["phrase"];
     if (index === sourceSections.length - 1 && modulationSemitones !== 0) {
       operations.push(`modulate:${modulationSemitones}`);
     }
     const directives: Record<string, TrackDirective> = {};
-    const layerCount = Math.max(1, Math.ceil(input.tracks.length * clamp(.25 + orchestraSize * .55 + section.energy * .2)));
+    const unconstrainedLayers = Math.max(1, Math.ceil(input.tracks.length *
+      clamp(.25 + orchestraSize * .55 + plannedEnergy * .2)));
+    const layerCount = arrangementBrain.enabled && priorLayerCount !== undefined
+      ? clamp(unconstrainedLayers, Math.max(1, priorLayerCount - 1), Math.min(input.tracks.length, priorLayerCount + 1))
+      : unconstrainedLayers;
+    priorLayerCount = layerCount;
     const ordered = [...input.tracks].sort((left, right) =>
       Number(/bass|drum|rhythm/.test(`${right.name} ${right.role}`.toLowerCase())) -
       Number(/bass|drum|rhythm/.test(`${left.name} ${left.role}`.toLowerCase())));
@@ -439,23 +566,23 @@ export function createArrangementPlan(input: {
     const tracks = Object.fromEntries(input.tracks.map((track) => {
       const identity = `${track.name} ${track.role}`.toLowerCase();
       const trackId = track.id ?? track.name;
-      const operation = enabledIds.has(trackId) ? operationForTrack(track, section) : "none";
+      const operation = enabledIds.has(trackId) ? operationForTrack(track, { energy: plannedEnergy }) : "none";
       const percussion = /drum|rhythm|percussion/.test(identity);
       const bass = identity.includes("bass");
       const melodic = /vocal|voice|melody/.test(identity);
       directives[trackId] = {
         role: track.role,
-        register: bass ? "low" : melodic ? "high" : section.energy > .68 ? "high" : "middle",
+        register: bass ? "low" : melodic ? "high" : plannedEnergy > .68 ? "high" : "middle",
         rhythmicActivity: round(clamp(percussion
-          ? section.energy * .45 + rhythmIntensity * .55
-          : (input.style.rhythm.syncopation * .45 + section.energy * .55) * (.55 + rhythmIntensity * .45))),
-        harmonicActivity: round(clamp(percussion || melodic ? 0 : input.style.harmony.complexity / 10 * .55 + section.energy * .3)),
-        dynamicTarget: round(clamp(.28 + section.energy * .68)),
-        articulationFamily: percussion ? (section.energy > .7 ? "accent" : "tight") : section.energy > .72 ? "accent" : "legato",
+          ? plannedEnergy * .45 + rhythmIntensity * .55
+          : (input.style.rhythm.syncopation * .45 + plannedEnergy * .55) * (.55 + rhythmIntensity * .45))),
+        harmonicActivity: round(clamp(percussion || melodic ? 0 : input.style.harmony.complexity / 10 * .55 + plannedEnergy * .3)),
+        dynamicTarget: round(clamp(.28 + plannedEnergy * .68)),
+        articulationFamily: percussion ? (plannedEnergy > .7 ? "accent" : "tight") : plannedEnergy > .72 ? "accent" : "legato",
         entry: { bar: section.startBar, mode: index === 0 ? "downbeat" : "phrase_entry" },
         exit: { bar: section.endBar, mode: index === sourceSections.length - 1 ? "cadence" : "release" },
-        transition: index === 0 ? "none" : section.energy > sourceSections[index - 1].energy ? "build" : "thin",
-        fill: percussion && index < sourceSections.length - 1 && section.energy >= .55 && rhythmIntensity >= .45,
+        transition: index === 0 ? "none" : plannedEnergy > (arrangementBrain.enabled ? arrangementBrain.sections[index - 1]?.targetEnergy : sourceSections[index - 1].energy) ? "build" : "thin",
+        fill: percussion && index < sourceSections.length - 1 && plannedEnergy >= .55 && rhythmIntensity >= .45,
       };
       return [track.name, operation];
     }));
@@ -463,8 +590,8 @@ export function createArrangementPlan(input: {
       section: section.name.toLowerCase().replace(/\s+/g, "_"),
       startBar: section.startBar,
       endBar: section.endBar,
-      energy: round(clamp(section.energy)),
-      density: round(clamp(input.style.orchestration.density * 0.65 + section.energy * 0.35)),
+       energy: round(clamp(plannedEnergy)),
+       density: round(plannedDensity),
       tracks,
       activeTracks: input.tracks
         .filter((track) => tracks[track.name] !== "none")
