@@ -8,10 +8,11 @@ from smoke import (
  COPY_LIKE_DIFFERENCE_THRESHOLD,
  DECODED_SAMPLE_BYTES,
  MAX_CHANNEL_PROJECTIONS,
+ MAX_COMPARISON_WORKING_BYTES,
  MAX_DECODED_AUDIO_BYTES,
  MAX_DECODED_CHANNELS,
  MAX_INPUT_SAMPLE_RATE,
- MAX_SUPPORTED_SMOKE_DURATION_SECONDS,
+ _comparison_working_bytes,
  signal_comparison,
 )
 ROOT=Path(__file__).parents[1]
@@ -272,6 +273,11 @@ print(json.dumps({"elapsedSeconds":elapsed,"peakResidentMiB":peak_kib/1024,"resu
    f"maximum-duration comparison peaked at "
    f"{measurement['peakResidentMiB']:.1f} MiB RSS",
   )
+  policy=measurement["result"]["workingMemoryPolicy"]
+  self.assertEqual(
+   policy["maximumMiB"],MAX_COMPARISON_WORKING_BYTES//(1024*1024),
+  )
+  self.assertLessEqual(policy["estimatedPeakMiB"],policy["maximumMiB"])
 
  def test_source_copy_thresholds_have_margin_across_real_codecs(self):
   # These settings intentionally span the sample rates, layouts, and lossy
@@ -470,7 +476,7 @@ print(json.dumps({"elapsedSeconds":elapsed,"peakResidentMiB":peak_kib/1024,"resu
 
  def test_source_copy_detection_rejects_malformed_oversized_audio_before_decode(self):
   sample_rate=8000
-  claimed_frames=int(sample_rate*MAX_SUPPORTED_SMOKE_DURATION_SECONDS)+1
+  claimed_frames=int(sample_rate*MAX_DURATION_SECONDS)+1
   with tempfile.TemporaryDirectory() as directory:
    directory=Path(directory)
    oversized=directory/"truncated-oversized.wav"
@@ -485,7 +491,7 @@ print(json.dumps({"elapsedSeconds":elapsed,"peakResidentMiB":peak_kib/1024,"resu
     with self.assertRaisesRegex(
      RuntimeError,
      rf"audio duration exceeds supported maximum of "
-     rf"{MAX_SUPPORTED_SMOKE_DURATION_SECONDS:g} seconds",
+      rf"{MAX_DURATION_SECONDS:g} seconds",
     ):
      signal_comparison(oversized,normal)
    decode.assert_not_called()
@@ -496,7 +502,7 @@ print(json.dumps({"elapsedSeconds":elapsed,"peakResidentMiB":peak_kib/1024,"resu
   claimed_frames=MAX_DECODED_AUDIO_BYTES//(channel_count*DECODED_SAMPLE_BYTES)+1
   self.assertLessEqual(
    claimed_frames,
-   int(sample_rate*MAX_SUPPORTED_SMOKE_DURATION_SECONDS),
+    int(sample_rate*MAX_DURATION_SECONDS),
   )
   with tempfile.TemporaryDirectory() as directory:
    directory=Path(directory)
@@ -517,6 +523,42 @@ print(json.dumps({"elapsedSeconds":elapsed,"peakResidentMiB":peak_kib/1024,"resu
      signal_comparison(unsafe,normal)
    decode.assert_not_called()
   self.assertNotIn(unsafe.name,str(raised.exception))
+
+ def test_source_copy_detection_rejects_unsafe_derived_working_set_before_decode(self):
+  sample_rate=48000
+  frames=int(sample_rate*MAX_DURATION_SECONDS)
+  metadata=mock.Mock(channels=3,samplerate=sample_rate,frames=frames)
+  self.assertLessEqual(
+   frames*metadata.channels*DECODED_SAMPLE_BYTES,MAX_DECODED_AUDIO_BYTES,
+  )
+  self.assertGreater(
+   _comparison_working_bytes(metadata,metadata),MAX_COMPARISON_WORKING_BYTES,
+  )
+  with tempfile.TemporaryDirectory() as directory:
+   path=Path(directory)/"metadata-only.wav"
+   path.write_bytes(b"metadata-only working-set fixture")
+   with mock.patch("smoke.sf.info",return_value=metadata), \
+        mock.patch("smoke.sf.read") as decode:
+    with self.assertRaisesRegex(
+     RuntimeError,
+     rf"^audio comparison working set exceeds supported maximum of "
+     rf"{MAX_COMPARISON_WORKING_BYTES//(1024*1024)} MiB$",
+    ):
+     signal_comparison(path,path)
+   decode.assert_not_called()
+
+ def test_comparison_working_policy_supports_normal_layouts_at_maximum_duration(self):
+  sample_rate=16000
+  frames=int(sample_rate*MAX_DURATION_SECONDS)
+  for channels in (1,2,6):
+   metadata=mock.Mock(
+    channels=channels,samplerate=sample_rate,frames=frames,
+   )
+   self.assertLessEqual(
+    _comparison_working_bytes(metadata,metadata),
+    MAX_COMPARISON_WORKING_BYTES,
+    f"{channels}-channel maximum-duration comparison must remain supported",
+   )
 
  def test_source_copy_detection_keeps_stereo_projection_behavior(self):
   sample_rate=8000

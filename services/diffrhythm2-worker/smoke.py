@@ -30,8 +30,9 @@ MAX_DECODED_CHANNELS = 32
 DECODED_SAMPLE_BYTES = np.dtype(np.float64).itemsize
 MAX_DECODED_AUDIO_BYTES = 256 * 1024 * 1024
 MAX_INPUT_SAMPLE_RATE = 192000
+MAX_COMPARISON_WORKING_BYTES = 700 * 1024 * 1024
 
-def _read_bounded_audio(path: Path) -> tuple[np.ndarray, int]:
+def _audio_metadata(path: Path):
     metadata = sf.info(str(path))
     channel_count = metadata.channels
     if channel_count > MAX_DECODED_CHANNELS:
@@ -45,12 +46,12 @@ def _read_bounded_audio(path: Path) -> tuple[np.ndarray, int]:
             f"of {MAX_INPUT_SAMPLE_RATE} Hz"
         )
     maximum_frames = int(
-        metadata.samplerate * MAX_SUPPORTED_SMOKE_DURATION_SECONDS
+        metadata.samplerate * MAX_DURATION_SECONDS
     )
     if metadata.frames > maximum_frames:
         raise RuntimeError(
             f"audio duration exceeds supported maximum of "
-            f"{MAX_SUPPORTED_SMOKE_DURATION_SECONDS:g} seconds"
+            f"{MAX_DURATION_SECONDS:g} seconds"
         )
     decoded_bytes = metadata.frames * channel_count * DECODED_SAMPLE_BYTES
     if decoded_bytes > MAX_DECODED_AUDIO_BYTES:
@@ -58,7 +59,37 @@ def _read_bounded_audio(path: Path) -> tuple[np.ndarray, int]:
             f"audio decoded size exceeds supported maximum of "
             f"{MAX_DECODED_AUDIO_BYTES // (1024 * 1024)} MiB"
         )
+    return metadata
+
+def _read_bounded_audio(path: Path, metadata=None) -> tuple[np.ndarray, int]:
+    metadata = metadata or _audio_metadata(path)
     return sf.read(str(path), always_2d=True)
+
+def _comparison_working_bytes(source_metadata, output_metadata) -> int:
+    """Conservative peak estimate for simultaneously live comparison arrays."""
+    def sizes(metadata):
+        decoded = metadata.frames * metadata.channels * DECODED_SAMPLE_BYTES
+        resampled_frames = (
+            metadata.frames * COMPARISON_SAMPLE_RATE + metadata.samplerate - 1
+        ) // metadata.samplerate
+        resampled = resampled_frames * metadata.channels * DECODED_SAMPLE_BYTES
+        mono = resampled_frames * DECODED_SAMPLE_BYTES
+        chroma_frames = max(0, (resampled_frames - 512) // 512)
+        chroma = chroma_frames * 12 * DECODED_SAMPLE_BYTES
+        return decoded, resampled, mono, chroma, resampled_frames
+    source = sizes(source_metadata)
+    output = sizes(output_metadata)
+    decoded_and_resampled = sum(source[:3]) + sum(output[:3])
+    longest = max(source[4], output[4])
+    waveform_scratch = (
+        # FFT correlation output/temporary, four prefix sums, and bounded lag vectors.
+        6 * (source[4] + output[4]) * DECODED_SAMPLE_BYTES
+        + 12 * (2 * int(MAX_OFFSET_SECONDS * COMPARISON_SAMPLE_RATE) + 1)
+        * DECODED_SAMPLE_BYTES
+    )
+    tempo_scratch = int(np.ceil(longest / min(TEMPO_RATIOS))) * DECODED_SAMPLE_BYTES
+    chroma_scratch = 4 * (source[3] + output[3])
+    return decoded_and_resampled + waveform_scratch + tempo_scratch + chroma_scratch
 
 def _resample(audio: np.ndarray, source_rate: int, target_rate: int) -> np.ndarray:
     if source_rate == target_rate:
@@ -147,8 +178,18 @@ def _channel_projections(audio: np.ndarray) -> list[tuple[str, np.ndarray]]:
     return [(f"channel-{index}", audio[:, index]) for index in indices]
 
 def signal_comparison(source_path: Path, output_path: Path) -> dict:
-    source, source_rate = _read_bounded_audio(source_path)
-    output, output_rate = _read_bounded_audio(output_path)
+    source_metadata = _audio_metadata(source_path)
+    output_metadata = _audio_metadata(output_path)
+    estimated_working_bytes = _comparison_working_bytes(
+        source_metadata, output_metadata
+    )
+    if estimated_working_bytes > MAX_COMPARISON_WORKING_BYTES:
+        raise RuntimeError(
+            f"audio comparison working set exceeds supported maximum of "
+            f"{MAX_COMPARISON_WORKING_BYTES // (1024 * 1024)} MiB"
+        )
+    source, source_rate = _read_bounded_audio(source_path, source_metadata)
+    output, output_rate = _read_bounded_audio(output_path, output_metadata)
     source = _resample(source, source_rate, COMPARISON_SAMPLE_RATE)
     output = _resample(output, output_rate, COMPARISON_SAMPLE_RATE)
     source_mono = source.mean(axis=1)
@@ -240,6 +281,15 @@ def signal_comparison(source_path: Path, output_path: Path) -> dict:
             "sourceProjections": [label for label, _ in source_projections],
             "outputProjections": [label for label, _ in output_projections],
         },
+        "workingMemoryPolicy": {
+            "maximumMiB": MAX_COMPARISON_WORKING_BYTES // (1024 * 1024),
+            "estimatedPeakMiB": round(estimated_working_bytes / (1024 * 1024), 3),
+            "includes": [
+                "decoded-audio", "resampled-audio", "mono-fold-downs",
+                "waveform-correlation-and-prefix-scratch", "tempo-resample",
+                "chroma-and-alignment-scratch",
+            ],
+        },
         "searchedTransformCount": chroma["searchedTransformCount"],
         "searchedTransformAlignmentCount": chroma["searchedAlignmentCount"],
         "passesNotSourceCopy": passes,
@@ -327,3 +377,7 @@ def _strongest_chroma_match(source: np.ndarray, output: np.ndarray) -> dict:
     best["searchedAlignmentCount"] = searched
     best["offsetSeconds"] = best.pop("lagFrames") / frames_per_second
     return best
+
+if __name__=="__main__":
+    fixture = Path(os.environ["DIFFRHYTHM2_SMOKE_AUDIO"])
+    print(json.dumps(main(fixture), sort_keys=True))
