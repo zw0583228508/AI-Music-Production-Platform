@@ -26,6 +26,7 @@ COPY_LIKE_DIFFERENCE_THRESHOLD = 0.25
 TEMPO_RATIOS = (0.90, 0.95, 1.0, 1.05, 1.10)
 PITCH_SEMITONES = tuple(range(-4, 5))
 CHROMA_CORRELATION_THRESHOLD = 0.90
+MAX_CHANNEL_PROJECTIONS = 4
 
 def _resample(audio: np.ndarray, source_rate: int, target_rate: int) -> np.ndarray:
     if source_rate == target_rate:
@@ -102,7 +103,16 @@ def _strongest_waveform_match(source: np.ndarray, output: np.ndarray) -> dict:
     }
 
 def _channel_projections(audio: np.ndarray) -> list[tuple[str, np.ndarray]]:
-    return [(f"channel-{index}", audio[:, index]) for index in range(audio.shape[1])]
+    channel_count = audio.shape[1]
+    if channel_count <= MAX_CHANNEL_PROJECTIONS:
+        indices = range(channel_count)
+    else:
+        energies = np.mean(audio * audio, axis=0, dtype=np.float64)
+        indices = sorted(
+            range(channel_count),
+            key=lambda index: (-float(energies[index]), index),
+        )[:MAX_CHANNEL_PROJECTIONS]
+    return [(f"channel-{index}", audio[:, index]) for index in indices]
 
 def signal_comparison(source_path: Path, output_path: Path) -> dict:
     source, source_rate = sf.read(str(source_path), always_2d=True)
@@ -112,6 +122,8 @@ def signal_comparison(source_path: Path, output_path: Path) -> dict:
     source_mono = source.mean(axis=1)
     output_mono = output.mean(axis=1)
     waveform_matches = []
+    source_projections = _channel_projections(source)
+    output_projections = _channel_projections(output)
     for tempo_ratio in TEMPO_RATIOS:
         transformed = resample_poly(source_mono, 100, int(round(100 * tempo_ratio)))
         match = _strongest_waveform_match(transformed, output_mono)
@@ -120,8 +132,8 @@ def signal_comparison(source_path: Path, output_path: Path) -> dict:
         match["outputProjection"] = "mono-fold-down"
         waveform_matches.append(match)
     if source.shape[1] > 1 or output.shape[1] > 1:
-        for source_label, source_projection in _channel_projections(source):
-            for output_label, output_projection in _channel_projections(output):
+        for source_label, source_projection in source_projections:
+            for output_label, output_projection in output_projections:
                 match = _strongest_waveform_match(source_projection, output_projection)
                 match["tempoRatio"] = 1.0
                 match["sourceProjection"] = source_label
@@ -169,10 +181,18 @@ def signal_comparison(source_path: Path, output_path: Path) -> dict:
         "sourceProjection": waveform["sourceProjection"],
         "outputProjection": waveform["outputProjection"],
         "comparedProjectionPairs": (
-            source.shape[1] * output.shape[1]
+            len(source_projections) * len(output_projections)
             if source.shape[1] > 1 or output.shape[1] > 1
             else 1
         ),
+        "channelProjectionPolicy": {
+            "maximumPerAudio": MAX_CHANNEL_PROJECTIONS,
+            "selection": "all-up-to-limit-otherwise-highest-energy",
+            "sourceChannelCount": int(source.shape[1]),
+            "outputChannelCount": int(output.shape[1]),
+            "sourceProjections": [label for label, _ in source_projections],
+            "outputProjections": [label for label, _ in output_projections],
+        },
         "searchedTransformCount": chroma["searchedTransformCount"],
         "searchedTransformAlignmentCount": chroma["searchedAlignmentCount"],
         "passesNotSourceCopy": passes,
