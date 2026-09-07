@@ -30,6 +30,8 @@ await build({
         arrangementsTable,
         db,
         musicArtifactsTable,
+         musicGenerationCandidatesTable,
+         musicGenerationJobsTable,
         musicProjectsTable,
         projectSourcesTable,
         projectCleanupJobsTable,
@@ -62,6 +64,8 @@ const {
   ListGenerationProvidersResponse,
   loadExportZip,
   musicArtifactsTable,
+  musicGenerationCandidatesTable,
+  musicGenerationJobsTable,
   musicProjectsTable,
   projectSourcesTable,
   projectCleanupJobsTable,
@@ -75,6 +79,7 @@ let ownerSession;
 let otherSession;
 let projectId;
 let arrangementId;
+let generationJobId;
 let exportId;
 let raceHookDirectory;
 let instrumentWorker;
@@ -146,6 +151,14 @@ function request(path, session, init = {}) {
   const headers = new Headers(init.headers);
   if (session) headers.set("Authorization", `Bearer ${session}`);
   return fetch(`${baseUrl}${path}`, { ...init, headers, redirect: init.redirect ?? "manual" });
+}
+
+function assertProducerSafeEvaluation(evaluation) {
+  assert.equal(evaluation.musicCritic, null);
+  assert.equal("fingerprint" in evaluation.diversity, false);
+  assert.equal(evaluation.diversity.reason, "near_duplicate");
+  assert.equal(evaluation.diversity.distance, 0.12);
+  assert.equal(evaluation.diversity.rejected, true);
 }
 
 function instrumentPackMultipart(size) {
@@ -340,6 +353,7 @@ before(async () => {
   assert.equal(createResponse.status, 201);
   projectId = (await createResponse.json()).id;
   arrangementId = `auth-arrangement-${process.pid}`;
+  generationJobId = `auth-generation-job-${process.pid}`;
   exportId = `auth-export-${process.pid}`;
   exportStorageObjectId = `${exportId}-content-addressed`;
   legacyExportStorageObjectId = `${exportId}-legacy-content-addressed`;
@@ -350,6 +364,95 @@ before(async () => {
     style: "Test",
     mode: "STUDIO",
     sections: [],
+    generationProvenance: {
+      jobId: generationJobId,
+      candidateId: `auth-candidate-${process.pid}`,
+      provider: "METEOR",
+      modelVersion: "historical-model",
+      reportedModelVersion: null,
+      providerRequestId: null,
+      songModelVersion: null,
+      seed: 233,
+      parameters: {},
+      parentArtifactIds: [],
+      evaluation: {
+        status: "diversity_rejected",
+        providerScore: 0.7,
+        renderArtifactIds: [],
+        artifacts: [],
+        qualityReport: null,
+        error: null,
+        diversity: {
+          fingerprint: {
+            activeTracks: ["private-track"],
+            densityEnergy: [{ density: 0.5, energy: 0.5 }],
+            harmonySequence: ["private-harmony"],
+            trackRoleInstruments: ["private-role"],
+            noteShape: [1, 2, 3],
+          },
+          comparedToCandidateId: "baseline-candidate",
+          distance: 0.12,
+          threshold: 0.25,
+          rejected: true,
+          reason: "near_duplicate",
+        },
+      },
+    },
+  });
+  await db.insert(musicGenerationJobsTable).values({
+    id: generationJobId,
+    projectId,
+    arrangementId,
+    task: "ARRANGEMENT",
+    status: "succeeded",
+    provider: "METEOR",
+    modelVersion: "historical-model",
+    hardware: "AUTO",
+    speed: "BALANCED",
+    progress: 100,
+    stage: "completed",
+    requestedCandidates: 1,
+    seed: 233,
+    inputSnapshot: {},
+  });
+  await db.insert(musicGenerationCandidatesTable).values({
+    id: `auth-candidate-${process.pid}`,
+    jobId: generationJobId,
+    projectId,
+    arrangementId,
+    provider: "METEOR",
+    modelVersion: "historical-model",
+    seed: 233,
+    rank: null,
+    label: "Historical candidate",
+    score: 0.7,
+    confidence: 0.8,
+    summary: "Historical candidate without a Music Critic report",
+    status: "diversity_rejected",
+    plan: { sections: [] },
+    trackModels: null,
+    evaluation: {
+      status: "diversity_rejected",
+      providerScore: 0.7,
+      renderArtifactIds: [],
+      artifacts: [],
+      qualityReport: null,
+      error: null,
+      diversity: {
+        fingerprint: {
+          activeTracks: ["private-track"],
+          densityEnergy: [{ density: 0.5, energy: 0.5 }],
+          harmonySequence: ["private-harmony"],
+          trackRoleInstruments: ["private-role"],
+          noteShape: [1, 2, 3],
+        },
+        comparedToCandidateId: "baseline-candidate",
+        distance: 0.12,
+        threshold: 0.25,
+        rejected: true,
+        reason: "near_duplicate",
+      },
+    },
   });
   await db.insert(musicArtifactsTable).values({
     id: exportId,
@@ -898,7 +1001,31 @@ test("project and export endpoints enforce owner authorization", async () => {
     },
   );
   assert.equal(ownerEdit.status, 200);
-  assert.equal((await ownerEdit.json()).name, "Owner edit");
+  const arrangementDetail = await ownerEdit.json();
+  assert.equal(arrangementDetail.name, "Owner edit");
+  assertProducerSafeEvaluation(arrangementDetail.generationProvenance.evaluation);
+  assert.equal(JSON.stringify(arrangementDetail).includes("private-track"), false);
+
+  const arrangementListResponse = await request(
+    `/api/projects/${projectId}/arrangements`,
+    ownerSession,
+  );
+  assert.equal(arrangementListResponse.status, 200);
+  const arrangementList = await arrangementListResponse.json();
+  const listedArrangement = arrangementList.find(({ id }) => id === arrangementId);
+  assert.ok(listedArrangement);
+  assertProducerSafeEvaluation(listedArrangement.generationProvenance.evaluation);
+  assert.equal(JSON.stringify(listedArrangement).includes("private-track"), false);
+
+  const candidatesResponse = await request(
+    `/api/generation-jobs/${generationJobId}/candidates`,
+    ownerSession,
+  );
+  assert.equal(candidatesResponse.status, 200);
+  const candidates = await candidatesResponse.json();
+  assert.equal(candidates.length, 1);
+  assertProducerSafeEvaluation(candidates[0].evaluation);
+  assert.equal(JSON.stringify(candidates[0]).includes("private-track"), false);
 
   const crossUserExport = await request(`/api/projects/${projectId}/export`, otherSession, {
     method: "POST",
