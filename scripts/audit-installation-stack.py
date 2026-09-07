@@ -2166,6 +2166,165 @@ def evidence_errors(rows, root):
                 "ANYACCOMP: READY lacks exact retained source/license/checkpoint/"
                 "fixture/smoke/Modal/promotion/API evidence"
             )
+    midi_sag = by_name.get("MIDI_SAG", {})
+    muse_control = by_name.get("MUSE_CONTROL_LITE", {})
+    midi_revision = "b79839ed0cdd0b5e5f39d4cc4a80fcc90002d32f"
+    if midi_sag or muse_control:
+        base = Path("services/midi-sag-worker")
+        status = read_json(base / "installation-status.json")
+        manifest = read_json(base / "model_manifest.json")
+        license_manifest = read_json(base / "license_manifest.json")
+        review = read_json(
+            base / "release-evidence/source-contract-license-review.json"
+        )
+        local_midi = status.get("providers", {}).get("MIDI_SAG", {})
+        local_muse = status.get("providers", {}).get("MUSE_CONTROL_LITE", {})
+        assets = {
+            asset.get("id"): asset
+            for asset in manifest.get("assets", [])
+            if isinstance(asset, dict)
+        }
+        try:
+            app_source = (root / base / "app.py").read_text()
+            bootstrap_source = (root / base / "bootstrap_assets.py").read_text()
+            smoke_source = (root / base / "smoke.py").read_text()
+            api_source = (
+                root / "artifacts/api-server/src/lib/musicProviders.ts"
+            ).read_text()
+            api_test_source = (
+                root
+                / "artifacts/api-server/src/lib/"
+                "musicProviders.blockedRouting.test.ts"
+            ).read_text()
+            replit_source = (root / ".replit").read_text()
+        except OSError:
+            app_source = bootstrap_source = smoke_source = api_source = ""
+            api_test_source = replit_source = ""
+        source = review.get("observedSource", {})
+        source_contract = manifest.get("sourceContract", {})
+        conclusion = review.get("terminalConclusion", {})
+        provider_statuses = conclusion.get("providerStatuses", {})
+        blocked_flags = (
+            "runtimeBuilt", "assetsDownloaded", "assetsChecksummed",
+            "assetManifestCreated", "volumeProvisioned", "secretsConfigured",
+            "realSmokePassed", "nonSilentOutputVerified", "endpointDeployed",
+            "endpointConfigured", "healthReady", "promotionSigned",
+            "apiConnected",
+        )
+        required_asset_ids = {
+            "rmvpe", "game-1.0-medium", "muse-control-lite",
+            "vocal-beat-tracking", "accomontage2", "csll2m",
+            "soulx-singer", "soulx-singer-preprocess",
+            "stable-audio-open-1.0",
+        }
+        required = [
+            midi_sag.get("provider") == "MIDI_SAG",
+            muse_control.get("provider") == "MUSE_CONTROL_LITE",
+            midi_sag.get("finalStatus") == "BLOCKED_UPSTREAM",
+            midi_sag.get("category") == "symbolic",
+            midi_sag.get("codeRepository")
+            == "https://github.com/fundwotsai2001/MIDI-SAG.git",
+            midi_sag.get("codeRevision") == midi_revision,
+            midi_sag.get("sourcePinned") is True,
+            midi_sag.get("licenseStatus") == "UNVERIFIED",
+            midi_sag.get("promotionRequired") is True,
+            all(midi_sag.get(flag) is False for flag in blocked_flags),
+            muse_control.get("finalStatus")
+            == "BLOCKED_MISSING_LICENSED_ASSET",
+            muse_control.get("category") == "symbolic",
+            muse_control.get("codeRepository")
+            == midi_sag.get("codeRepository"),
+            muse_control.get("codeRevision") == midi_revision,
+            muse_control.get("sourcePinned") is False,
+            muse_control.get("licenseStatus") == "UNVERIFIED",
+            muse_control.get("promotionRequired") is True,
+            all(muse_control.get(flag) is False for flag in blocked_flags),
+            status.get("schemaVersion") == 2,
+            status.get("providerFamily") == "MIDI_SAG",
+            local_midi.get("classification") == "BLOCKED_UPSTREAM",
+            local_midi.get("terminal", {}).get("status")
+            == midi_sag.get("finalStatus"),
+            local_midi.get("terminal", {}).get("ready") is False,
+            local_muse.get("classification")
+            == "BLOCKED_MISSING_LICENSED_ASSET",
+            local_muse.get("terminal", {}).get("status")
+            == muse_control.get("finalStatus"),
+            local_muse.get("terminal", {}).get("ready") is False,
+            manifest.get("schemaVersion") == 2,
+            manifest.get("routingStatus") == "BLOCKED_UPSTREAM",
+            manifest.get("code", {}).get("revision") == midi_revision,
+            manifest.get("code", {}).get("tree")
+            == "7e979241dde308c5670439994849eb877433a0db",
+            manifest.get("code", {}).get("license") == "Apache-2.0",
+            manifest.get("code", {}).get("licenseBlob")
+            == "b22cabd036d8b65397db08aacbe7a756e1cd47ba",
+            source_contract.get("requiredAdapter") == "production_adapter.py",
+            source_contract.get("adapterPresentAtPinnedRevision") is False,
+            source_contract.get("installScriptBlob")
+            == "b8792a63ac102a8604c31fc2eae8106422750399",
+            source_contract.get("installScriptSha256")
+            == "459a0be805f317477b2f1691a008647b8983807cd90eb2551db4da53a3070315",
+            set(assets) == required_asset_ids,
+            assets.get("game-1.0-medium", {}).get("remoteBytes") == 184550485,
+            assets.get("game-1.0-medium", {}).get("remoteSha256")
+            == "8c5b3e531e2905b935e664e2f533921cd637243770fab5282413bdb5051ca60c",
+            assets.get("game-1.0-medium", {}).get("locallyVerified") is False,
+            assets.get("rmvpe", {}).get("remoteBytes") == 340638958,
+            assets.get("rmvpe", {}).get("remoteSha256") is None,
+            assets.get("muse-control-lite", {}).get("revision") is None,
+            assets.get("muse-control-lite", {}).get("remoteSha256") is None,
+            assets.get("stable-audio-open-1.0", {}).get("revision")
+            == "f21265c1e2710b3bd2386596943f0007f55f802e",
+            assets.get("stable-audio-open-1.0", {}).get("gated") == "auto",
+            assets.get("stable-audio-open-1.0", {}).get("locallyVerified")
+            is False,
+            all(asset.get("locallyVerified") is False for asset in assets.values()),
+            license_manifest.get("classification")
+            == "BLOCKED_MISSING_LICENSED_ASSET",
+            license_manifest.get("provisioningAllowed") is False,
+            license_manifest.get("deploymentAllowed") is False,
+            all(
+                component.get("commercialUsePermitted") is False
+                for component in license_manifest.get("components", {}).values()
+            ),
+            source.get("commit") == midi_revision,
+            source.get("tree")
+            == "7e979241dde308c5670439994849eb877433a0db",
+            source.get("treeEnumeration", {}).get("entryCount") == 24188,
+            source.get("treeEnumeration", {}).get("truncated") is False,
+            source.get("productionAdapter", {}).get("gitTreeEntry")
+            == "MISSING",
+            source.get("installScript", {}).get("sha256")
+            == source_contract.get("installScriptSha256"),
+            source.get("license", {}).get("sha256")
+            == "aa948f5eb343aa3a2a13ce6f3d41f8dc41b2cc6d41eac44ea2c5c578948c522d",
+            provider_statuses.get("MIDI_SAG") == "BLOCKED_UPSTREAM",
+            provider_statuses.get("MUSE_CONTROL_LITE")
+            == "BLOCKED_MISSING_LICENSED_ASSET",
+            conclusion.get("networkProvisioningAttempted") is False,
+            conclusion.get("assetsDownloaded") is False,
+            conclusion.get("midiSmokeRetained") is False,
+            conclusion.get("museControlLiteSmokeRetained") is False,
+            conclusion.get("deploymentEvidenceRetained") is False,
+            'record["classification"] != terminal["status"]' in app_source,
+            'auth(request, "MIDI_SAG")' in app_source,
+            'auth(request, provider)' in app_source,
+            "This guard deliberately precedes decoding" in app_source,
+            "MIDI-SAG provisioning is blocked" in bootstrap_source,
+            'terminal = state("MIDI_SAG")' in smoke_source,
+            'new Set<string>(["MIDI_SAG"])' in api_source,
+            'new Set<string>(["MUSE_CONTROL_LITE"])' in api_source,
+            'status: "unavailable"' in api_source,
+            "blocked providers must not fetch" in api_test_source,
+            "assert.equal(fetchCalls, 0)" in api_test_source,
+            "MIDI_SAG_API_URL =" not in replit_source,
+            "MUSE_CONTROL_LITE_API_URL =" not in replit_source,
+        ]
+        if not all(required):
+            errors.append(
+                "MIDI_SAG/MUSE_CONTROL_LITE: blocked states lack exact retained "
+                "source/asset/license/no-downstream/API-fail-closed evidence"
+            )
     return errors
 
 def audit(data, local_statuses=None, report_text=None, replit_text=None, root=Path(".")):

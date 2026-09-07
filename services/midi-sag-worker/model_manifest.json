@@ -1,13 +1,23 @@
 {
+  "schemaVersion": 2,
   "provider": "MIDI_SAG",
   "modelVersion": "midi-sag-b79839ed0cdd0b5e5f39d4cc4a80fcc90002d32f",
+  "routingStatus": "BLOCKED_UPSTREAM",
   "assetRoot": "/var/lib/midi-sag/models",
   "assetManifest": "installed-assets.json",
   "smokeProof": "smoke-proof.json",
   "code": {
     "repository": "https://github.com/fundwotsai2001/MIDI-SAG.git",
     "revision": "b79839ed0cdd0b5e5f39d4cc4a80fcc90002d32f",
-    "license": "upstream repository terms"
+    "tree": "7e979241dde308c5670439994849eb877433a0db",
+    "license": "Apache-2.0",
+    "licenseBlob": "b22cabd036d8b65397db08aacbe7a756e1cd47ba"
+  },
+  "sourceContract": {
+    "requiredAdapter": "production_adapter.py",
+    "adapterPresentAtPinnedRevision": false,
+    "installScriptBlob": "b8792a63ac102a8604c31fc2eae8106422750399",
+    "installScriptSha256": "459a0be805f317477b2f1691a008647b8983807cd90eb2551db4da53a3070315"
   },
   "runtime": {
     "python": "3.9",
@@ -16,16 +26,134 @@
     "torchaudio": "2.5.1",
     "transformers": "4.47.1",
     "pytorchFastTransformers": "0.4.0",
-    "runner": "MIDI-SAG pinned upstream inference adapter"
+    "runner": "UNVERIFIED: production_adapter.py is absent from the pinned source tree"
   },
   "assets": [
-    {"id": "rmvpe", "required": true, "source": "MIDI-SAG pinned install manifest", "license": "upstream asset terms"},
-    {"id": "game-1.0-medium", "required": true, "source": "MIDI-SAG pinned install manifest", "license": "upstream asset terms"},
-    {"id": "muse-control-lite", "required": true, "source": "MIDI-SAG pinned install manifest", "license": "upstream asset terms"},
-    {"id": "vocal-beat-tracking", "required": true, "source": "MIDI-SAG pinned install manifest", "license": "upstream asset terms"},
-    {"id": "accomontage2", "required": true, "source": "MIDI-SAG pinned install manifest", "license": "upstream asset terms"},
-    {"id": "csll2m", "required": true, "source": "MIDI-SAG pinned install manifest", "license": "upstream asset terms"},
-    {"id": "soulx-singer", "required": true, "source": "MIDI-SAG pinned install manifest", "license": "upstream asset terms"},
-    {"id": "soulx-singer-preprocess", "required": true, "source": "MIDI-SAG pinned install manifest", "license": "upstream asset terms"}
+    {
+      "id": "rmvpe",
+      "providers": ["MIDI_SAG"],
+      "required": true,
+      "origin": "https://github.com/yxlllc/RMVPE/releases/download/230917/rmvpe.zip",
+      "revision": "230917",
+      "filename": "rmvpe.zip",
+      "remoteBytes": 340638958,
+      "remoteSha256": null,
+      "locallyVerified": false,
+      "license": "UNVERIFIED",
+      "blocker": "The GitHub release API publishes no digest for this historical asset, and no downloaded bytes were retained."
+    },
+    {
+      "id": "game-1.0-medium",
+      "providers": ["MIDI_SAG"],
+      "required": true,
+      "origin": "https://github.com/openvpi/GAME/releases/download/v1.0.0/GAME-1.0-medium.zip",
+      "revision": "v1.0.0",
+      "filename": "GAME-1.0-medium.zip",
+      "remoteBytes": 184550485,
+      "remoteSha256": "8c5b3e531e2905b935e664e2f533921cd637243770fab5282413bdb5051ca60c",
+      "locallyVerified": false,
+      "license": "UNVERIFIED_CHECKPOINT",
+      "blocker": "The source subtree is MIT, but no checkpoint-specific grant was retained and the archive was not provisioned."
+    },
+    {
+      "id": "muse-control-lite",
+      "providers": ["MUSE_CONTROL_LITE", "MIDI_SAG"],
+      "required": true,
+      "origin": "https://drive.google.com/drive/folders/1o6eUCYwUcIzZeqEycar6AHTSQ-vYcL_q",
+      "revision": null,
+      "filename": null,
+      "expectedPath": "MIDI-SAG_checkpoints/MuseControlLite_checkpoint",
+      "remoteBytes": null,
+      "remoteSha256": null,
+      "locallyVerified": false,
+      "license": "UNVERIFIED",
+      "blocker": "The install script gives only an unversioned folder ID and publishes no complete file inventory or terms."
+    },
+    {
+      "id": "vocal-beat-tracking",
+      "providers": ["MIDI_SAG"],
+      "required": true,
+      "origin": "https://drive.google.com/drive/folders/1o6eUCYwUcIzZeqEycar6AHTSQ-vYcL_q",
+      "revision": null,
+      "filename": "vocal_beat_detector.pt",
+      "expectedPath": "MIDI-SAG_checkpoints/vocal_beat_detector.pt",
+      "remoteBytes": null,
+      "remoteSha256": null,
+      "locallyVerified": false,
+      "license": "UNVERIFIED",
+      "blocker": "The shared folder has no immutable revision, retained byte identity, or checkpoint-specific license."
+    },
+    {
+      "id": "accomontage2",
+      "providers": ["MIDI_SAG"],
+      "required": true,
+      "origin": "https://drive.google.com/drive/folders/1z8oW16dZtdS06woHc7_rxserNJRrkc4s",
+      "revision": null,
+      "filename": null,
+      "expectedPath": "AccoMontage2/chorderator/static",
+      "sourceTree": "f1eaae43891ea4d6d3cfaac8be18032d8973db20",
+      "remoteBytes": null,
+      "remoteSha256": null,
+      "locallyVerified": false,
+      "license": "UNVERIFIED_ASSETS",
+      "blocker": "The source subtree is MIT, but install.sh does not provision the separately hosted runtime data/model files."
+    },
+    {
+      "id": "csll2m",
+      "providers": ["MIDI_SAG"],
+      "required": true,
+      "origin": "google-drive-file:1ylVTiDd_fwif2ISQzn9bxxYSkfEzXjQu",
+      "revision": null,
+      "filename": "pretrained_CSLL2M.pt",
+      "expectedPath": "MIDI-SAG_checkpoints/pretrained_CSLL2M.pt",
+      "remoteBytes": null,
+      "remoteSha256": null,
+      "locallyVerified": false,
+      "license": "UNVERIFIED",
+      "blocker": "The mutable file ID has no retained bytes, checksum, revision, or checkpoint license."
+    },
+    {
+      "id": "soulx-singer",
+      "providers": ["MIDI_SAG"],
+      "required": true,
+      "origin": "https://huggingface.co/Soul-AILab/SoulX-Singer",
+      "revision": "40493ad90286056c7a9095035164434a79daa8c9",
+      "revisionUse": "Observed repository head; install.sh does not pin it",
+      "filename": null,
+      "remoteBytes": null,
+      "remoteSha256": null,
+      "locallyVerified": false,
+      "license": "Apache-2.0 model card",
+      "blocker": "No complete per-file inventory was provisioned or retained."
+    },
+    {
+      "id": "soulx-singer-preprocess",
+      "providers": ["MIDI_SAG"],
+      "required": true,
+      "origin": "https://huggingface.co/Soul-AILab/SoulX-Singer-Preprocess",
+      "revision": "83dc50289d22a81b1e9998f5b9e111aef7c1fdcd",
+      "revisionUse": "Observed repository head; install.sh does not pin it",
+      "filename": null,
+      "remoteBytes": null,
+      "remoteSha256": null,
+      "locallyVerified": false,
+      "license": "Apache-2.0 model card",
+      "blocker": "No complete nested preprocessing checkpoint inventory was provisioned or retained."
+    },
+    {
+      "id": "stable-audio-open-1.0",
+      "providers": ["MUSE_CONTROL_LITE", "MIDI_SAG"],
+      "required": true,
+      "origin": "https://huggingface.co/stabilityai/stable-audio-open-1.0",
+      "revision": "f21265c1e2710b3bd2386596943f0007f55f802e",
+      "revisionUse": "Observed repository head; upstream inference calls from_pretrained without a revision",
+      "filename": null,
+      "remoteBytes": null,
+      "remoteSha256": null,
+      "locallyVerified": false,
+      "gated": "auto",
+      "license": "OTHER_REQUIRES_ACCEPTANCE_REVIEW",
+      "blocker": "No accepted-account evidence, approved terms review, or revision-pinned offline inventory is retained."
+    }
   ]
 }

@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "reviewType": "source-contract-and-license",
+  "providerIdentities": ["MIDI_SAG", "MUSE_CONTROL_LITE"],
+  "observedSource": {
+    "repository": "https://github.com/fundwotsai2001/MIDI-SAG.git",
+    "commit": "b79839ed0cdd0b5e5f39d4cc4a80fcc90002d32f",
+    "tree": "7e979241dde308c5670439994849eb877433a0db",
+    "treeEnumeration": {"recursive": true, "truncated": false, "entryCount": 24188},
+    "productionAdapter": {
+      "path": "production_adapter.py",
+      "gitTreeEntry": "MISSING",
+      "finding": "No production_adapter.py blob exists at the pinned commit."
+    },
+    "installScript": {
+      "path": "install.sh",
+      "gitBlob": "b8792a63ac102a8604c31fc2eae8106422750399",
+      "sha256": "459a0be805f317477b2f1691a008647b8983807cd90eb2551db4da53a3070315"
+    },
+    "license": {
+      "path": "LICENSE",
+      "gitBlob": "b22cabd036d8b65397db08aacbe7a756e1cd47ba",
+      "sha256": "aa948f5eb343aa3a2a13ce6f3d41f8dc41b2cc6d41eac44ea2c5c578948c522d",
+      "identifier": "Apache-2.0"
+    }
+  },
+  "publicAssetOriginsObservedInInstallScript": [
+    {"asset": "rmvpe", "url": "https://github.com/yxlllc/RMVPE/releases/download/230917/rmvpe.zip", "revision": "230917", "filename": "rmvpe.zip", "remoteBytes": 340638958, "remoteSha256": null},
+    {"asset": "game-1.0-medium", "url": "https://github.com/openvpi/GAME/releases/download/v1.0.0/GAME-1.0-medium.zip", "revision": "v1.0.0", "filename": "GAME-1.0-medium.zip", "remoteBytes": 184550485, "remoteSha256": "8c5b3e531e2905b935e664e2f533921cd637243770fab5282413bdb5051ca60c"},
+    {"asset": "muse-control-lite and vocal-beat-tracking", "url": "https://drive.google.com/drive/folders/1o6eUCYwUcIzZeqEycar6AHTSQ-vYcL_q", "revision": "UNVERIFIED"},
+    {"asset": "csll2m", "url": "https://drive.google.com/open?id=1ylVTiDd_fwif2ISQzn9bxxYSkfEzXjQu", "revision": "UNVERIFIED"},
+    {"asset": "soulx-singer", "url": "https://huggingface.co/Soul-AILab/SoulX-Singer", "observedHead": "40493ad90286056c7a9095035164434a79daa8c9", "installPinnedRevision": false, "modelCardLicense": "apache-2.0"},
+    {"asset": "soulx-singer-preprocess", "url": "https://huggingface.co/Soul-AILab/SoulX-Singer-Preprocess", "observedHead": "83dc50289d22a81b1e9998f5b9e111aef7c1fdcd", "installPinnedRevision": false, "modelCardLicense": "apache-2.0"}
+  ],
+  "additionalRequiredOriginsObservedInRuntimeSource": [
+    {
+      "asset": "accomontage2-runtime-data",
+      "url": "https://drive.google.com/drive/folders/1z8oW16dZtdS06woHc7_rxserNJRrkc4s",
+      "revision": "UNVERIFIED",
+      "installScriptProvisions": false
+    },
+    {
+      "asset": "stable-audio-open-1.0",
+      "url": "https://huggingface.co/stabilityai/stable-audio-open-1.0",
+      "observedHead": "f21265c1e2710b3bd2386596943f0007f55f802e",
+      "runtimePinnedRevision": false,
+      "gated": "auto",
+      "modelCardLicense": "other",
+      "acceptedTermsEvidenceRetained": false
+    }
+  ],
+  "requiredPathsAbsentFromPinnedSource": [
+    "production_adapter.py",
+    "GAME/GAME-1.0-medium/model.pt",
+    "MIDI-SAG_checkpoints/vocal_beat_detector.pt",
+    "MIDI-SAG_checkpoints/MuseControlLite_checkpoint",
+    "AccoMontage2/chorderator/static/model_master_final.pt"
+  ],
+  "terminalConclusion": {
+    "providerStatuses": {
+      "MIDI_SAG": "BLOCKED_UPSTREAM",
+      "MUSE_CONTROL_LITE": "BLOCKED_MISSING_LICENSED_ASSET"
+    },
+    "reason": "The required production adapter is absent from the immutable source tree.",
+    "networkProvisioningAttempted": false,
+    "assetsDownloaded": false,
+    "assetHashesRetained": false,
+    "midiSmokeRetained": false,
+    "museControlLiteSmokeRetained": false,
+    "deploymentEvidenceRetained": false
+  }
+}

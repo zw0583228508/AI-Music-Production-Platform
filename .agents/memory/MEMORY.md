@@ -32,3 +32,4 @@
 - [Checkpoint license provenance](checkpoint-license-provenance.md) — code/model-card licenses do not authorize external weights; invalid remote digests require direct byte hashing.
 - [Blocked-provider evidence preimages](blocked-provider-evidence-preimages.md) — retain hash preimages and keep provisioning manifest schemas identical to runtime validators.
 - [Attested generation I/O](attested-generation-response-urls.md) — results repeat health provenance; artifact origins and source allowlists are deployment gates, never request-host defaults.
+- [Focused API bundle boundaries](focused-api-bundle-boundaries.md) — no-route tests should alias database packages to throwing stubs rather than bundle native clients or externalize workspace source.

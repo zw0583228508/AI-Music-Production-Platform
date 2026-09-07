@@ -4,47 +4,42 @@ import base64
 import hmac
 import json
 import os
-import subprocess
 from pathlib import Path
 from typing import Any, Literal
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
-from inference import ROOT, SPEC, UPSTREAM, run_pipeline, sha256, valid_midi
+from inference import ROOT, SPEC, run_pipeline, sha256, valid_midi
 
 ASSET_ROOT = Path(os.getenv("MIDI_SAG_ASSET_ROOT", SPEC["assetRoot"]))
+PROVIDERS = ("MIDI_SAG", "MUSE_CONTROL_LITE")
 
-def auth(request: Request) -> None:
-    # Both registry identities can deliberately terminate at this packaged
-    # worker, but neither gets an unauthenticated compatibility path.
-    token = os.getenv("MIDI_SAG_API_TOKEN") or os.getenv("MUSE_CONTROL_LITE_API_TOKEN")
-    if not token: raise HTTPException(503, "MIDI-SAG authentication is not configured")
+
+def auth(request: Request, provider: str) -> None:
+    """Authenticate only against the token assigned to this provider identity."""
+    token = os.getenv(f"{provider}_API_TOKEN")
+    if not token:
+        raise HTTPException(503, f"{provider} authentication is not configured")
     if not hmac.compare_digest(request.headers.get("Authorization", ""), f"Bearer {token}"):
         raise HTTPException(401, "invalid bearer token")
 
-def state() -> tuple[bool, str, dict[str, Any] | None]:
+
+def state(provider: str) -> dict[str, Any]:
+    """Return the reviewed terminal state, never infer one provider from another."""
+    if provider not in PROVIDERS:
+        return {"provider": provider, "status": "BLOCKED_UNKNOWN_PROVIDER",
+                "message": "unknown provider identity", "readiness": {}}
     try:
-        if subprocess.check_output(["git", "-C", str(UPSTREAM), "rev-parse", "HEAD"], text=True).strip() != SPEC["code"]["revision"]:
-            return False, "pinned MIDI-SAG source identity failed", None
-        manifest = json.loads((ASSET_ROOT / SPEC["assetManifest"]).read_text())
-        if manifest.get("provider") != "MIDI_SAG" or manifest.get("modelVersion") != SPEC["modelVersion"]:
-            return False, "MIDI-SAG asset manifest identity failed", None
-        if {asset.get("id") for asset in manifest.get("assets", [])} != {asset["id"] for asset in SPEC["assets"]}:
-            return False, "MIDI-SAG asset inventory does not match the required manifest", None
-        for asset in manifest["assets"]:
-            files = asset["files"]
-            if not files: return False, f"{asset.get('id')} inventory is empty", None
-            for entry in files:
-                file = ASSET_ROOT / asset["path"] / entry["path"]
-                if not file.is_file() or file.stat().st_size != entry["bytes"] or sha256(file) != entry["sha256"]:
-                    return False, f"{asset.get('id')} checksum verification failed", None
-        proof = json.loads((ASSET_ROOT / SPEC["smokeProof"]).read_text())
-        if not (proof["realInference"] is True and proof["assetManifestSha256"] == sha256(ASSET_ROOT / SPEC["assetManifest"])
-                and proof["midi"]["validNonempty"] is True and proof["midi"]["bytes"] > 32
-                and proof["museControlLite"]["nonemptyWav"] is True and proof["museControlLite"]["bytes"] > 0):
-            return False, "real MIDI-SAG/MuseControlLite smoke evidence is incomplete", None
-        return True, "pinned source, assets, and real smoke evidence verified", manifest
-    except (OSError, KeyError, TypeError, json.JSONDecodeError, subprocess.CalledProcessError):
-        return False, "MIDI-SAG provenance or smoke evidence is unavailable", None
+        review = json.loads((ROOT / "installation-status.json").read_text())
+        record = review["providers"][provider]
+        terminal = record["terminal"]
+        if (record["classification"] != terminal["status"]
+                or terminal["ready"] is not False
+                or not str(terminal["status"]).startswith("BLOCKED_")):
+            raise ValueError("terminal state is not fail-closed")
+        return {"provider": provider, **terminal}
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return {"provider": provider, "status": "BLOCKED_REVIEW_UNAVAILABLE",
+                "message": "reviewed terminal status is unavailable", "readiness": {}}
 
 class ArrangeRequest(BaseModel):
     vocalWavBase64: str = Field(min_length=4)
@@ -59,18 +54,23 @@ class ArrangeRequest(BaseModel):
 app = FastAPI(title="MIDI-SAG / MuseControlLite isolated worker")
 @app.get("/health")
 def health(request: Request, provider: str = "MIDI_SAG") -> dict[str, Any]:
-    auth(request)
-    ok, message, _ = state()
-    if provider not in ("MIDI_SAG", "MUSE_CONTROL_LITE"): ok, message = False, "unknown provider identity"
-    return {"provider": provider, "status": "ready" if ok else "blocked", "healthy": ok, "runtimeReady": ok,
-            "checkpointReady": ok, "packageReady": ok, "smokeTested": ok, "modelVersion": SPEC["modelVersion"],
-            "message": message, "provenance": {"code": SPEC["code"], "runtime": SPEC["runtime"]}}
+    if provider not in PROVIDERS:
+        raise HTTPException(404, "unknown provider identity")
+    auth(request, provider)
+    terminal = state(provider)
+    readiness = terminal.get("readiness", {})
+    return {"provider": provider, "status": terminal["status"], "healthy": False, "runtimeReady": False,
+            "checkpointReady": False, "packageReady": False, "smokeTested": False,
+            "modelVersion": terminal.get("modelVersion", SPEC["modelVersion"]), "message": terminal["message"],
+            "findings": terminal.get("findings", []), "readiness": readiness}
 
 @app.post("/arrange")
 def arrange(payload: ArrangeRequest, request: Request) -> dict[str, Any]:
-    auth(request)
-    ok, message, manifest = state()
-    if not ok or manifest is None: raise HTTPException(503, f"MIDI-SAG is BLOCKED: {message}")
+    auth(request, "MIDI_SAG")
+    terminal = state("MIDI_SAG")
+    # This guard deliberately precedes decoding and the upstream runner.
+    if terminal["status"].startswith("BLOCKED_"):
+        raise HTTPException(503, f"MIDI-SAG is BLOCKED: {terminal['message']}")
     try:
         vocal = base64.b64decode(payload.vocalWavBase64, validate=True)
         source_midi = base64.b64decode(payload.vocalMidiBase64, validate=True) if payload.vocalMidiBase64 else None
