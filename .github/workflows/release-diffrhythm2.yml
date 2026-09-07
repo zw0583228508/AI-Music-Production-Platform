@@ -36,12 +36,14 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Deploy exact research worker
-        run: uv run modal deploy services/diffrhythm2-worker/modal_app.py
+        run: |
+          uv run modal deploy services/diffrhythm2-worker/modal_app.py
+          uv run modal deploy services/diffrhythm2-worker/modal_compare.py
       - name: Observe and refresh exact deployment identity
         run: |
           uv run python services/diffrhythm2-worker/release.py observe
           uv run python services/diffrhythm2-worker/release.py install-identity
-      - name: Capture health and mandatory licensed generation canary
+      - name: Capture health, burst comparison, and licensed generation canary
         run: uv run python services/diffrhythm2-worker/release.py capture
       - name: Sign canary-bound release evidence
         run: uv run python services/diffrhythm2-worker/release.py promote

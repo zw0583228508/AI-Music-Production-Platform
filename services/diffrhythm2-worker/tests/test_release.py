@@ -4,6 +4,8 @@ import json
 import os
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -141,6 +143,9 @@ class DiffRhythmReleaseTests(unittest.TestCase):
         ), patch.object(
             release, "verify_research_generation", return_value=proof
         ) as canary, patch.object(
+            release, "verify_comparison_burst",
+            return_value=self.burst_proof(),
+        ) as burst, patch.object(
             release, "observe", return_value=self.metadata
         ):
             evidence = Path(directory)
@@ -154,8 +159,12 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             release.atomic_json(
                 evidence / "live-research-generation-proof.json", proof
             )
+            release.atomic_json(
+                evidence / "live-comparison-burst-proof.json", self.burst_proof()
+            )
             captured = release.capture(self.metadata)
             canary.assert_called_once_with(self.metadata, self.health)
+            burst.assert_called_once_with(self.metadata)
             self.assertEqual(captured["liveResearchGeneration"], proof)
             self.assertEqual(
                 captured["retainedEvidence"]["live-research-generation-proof.json"]["sha256"],
@@ -165,6 +174,113 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             stale["liveResearchGeneration"]["modalDeploymentId"] = "v8"
             with self.assertRaisesRegex(ValueError, "stale or invalid"):
                 release.validate_release(stale)
+
+    def burst_proof(self):
+        return {
+            "schemaVersion": 1,
+            "provider": "DIFFRHYTHM_2",
+            "workerModalDeploymentId": self.metadata["modalDeploymentId"],
+            "comparisonModalAppId": "ap-Compare",
+            "comparisonModalDeploymentId": "v3",
+            "comparisonModalFunctionId": "fu-Compare",
+            "comparisonModalImageId": "im-Compare",
+            "requestCount": release.COMPARISON_BURST_REQUESTS,
+            "concurrencyLimit": release.COMPARISON_MAX_CONCURRENT_INPUTS,
+            "timeoutSeconds": release.COMPARISON_BURST_TIMEOUT_SECONDS,
+            "wallDurationSeconds": 1.2,
+            "queueObserved": True,
+            "outcomes": [
+                {
+                    "requestIndex": index,
+                    "outcome": "completed",
+                    "startedAfterSeconds": 0.5 if index == 2 else 0.0,
+                    "durationSeconds": 0.5,
+                }
+                for index in range(release.COMPARISON_BURST_REQUESTS)
+            ],
+        }
+
+    def test_comparison_burst_submits_above_cap_and_retains_only_safe_fields(self):
+        class FakeComparison:
+            def __init__(self):
+                self.active = 0
+                self.peak = 0
+                self.lock = threading.Lock()
+
+            def remote(self):
+                with self.lock:
+                    self.active += 1
+                    self.peak = max(self.peak, self.active)
+                started = time.time()
+                time.sleep(0.02)
+                with self.lock:
+                    self.active -= 1
+                return {
+                    "outcome": "completed",
+                    "startedUnixSeconds": started,
+                    "finishedUnixSeconds": time.time(),
+                    "modalImageId": "im-Compare",
+                }
+
+        comparison = FakeComparison()
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            release, "EVIDENCE", Path(directory)
+        ), patch.object(
+            release.modal.Function, "from_name", return_value=comparison
+        ), patch.object(
+            release, "observe_comparison",
+            return_value={
+                "modalAppId": "ap-Compare",
+                "modalDeploymentId": "v3",
+                "modalFunctionId": "fu-Compare",
+            },
+        ):
+            original_remote = comparison.remote
+            gate = threading.Semaphore(release.COMPARISON_MAX_CONCURRENT_INPUTS)
+            def capped_remote():
+                with gate:
+                    return original_remote()
+            comparison.remote = capped_remote
+            proof = release.verify_comparison_burst(self.metadata)
+            retained = json.loads(
+                (Path(directory) / "live-comparison-burst-proof.json").read_text()
+            )
+        self.assertEqual(proof, retained)
+        self.assertGreater(proof["requestCount"], proof["concurrencyLimit"])
+        self.assertEqual(comparison.peak, release.COMPARISON_MAX_CONCURRENT_INPUTS)
+        self.assertTrue(proof["queueObserved"])
+        release.validate_comparison_burst(proof, self.metadata)
+        self.assertNotRegex(
+            json.dumps(proof).lower(), r"(path|sha|audio|fixture|artifact|error|message)"
+        )
+
+    def test_comparison_burst_failure_is_sanitized_after_safe_evidence_is_written(self):
+        class FailedComparison:
+            def remote(self):
+                raise RuntimeError("/private/audio.wav " + "a" * 64)
+
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            release, "EVIDENCE", Path(directory)
+        ), patch.object(
+            release.modal.Function, "from_name", return_value=FailedComparison()
+        ), patch.object(
+            release, "observe_comparison",
+            return_value={
+                "modalAppId": "ap-Compare",
+                "modalDeploymentId": "v3",
+                "modalFunctionId": "fu-Compare",
+            },
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError, "^live comparison burst did not queue safely "
+            ) as raised:
+                release.verify_comparison_burst(self.metadata)
+            retained = (
+                Path(directory) / "live-comparison-burst-proof.json"
+            ).read_text()
+        self.assertNotIn("/private", str(raised.exception))
+        self.assertNotIn("/private", retained)
+        self.assertNotIn("a" * 64, retained)
 
 
 if __name__ == "__main__":

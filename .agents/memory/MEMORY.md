@@ -38,3 +38,4 @@
 - [Modal Docker USER behavior](modal-docker-user.md) — Modal skips Dockerfile USER; verify runtime UID instead of assuming container privilege dropping.
 - [CLaMP3 source scratch isolation](clamp3-source-scratch.md) — redirect upstream preprocessing logs outside the per-request attested source tree.
 - [CLaMP3 offline model resolution](clamp3-offline-model-resolution.md) — enforce egress denial and bind upstream model arguments to exact local snapshots.
+- [Modal concurrency queue drills](modal-concurrency-queue-drills.md) — max_inputs is per container; constrain the fleet and verify waiting from identity-bound timing evidence.
