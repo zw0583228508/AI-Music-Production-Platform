@@ -1,0 +1,261 @@
+{
+  "fixture": {
+    "authorizationScope": "private AnyAccomp validation and regression testing only",
+    "bytes": 384044,
+    "channels": 1,
+    "containsBiologicalVoice": false,
+    "containsExternalRecording": false,
+    "containsThirdPartyComposition": false,
+    "durationSeconds": 8.0,
+    "fixtureType": "deterministic procedural sung-vowel approximation",
+    "notesHz": [
+      220.0,
+      261.625565,
+      329.627557,
+      293.664768
+    ],
+    "origin": "generated locally from mathematical oscillators and vocal-formant envelopes",
+    "sampleRate": 24000,
+    "schemaVersion": 1,
+    "sha256": "16981cf4f0a2e55f1fe45178e5ffd4ed9befef7bd1e0153294291f8cd8c4d412"
+  },
+  "licenseEvidenceSha256": "a3a6f1bac872e24d4d7e6cb964add67682c35fcf28af7c75cab17dcebc9cbec4",
+  "licenseStatus": "COMMERCIAL",
+  "modelVersion": "anyaccomp-2025-12-22",
+  "provider": "ANYACCOMP",
+  "schemaVersion": 2,
+  "source": {
+    "checkedOutRevision": "82604b5e3107944ad4c49fc64900b86118ae2c62",
+    "commercial_use_permitted": true,
+    "critical_files": [
+      {
+        "bytes": 1069,
+        "path": "LICENSE",
+        "sha256": "4f5f5cc99165e8a606579265c89f49c005bfd7f5dfde4049cd8d99a282c3dd3d"
+      },
+      {
+        "bytes": 2059,
+        "path": "requirements.txt",
+        "sha256": "ac3258276a4c2c6192d7dae4730a9a97f703f26cbebf413dea023d6172bd68f5"
+      },
+      {
+        "bytes": 2148,
+        "path": "config/flow_matching.json",
+        "sha256": "b667cce677587db958a2445a13b1b6d1b3b42ac3368d2ed0b2a4eca67ff66db8"
+      },
+      {
+        "bytes": 1461,
+        "path": "config/vocoder.json",
+        "sha256": "617169cb90eebe66309aa11912330b201026eb6aad52dfb3b5766576f6138148"
+      },
+      {
+        "bytes": 3664,
+        "path": "anyaccomp/inference_utils.py",
+        "sha256": "ac9bf5917b58f49059524054041b52a2f0def9505d09411dc9185a2880899d60"
+      },
+      {
+        "bytes": 13010,
+        "path": "anyaccomp/fmt_model.py",
+        "sha256": "490d83561c49d3a83068a72cb406519b62a074f81c4a5a9a1b2d0405ef04e125"
+      },
+      {
+        "bytes": 23064,
+        "path": "anyaccomp/llama_nar.py",
+        "sha256": "2f3457d6d48d044ada934eba18b456186f8ec4ecd195bf75c965f1c9d686c4df"
+      }
+    ],
+    "file_inventory_sha256": "65f7ac6a2bbe83149ff997239c48f79b2c21ef35f21c934419d7949a0fa0fc03",
+    "files": [
+      {
+        "bytes": 748,
+        "path": ".gitignore",
+        "sha256": "f1feb688aa4ea40339ad27c0fded37f63ca15c407d642311f844880e7f64e395"
+      },
+      {
+        "bytes": 1069,
+        "path": "LICENSE",
+        "sha256": "4f5f5cc99165e8a606579265c89f49c005bfd7f5dfde4049cd8d99a282c3dd3d"
+      },
+      {
+        "bytes": 5745,
+        "path": "README.md",
+        "sha256": "9707e6d9f704f3c910380ba413dd10bc00346ddd86087e3ef354dc0400fd28c1"
+      },
+      {
+        "bytes": 13010,
+        "path": "anyaccomp/fmt_model.py",
+        "sha256": "490d83561c49d3a83068a72cb406519b62a074f81c4a5a9a1b2d0405ef04e125"
+      },
+      {
+        "bytes": 3664,
+        "path": "anyaccomp/inference_utils.py",
+        "sha256": "ac9bf5917b58f49059524054041b52a2f0def9505d09411dc9185a2880899d60"
+      },
+      {
+        "bytes": 23064,
+        "path": "anyaccomp/llama_nar.py",
+        "sha256": "2f3457d6d48d044ada934eba18b456186f8ec4ecd195bf75c965f1c9d686c4df"
+      },
+      {
+        "bytes": 2148,
+        "path": "config/flow_matching.json",
+        "sha256": "b667cce677587db958a2445a13b1b6d1b3b42ac3368d2ed0b2a4eca67ff66db8"
+      },
+      {
+        "bytes": 1461,
+        "path": "config/vocoder.json",
+        "sha256": "617169cb90eebe66309aa11912330b201026eb6aad52dfb3b5766576f6138148"
+      },
+      {
+        "bytes": 384580,
+        "path": "example/gradio/example1.mp3",
+        "sha256": "2860cf5b49b861f0770805c8cdda5b61276abc3931bb11140a5d6fa451418130"
+      },
+      {
+        "bytes": 2646044,
+        "path": "example/gradio/example2.wav",
+        "sha256": "4a16962f991ca69af95c79f39050017bd14e6dfd2c11b7547a10cd2b123b5ea6"
+      },
+      {
+        "bytes": 2646044,
+        "path": "example/gradio/example3.wav",
+        "sha256": "7a96d209d00b50cb0b2ea0d985d4d94a5ea29b20874e9f91f4ed15235d4018ec"
+      },
+      {
+        "bytes": 882044,
+        "path": "example/input/1afe1b3b-3e2e-48d3-b859-f50e222cbaf4_Big_Life_Firefly_guitar_ddb98745_1.wav",
+        "sha256": "b3e8554ce569223d75fa12f339f47f903b04bd9a04111e4b40ba12f6126b5f17"
+      },
+      {
+        "bytes": 99658,
+        "path": "example/input/20707627_21.24.Instrumental.mp3",
+        "sha256": "8a9b1c4f3c806bbaba5bf35155f1acee6b56a1949e84dcd964a8197415044ccf"
+      },
+      {
+        "bytes": 882044,
+        "path": "example/input/6ce087b4-e571-4472-9be2-04b5340311c6_Electric_Firefly_piano_84f30f84_7.wav",
+        "sha256": "79d7c212aff29b71299556834c8f07ac133ff3930bd0254da8d16fee09248eee"
+      },
+      {
+        "bytes": 2646044,
+        "path": "example/input/example1.wav",
+        "sha256": "7a96d209d00b50cb0b2ea0d985d4d94a5ea29b20874e9f91f4ed15235d4018ec"
+      },
+      {
+        "bytes": 2646044,
+        "path": "example/input/example2.wav",
+        "sha256": "4a16962f991ca69af95c79f39050017bd14e6dfd2c11b7547a10cd2b123b5ea6"
+      },
+      {
+        "bytes": 6500,
+        "path": "gradio_app.py",
+        "sha256": "28c2fa9fbbab701d7791c9e0825037cddfc7afa6237c63ec382e71fb491733d9"
+      },
+      {
+        "bytes": 4582,
+        "path": "infer_from_folder.py",
+        "sha256": "25b0c28d31cda1c601e97acfd2130f064bba042af636ec7f19eed19168f5033a"
+      },
+      {
+        "bytes": 0,
+        "path": "models/__init__.py",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "path": "models/codec/__init__.py",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 504,
+        "path": "models/codec/amphion_codec/quantize/__init__.py",
+        "sha256": "4ab58f99ec7bee7f06dc94ee8b359ce41cd8982ce46d4ac9e2fa0e826a1f5f61"
+      },
+      {
+        "bytes": 5035,
+        "path": "models/codec/amphion_codec/quantize/factorized_vector_quantize.py",
+        "sha256": "9e180c4e9cd8f937b2302b5273845528c353b345c58ff620b64cc88ae0261f93"
+      },
+      {
+        "bytes": 2201,
+        "path": "models/codec/amphion_codec/quantize/lookup_free_quantize.py",
+        "sha256": "b6baa46ff6d81b821fe0328b52418da88a88d313cfc97e9d8c327ccd0227d86c"
+      },
+      {
+        "bytes": 5778,
+        "path": "models/codec/amphion_codec/quantize/residual_vq.py",
+        "sha256": "0fc0e376eee85695d5118fbcfb7cda423c454d4408ab10ed404265900a37d966"
+      },
+      {
+        "bytes": 13633,
+        "path": "models/codec/amphion_codec/quantize/vector_quantize.py",
+        "sha256": "41d5d508dcbb074baab7010221d7740b41245c7c3adaef680b85d29208666548"
+      },
+      {
+        "bytes": 31452,
+        "path": "models/codec/amphion_codec/vocos.py",
+        "sha256": "c4b0539755d51eaebb0594018dec06d728942cfbeaccb9dcd5ac92693993fd62"
+      },
+      {
+        "bytes": 14290,
+        "path": "models/codec/coco/rep_coco_model.py",
+        "sha256": "b5c0bf57bbbc0c043f747970830ea46a50f8f437b5586a29a1b21d199a24e15a"
+      },
+      {
+        "bytes": 2788,
+        "path": "models/codec/melvqgan/melspec.py",
+        "sha256": "eeacccf417f1da152a1b36e5ff9672a24b556345061c5c6769cee8caf8a45964"
+      },
+      {
+        "bytes": 2059,
+        "path": "requirements.txt",
+        "sha256": "ac3258276a4c2c6192d7dae4730a9a97f703f26cbebf413dea023d6172bd68f5"
+      },
+      {
+        "bytes": 0,
+        "path": "utils/__init__.py",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 24927,
+        "path": "utils/hparam.py",
+        "sha256": "56064f2a72842fc67a7badae39a059a49f3598a04ab27411b99c8d7c5f933890"
+      },
+      {
+        "bytes": 20406,
+        "path": "utils/util.py",
+        "sha256": "f8c9c05f2409af9ed38dbdfcf3e4fb60bc47b66766421d82da2568573a30f917"
+      }
+    ],
+    "git_tree": "854de7d216d134878c442b461e0bb97196f51c5b",
+    "license": "MIT",
+    "observedGitTree": "854de7d216d134878c442b461e0bb97196f51c5b",
+    "repository": "https://github.com/AmphionTeam/AnyAccomp.git",
+    "revision": "82604b5e3107944ad4c49fc64900b86118ae2c62",
+    "subdirectory": ".",
+    "treeSha256": "65f7ac6a2bbe83149ff997239c48f79b2c21ef35f21c934419d7949a0fa0fc03"
+  },
+  "weights": {
+    "files": [
+      {
+        "bytes": 880790586,
+        "path": "pretrained/flow_matching/pytorch_model.bin",
+        "sha256": "e6802bd1123935a54e990cb8d3897a18190df6c53f73db021baa28c420721129"
+      },
+      {
+        "bytes": 1020206416,
+        "path": "pretrained/vocoder/model.safetensors",
+        "sha256": "1b7efd04c71c058cd00b4e9a91c761b31da745f878b7d7ee839e157104d3a7da"
+      },
+      {
+        "bytes": 177202134,
+        "path": "pretrained/vq/pytorch_model.bin",
+        "sha256": "9d7f48cefea30602b2148c057faf14ecad168184e8063c8377dd57f208dc65fc"
+      }
+    ],
+    "license": "CC-BY-4.0",
+    "repository": "amphion/anyaccomp",
+    "revision": "9aa9e62427337bf1df4caa3c4f3e6ad934522e71",
+    "treeSha256": "bfa6615ef52d19360d84865b6a782152399911d0feb3030f0b8c3d9cda8e501d"
+  }
+}

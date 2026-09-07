@@ -1,0 +1,69 @@
+{
+  "checkpointRevision": "9aa9e62427337bf1df4caa3c4f3e6ad934522e71",
+  "checkpointSha256": "bfa6615ef52d19360d84865b6a782152399911d0feb3030f0b8c3d9cda8e501d",
+  "conditioning": "24 kHz mono vocal-like waveform; text prompt is not used upstream",
+  "inferencePath": "Sing2SongInferencePipeline.encode_vocal -> reverse_diffusion -> _generate_audio",
+  "input": {
+    "authorization": {
+      "authorizationScope": "private AnyAccomp validation and regression testing only",
+      "bytes": 384044,
+      "channels": 1,
+      "containsBiologicalVoice": false,
+      "containsExternalRecording": false,
+      "containsThirdPartyComposition": false,
+      "durationSeconds": 8.0,
+      "fixtureType": "deterministic procedural sung-vowel approximation",
+      "notesHz": [
+        220.0,
+        261.625565,
+        329.627557,
+        293.664768
+      ],
+      "origin": "generated locally from mathematical oscillators and vocal-formant envelopes",
+      "sampleRate": 24000,
+      "schemaVersion": 1,
+      "sha256": "16981cf4f0a2e55f1fe45178e5ffd4ed9befef7bd1e0153294291f8cd8c4d412"
+    },
+    "bytes": 384044,
+    "channels": 1,
+    "durationSeconds": 8.0,
+    "finiteSamples": true,
+    "peakAmplitude": 0.489013671875,
+    "rmsAmplitude": 0.26038745675995123,
+    "sampleRate": 24000,
+    "sha256": "16981cf4f0a2e55f1fe45178e5ffd4ed9befef7bd1e0153294291f8cd8c4d412"
+  },
+  "licenseEvidenceSha256": "a3a6f1bac872e24d4d7e6cb964add67682c35fcf28af7c75cab17dcebc9cbec4",
+  "modelVersion": "anyaccomp-2025-12-22",
+  "output": {
+    "bytes": 384044,
+    "channels": 1,
+    "durationDeltaSeconds": 0.0,
+    "durationSeconds": 8.0,
+    "finiteSamples": true,
+    "inputCorrelation": -0.006163964795160787,
+    "normalizedDifference": 1.2385204916413324,
+    "notCopy": true,
+    "peakAmplitude": 1.0,
+    "retainedPrivateVolumePath": "smoke-output.wav",
+    "rmsAmplitude": 0.18866873952661314,
+    "sampleRate": 24000,
+    "sha256": "a6084c79debe31a38c790b8a6f491e2f66e96fe7e437e96382d27ebad56a72a2"
+  },
+  "provider": "ANYACCOMP",
+  "runtime": {
+    "accelerateVersion": "1.6.0",
+    "cudaAvailable": true,
+    "cudaVersion": "12.1",
+    "gpu": "NVIDIA L40S",
+    "pythonVersion": "3.10.12",
+    "torchVersion": "2.3.1+cu121",
+    "torchaudioVersion": "2.3.1+cu121",
+    "torchvisionVersion": "0.18.1+cu121",
+    "transformersVersion": "4.47.1"
+  },
+  "schemaVersion": 2,
+  "smokeTested": true,
+  "sourceGitTree": "854de7d216d134878c442b461e0bb97196f51c5b",
+  "sourceRevision": "82604b5e3107944ad4c49fc64900b86118ae2c62"
+}
