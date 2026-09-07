@@ -457,7 +457,16 @@ function normalizeSongModelSnapshot(value: unknown): SongModelData {
     ? value as Partial<SongModelData>
     : {};
   return {
-    contractVersion: "1.0",
+    contractVersion: raw.contractVersion ?? "2.0",
+    ...(raw.contractVersion === "1.0"
+      ? {}
+      : {
+          timebase: raw.timebase ?? {
+            ppq: 960,
+            originSeconds: 0,
+            coordinateSystem: "seconds+ticks",
+          },
+        }),
     validation: { status: "accepted", issues: [] },
     fusion: { selectedProvider: null, confidence: 0, decisions: [] },
     audio: {

@@ -14,6 +14,22 @@ export type AnalysisSection = {
   startBar: number;
   endBar: number;
   energy: number;
+  /** Present on v2 analysis output when the section has observed bar bounds. */
+  coordinates?: CanonicalTimeRange;
+};
+
+/** A v2 musical location expressed on every canonical timeline axis. */
+export type CanonicalTimeCoordinate = {
+  seconds: number;
+  tick: number;
+  beat: number;
+  bar: number;
+  beatInBar: number;
+};
+
+export type CanonicalTimeRange = {
+  start: CanonicalTimeCoordinate;
+  end: CanonicalTimeCoordinate;
 };
 
 export type ArrangementSection = {
@@ -104,6 +120,11 @@ export type ProductionJobKind =
   | "quality"
   | "export";
 export type TrackPerformance = {
+  /**
+   * Performances created before Song Model v2 omit this field and are
+   * interpreted at the legacy 480 PPQ by export consumers.
+   */
+  ppq?: number;
   tempoMap: Array<{ tick: number; bpm: number }>;
   meterMap: Array<{ tick: number; numerator: number; denominator: number }>;
   notes: Array<{
@@ -153,7 +174,16 @@ export type SongModelValidationIssue = {
   provider?: string;
 };
 export type SongModelData = SongModelCore & {
-  contractVersion: "1.0";
+  contractVersion: "1.0" | "2.0";
+  /**
+   * Canonical v2 models declare their musical coordinate system explicitly.
+   * Historical v1 models remain readable without this field.
+   */
+  timebase?: {
+    ppq: 960;
+    originSeconds: 0;
+    coordinateSystem: "seconds+ticks";
+  };
   validation: {
     status: "accepted" | "flagged";
     issues: SongModelValidationIssue[];
@@ -178,6 +208,7 @@ export type SongModelData = SongModelCore & {
     beat: number;
     bar: number;
     confidence: number;
+    coordinates?: CanonicalTimeCoordinate;
   }>;
   bars: Array<{
     bar: number;
@@ -185,6 +216,7 @@ export type SongModelData = SongModelCore & {
     end: number;
     beats: number;
     confidence: number;
+    coordinates?: CanonicalTimeRange;
   }>;
   dynamics: number[];
   waveform: number[];
@@ -206,6 +238,7 @@ export type SongModelData = SongModelCore & {
     end: number;
     text: string;
     confidence: number;
+    coordinates?: CanonicalTimeRange;
   }>;
   confidenceByField: Record<string, number>;
   providerProvenance: Array<{
@@ -805,9 +838,9 @@ export type SongModelCore = {
     sampleRate: number;
     channels: number;
   };
-  tempoMap: Array<{ time: number; bpm: number; confidence: number }>;
-  meterMap: Array<{ bar: number; meter: string; confidence: number }>;
-  keyMap: Array<{ time: number; key: string; confidence: number }>;
+  tempoMap: Array<{ time: number; bpm: number; confidence: number; coordinates?: CanonicalTimeCoordinate }>;
+  meterMap: Array<{ bar: number; meter: string; confidence: number; coordinates?: CanonicalTimeCoordinate }>;
+  keyMap: Array<{ time: number; key: string; confidence: number; coordinates?: CanonicalTimeCoordinate }>;
   melody: Array<{
     start: number;
     end: number;
@@ -815,6 +848,7 @@ export type SongModelCore = {
     velocity: number;
     confidence: number;
     source: string;
+    coordinates?: CanonicalTimeRange;
   }>;
   /** Observed bass notes from harmony providers; absent/empty means no bass evidence. */
   bass?: Array<{
@@ -826,6 +860,7 @@ export type SongModelCore = {
     sourceStem?: string;
     sourceStemProvider?: string;
     providers?: string[];
+    coordinates?: CanonicalTimeRange;
   }>;
   chords: ChordHarmonyEvent[];
   sections: AnalysisSection[];
@@ -897,6 +932,7 @@ export type ChordHarmonyEvent = {
   melodyConflictEvidence?: MelodyConflictEvidence[];
   candidateProvenance?: ChordCandidateProvenance[];
   bassSupportEvidence?: ChordBassSupportEvidence[];
+  coordinates?: CanonicalTimeRange;
 };
 export type SongModelFieldStatus = {
   status: "detected" | "low_confidence" | "failed" | "not_available";

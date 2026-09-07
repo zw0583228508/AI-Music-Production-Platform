@@ -110,6 +110,8 @@ test("expressive export preserves a silent trailing 6/8 section in WAV and MIDI"
     sections: [],
     tracks: [{ id: "track-piano", name: "Piano", role: "harmony", volume: 0, muted: false, solo: false }],
     songModel: {
+      contractVersion: "2.0",
+      timebase: { ppq: 960, originSeconds: 0, coordinateSystem: "seconds+ticks" },
       audio: { name: "test.wav", contentType: "audio/wav", size: 1, durationSeconds: 6, sampleRate: 44_100, channels: 2 },
       tempoMap: [{ time: 0, bpm: 120, confidence: 1 }],
       meterMap: [{ bar: 1, meter: "6/8", confidence: 1 }],

@@ -379,7 +379,7 @@ test("export ZIP keeps MIDI and WAV timelines aligned with section activation", 
     solo: false,
     performance: emptyPerformance,
   };
-  const sectionTwoTick = 2 * 4 * 480;
+  const sectionTwoTick = 2 * 4 * 960;
   bass.performance = createTrackPerformance(bass, project, arrangement, 0);
   piano.performance = createTrackPerformance(piano, project, arrangement, 1);
 
@@ -405,7 +405,7 @@ test("export ZIP keeps MIDI and WAV timelines aligned with section activation", 
     )),
   };
   const hornPerformance = createTrackPerformance(horn, project, brassOutro, 2);
-  assert.ok(hornPerformance.notes.some((note) => note.startTick >= 4 * 4 * 480));
+  assert.ok(hornPerformance.notes.some((note) => note.startTick >= 4 * 4 * 960));
 
   const result = createExportBundle(
     project,
@@ -437,16 +437,28 @@ test("export ZIP keeps MIDI and WAV timelines aligned with section activation", 
   );
 
   const midiEndTick = lastMidiTick(midi);
-  assert.equal(midiEndTick, 6 * 4 * 480);
-  const midiEndSeconds = tickToSeconds(midiEndTick, bass.performance.tempoMap);
+  assert.equal(midiEndTick, 6 * 4 * 960);
+  const midiEndSeconds = tickToSeconds(
+    midiEndTick,
+    bass.performance.tempoMap,
+    bass.performance.ppq,
+  );
   assert.ok(
     wavDuration(master) >= midiEndSeconds,
     `master WAV ${wavDuration(master)}s ended before MIDI ${midiEndSeconds}s`,
   );
   assert.ok(wavDuration(master) > 20, "render duration must include the silent trailing section, not 1-second display metadata");
 
-  const sectionTwoSeconds = tickToSeconds(sectionTwoTick, bass.performance.tempoMap);
-  const outroSeconds = tickToSeconds(4 * 4 * 480, bass.performance.tempoMap);
+  const sectionTwoSeconds = tickToSeconds(
+    sectionTwoTick,
+    bass.performance.tempoMap,
+    bass.performance.ppq,
+  );
+  const outroSeconds = tickToSeconds(
+    4 * 4 * 960,
+    bass.performance.tempoMap,
+    bass.performance.ppq,
+  );
   assert.equal(peakAfter(bassStem, sectionTwoSeconds + 0.5), 0);
   assert.equal(peakBefore(pianoStem, sectionTwoSeconds - 0.1), 0);
   assert.equal(peakAfter(pianoStem, outroSeconds + 0.5), 0);
@@ -535,8 +547,8 @@ test("versioned piano, chord, CC, articulation, and transpose edits drive export
   const editedPiano = createTrackPerformance(piano, project, arrangement, 1);
 
   assert.deepEqual(editedBass.notes, [{
-    startTick: 480,
-    durationTicks: 960,
+    startTick: 960,
+    durationTicks: 1920,
     pitch: 47,
     velocity: 101,
   }]);
@@ -544,7 +556,7 @@ test("versioned piano, chord, CC, articulation, and transpose edits drive export
   assert.ok(editedBass.expression.some((event) => event.value === 100));
   assert.ok(editedBass.expression.some((event) => event.value === 32));
   assert.ok(editedBass.articulations.some((event) =>
-    event.tick === 480 && event.type === "staccato" && event.keyswitch === 25));
+    event.tick === 960 && event.type === "staccato" && event.keyswitch === 25));
   assert.deepEqual(
     editedPiano.notes.map((note) => note.pitch).sort((left, right) => left - right),
     [47, 55, 59, 64],
@@ -618,7 +630,7 @@ test("versioned piano, chord, CC, articulation, and transpose edits drive export
   assert.ok(extendedMidi);
   assert.equal(
     lastMidiTick(extendedMidi),
-    4 * 4 * 480,
+    4 * 4 * 960,
     "MIDI endpoint must follow the arrangement's edited section boundary",
   );
 });

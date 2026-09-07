@@ -1488,7 +1488,12 @@ export async function analyzeProjectSource(
     }]);
     const model: SongModelData = fusion.accepted ? fusion.model : {
       ...candidate,
-      contractVersion: "1.0",
+      contractVersion: "2.0",
+      timebase: {
+        ppq: 960,
+        originSeconds: 0,
+        coordinateSystem: "seconds+ticks",
+      },
       validation: { status: "flagged", issues: fusion.issues },
       fusion: {
         selectedProvider: null,
