@@ -161,6 +161,41 @@ function assertProducerSafeEvaluation(evaluation) {
   assert.equal(evaluation.diversity.rejected, true);
 }
 
+function completeMusicCriticReport(score) {
+  const dimensions = [
+    "vocalFit",
+    "harmony",
+    "development",
+    "contrastAndTransitions",
+    "registerCollisions",
+    "playability",
+    "repetition",
+    "styleAndControlAdherence",
+  ];
+  return {
+    version: "music-critic-v1",
+    score,
+    coverage: {
+      availableDimensions: dimensions.length,
+      totalDimensions: 8,
+      sparse: false,
+    },
+    dimensions: Object.fromEntries(dimensions.map((name) => [
+      name,
+      {
+        status: "available",
+        score,
+        evidence: [{
+          source: "style_and_directives",
+          summary: `${name} evidence`,
+          observations: { validated: true },
+        }],
+        explanation: `${name} passed`,
+      },
+    ])),
+  };
+}
+
 function instrumentPackMultipart(size) {
   const boundary = `music-pack-${process.pid}`;
   const fields = [
@@ -1113,6 +1148,141 @@ test("project and export endpoints enforce owner authorization", async () => {
   assert.equal(selectedEvaluation.diversity.rejected, false);
   assert.equal("fingerprint" in selectedEvaluation.diversity, false);
   assert.equal(JSON.stringify(selectedArrangement).includes("private-selected-track"), false);
+
+  const freshGenerationJobId = `fresh-auth-generation-job-${process.pid}`;
+  const freshCandidateId = `fresh-auth-candidate-${process.pid}`;
+  const freshAudioArtifactId = `fresh-auth-audio-${process.pid}`;
+  const freshQualityArtifactId = `fresh-auth-quality-${process.pid}`;
+  const freshMusicCritic = completeMusicCriticReport(0.88);
+  const freshSelectionEvaluation = {
+    status: "evaluated",
+    providerScore: 0.9,
+    renderArtifactIds: [freshAudioArtifactId],
+    artifacts: [
+      {
+        id: freshAudioArtifactId,
+        type: "AUDIO_TRACK",
+        label: "Validated provider audio",
+        url: `/api/storage/objects/renders/${freshAudioArtifactId}.wav`,
+      },
+      {
+        id: freshQualityArtifactId,
+        type: "QUALITY_REPORT",
+        label: "Validated quality report",
+        url: `/api/storage/objects/reports/${freshQualityArtifactId}.json`,
+      },
+    ],
+    qualityReport: {
+      score: 0.89,
+      checks: {
+        silence: 1,
+        clipping: 0.98,
+        notePlayability: 1,
+        timing: 0.96,
+        sectionCoverage: 0.94,
+        lineage: 1,
+      },
+      weights: {
+        silence: 0.15,
+        clipping: 0.15,
+        notePlayability: 0.2,
+        timing: 0.15,
+        sectionCoverage: 0.15,
+        lineage: 0.2,
+      },
+      strengths: ["Clear dynamics"],
+      weaknesses: [],
+      warnings: [],
+      evaluatedAt: "2026-09-07T00:00:00.000Z",
+      renderArtifactIds: [freshAudioArtifactId],
+      lineageComplete: true,
+    },
+    musicCritic: freshMusicCritic,
+    error: null,
+    diversity: {
+      fingerprint: {
+        activeTracks: ["private-fresh-track"],
+        densityEnergy: [{ density: 0.64, energy: 0.73 }],
+        harmonySequence: ["private-fresh-harmony"],
+        trackRoleInstruments: ["private-fresh-role"],
+        noteShape: [8, 5, 3],
+      },
+      comparedToCandidateId: "fresh-baseline-candidate",
+      distance: 0.47,
+      threshold: 0.25,
+      rejected: false,
+      reason: "sufficiently_distinct",
+    },
+  };
+  await db.insert(musicGenerationJobsTable).values({
+    id: freshGenerationJobId,
+    projectId,
+    arrangementId,
+    task: "ARRANGEMENT",
+    status: "succeeded",
+    provider: "METEOR",
+    modelVersion: "current-model",
+    hardware: "AUTO",
+    speed: "BALANCED",
+    progress: 100,
+    stage: "completed",
+    requestedCandidates: 1,
+    seed: 235,
+    inputSnapshot: {
+      arrangement: {
+        style: "Test",
+        mode: "STUDIO",
+        harmonyComplexity: 5,
+        energy: 6,
+        density: 5,
+        orchestraSize: 4,
+        rhythmIntensity: 5,
+      },
+    },
+  });
+  await db.insert(musicGenerationCandidatesTable).values({
+    id: freshCandidateId,
+    jobId: freshGenerationJobId,
+    projectId,
+    arrangementId,
+    provider: "METEOR",
+    modelVersion: "current-model",
+    seed: 235,
+    rank: 1,
+    label: "Newly scored candidate",
+    score: 0.88,
+    confidence: 0.92,
+    summary: "Current candidate with complete quality and Music Critic evidence",
+    status: "validated",
+    plan: { sections: [] },
+    trackModels: [],
+    evaluatedPlan: { sections: [] },
+    evaluatedStyleSpec: {},
+    evaluation: freshSelectionEvaluation,
+  });
+
+  const freshSelectionResponse = await request(
+    `/api/generation-candidates/${freshCandidateId}/select`,
+    ownerSession,
+    { method: "POST" },
+  );
+  assert.equal(freshSelectionResponse.status, 200);
+  const freshArrangement = await freshSelectionResponse.json();
+  const freshPublicEvaluation = freshArrangement.generationProvenance.evaluation;
+  assert.equal(freshArrangement.sourceCandidateId, freshCandidateId);
+  assert.deepEqual(freshPublicEvaluation.musicCritic, freshMusicCritic);
+  assert.deepEqual(freshPublicEvaluation.diversity, {
+    comparedToCandidateId: "fresh-baseline-candidate",
+    distance: 0.47,
+    threshold: 0.25,
+    rejected: false,
+    reason: "sufficiently_distinct",
+  });
+  const freshArrangementJson = JSON.stringify(freshArrangement);
+  assert.equal(freshArrangementJson.includes('"fingerprint"'), false);
+  assert.equal(freshArrangementJson.includes("private-fresh-track"), false);
+  assert.equal(freshArrangementJson.includes("private-fresh-harmony"), false);
+  assert.equal(freshArrangementJson.includes("private-fresh-role"), false);
 
   const crossUserExport = await request(`/api/projects/${projectId}/export`, otherSession, {
     method: "POST",
