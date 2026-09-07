@@ -282,6 +282,71 @@ class DiffRhythmReleaseTests(unittest.TestCase):
         self.assertNotIn("/private", retained)
         self.assertNotIn("a" * 64, retained)
 
+    def test_comparison_burst_stall_times_out_without_waiting_for_call_threads(self):
+        private_details = "/private/stalled/audio.wav " + "a" * 64
+        stalled = threading.Event()
+
+        class StalledComparison:
+            def remote(self):
+                stalled.wait()
+                raise RuntimeError(private_details)
+
+        try:
+            with tempfile.TemporaryDirectory() as directory, patch.object(
+                release, "EVIDENCE", Path(directory)
+            ), patch.object(
+                release, "COMPARISON_BURST_TIMEOUT_SECONDS", 0.05
+            ), patch.object(
+                release.modal.Function, "from_name", return_value=StalledComparison()
+            ), patch.object(
+                release, "observe_comparison",
+                return_value={
+                    "modalAppId": "ap-Compare",
+                    "modalDeploymentId": "v3",
+                    "modalFunctionId": "fu-Compare",
+                },
+            ):
+                started = time.monotonic()
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "^live comparison burst did not queue safely within "
+                    "the worker resource limit$",
+                ) as raised:
+                    release.verify_comparison_burst(self.metadata)
+                elapsed = time.monotonic() - started
+                retained = json.loads(
+                    (
+                        Path(directory) / "live-comparison-burst-proof.json"
+                    ).read_text()
+                )
+        finally:
+            stalled.set()
+
+        self.assertLess(elapsed, 0.5)
+        self.assertEqual(
+            retained["outcomes"],
+            [
+                {
+                    "requestIndex": index,
+                    "outcome": "timeout",
+                    "startedAfterSeconds": 0,
+                    "durationSeconds": 0.05,
+                }
+                for index in range(release.COMPARISON_BURST_REQUESTS)
+            ],
+        )
+        self.assertTrue(all(
+            set(outcome) == {
+                "requestIndex", "outcome", "startedAfterSeconds", "durationSeconds",
+            }
+            for outcome in retained["outcomes"]
+        ))
+        surfaced = str(raised.exception) + json.dumps(retained)
+        self.assertNotIn(private_details, surfaced)
+        self.assertNotRegex(
+            surfaced.lower(), r"(private|sha256|audio|fixture|artifact|metadata)"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

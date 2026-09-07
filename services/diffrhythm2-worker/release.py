@@ -3,16 +3,17 @@ from __future__ import annotations
 
 import argparse
 import base64
-import concurrent.futures
 import hashlib
 import io
 import json
 import math
 import os
+import queue
 import re
 import struct
 import subprocess
 import tempfile
+import threading
 import time
 import urllib.request
 import wave
@@ -428,68 +429,68 @@ def verify_comparison_burst(metadata: dict) -> dict:
     )
     started = time.time()
     outcomes = []
-    executor = concurrent.futures.ThreadPoolExecutor(
-        max_workers=COMPARISON_BURST_REQUESTS
-    )
-    futures = {
-        executor.submit(comparison.remote): index
-        for index in range(COMPARISON_BURST_REQUESTS)
-    }
-    try:
-        for future in concurrent.futures.as_completed(
-            futures, timeout=COMPARISON_BURST_TIMEOUT_SECONDS
-        ):
-            index = futures[future]
-            try:
-                result = future.result()
-                valid = (
-                    isinstance(result, dict)
-                    and result.get("outcome") == "completed"
-                    and isinstance(result.get("startedUnixSeconds"), (int, float))
-                    and isinstance(result.get("finishedUnixSeconds"), (int, float))
-                    and result["startedUnixSeconds"] <= result["finishedUnixSeconds"]
-                    and (
-                        result["finishedUnixSeconds"] - result["startedUnixSeconds"]
-                        <= COMPARISON_BURST_TIMEOUT_SECONDS
-                    )
-                    and result.get("modalImageId")
-                    and set(result) == {
-                        "outcome", "startedUnixSeconds", "finishedUnixSeconds",
-                        "modalImageId",
-                    }
-                )
-                outcomes.append({
-                    "requestIndex": index,
-                    "outcome": "completed" if valid else "failed",
-                    "startedUnixSeconds": (
-                        float(result["startedUnixSeconds"]) if valid else time.time()
-                    ),
-                    "finishedUnixSeconds": (
-                        float(result["finishedUnixSeconds"]) if valid else time.time()
-                    ),
-                    "modalImageId": result.get("modalImageId", "") if valid else "",
-                })
-            except Exception:
-                outcomes.append({
-                    "requestIndex": index,
-                    "outcome": "failed",
-                    "startedUnixSeconds": time.time(),
-                    "finishedUnixSeconds": time.time(),
-                    "modalImageId": "",
-                })
-    except TimeoutError:
-        completed = {item["requestIndex"] for item in outcomes}
-        for index in range(COMPARISON_BURST_REQUESTS):
-            if index not in completed:
-                outcomes.append({
-                    "requestIndex": index,
-                    "outcome": "timeout",
-                    "startedUnixSeconds": started,
-                    "finishedUnixSeconds": started + COMPARISON_BURST_TIMEOUT_SECONDS,
-                    "modalImageId": "",
-                })
-    finally:
-        executor.shutdown(wait=False, cancel_futures=True)
+    results = queue.Queue()
+
+    def call_comparison(index: int) -> None:
+        try:
+            results.put((index, comparison.remote()))
+        except Exception:
+            results.put((index, None))
+
+    for index in range(COMPARISON_BURST_REQUESTS):
+        threading.Thread(
+            target=call_comparison, args=(index,), daemon=True
+        ).start()
+
+    deadline = time.monotonic() + COMPARISON_BURST_TIMEOUT_SECONDS
+    pending = set(range(COMPARISON_BURST_REQUESTS))
+    while pending:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        try:
+            index, result = results.get(timeout=remaining)
+        except queue.Empty:
+            break
+        if index not in pending:
+            continue
+        pending.remove(index)
+        valid = (
+            isinstance(result, dict)
+            and result.get("outcome") == "completed"
+            and isinstance(result.get("startedUnixSeconds"), (int, float))
+            and isinstance(result.get("finishedUnixSeconds"), (int, float))
+            and result["startedUnixSeconds"] <= result["finishedUnixSeconds"]
+            and (
+                result["finishedUnixSeconds"] - result["startedUnixSeconds"]
+                <= COMPARISON_BURST_TIMEOUT_SECONDS
+            )
+            and result.get("modalImageId")
+            and set(result) == {
+                "outcome", "startedUnixSeconds", "finishedUnixSeconds",
+                "modalImageId",
+            }
+        )
+        observed = time.time()
+        outcomes.append({
+            "requestIndex": index,
+            "outcome": "completed" if valid else "failed",
+            "startedUnixSeconds": (
+                float(result["startedUnixSeconds"]) if valid else observed
+            ),
+            "finishedUnixSeconds": (
+                float(result["finishedUnixSeconds"]) if valid else observed
+            ),
+            "modalImageId": result.get("modalImageId", "") if valid else "",
+        })
+    for index in pending:
+        outcomes.append({
+            "requestIndex": index,
+            "outcome": "timeout",
+            "startedUnixSeconds": started,
+            "finishedUnixSeconds": started + COMPARISON_BURST_TIMEOUT_SECONDS,
+            "modalImageId": "",
+        })
     completed = [
         item for item in outcomes if item["outcome"] == "completed"
     ]
