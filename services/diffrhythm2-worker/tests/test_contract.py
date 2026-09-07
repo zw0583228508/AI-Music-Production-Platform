@@ -6,7 +6,9 @@ import soundfile as sf
 from smoke import (
  COPY_LIKE_CORRELATION_THRESHOLD,
  COPY_LIKE_DIFFERENCE_THRESHOLD,
+ DECODED_SAMPLE_BYTES,
  MAX_CHANNEL_PROJECTIONS,
+ MAX_DECODED_AUDIO_BYTES,
  MAX_DECODED_CHANNELS,
  MAX_SUPPORTED_SMOKE_DURATION_SECONDS,
  signal_comparison,
@@ -453,6 +455,34 @@ print(json.dumps({"elapsedSeconds":elapsed,"peakResidentMiB":peak_kib/1024,"resu
     ):
      signal_comparison(oversized,normal)
    decode.assert_not_called()
+
+ def test_source_copy_detection_rejects_unsafe_combined_dimensions_before_decode(self):
+  sample_rate=48000
+  channel_count=MAX_DECODED_CHANNELS
+  claimed_frames=MAX_DECODED_AUDIO_BYTES//(channel_count*DECODED_SAMPLE_BYTES)+1
+  self.assertLessEqual(
+   claimed_frames,
+   int(sample_rate*MAX_SUPPORTED_SMOKE_DURATION_SECONDS),
+  )
+  with tempfile.TemporaryDirectory() as directory:
+   directory=Path(directory)
+   unsafe=directory/"private-user-upload.wav"
+   normal=directory/"normal.wav"
+   unsafe.write_bytes(b"metadata-only combined-dimension fixture")
+   sf.write(normal,np.zeros(32),sample_rate,subtype="PCM_16")
+   unsafe_metadata=mock.Mock(
+    channels=channel_count,samplerate=sample_rate,frames=claimed_frames,
+   )
+   with mock.patch("smoke.sf.info",return_value=unsafe_metadata), \
+        mock.patch("smoke.sf.read",wraps=sf.read) as decode:
+    with self.assertRaisesRegex(
+     RuntimeError,
+     rf"^audio decoded size exceeds supported maximum of "
+     rf"{MAX_DECODED_AUDIO_BYTES//(1024*1024)} MiB$",
+    ) as raised:
+     signal_comparison(unsafe,normal)
+   decode.assert_not_called()
+  self.assertNotIn(unsafe.name,str(raised.exception))
 
  def test_source_copy_detection_keeps_stereo_projection_behavior(self):
   sample_rate=8000
