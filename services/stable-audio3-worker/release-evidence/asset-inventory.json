@@ -1,0 +1,378 @@
+{
+  "models": {
+    "STABLE_AUDIO_3_MEDIUM": {
+      "files": [
+        {
+          "bytes": 1,
+          "path": ".cache/huggingface/.gitignore",
+          "sha256": "684888c0ebb17f374298b65ee2807526c066094c701bcc7ebbe1c1095f494fc1"
+        },
+        {
+          "bytes": 101,
+          "path": ".cache/huggingface/download/.gitattributes.metadata",
+          "sha256": "2afe8439a28486b82d0ccc846bda03c6b29257b6cf47aa3a2236f4f61bbffc1c"
+        },
+        {
+          "bytes": 101,
+          "path": ".cache/huggingface/download/LICENSE.md.metadata",
+          "sha256": "7aec342696228c8f2abd88bda1142bb720dc1eb467992892adcf388a51a3b42e"
+        },
+        {
+          "bytes": 101,
+          "path": ".cache/huggingface/download/LICENSE_GEMMA.md.metadata",
+          "sha256": "6060b18c347787d9c0add84769e216b484faa0f37cab7f7f3d31dbefec6185cc"
+        },
+        {
+          "bytes": 101,
+          "path": ".cache/huggingface/download/NOTICE.metadata",
+          "sha256": "232d097b7a0476bba73c5b722f1ecdd5428495c6135ddedb44bc5945f4200b3e"
+        },
+        {
+          "bytes": 101,
+          "path": ".cache/huggingface/download/README.md.metadata",
+          "sha256": "7491769a194185c274cdf377e3a1b6a4b0abd7c3df37db97b128a10079b493c0"
+        },
+        {
+          "bytes": 123,
+          "path": ".cache/huggingface/download/Stable_Audio_3.0_Thumbnail_1x1.png.metadata",
+          "sha256": "dedfd7e9d71e42f6d522468caea9a6f6571d6628f2ac568d1fc3e2e851c66c9d"
+        },
+        {
+          "bytes": 125,
+          "path": ".cache/huggingface/download/model.safetensors.metadata",
+          "sha256": "185c16f0aa3ea591172185c5dc6f49eca42cdc0386e09d3139ddf7e98ff7f3dc"
+        },
+        {
+          "bytes": 101,
+          "path": ".cache/huggingface/download/model_config.json.metadata",
+          "sha256": "9ef21601e6ac06ad9a2b645af2aa7c0bebf4bf3a31f45dcbedfb5d2ea1877eb1"
+        },
+        {
+          "bytes": 101,
+          "path": ".cache/huggingface/download/t5gemma-b-b-ul2/.gitattributes.metadata",
+          "sha256": "aca0064be6d33d88bbb45be873b68800993933534814fa6f89431ff004820b0e"
+        },
+        {
+          "bytes": 101,
+          "path": ".cache/huggingface/download/t5gemma-b-b-ul2/README.md.metadata",
+          "sha256": "679e82bec72c60d5fef620906f0e0ceaa48617aae447b351ff2c2219273383a5"
+        },
+        {
+          "bytes": 100,
+          "path": ".cache/huggingface/download/t5gemma-b-b-ul2/config.json.metadata",
+          "sha256": "246a16615aeb567b5f8520bcce92027560061fdc054c36579911fe6612a5ee9c"
+        },
+        {
+          "bytes": 100,
+          "path": ".cache/huggingface/download/t5gemma-b-b-ul2/generation_config.json.metadata",
+          "sha256": "1d414bfbe4eb895051d56021f701c615dedbd0766eb7e373ac01ac7dd4231335"
+        },
+        {
+          "bytes": 125,
+          "path": ".cache/huggingface/download/t5gemma-b-b-ul2/model.safetensors.metadata",
+          "sha256": "ebdd794b8c344aa3a32964a35fdc01dd8e74684f0ebfa76b0e21e647f4ff7145"
+        },
+        {
+          "bytes": 101,
+          "path": ".cache/huggingface/download/t5gemma-b-b-ul2/special_tokens_map.json.metadata",
+          "sha256": "01e13fa834c3f02a2bb9b47440e1f811f74c58ffb24b42e7a9ac2a7bc077cb44"
+        },
+        {
+          "bytes": 124,
+          "path": ".cache/huggingface/download/t5gemma-b-b-ul2/tokenizer.json.metadata",
+          "sha256": "90d79ca282dbdd748d7789f740f04f90a43a1c4d980b659fceb3bfbdac25d9e8"
+        },
+        {
+          "bytes": 125,
+          "path": ".cache/huggingface/download/t5gemma-b-b-ul2/tokenizer.model.metadata",
+          "sha256": "fcb1bfc2a85e0d3bd869d4494ab428d1c6b072bf238751fa9b3558c29abb3fa6"
+        },
+        {
+          "bytes": 100,
+          "path": ".cache/huggingface/download/t5gemma-b-b-ul2/tokenizer_config.json.metadata",
+          "sha256": "42b89573e63db969f61019157ccf6b0a0820981fccee70f79c582c24e360fd1f"
+        },
+        {
+          "bytes": 1716,
+          "path": ".gitattributes",
+          "sha256": "ad05eef8ec7bef9177cb5c4fca74241860ee9d5355a845608490d6d0af4e5628"
+        },
+        {
+          "bytes": 11852,
+          "path": "LICENSE.md",
+          "sha256": "d6f6b1a4dce5c852bd6d7d9482d002baf0ccdb71e662250b73be9eec8764ee8d"
+        },
+        {
+          "bytes": 10541,
+          "path": "LICENSE_GEMMA.md",
+          "sha256": "e77acc0d3163bb7534675045c584b4d04b387b529239fc4b3647da0a01ba4745"
+        },
+        {
+          "bytes": 97,
+          "path": "NOTICE",
+          "sha256": "66f856d7da72797f528fca46b7c80634ab481f917bfe020960e123d84b19f75f"
+        },
+        {
+          "bytes": 6086,
+          "path": "README.md",
+          "sha256": "ac3429a3b331d9846ebab26cc5ae6a0469efda9640c367e1f47c018d894c1452"
+        },
+        {
+          "bytes": 1462873,
+          "path": "Stable_Audio_3.0_Thumbnail_1x1.png",
+          "sha256": "a9834815023e381f367ed5e63a4cf6276a75b876b6fd6076f633e3135b786512"
+        },
+        {
+          "bytes": 9222116660,
+          "path": "model.safetensors",
+          "sha256": "48d9c65e290e7bcd5194e0633bfc2424a59ee9683f5c2d58762d997b7d8ce0b5"
+        },
+        {
+          "bytes": 10360,
+          "path": "model_config.json",
+          "sha256": "4f8846649df59167e1792d134acb6fc2bb7105227c5455300bad6cb107e20c88"
+        },
+        {
+          "bytes": 1570,
+          "path": "t5gemma-b-b-ul2/.gitattributes",
+          "sha256": "34448b82c17d60fec9b65b1f093c115ddbaadc04beb1b0140b6bfed2e012a930"
+        },
+        {
+          "bytes": 18296,
+          "path": "t5gemma-b-b-ul2/README.md",
+          "sha256": "6a96748c87d323d6080d037191346e68c3eda39c34c0530cb4f7f3bd8cc20319"
+        },
+        {
+          "bytes": 2540,
+          "path": "t5gemma-b-b-ul2/config.json",
+          "sha256": "575334409716886ac2952f5a275ed92868deef8a0ea560258d9970a431c6fb3a"
+        },
+        {
+          "bytes": 156,
+          "path": "t5gemma-b-b-ul2/generation_config.json",
+          "sha256": "1068b94599a94ceea097dd3936819f108c2e70806d7c6cc5ec425610af347625"
+        },
+        {
+          "bytes": 1183022944,
+          "path": "t5gemma-b-b-ul2/model.safetensors",
+          "sha256": "9b05ea5a4f211d023832f706fb2c0e83e4fc721b6da35ab69ceb0b55eb7800d3"
+        },
+        {
+          "bytes": 636,
+          "path": "t5gemma-b-b-ul2/special_tokens_map.json",
+          "sha256": "baec30ea10906f16adb8c18af7a34023002c1746542612b8b41c9f09e1351351"
+        },
+        {
+          "bytes": 34362429,
+          "path": "t5gemma-b-b-ul2/tokenizer.json",
+          "sha256": "7794135caa3ea73918949c902a781cc61dab674a4b59c17d85931c77c1114cbd"
+        },
+        {
+          "bytes": 4241003,
+          "path": "t5gemma-b-b-ul2/tokenizer.model",
+          "sha256": "61a7b147390c64585d6c3543dd6fc636906c9af3865a5548f27f31aee1d4c8e2"
+        },
+        {
+          "bytes": 46437,
+          "path": "t5gemma-b-b-ul2/tokenizer_config.json",
+          "sha256": "9546baec0dfefec0e29873edea9488ecde153f846e18c06ea48cb44587bf408f"
+        }
+      ],
+      "model_version": "27b5a21b791b1b033d193a9e1e3ce78493f102f9",
+      "path": "models/STABLE_AUDIO_3_MEDIUM",
+      "repository": "stabilityai/stable-audio-3-medium",
+      "resolvedRevision": "27b5a21b791b1b033d193a9e1e3ce78493f102f9",
+      "revision": "27b5a21b791b1b033d193a9e1e3ce78493f102f9"
+    },
+    "STABLE_AUDIO_3_SMALL_MUSIC": {
+      "files": [
+        {
+          "bytes": 1,
+          "path": ".cache/huggingface/.gitignore",
+          "sha256": "684888c0ebb17f374298b65ee2807526c066094c701bcc7ebbe1c1095f494fc1"
+        },
+        {
+          "bytes": 101,
+          "path": ".cache/huggingface/download/.gitattributes.metadata",
+          "sha256": "171cd673794ef4acea966b944314f41a2928c3a92da36f4ae3d14c3c68ff7cee"
+        },
+        {
+          "bytes": 101,
+          "path": ".cache/huggingface/download/LICENSE.md.metadata",
+          "sha256": "ddc9b9c04118e6cde7c0bc6030a540b9a306cae6355f24cd7ad17448522cf804"
+        },
+        {
+          "bytes": 100,
+          "path": ".cache/huggingface/download/LICENSE_GEMMA.md.metadata",
+          "sha256": "802bcbaf9839c170dca2d29dabf2c8683ed6b7b6aa3d2bb6d80caa66a6c27139"
+        },
+        {
+          "bytes": 101,
+          "path": ".cache/huggingface/download/NOTICE.metadata",
+          "sha256": "bbe3789f8f2c8e81cad6aa042f0b6510a3327b4004a8ff2fa548e44279e834f2"
+        },
+        {
+          "bytes": 100,
+          "path": ".cache/huggingface/download/README.md.metadata",
+          "sha256": "23191fa16b6c933c1148dbc29727eef1bb68c53323ccdeda0a51541866034822"
+        },
+        {
+          "bytes": 125,
+          "path": ".cache/huggingface/download/Stable_Audio_3.0_Thumbnail_1x1.png.metadata",
+          "sha256": "1934be4af6815a050e75257cd731d4bfe894888c0b2a883e9459c4ce1381ed38"
+        },
+        {
+          "bytes": 125,
+          "path": ".cache/huggingface/download/model.safetensors.metadata",
+          "sha256": "7ee0a8c58323f108dabfe1efb51b3467beeb97b04b0feaba58c55273b1c876cf"
+        },
+        {
+          "bytes": 100,
+          "path": ".cache/huggingface/download/model_config.json.metadata",
+          "sha256": "ea497bafbb0ee214b00af46a78c9662087cae2e7a3d800d79621daec645a6104"
+        },
+        {
+          "bytes": 101,
+          "path": ".cache/huggingface/download/t5gemma-b-b-ul2/.gitattributes.metadata",
+          "sha256": "467a5f4473d2a9622012e52b1ce717eae9faeef7d9484ac21bc97d54fd08ca9a"
+        },
+        {
+          "bytes": 98,
+          "path": ".cache/huggingface/download/t5gemma-b-b-ul2/README.md.metadata",
+          "sha256": "2761e33c0c7231a92c9bbb65f18d1dfcb3b0143fb8b4acdff13552e6c4868e2e"
+        },
+        {
+          "bytes": 101,
+          "path": ".cache/huggingface/download/t5gemma-b-b-ul2/config.json.metadata",
+          "sha256": "403bc0f39b0003092c9f5e51fb75298c87323da44c0d92454eaf5e26cf6f2c60"
+        },
+        {
+          "bytes": 101,
+          "path": ".cache/huggingface/download/t5gemma-b-b-ul2/generation_config.json.metadata",
+          "sha256": "bea582e52c1964ff2c6c3b84e93236b0ae35f20c3bf1916b6124b7673aec7781"
+        },
+        {
+          "bytes": 125,
+          "path": ".cache/huggingface/download/t5gemma-b-b-ul2/model.safetensors.metadata",
+          "sha256": "77970a300cfcf834e55a652784634a2a4ab890e84373e7e9f4e862143334c717"
+        },
+        {
+          "bytes": 100,
+          "path": ".cache/huggingface/download/t5gemma-b-b-ul2/special_tokens_map.json.metadata",
+          "sha256": "2accac9e725d0d0bdb95b2cb19990d907ad8acf703f92f968cac74e7a324223b"
+        },
+        {
+          "bytes": 125,
+          "path": ".cache/huggingface/download/t5gemma-b-b-ul2/tokenizer.json.metadata",
+          "sha256": "d6ead70124ac285d66b53699b70ea38f0fb96edd44059a402fbcb54a46a60184"
+        },
+        {
+          "bytes": 125,
+          "path": ".cache/huggingface/download/t5gemma-b-b-ul2/tokenizer.model.metadata",
+          "sha256": "191cbb0d75fdbc378670fc228474604e7a0270d237d145baba678f577bff2bf2"
+        },
+        {
+          "bytes": 101,
+          "path": ".cache/huggingface/download/t5gemma-b-b-ul2/tokenizer_config.json.metadata",
+          "sha256": "2564082fa332b8836cbe81f3890ab6754af2d7ac045fdaca31c466ae65b37079"
+        },
+        {
+          "bytes": 1716,
+          "path": ".gitattributes",
+          "sha256": "ad05eef8ec7bef9177cb5c4fca74241860ee9d5355a845608490d6d0af4e5628"
+        },
+        {
+          "bytes": 11852,
+          "path": "LICENSE.md",
+          "sha256": "d6f6b1a4dce5c852bd6d7d9482d002baf0ccdb71e662250b73be9eec8764ee8d"
+        },
+        {
+          "bytes": 10541,
+          "path": "LICENSE_GEMMA.md",
+          "sha256": "e77acc0d3163bb7534675045c584b4d04b387b529239fc4b3647da0a01ba4745"
+        },
+        {
+          "bytes": 97,
+          "path": "NOTICE",
+          "sha256": "66f856d7da72797f528fca46b7c80634ab481f917bfe020960e123d84b19f75f"
+        },
+        {
+          "bytes": 5913,
+          "path": "README.md",
+          "sha256": "953907704565702115bfd7a796997fa30729e1bdedd54ef17c823df3dc518f77"
+        },
+        {
+          "bytes": 1462873,
+          "path": "Stable_Audio_3.0_Thumbnail_1x1.png",
+          "sha256": "a9834815023e381f367ed5e63a4cf6276a75b876b6fd6076f633e3135b786512"
+        },
+        {
+          "bytes": 2270384940,
+          "path": "model.safetensors",
+          "sha256": "da85866b11b01d0694d990785f6abbd79c8064df1b0e6f8aea52935e0ef84b64"
+        },
+        {
+          "bytes": 10341,
+          "path": "model_config.json",
+          "sha256": "100776f25af5aa83f70e0c6b384de6690cb4e5ad01c24f7cfbb6524d18765f06"
+        },
+        {
+          "bytes": 1570,
+          "path": "t5gemma-b-b-ul2/.gitattributes",
+          "sha256": "34448b82c17d60fec9b65b1f093c115ddbaadc04beb1b0140b6bfed2e012a930"
+        },
+        {
+          "bytes": 18296,
+          "path": "t5gemma-b-b-ul2/README.md",
+          "sha256": "6a96748c87d323d6080d037191346e68c3eda39c34c0530cb4f7f3bd8cc20319"
+        },
+        {
+          "bytes": 2540,
+          "path": "t5gemma-b-b-ul2/config.json",
+          "sha256": "575334409716886ac2952f5a275ed92868deef8a0ea560258d9970a431c6fb3a"
+        },
+        {
+          "bytes": 156,
+          "path": "t5gemma-b-b-ul2/generation_config.json",
+          "sha256": "1068b94599a94ceea097dd3936819f108c2e70806d7c6cc5ec425610af347625"
+        },
+        {
+          "bytes": 1183022944,
+          "path": "t5gemma-b-b-ul2/model.safetensors",
+          "sha256": "9b05ea5a4f211d023832f706fb2c0e83e4fc721b6da35ab69ceb0b55eb7800d3"
+        },
+        {
+          "bytes": 636,
+          "path": "t5gemma-b-b-ul2/special_tokens_map.json",
+          "sha256": "baec30ea10906f16adb8c18af7a34023002c1746542612b8b41c9f09e1351351"
+        },
+        {
+          "bytes": 34362429,
+          "path": "t5gemma-b-b-ul2/tokenizer.json",
+          "sha256": "7794135caa3ea73918949c902a781cc61dab674a4b59c17d85931c77c1114cbd"
+        },
+        {
+          "bytes": 4241003,
+          "path": "t5gemma-b-b-ul2/tokenizer.model",
+          "sha256": "61a7b147390c64585d6c3543dd6fc636906c9af3865a5548f27f31aee1d4c8e2"
+        },
+        {
+          "bytes": 46437,
+          "path": "t5gemma-b-b-ul2/tokenizer_config.json",
+          "sha256": "9546baec0dfefec0e29873edea9488ecde153f846e18c06ea48cb44587bf408f"
+        }
+      ],
+      "model_version": "0fef1392cd842149a2b6d445e181c97608faac06",
+      "path": "models/STABLE_AUDIO_3_SMALL_MUSIC",
+      "repository": "stabilityai/stable-audio-3-small-music",
+      "resolvedRevision": "0fef1392cd842149a2b6d445e181c97608faac06",
+      "revision": "0fef1392cd842149a2b6d445e181c97608faac06"
+    }
+  },
+  "providerFamily": "STABLE_AUDIO_3",
+  "source": {
+    "checkedOutRevision": "779434a908193105335fd8d833418603625b2859",
+    "repository": "https://github.com/Stability-AI/stable-audio-3.git",
+    "revision": "779434a908193105335fd8d833418603625b2859"
+  }
+}

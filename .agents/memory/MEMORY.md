@@ -39,3 +39,4 @@
 - [CLaMP3 source scratch isolation](clamp3-source-scratch.md) — redirect upstream preprocessing logs outside the per-request attested source tree.
 - [CLaMP3 offline model resolution](clamp3-offline-model-resolution.md) — enforce egress denial and bind upstream model arguments to exact local snapshots.
 - [Modal concurrency queue drills](modal-concurrency-queue-drills.md) — max_inputs is per container; constrain the fleet and verify waiting from identity-bound timing evidence.
+- [Stable Audio 3 offline inference](stable-audio3-offline-inference.md) — local checkpoints must localize nested conditioners; exact inpainting boundaries require source-layout compositing.

@@ -121,6 +121,8 @@ ENDPOINT_KEYS = {
     "LADA_BAND": "LADA_BAND_API_URL", "ANYACCOMP": "ANYACCOMP_API_URL",
     "DIFFRHYTHM_2": "DIFFRHYTHM2_API_URL",
     "CLAMP3": "CLAMP3_API_URL",
+    "STABLE_AUDIO_3_SMALL_MUSIC": "STABLE_AUDIO_3_SMALL_MUSIC_API_URL",
+    "STABLE_AUDIO_3_MEDIUM": "STABLE_AUDIO_3_MEDIUM_API_URL",
 }
 
 def report_errors(rows, report_text):
@@ -3006,6 +3008,51 @@ def evidence_errors(rows, root):
                 "MIDI_SAG/MUSE_CONTROL_LITE: blocked states lack exact retained "
                 "source/asset/license/no-downstream/API-fail-closed evidence"
             )
+    stable_names = ("STABLE_AUDIO_3_SMALL_MUSIC", "STABLE_AUDIO_3_MEDIUM")
+    if any(by_name.get(name, {}).get("finalStatus") == "READY" for name in stable_names):
+        base = Path("services/stable-audio3-worker")
+        status = read_json(base / "installation-status.json")
+        proof = read_json(base / "release-evidence/smoke-proof.json")
+        inventory_path = root / base / "release-evidence/asset-inventory.json"
+        inventory_sha = hashlib.sha256(inventory_path.read_bytes()).hexdigest()
+        expected = {
+            "STABLE_AUDIO_3_SMALL_MUSIC": ("small", "0fef1392cd842149a2b6d445e181c97608faac06"),
+            "STABLE_AUDIO_3_MEDIUM": ("medium", "27b5a21b791b1b033d193a9e1e3ce78493f102f9"),
+        }
+        for name, (suffix, revision) in expected.items():
+            if by_name.get(name, {}).get("finalStatus") != "READY":
+                continue
+            local = status.get("providers", {}).get(name, {})
+            evidence = local.get("evidence", {})
+            health = read_json(base / f"release-evidence/live-health-{suffix}.json")
+            modes = proof.get("models", {}).get(name, {}).get("modes", {})
+            required = [
+                local.get("classification") == "READY",
+                evidence.get("assetInventorySha256") == inventory_sha,
+                evidence.get("smokeProofSha256") == hashlib.sha256(
+                    (root / base / "release-evidence/smoke-proof.json").read_bytes()
+                ).hexdigest(),
+                set(modes) == {"textToAudio", "audioToAudio", "continuation", "inpainting"},
+                all(item.get("rms", 0) >= 1e-7 for item in modes.values()),
+                proof.get("schemaVersion") == 2,
+                proof.get("networkAccessDenied") is True,
+                modes.get("continuation", {}).get("extendedBeyondSource") is True,
+                modes.get("continuation", {}).get("generatedTailRms", 0) >= 1e-7,
+                modes.get("inpainting", {}).get("outsideMaskBitExact") is True,
+                modes.get("inpainting", {}).get("maskedRegionChanged") is True,
+                health.get("provider") == name,
+                health.get("modelVersion") == revision,
+                health.get("checkpointSha256") == inventory_sha,
+                health.get("healthy") is True,
+                health.get("smokeTested") is True,
+                health.get("networkAccessDenied") is True,
+                evidence.get("endpointConfigured") is True,
+                evidence.get("apiConnected") is True,
+                evidence.get("networkAccessDenied") is True,
+                evidence.get("continuationExtendedBeyondSource") is True,
+            ]
+            if not all(required):
+                errors.append(f"{name}: READY lacks retained four-mode/live-health/API identity evidence")
     return errors
 
 def audit(data, local_statuses=None, report_text=None, replit_text=None, root=Path(".")):

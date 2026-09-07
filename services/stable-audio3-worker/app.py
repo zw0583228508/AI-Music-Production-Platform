@@ -22,10 +22,12 @@ def auth(r: Request) -> None:
 def runtime_state() -> tuple[bool,str]:
  if sys.version_info < (3,10): return False,"Stable Audio 3 requires Python 3.10 or newer"
  try:
-  import torch, torchaudio
-  revision=subprocess.check_output(["git","-C",str(ASSETS/"source"),"rev-parse","HEAD"],text=True).strip()
- except (ImportError,OSError,subprocess.CalledProcessError): return False,"Stable Audio 3 pinned runtime evidence is unavailable"
- if torch.__version__.split("+",1)[0]!="2.7.1" or torchaudio.__version__.split("+",1)[0]!="2.7.1" or revision!=SPEC["source"]["revision"]:
+  pinned=os.getenv("STABLE_AUDIO3_PYTHON","/opt/stable-audio3-venv/bin/python")
+  versions=json.loads(subprocess.check_output([pinned,"-c","import json,torch,torchaudio;print(json.dumps({'torch':torch.__version__,'torchaudio':torchaudio.__version__}))"],text=True))
+  source=Path(os.getenv("STABLE_AUDIO3_SOURCE_ROOT",str(ASSETS/"source")))
+  revision=subprocess.check_output(["git","-C",str(source),"rev-parse","HEAD"],text=True).strip()
+ except (OSError,subprocess.CalledProcessError,json.JSONDecodeError,KeyError): return False,"Stable Audio 3 pinned runtime evidence is unavailable"
+ if versions["torch"].split("+",1)[0]!="2.7.1" or versions["torchaudio"].split("+",1)[0]!="2.7.1" or revision!=SPEC["source"]["revision"]:
   return False,"Stable Audio 3 package/runtime does not match its immutable identity"
  return True,"Stable Audio 3 runtime verified"
 def state(identity: str | None=None) -> tuple[bool,str,dict[str,Any]|None]:
@@ -38,7 +40,7 @@ def state(identity: str | None=None) -> tuple[bool,str,dict[str,Any]|None]:
  for key, wanted in SPEC["models"].items():
   if identity and key != identity: continue
   item=inventory.get("models",{}).get(key)
-  if not isinstance(item,dict) or item.get("repository")!=wanted["repository"] or item.get("revision")!=wanted["revision"]: return False,f"{key} snapshot pin is invalid",None
+  if not isinstance(item,dict) or item.get("repository")!=wanted["repository"] or item.get("revision")!=wanted["revision"] or item.get("resolvedRevision")!=wanted["revision"]: return False,f"{key} snapshot pin is invalid",None
   for entry in item.get("files",[]):
    p=ASSETS/item["path"]/entry.get("path","")
    if not p.is_file() or p.stat().st_size!=entry.get("bytes") or sha(p)!=entry.get("sha256"): return False,f"{key} checkpoint verification failed",None
@@ -49,14 +51,19 @@ def smoke(identity: str | None=None) -> bool:
  try:
   proof=json.loads((ASSETS/SPEC["smoke_proof"]).read_text())
   chosen=[identity] if identity else list(SPEC["models"])
-  return ready and proof["assetManifestSha256"]==sha(ASSETS/SPEC["asset_manifest"]) and all(proof["models"][x]["realInference"] is True and proof["models"][x]["nonSilent"] is True for x in chosen)
+  required={"textToAudio","audioToAudio","continuation","inpainting"}
+  return ready and proof["schemaVersion"]==2 and proof["networkAccessDenied"] is True and proof["assetManifestSha256"]==sha(ASSETS/SPEC["asset_manifest"]) and all(
+   proof["models"][x]["realInference"] is True and proof["models"][x]["nonSilent"] is True
+   and required <= set(proof["models"][x]["modes"])
+   and proof["models"][x]["modes"]["continuation"]["extendedBeyondSource"] is True
+   and proof["models"][x]["modes"]["inpainting"]["outsideMaskBitExact"] is True
+   for x in chosen)
  except (OSError,KeyError,TypeError,json.JSONDecodeError): return False
 class Generate(BaseModel):
  provider: Literal["STABLE_AUDIO_3_SMALL_MUSIC","STABLE_AUDIO_3_MEDIUM"]
  prompt: str=Field(min_length=1,max_length=4000); duration: float=Field(gt=0,le=180)
  initAudio: str|None=None; initNoiseLevel: float=Field(default=0.0,ge=0,le=1)
  inpaintStart: float|None=Field(default=None,ge=0); inpaintEnd: float|None=Field(default=None,ge=0)
- loraPath: str|None=None; loraStrength: float=Field(default=1,ge=0,le=2)
  @model_validator(mode="after")
  def controls(self):
   if (self.inpaintStart is None)!=(self.inpaintEnd is None) or (self.inpaintEnd is not None and self.inpaintEnd<=self.inpaintStart): raise ValueError("inpaintStart and inpaintEnd must be an ordered pair")
@@ -67,7 +74,7 @@ app=FastAPI(title="Stable Audio 3 isolated provider")
 @app.get("/health")
 def health(request:Request,provider:str|None=None):
  auth(request); identity=provider if provider in SPEC["models"] else None; ok,msg,inv=state(identity); tested=smoke(identity)
- return {"provider":identity or "STABLE_AUDIO_3","status":"ready" if ok and tested else "blocked","healthy":ok and tested,"runtimeReady":ok and tested,"packageReady":ok and tested,"checkpointReady":ok,"smokeTested":tested,"modelVersion":SPEC["models"][identity]["model_version"] if identity else None,"checkpointSha256":sha(ASSETS/SPEC["asset_manifest"]) if inv else None,"licenseStatus":"Stability license accepted" if ok else "blocked","message":"ready" if ok and tested else msg}
+ return {"provider":identity or "STABLE_AUDIO_3","status":"ready" if ok and tested else "blocked","healthy":ok and tested,"runtimeReady":ok and tested,"packageReady":ok and tested,"checkpointReady":ok,"smokeTested":tested,"networkAccessDenied":tested,"modelVersion":SPEC["models"][identity]["model_version"] if identity else None,"checkpointSha256":sha(ASSETS/SPEC["asset_manifest"]) if inv else None,"licenseStatus":"Stability license accepted" if ok else "blocked","message":"ready" if ok and tested else msg}
 @app.post("/generate")
 def generate(payload:Generate,request:Request):
  auth(request); ok,_,inv=state(payload.provider); tested=smoke(payload.provider)
@@ -79,7 +86,7 @@ def generate(payload:Generate,request:Request):
    except (ValueError,RuntimeError): raise HTTPException(422,"initAudio must be a decodable base64 WAV")
    if len(audio)<rate//10 or float(abs(audio).max())<1e-5: raise HTTPException(422,"initAudio is silent or too short")
    init=Path(directory)/"init.wav"; init.write_bytes(data)
-  try: run(payload.provider,payload.prompt,payload.duration,init,payload.initNoiseLevel,payload.inpaintStart,payload.inpaintEnd,payload.loraPath,payload.loraStrength,output,ASSETS)
+  try: run(payload.provider,payload.prompt,payload.duration,init,payload.initNoiseLevel,payload.inpaintStart,payload.inpaintEnd,None,1,output,ASSETS)
   except InferenceError as exc: raise HTTPException(503,str(exc)) from exc
   try: rendered,rate=sf.read(str(output),always_2d=True)
   except RuntimeError as exc: raise HTTPException(502,"Stable Audio 3 returned an invalid WAV") from exc
