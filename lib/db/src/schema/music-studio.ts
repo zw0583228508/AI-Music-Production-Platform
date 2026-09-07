@@ -1396,6 +1396,11 @@ export type CandidateMusicCriticDimensionResult = {
 export type CandidateMusicCriticReport = {
   version: "music-critic-v1";
   score: number;
+  coverage: {
+    availableDimensions: number;
+    totalDimensions: 8;
+    sparse: boolean;
+  };
   dimensions: Record<
     CandidateMusicCriticDimension,
     CandidateMusicCriticDimensionResult

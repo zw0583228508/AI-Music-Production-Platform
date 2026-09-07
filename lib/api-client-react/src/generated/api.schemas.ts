@@ -1416,6 +1416,21 @@ export interface CandidateQualityReport {
   lineageComplete: boolean;
 }
 
+export type CandidateMusicCriticReportCoverageAvailableDimensions = typeof CandidateMusicCriticReportCoverageAvailableDimensions[keyof typeof CandidateMusicCriticReportCoverageAvailableDimensions];
+
+
+export const CandidateMusicCriticReportCoverageAvailableDimensions = {
+  NUMBER_0: 0,
+  NUMBER_1: 1,
+  NUMBER_2: 2,
+  NUMBER_3: 3,
+  NUMBER_4: 4,
+  NUMBER_5: 5,
+  NUMBER_6: 6,
+  NUMBER_7: 7,
+  NUMBER_8: 8,
+} as const;
+
 export type CandidateMusicCriticDimensionResultStatus = typeof CandidateMusicCriticDimensionResultStatus[keyof typeof CandidateMusicCriticDimensionResultStatus];
 
 
@@ -1457,6 +1472,16 @@ export interface CandidateMusicCriticDimensionResult {
   explanation: string;
 }
 
+/**
+ * Producer-safe summary of how broadly the aggregate score is supported.
+ */
+export type CandidateMusicCriticReportCoverage = {
+  availableDimensions: CandidateMusicCriticReportCoverageAvailableDimensions;
+  totalDimensions: 8;
+  /** True when fewer than half of the critic dimensions have available evidence. */
+  sparse: boolean;
+};
+
 export type CandidateMusicCriticReportDimensions = {
   vocalFit: CandidateMusicCriticDimensionResult;
   harmony: CandidateMusicCriticDimensionResult;
@@ -1475,6 +1500,8 @@ export interface CandidateMusicCriticReport {
      * @maximum 1
      */
   score: number;
+  /** Producer-safe summary of how broadly the aggregate score is supported. */
+  coverage: CandidateMusicCriticReportCoverage;
   dimensions: CandidateMusicCriticReportDimensions;
 }
 

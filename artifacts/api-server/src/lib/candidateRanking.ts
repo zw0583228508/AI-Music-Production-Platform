@@ -20,9 +20,24 @@ export function publicCandidateEvaluation(evaluation: CandidateEvaluation) {
       rejected: false,
       reason: "baseline_retained" as const,
     };
+  const musicCritic = evaluation.musicCritic
+    ? {
+        ...evaluation.musicCritic,
+        coverage: evaluation.musicCritic.coverage ?? (() => {
+          const availableDimensions = musicCriticDimensions.filter(
+            (name) => evaluation.musicCritic?.dimensions[name]?.status === "available",
+          ).length;
+          return {
+            availableDimensions,
+            totalDimensions: 8 as const,
+            sparse: availableDimensions < musicCriticDimensions.length / 2,
+          };
+        })(),
+      }
+    : null;
   return {
     ...evaluation,
-    musicCritic: evaluation.musicCritic ?? null,
+    musicCritic,
     ...(evaluation.diversity ? { diversity: publicDiversity } : {}),
   };
 }
