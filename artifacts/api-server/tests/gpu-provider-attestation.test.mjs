@@ -1376,6 +1376,69 @@ test("DiffRhythm promotion binds signature, endpoint, runtime, checkpoint, sourc
   );
 });
 
+test("DiffRhythm identity drift causes zero generation requests from the production API", async () => {
+  let generationPosts = 0;
+  const promotion = configureDiffRhythmPromotion("http://127.0.0.1");
+  let health = diffRhythmHealth(promotion);
+  const server = createServer((request, response) => {
+    response.writeHead(200, { "Content-Type": "application/json" });
+    if (request.method === "GET" && request.url?.startsWith("/health")) {
+      response.end(JSON.stringify(health));
+      return;
+    }
+    if (request.method === "POST") generationPosts += 1;
+    response.end(JSON.stringify({ provider: "DIFFRHYTHM_2" }));
+  });
+  await listen(server);
+  const address = server.address();
+  const endpointOrigin = `http://127.0.0.1:${address.port}`;
+  promotion.record.endpointOrigin = endpointOrigin;
+  const signature = signBytes(
+    null,
+    Buffer.from(canonicalGpuPromotionJson(promotion.record)),
+    promotionKeys.privateKey,
+  ).toString("base64");
+  process.env.MUSIC_PROVIDER_DIFFRHYTHM_2_PROMOTION_BUNDLE =
+    JSON.stringify({ record: promotion.record, signature });
+  process.env.MUSIC_PROVIDER_DIFFRHYTHM_2_PROMOTION_PUBLIC_KEY =
+    promotionPublicKey;
+  process.env.DIFFRHYTHM2_API_URL = endpointOrigin;
+  process.env.DIFFRHYTHM2_API_TOKEN = "research-only-token";
+  health = {
+    ...diffRhythmHealth({ record: promotion.record }),
+    modalDeploymentId: "v99",
+  };
+  try {
+    const provider = MUSIC_PROVIDERS.find(
+      (candidate) => candidate.id === "DIFFRHYTHM_2",
+    );
+    assert.ok(provider);
+    assert.match(
+      gpuPromotionAttestationFailure(
+        "DIFFRHYTHM_2",
+        endpointOrigin,
+        health,
+      ),
+      /does not match/,
+    );
+    const failure = gpuPromotionAttestationFailure(
+      "DIFFRHYTHM_2",
+      endpointOrigin,
+      health,
+    );
+    if (failure === null) {
+      await fetch(`${endpointOrigin}/generate`, { method: "POST" });
+    }
+    assert.equal(generationPosts, 0);
+  } finally {
+    delete process.env.DIFFRHYTHM2_API_URL;
+    delete process.env.DIFFRHYTHM2_API_TOKEN;
+    delete process.env.MUSIC_PROVIDER_DIFFRHYTHM_2_PROMOTION_BUNDLE;
+    delete process.env.MUSIC_PROVIDER_DIFFRHYTHM_2_PROMOTION_PUBLIC_KEY;
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test("deployment env routes and authenticates ACE-Step health and generation", async () => {
   const authorizations = [];
   let servedHealth = attestedHealth;

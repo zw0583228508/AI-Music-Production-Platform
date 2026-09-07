@@ -1,0 +1,74 @@
+name: Release and attest DiffRhythm2 research provider
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: modal-promotion-release-trust-root
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: production
+    env:
+      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+      MUSIC_AI_WORKER_TOKEN: ${{ secrets.MUSIC_AI_WORKER_TOKEN }}
+      MUSIC_GPU_PROMOTION_SIGNING_KEY: ${{ secrets.MUSIC_GPU_PROMOTION_SIGNING_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Deploy exact research worker
+        run: uv run modal deploy services/diffrhythm2-worker/modal_app.py
+      - name: Observe and refresh exact deployment identity
+        run: |
+          uv run python services/diffrhythm2-worker/release.py observe
+          uv run python services/diffrhythm2-worker/release.py install-identity
+      - name: Capture health and mandatory licensed generation canary
+        run: uv run python services/diffrhythm2-worker/release.py capture
+      - name: Sign canary-bound release evidence
+        run: uv run python services/diffrhythm2-worker/release.py promote
+      - name: Validate and stage canonical activation
+        run: |
+          uv run python services/diffrhythm2-worker/release.py activate
+          pnpm --filter @workspace/api-server run typecheck
+          node --test artifacts/api-server/tests/gpu-provider-attestation.test.mjs
+      - name: Retain redacted release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: diffrhythm2-release-${{ github.run_id }}
+          path: services/diffrhythm2-worker/release-evidence
+          if-no-files-found: error
+          retention-days: 90
+      - name: Publish activation pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git add artifacts/api-server/src/lib/gpuPromotions.generated.ts
+          git diff --cached --quiet && { echo "No new promotion produced" >&2; exit 1; }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: activate verified DIFFRHYTHM_2 release"
+          branch="modal-activation/diffrhythm2/$GITHUB_SHA"
+          git push origin "HEAD:refs/heads/$branch"
+          gh pr create --base "$GITHUB_REF_NAME" --head "$branch" \
+            --title "Activate verified DiffRhythm2 research release" \
+            --body "Mandatory authenticated generation, license, download, hash, duration, and non-silence evidence is bound into this promotion."

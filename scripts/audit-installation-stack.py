@@ -2065,6 +2065,9 @@ def evidence_errors(rows, root):
         refresh = read_json(evidence_base / "identity-refresh.json")
         worker = read_json(evidence_base / "worker-identity.json")
         release = read_json(evidence_base / "release-evidence.json")
+        live_generation = read_json(
+            evidence_base / "live-research-generation-proof.json"
+        )
         bundle = read_json(evidence_base / "promotion-bundle.json")
         source_revision = "13a7b091f45124f611e36ee674973234f38d55b6"
         checkpoint_revision = "9aa15742e4889c0eb2e198db6fdab1facf1b6761"
@@ -2117,6 +2120,7 @@ def evidence_errors(rows, root):
             "full-fixture-smoke-proof.json",
             "full-fixture-output.mp3",
             "full-fixture-diagnostic.json",
+            "live-research-generation-proof.json",
         )
         try:
             public_key = public_key_path.read_text()
@@ -2287,6 +2291,27 @@ def evidence_errors(rows, root):
             release.get("licenseStatus") == "RESEARCH_ONLY",
             release.get("commercialUsePermitted") is False,
             all(release.get(field) == observed.get(field) for field in identity_fields),
+            release.get("liveResearchGeneration") == live_generation,
+            live_generation.get("provider") == "DIFFRHYTHM_2",
+            live_generation.get("modalDeploymentId")
+            == observed.get("modalDeploymentId"),
+            live_generation.get("modalImageId") == release.get("modalImageId"),
+            live_generation.get("artifactOrigin") == endpoint,
+            live_generation.get("licenseStatus") == "RESEARCH_ONLY",
+            live_generation.get("commercialUsePermitted") is False,
+            live_generation.get("license")
+            == (
+                "Apache-2.0 source and DiffRhythm2 weights; "
+                "CC-BY-NC-4.0 MuQ-MuLan and MuQ weights"
+            ),
+            live_generation.get("artifactHashVerified") is True,
+            live_generation.get("authenticatedArtifactRetrieved") is True,
+            re.fullmatch(
+                r"[a-f0-9]{64}", str(live_generation.get("outputSha256", ""))
+            )
+            is not None,
+            live_generation.get("durationSeconds", 0) >= 1,
+            live_generation.get("rmsAmplitude", 0) > 1e-5,
             health.get("provider") == "DIFFRHYTHM_2",
             health.get("ready") is True and health.get("healthy") is True,
             health.get("runtimeReady") is True,
@@ -2332,7 +2357,8 @@ def evidence_errors(rows, root):
             errors.append(
                 "DIFFRHYTHM_2: RESEARCH_READY lacks exact immutable asset, "
                 "short/full real smoke, CUDA diagnostic, live Modal identity, "
-                "signed canonical promotion, license, or API fail-closed evidence"
+                "authenticated generation/download canary, signed canonical "
+                "promotion, license, or API fail-closed evidence"
             )
     anyaccomp = by_name.get("ANYACCOMP", {})
     if anyaccomp.get("finalStatus") == "READY":
