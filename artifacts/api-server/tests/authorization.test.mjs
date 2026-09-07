@@ -37,7 +37,7 @@ await build({
         projectCleanupJobsTable,
         projectUploadReservationsTable,
       } from "@workspace/db";
-      export { getPrivateObject } from "./src/lib/objectStorage";
+      export { getPrivateObject, saveExportObject } from "./src/lib/objectStorage";
       export { eq } from "drizzle-orm";
       export { ListGenerationProvidersResponse } from "@workspace/api-zod";
     `,
@@ -71,6 +71,7 @@ const {
   projectCleanupJobsTable,
   projectUploadReservationsTable,
   persistExportBundle,
+  saveExportObject,
 } = await import(pathToFileURL(harnessPath).href);
 
 let server;
@@ -78,6 +79,7 @@ let baseUrl;
 let ownerSession;
 let otherSession;
 let projectId;
+let candidateAudioUrl;
 let arrangementId;
 let generationJobId;
 let exportId;
@@ -519,6 +521,24 @@ before(async () => {
     storageUri: `/api/storage/objects/exports/${exportStorageObjectId}.zip`,
   });
   await persistExportBundle({ zip: Buffer.from("private export bytes") }, exportStorageObjectId);
+  const candidateAudioObjectPath = `generation/${process.pid}/candidate/render.wav`;
+  candidateAudioUrl = await saveExportObject(
+    candidateAudioObjectPath,
+    Buffer.from("candidate audio bytes"),
+    "audio/wav",
+  );
+  await db.insert(musicArtifactsTable).values({
+    id: `candidate-audio-${process.pid}`,
+    projectId,
+    type: "AUDIO_TRACK",
+    label: "Candidate render",
+    version: 1,
+    size: "21 B",
+    format: "WAV",
+    state: "ready",
+    url: candidateAudioUrl,
+    storageUri: candidateAudioUrl,
+  });
   await db.insert(musicArtifactsTable).values({
     id: `${exportId}-legacy`,
     projectId,
@@ -1509,6 +1529,11 @@ test("project and export endpoints enforce owner authorization", async () => {
     (await request("/api/storage/objects/exports/private-test.zip", otherSession)).status,
     404,
   );
+  assert.equal((await request(candidateAudioUrl, null)).status, 401);
+  assert.equal((await request(candidateAudioUrl, otherSession)).status, 404);
+  const ownerCandidateAudio = await request(candidateAudioUrl, ownerSession);
+  assert.equal(ownerCandidateAudio.status, 200);
+  assert.match(ownerCandidateAudio.headers.get("content-disposition"), /^inline;/);
 
   const traversalSource = await request(
     `/api/projects/${projectId}/sources`,

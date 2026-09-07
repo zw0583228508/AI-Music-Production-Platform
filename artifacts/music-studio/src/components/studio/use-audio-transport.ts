@@ -33,6 +33,9 @@ export function useAudioTransport(
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const frameRef = useRef<number | null>(null);
   const playAttemptRef = useRef(0);
+  const sourceRef = useRef<string | null>(null);
+  const pendingSourceTimeRef = useRef(0);
+  const resumeAfterSourceChangeRef = useRef(false);
   const durationHintRef = useRef(durationHint);
   durationHintRef.current = durationHint;
   const [status, setStatus] = useState<AudioTransportStatus>(
@@ -75,7 +78,18 @@ export function useAudioTransport(
       if (Number.isFinite(audio.duration) && audio.duration > 0) {
         setDuration(audio.duration);
       }
+      const synchronizedTime = clampTime(
+        pendingSourceTimeRef.current,
+        audio.duration || durationHintRef.current,
+      );
+      audio.currentTime = synchronizedTime;
+      setCurrentTime(synchronizedTime);
+      pendingSourceTimeRef.current = 0;
       setStatus("paused");
+      if (resumeAfterSourceChangeRef.current) {
+        resumeAfterSourceChangeRef.current = false;
+        void audio.play();
+      }
     };
     const handleCanPlay = () => setStatus(audio.paused ? "ready" : "playing");
     const handlePlay = () => {
@@ -132,11 +146,16 @@ export function useAudioTransport(
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
+    const previousSource = sourceRef.current;
+    const switchingSource = Boolean(previousSource && src && previousSource !== src);
+    pendingSourceTimeRef.current = switchingSource ? audio.currentTime : 0;
+    resumeAfterSourceChangeRef.current = switchingSource && !audio.paused;
+    sourceRef.current = src;
     playAttemptRef.current += 1;
     stopAnimation();
     audio.pause();
     audio.removeAttribute("src");
-    setCurrentTime(0);
+    setCurrentTime(pendingSourceTimeRef.current);
     setDuration(durationHintRef.current);
     setError(null);
     setStatus(src ? "loading" : "unavailable");
