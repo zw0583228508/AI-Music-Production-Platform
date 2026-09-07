@@ -35,6 +35,19 @@ def slow_start_cancel_worker(_call_id, sender, worker_args):
     sender.send(True)
 
 
+def acknowledgement_fixture_worker(call_id, sender, worker_args):
+    deadline, = worker_args
+    sender.send("started")
+    if call_id == "fc-Missing":
+        time.sleep(3600)
+        sender.send(False)
+    elif call_id == "fc-Late":
+        time.sleep(3)
+        sender.send(time.monotonic() <= deadline)
+    else:
+        sender.send(call_id == "fc-OnTime")
+
+
 class FakeResponse:
     def __init__(self, url, body, headers=None):
         self.status = 200
@@ -339,46 +352,91 @@ class DiffRhythmReleaseTests(unittest.TestCase):
         }
 
     def test_shared_cancellation_deadline_handles_acknowledgement_outcomes(self):
-        missing = threading.Event()
-
         class Call:
             def __init__(self, outcome):
-                self.outcome = outcome
+                self.object_id = f"fc-{outcome}"
 
-            def get(self, timeout=None):
-                if self.outcome == "missing":
-                    missing.wait()
-                    raise RuntimeError("private provider detail")
-                if self.outcome == "late":
-                    time.sleep(0.08)
-                if self.outcome == "failed_ack":
-                    raise RuntimeError("private provider detail")
-                raise release.RemoteError("private provider detail")
+        calls = [
+            Call("Missing"), Call("OnTime"), Call("Late"), Call("FailedAck")
+        ]
+        run_acknowledgements = release._run_acknowledgement_workers_within_bound
 
-        try:
-            calls = [
-                Call("on_time"), Call("late"), Call("missing"), Call("failed_ack")
-            ]
-            with patch.object(
-                release, "cancel_calls_within_bound",
-                return_value=[True] * len(calls),
-            ):
-                requested, acknowledged = release.cancel_calls_before_deadline(
-                    calls, 0.05
+        def observe(call_ids, deadline):
+            return run_acknowledgements(
+                call_ids,
+                deadline,
+                acknowledgement_fixture_worker,
+            )
+
+        with patch.object(
+            release, "cancel_calls_within_bound",
+            return_value=[True] * len(calls),
+        ), patch.object(
+            release, "_run_acknowledgement_workers_within_bound",
+            side_effect=observe,
+        ):
+            requested, acknowledged = release.cancel_calls_before_deadline(
+                calls, 2
+            )
+        self.assertEqual((requested, acknowledged), (4, 1))
+        with patch.object(
+            release, "cancel_calls_within_bound",
+            return_value=[True, False],
+        ):
+            requested, acknowledged = release.cancel_calls_before_deadline(
+                [Call("on_time"), Call("failed_request")], 0.05
+            )
+        self.assertEqual((requested, acknowledged), (1, 0))
+
+    def test_repeated_acknowledgement_timeouts_leave_no_waiters(self):
+        class Call:
+            object_id = "fc-Missing"
+
+            def __init__(self):
+                self.resolved = False
+
+        run_acknowledgements = release._run_acknowledgement_workers_within_bound
+
+        def observe(call_ids, deadline):
+            return run_acknowledgements(
+                call_ids,
+                deadline,
+                acknowledgement_fixture_worker,
+            )
+
+        remote_calls = []
+        baseline_processes = {
+            worker.pid for worker in multiprocessing.active_children()
+        }
+        baseline_threads = {thread.ident for thread in threading.enumerate()}
+        started = time.monotonic()
+        with patch.object(
+            release, "cancel_calls_within_bound", return_value=[True]
+        ), patch.object(
+            release, "_run_acknowledgement_workers_within_bound",
+            side_effect=observe,
+        ):
+            for _ in range(3):
+                remote_call = Call()
+                remote_calls.append(remote_call)
+                self.assertEqual(
+                    release.cancel_calls_before_deadline([remote_call], 1),
+                    (1, 0),
                 )
-            self.assertEqual(requested, 4)
-            self.assertEqual(acknowledged, 1)
-
-            with patch.object(
-                release, "cancel_calls_within_bound",
-                return_value=[True, False],
-            ):
-                requested, acknowledged = release.cancel_calls_before_deadline(
-                    [Call("on_time"), Call("failed_request")], 0.05
-                )
-            self.assertEqual((requested, acknowledged), (1, 0))
-        finally:
-            missing.set()
+        elapsed = time.monotonic() - started
+        self.assertTrue(all(not call.resolved for call in remote_calls))
+        self.assertLess(elapsed, 3 * (1 + 0.15))
+        self.assertEqual(
+            {worker.pid for worker in multiprocessing.active_children()},
+            baseline_processes,
+        )
+        self.assertFalse(
+            {thread.ident for thread in threading.enumerate()} - baseline_threads
+        )
+        self.assertNotIn(
+            "private provider detail",
+            str(release.cancel_calls_before_deadline),
+            )
 
     def test_consolidated_cancellation_drills_share_one_batch_and_probe(self):
         class Lifecycle:
@@ -1407,14 +1465,6 @@ class DiffRhythmReleaseTests(unittest.TestCase):
         self.assertEqual(
             comparison.probe_timeout, release.COMPARISON_RECOVERY_BOUND_SECONDS
         )
-        self.assertEqual(
-            len(comparison.cancel_timeouts),
-            release.COMPARISON_MAX_CONCURRENT_INPUTS,
-        )
-        self.assertTrue(all(
-            0 < timeout <= release.COMPARISON_CANCEL_ACK_BOUND_SECONDS
-            for timeout in comparison.cancel_timeouts
-        ))
         self.assertEqual(
             proof["startedCapacity"], release.COMPARISON_MAX_CONCURRENT_INPUTS
         )

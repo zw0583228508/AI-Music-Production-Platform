@@ -18,6 +18,7 @@ import threading
 import time
 import urllib.request
 import wave
+from multiprocessing.connection import wait as wait_for_connections
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -69,12 +70,51 @@ def _cancel_modal_call(call_id: str, sender, _worker_args: tuple) -> None:
         sender.close()
 
 
+def _await_modal_cancellation(
+    call_id: str, sender, worker_args: tuple
+) -> None:
+    deadline, = worker_args
+    try:
+        sender.send("started")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            sender.send(False)
+            return
+        modal.FunctionCall.from_id(call_id).get(timeout=remaining)
+        sender.send(False)
+    except RemoteError:
+        sender.send(True)
+    except Exception:
+        sender.send(False)
+    finally:
+        sender.close()
+
+
+def _await_local_cancellation(call, sender, worker_args: tuple) -> None:
+    deadline, = worker_args
+    try:
+        sender.send("started")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            sender.send(False)
+            return
+        call.get(timeout=remaining)
+        sender.send(False)
+    except RemoteError:
+        sender.send(True)
+    except Exception:
+        sender.send(False)
+    finally:
+        sender.close()
+
+
 def _run_cancel_workers_within_bound(
-    call_ids: list[str],
+    call_ids: list,
     timeout_seconds: float,
     worker_target=_cancel_modal_call,
     worker_args: tuple = (),
     absolute_deadline: float | None = None,
+    context_name: str = "spawn",
 ) -> list[bool]:
     overall_deadline = (
         absolute_deadline
@@ -82,7 +122,7 @@ def _run_cancel_workers_within_bound(
         else time.monotonic() + timeout_seconds
     )
     cleanup_reserve = min(0.2, timeout_seconds / 2)
-    context = multiprocessing.get_context("spawn")
+    context = multiprocessing.get_context(context_name)
     receivers = []
     workers = []
     try:
@@ -113,16 +153,28 @@ def _run_cancel_workers_within_bound(
                 started.append(False)
 
         result_deadline = overall_deadline - cleanup_reserve
-        results = []
-        for receiver, worker_started in zip(receivers, started):
+        results = [False] * len(receivers)
+        pending_receivers = {
+            receiver: index
+            for index, (receiver, worker_started)
+            in enumerate(zip(receivers, started))
+            if worker_started
+        }
+        while pending_receivers:
             remaining = result_deadline - time.monotonic()
-            if worker_started and remaining > 0 and receiver.poll(remaining):
+            if remaining <= 0:
+                break
+            ready = wait_for_connections(
+                list(pending_receivers), timeout=remaining
+            )
+            if not ready:
+                break
+            for receiver in ready:
+                index = pending_receivers.pop(receiver)
                 try:
-                    results.append(receiver.recv() is True)
+                    results[index] = receiver.recv() is True
                 except EOFError:
-                    results.append(False)
-            else:
-                results.append(False)
+                    results[index] = False
         return results
     finally:
         for receiver in receivers:
@@ -150,6 +202,21 @@ def cancel_calls_within_bound(
         [str(call.object_id) for call in calls],
         timeout_seconds,
         absolute_deadline=absolute_deadline,
+    )
+
+
+def _run_acknowledgement_workers_within_bound(
+    call_ids: list[str],
+    deadline: float,
+    worker_target=_await_modal_cancellation,
+    worker_args: tuple = (),
+) -> list[bool]:
+    return _run_cancel_workers_within_bound(
+        call_ids,
+        max(0, deadline - time.monotonic()),
+        worker_target,
+        (deadline, *worker_args),
+        deadline,
     )
 
 
@@ -1035,44 +1102,20 @@ def validate_cancelled_comparison_execution(proof: dict, metadata: dict) -> None
 
 
 def count_cancellation_acknowledgements(calls: list, deadline: float) -> int:
-    results = queue.Queue()
-
-    def await_cancellation(call) -> None:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            return
-        try:
-            call.get(timeout=remaining)
-        except RemoteError:
-            results.put((time.monotonic(), True))
-        except Exception:
-            results.put((time.monotonic(), False))
-
-    for call in calls:
-        threading.Thread(target=await_cancellation, args=(call,), daemon=True).start()
-
-    pending = len(calls)
-    acknowledged = 0
-    while pending:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            break
-        try:
-            completed_at, succeeded = results.get(timeout=remaining)
-        except queue.Empty:
-            break
-        pending -= 1
-        if succeeded and completed_at <= deadline:
-            acknowledged += 1
-    while pending:
-        try:
-            completed_at, succeeded = results.get_nowait()
-        except queue.Empty:
-            break
-        pending -= 1
-        if succeeded and completed_at <= deadline:
-            acknowledged += 1
-    return acknowledged
+    if any(not hasattr(call, "object_id") for call in calls):
+        results = _run_cancel_workers_within_bound(
+            calls,
+            max(0, deadline - time.monotonic()),
+            _await_local_cancellation,
+            (deadline,),
+            deadline,
+            "fork",
+        )
+    else:
+        results = _run_acknowledgement_workers_within_bound(
+            [str(call.object_id) for call in calls], deadline
+        )
+    return sum(result is True for result in results)
 
 
 def verify_cancelled_comparison_batch_execution(metadata: dict) -> dict:
