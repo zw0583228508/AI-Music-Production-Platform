@@ -7,6 +7,9 @@ from smoke import (
  COPY_LIKE_CORRELATION_THRESHOLD,
  COPY_LIKE_DIFFERENCE_THRESHOLD,
  DECODED_SAMPLE_BYTES,
+ FULL_CHROMA_CI_DURATION_SECONDS,
+ FULL_CHROMA_CI_MAX_RSS_BYTES,
+ FULL_CHROMA_CI_MAX_RUNTIME_SECONDS,
  MAX_CHANNEL_PROJECTIONS,
  MAX_COMPARISON_WORKING_BYTES,
  MAX_DECODED_AUDIO_BYTES,
@@ -356,6 +359,85 @@ print(json.dumps({
      policy["maximumMiB"],MAX_COMPARISON_WORKING_BYTES//(1024*1024),label,
     )
     self.assertLessEqual(policy["estimatedPeakMiB"],policy["maximumMiB"],label)
+
+ def test_unrelated_comparison_full_chroma_path_stays_ci_bounded(self):
+   benchmark = """
+import json, resource, sys, tempfile, time
+from pathlib import Path
+import numpy as np
+import scipy
+import soundfile as sf
+from smoke import (
+ FULL_CHROMA_CI_DURATION_SECONDS,
+ signal_comparison,
+)
+sample_rate=16000
+duration=FULL_CHROMA_CI_DURATION_SECONDS
+time_values=np.arange(sample_rate*duration,dtype=np.float64)/sample_rate
+source_envelope=.55+.45*np.sin(2*np.pi*.73*time_values)**2
+output_envelope=.50+.50*np.sin(2*np.pi*1.17*time_values+.4)**2
+source=source_envelope*(
+ .36*np.sin(2*np.pi*(173*time_values+1.7*time_values*time_values))
+ +.18*np.sin(2*np.pi*521*time_values)
+ +.08*np.sin(2*np.pi*887*time_values)
+)
+output=output_envelope*(
+ .33*np.sin(2*np.pi*(269*time_values+3.1*time_values*time_values))
+ +.21*np.sin(2*np.pi*401*time_values)
+ +.10*np.sin(2*np.pi*743*time_values)
+)
+with tempfile.TemporaryDirectory() as directory:
+ directory=Path(directory)
+ source_path=directory/"full-chroma-source.wav"
+ output_path=directory/"full-chroma-unrelated.wav"
+ sf.write(source_path,source,sample_rate,subtype="PCM_16")
+ sf.write(output_path,output,sample_rate,subtype="PCM_16")
+ del time_values, source_envelope, output_envelope, source, output
+ started=time.perf_counter()
+ result=signal_comparison(source_path,output_path)
+ elapsed=time.perf_counter()-started
+ peak_kib=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+ print(json.dumps({
+  "durationSeconds":duration,
+  "elapsedSeconds":elapsed,
+  "peakResidentBytes":peak_kib*1024,
+  "numpyVersion":np.__version__,
+  "scipyVersion":scipy.__version__,
+  "result":result,
+ }))
+"""
+   completed=subprocess.run(
+    [sys.executable,"-c",benchmark],
+    cwd=ROOT,capture_output=True,text=True,timeout=90,
+   )
+   self.assertEqual(
+    completed.returncode,0,
+    "full-chroma unrelated benchmark failed "
+    f"(NumPy {np.__version__}):\\n{completed.stdout}\\n{completed.stderr}",
+   )
+   measurement=json.loads(completed.stdout)
+   label=(
+    f"{measurement['durationSeconds']}-second full-chroma unrelated comparison "
+    f"(NumPy {measurement['numpyVersion']}, SciPy {measurement['scipyVersion']}; "
+    f"{measurement['elapsedSeconds']:.2f}s, "
+    f"{measurement['peakResidentBytes']/(1024*1024):.1f} MiB RSS)"
+   )
+   result=measurement["result"]
+   self.assertTrue(result["passesNotSourceCopy"],label)
+   self.assertEqual(
+    result["searchedTransformCount"],len(result["searchedTempoRatios"])
+    *len(result["searchedPitchSemitones"]),label,
+   )
+   self.assertGreater(result["searchedTransformAlignmentCount"],0,label)
+   self.assertLess(
+    measurement["elapsedSeconds"],FULL_CHROMA_CI_MAX_RUNTIME_SECONDS,label,
+   )
+   self.assertLessEqual(
+    measurement["peakResidentBytes"],FULL_CHROMA_CI_MAX_RSS_BYTES,
+    f"{label}; full-chroma CI boundary is "
+    f"{FULL_CHROMA_CI_MAX_RSS_BYTES/(1024*1024):.0f} MiB. Review NumPy/SciPy "
+    "dependency changes or raise this separate boundary with measured evidence.",
+   )
 
  def test_source_copy_thresholds_have_margin_across_real_codecs(self):
   # These settings intentionally span the sample rates, layouts, and lossy
