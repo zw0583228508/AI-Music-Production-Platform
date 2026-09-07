@@ -66,7 +66,7 @@ smoke = modal.Volume.from_name(SMOKE_VOLUME_NAME, create_if_missing=False)
     timeout=600,
 )
 @modal.concurrent(max_inputs=COMPARISON_MAX_CONCURRENT_INPUTS)
-def drill_retained_smoke_comparison():
+def drill_retained_smoke_comparison(control: str = "compare", readiness=None):
     import os
     import re
     import time
@@ -80,6 +80,24 @@ def drill_retained_smoke_comparison():
             "retained comparison burst request lacks runtime image identity"
         ) from None
     started = time.time()
+    if control == "stall":
+        if readiness is None:
+            raise RuntimeError("comparison stall readiness channel is required") from None
+        readiness.put({
+            "outcome": "started",
+            "startedUnixSeconds": started,
+            "modalImageId": image_id,
+        })
+        time.sleep(120)
+    elif control == "probe":
+        return {
+            "outcome": "completed",
+            "startedUnixSeconds": started,
+            "finishedUnixSeconds": time.time(),
+            "modalImageId": image_id,
+        }
+    elif control != "compare":
+        raise RuntimeError("unsupported comparison drill control") from None
     try:
         comparison = signal_comparison(
             Path(SMOKE_MOUNT) / "golden-30s.wav",
