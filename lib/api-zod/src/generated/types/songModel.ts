@@ -33,6 +33,7 @@ import type { SongModelTimingEvidenceItem } from './songModelTimingEvidenceItem'
 import type { SongModelValidation } from './songModelValidation';
 import type { SourceStem } from './sourceStem';
 import type { TempoEvent } from './tempoEvent';
+import type { VocalEvidence } from './vocalEvidence';
 
 export interface SongModel {
   id: string;
@@ -72,6 +73,7 @@ export interface SongModel {
   stems: SongModelStem[];
   dynamics: number[];
   sourceStems: SourceStem[];
+  vocalEvidence: VocalEvidence;
   lyrics: LyricEvent[];
   confidenceByField: SongModelConfidenceByField;
   providerProvenance: ProviderProvenance[];

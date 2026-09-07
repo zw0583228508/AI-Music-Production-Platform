@@ -250,3 +250,8 @@ export * from './trackPerformance';
 export * from './trackStatus';
 export * from './uploadUrlRequest';
 export * from './uploadUrlResponse';
+export * from './vocalActivityThresholds';
+export * from './vocalEvidence';
+export * from './vocalEvidenceStatus';
+export * from './vocalObservedWindow';
+export * from './vocalStemProvenance';

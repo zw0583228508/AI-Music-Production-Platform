@@ -747,6 +747,73 @@ export interface SourceStem {
   objectPath: string;
   provider: string;
   confidence: number;
+  /** @pattern ^[a-fA-F0-9]{64}$ */
+  checksum?: string;
+}
+
+export type VocalEvidenceStatus = typeof VocalEvidenceStatus[keyof typeof VocalEvidenceStatus];
+
+
+export const VocalEvidenceStatus = {
+  detected: 'detected',
+  low_confidence: 'low_confidence',
+  not_available: 'not_available',
+  failed: 'failed',
+} as const;
+
+export interface VocalStemProvenance {
+  sourceStemRole: string;
+  objectPath: string;
+  provider: string;
+  /** @pattern ^[a-fA-F0-9]{64}$ */
+  contentChecksum?: string;
+}
+
+export interface VocalActivityThresholds {
+  /** @minimum 0 */
+  rms: number;
+  /** @minimum 0 */
+  peak: number;
+  /** @minimum 0 */
+  activitySample: number;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  activityRatio: number;
+}
+
+export interface VocalObservedWindow {
+  /** @minimum 0 */
+  start: number;
+  /** @minimum 0 */
+  end: number;
+  coordinates: CanonicalTimeRange;
+}
+
+export interface VocalEvidence {
+  status: VocalEvidenceStatus;
+  /** @nullable */
+  reason: string | null;
+  provenance: VocalStemProvenance | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  sampleRate: number | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  channels: number | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  frameSizeSamples: number | null;
+  thresholds: VocalActivityThresholds | null;
+  observedVoicedWindows: VocalObservedWindow[];
+  observedSilentWindows: VocalObservedWindow[];
 }
 
 export interface LyricEvent {
@@ -874,6 +941,7 @@ export interface SongModel {
   stems: SongModelStem[];
   dynamics: number[];
   sourceStems: SourceStem[];
+  vocalEvidence: VocalEvidence;
   lyrics: LyricEvent[];
   confidenceByField: SongModelConfidenceByField;
   providerProvenance: ProviderProvenance[];

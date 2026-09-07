@@ -39,7 +39,7 @@ import {
 import { execFile, spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { logger } from "./logger";
-import { isEffectivelySilent } from "./audioSignal";
+import { detectVocalActivity, isEffectivelySilent } from "./audioSignal";
 import { recordSheetSageCapacityRejection } from "./sheetSageCapacityAlerts";
 
 export { isEffectivelySilent };
@@ -435,8 +435,87 @@ async function persistSeparationStems(
       objectPath,
       provider: result.providerId,
       confidence: stem.confidence,
+      checksum: createHash("sha256").update(data).digest("hex"),
     };
   }));
+}
+
+const isVocalStemRole = (role: string): boolean =>
+  /^(vocal|vocals|voice)$/i.test(role.trim());
+
+async function deriveVocalEvidence(
+  separation: SeparationAnalysisResult | null,
+  sourceStems: SongModelData["sourceStems"],
+  directory: string,
+  durationSeconds: number,
+): Promise<SongModelData["vocalEvidence"]> {
+  const sourceStem = sourceStems.find((stem) => isVocalStemRole(stem.role));
+  const providerStem = separation?.stems.find((stem) =>
+    sourceStem?.provider === separation.providerId && stem.role === sourceStem.role
+  );
+  if (!sourceStem || !providerStem) {
+    return {
+      status: "not_available",
+      reason: "No verified vocal or voice stem bytes are available; full-mix and inferred evidence are forbidden.",
+      provenance: null,
+      sampleRate: null,
+      channels: null,
+      frameSizeSamples: null,
+      thresholds: null,
+      observedVoicedWindows: [],
+      observedSilentWindows: [],
+    };
+  }
+  try {
+    const stemPath = join(directory, `verified-${providerStem.role}.${providerStem.extension}`);
+    const sampleRate = 8_000;
+    const { stdout: pcm } = await execFileAsync("ffmpeg", [
+      "-v", "error", "-i", stemPath, "-ac", "1", "-ar", String(sampleRate),
+      "-f", "f32le", "pipe:1",
+    ], { encoding: "buffer", maxBuffer: 128 * 1024 * 1024 });
+    const samples = new Float32Array(pcm.buffer, pcm.byteOffset, Math.floor(pcm.byteLength / 4));
+    if (!samples.length) throw new Error("The verified vocal stem decoded to no PCM frames.");
+    const activity = detectVocalActivity(samples, sampleRate);
+    const bounded = (windows: Array<{ start: number; end: number }>) => windows.map((window) => ({
+      start: window.start,
+      end: Math.min(durationSeconds, window.end),
+    })).filter((window) => window.end > window.start);
+    return {
+      status: activity.status,
+      reason: activity.status === "detected"
+        ? null
+        : "Verified vocal stem PCM contains no frames above the configured voiced-activity thresholds.",
+      provenance: {
+        sourceStemRole: sourceStem.role,
+        objectPath: sourceStem.objectPath,
+        provider: sourceStem.provider,
+        ...(sourceStem.checksum ? { contentChecksum: sourceStem.checksum } : {}),
+      },
+      sampleRate,
+      channels: 1,
+      frameSizeSamples: activity.frameSizeSamples,
+      thresholds: activity.thresholds,
+      observedVoicedWindows: bounded(activity.observedVoicedWindows),
+      observedSilentWindows: bounded(activity.observedSilentWindows),
+    };
+  } catch {
+    return {
+      status: "failed",
+      reason: "Verified vocal stem PCM could not be decoded.",
+      provenance: {
+        sourceStemRole: sourceStem.role,
+        objectPath: sourceStem.objectPath,
+        provider: sourceStem.provider,
+        ...(sourceStem.checksum ? { contentChecksum: sourceStem.checksum } : {}),
+      },
+      sampleRate: null,
+      channels: null,
+      frameSizeSamples: null,
+      thresholds: null,
+      observedVoicedWindows: [],
+      observedSilentWindows: [],
+    };
+  }
 }
 
 type MidiEvent = {
@@ -1202,6 +1281,24 @@ export async function analyzeProjectSource(
         }] : [];
       }
     }
+    const vocalEvidence = midi
+      ? {
+          status: "not_available" as const,
+          reason: "MIDI sources do not contain decoded vocal or voice stem PCM.",
+          provenance: null,
+          sampleRate: null,
+          channels: null,
+          frameSizeSamples: null,
+          thresholds: null,
+          observedVoicedWindows: [],
+          observedSilentWindows: [],
+        }
+      : await deriveVocalEvidence(
+          providerResults.separation,
+          sourceStems,
+          directory,
+          durationSeconds,
+        );
     if (!midi) {
       const verifiedBassStem = providerResults.separation?.providerId === "BS_ROFORMER"
         ? sourceStems.find((stem) =>
@@ -1464,6 +1561,7 @@ export async function analyzeProjectSource(
         confidence: stem.confidence,
       })),
       sourceStems,
+      vocalEvidence,
       lyrics: [],
       confidenceByField,
       providerProvenance: [

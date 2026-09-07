@@ -232,7 +232,43 @@ export type SongModelData = SongModelCore & {
     objectPath: string;
     provider: string;
     confidence: number;
+    /** SHA-256 of the persisted provider stem bytes when available. */
+    checksum?: string;
   }>;
+  /**
+   * Activity observations made solely from decoded PCM of a verified
+   * vocal/voice separation stem. This deliberately does not infer vocal
+   * space from lyrics, melody, structure, or full-mix duration.
+   */
+  vocalEvidence?: {
+    status: "detected" | "low_confidence" | "not_available" | "failed";
+    reason: string | null;
+    provenance: {
+      sourceStemRole: string;
+      objectPath: string;
+      provider: string;
+      contentChecksum?: string;
+    } | null;
+    sampleRate: number | null;
+    channels: number | null;
+    frameSizeSamples: number | null;
+    thresholds: {
+      rms: number;
+      peak: number;
+      activitySample: number;
+      activityRatio: number;
+    } | null;
+    observedVoicedWindows: Array<{
+      start: number;
+      end: number;
+      coordinates?: CanonicalTimeRange;
+    }>;
+    observedSilentWindows: Array<{
+      start: number;
+      end: number;
+      coordinates?: CanonicalTimeRange;
+    }>;
+  };
   lyrics: Array<{
     start: number;
     end: number;

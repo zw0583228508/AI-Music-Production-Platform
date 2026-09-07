@@ -1197,7 +1197,7 @@ components:
         createdAt: { type: string }
     SongModel:
       type: object
-      required: [id, projectId, sourceId, version, status, contractVersion, validation, fusion, audio, analysisStartSeconds, analysisDurationSeconds, analysisCoverage, tempoMap, meterMap, keyMap, beats, bars, melody, bass, chords, sections, energy, waveform, stems, dynamics, sourceStems, lyrics, confidenceByField, providerProvenance, fieldStatus, provenance, providers, confidence, createdAt]
+      required: [id, projectId, sourceId, version, status, contractVersion, validation, fusion, audio, analysisStartSeconds, analysisDurationSeconds, analysisCoverage, tempoMap, meterMap, keyMap, beats, bars, melody, bass, chords, sections, energy, waveform, stems, dynamics, sourceStems, vocalEvidence, lyrics, confidenceByField, providerProvenance, fieldStatus, provenance, providers, confidence, createdAt]
       properties:
         id: { type: string }
         projectId: { type: string }
@@ -1273,6 +1273,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SourceStem"
+        vocalEvidence:
+          $ref: "#/components/schemas/VocalEvidence"
         lyrics:
           type: array
           items:
@@ -1565,6 +1567,55 @@ components:
         objectPath: { type: string }
         provider: { type: string }
         confidence: { type: number }
+        checksum: { type: string, pattern: '^[a-fA-F0-9]{64}$' }
+    VocalEvidence:
+      type: object
+      required: [status, reason, provenance, sampleRate, channels, frameSizeSamples, thresholds, observedVoicedWindows, observedSilentWindows]
+      properties:
+        status:
+          type: string
+          enum: [detected, low_confidence, not_available, failed]
+        reason: { type: ["string", "null"] }
+        provenance:
+          oneOf:
+            - $ref: "#/components/schemas/VocalStemProvenance"
+            - type: "null"
+        sampleRate: { type: ["number", "null"], minimum: 1 }
+        channels: { type: ["number", "null"], minimum: 1 }
+        frameSizeSamples: { type: ["number", "null"], minimum: 1 }
+        thresholds:
+          oneOf:
+            - $ref: "#/components/schemas/VocalActivityThresholds"
+            - type: "null"
+        observedVoicedWindows:
+          type: array
+          items: { $ref: "#/components/schemas/VocalObservedWindow" }
+        observedSilentWindows:
+          type: array
+          items: { $ref: "#/components/schemas/VocalObservedWindow" }
+    VocalStemProvenance:
+      type: object
+      required: [sourceStemRole, objectPath, provider]
+      properties:
+        sourceStemRole: { type: string }
+        objectPath: { type: string }
+        provider: { type: string }
+        contentChecksum: { type: string, pattern: '^[a-fA-F0-9]{64}$' }
+    VocalActivityThresholds:
+      type: object
+      required: [rms, peak, activitySample, activityRatio]
+      properties:
+        rms: { type: number, minimum: 0 }
+        peak: { type: number, minimum: 0 }
+        activitySample: { type: number, minimum: 0 }
+        activityRatio: { type: number, minimum: 0, maximum: 1 }
+    VocalObservedWindow:
+      type: object
+      required: [start, end, coordinates]
+      properties:
+        start: { type: number, minimum: 0 }
+        end: { type: number, minimum: 0 }
+        coordinates: { $ref: "#/components/schemas/CanonicalTimeRange" }
     LyricEvent:
       type: object
       required: [start, end, text, confidence]

@@ -35,8 +35,11 @@ const isFiniteNumber = (value: unknown): value is number =>
 const isInteger = (value: unknown): value is number =>
   typeof value === "number" && Number.isInteger(value);
 
-function canonicalizeCoordinates(model: SongModelCore): SongModelCore {
+function canonicalizeCoordinates(
+  model: SongModelCore,
+): SongModelCore & Partial<Pick<SongModelData, "vocalEvidence">> {
   const timeline = createCanonicalTimeline(model.tempoMap, model.meterMap);
+  const vocalEvidence = (model as Partial<SongModelData>).vocalEvidence;
   const range = (start: number, end: number) => ({
     start: timeline.coordinateAtSeconds(start),
     end: timeline.coordinateAtSeconds(end),
@@ -62,6 +65,15 @@ function canonicalizeCoordinates(model: SongModelCore): SongModelCore {
         end: timeline.coordinateAtBar(event.endBar + 1),
       },
     })),
+    vocalEvidence: vocalEvidence && {
+      ...vocalEvidence,
+      observedVoicedWindows: vocalEvidence.observedVoicedWindows.map((event) => ({
+        ...event, coordinates: range(event.start, event.end),
+      })),
+      observedSilentWindows: vocalEvidence.observedSilentWindows.map((event) => ({
+        ...event, coordinates: range(event.start, event.end),
+      })),
+    },
   };
 }
 
@@ -96,6 +108,7 @@ export function canonicalizeSongModelCoordinates(model: SongModelData): SongMode
         end: timeline.coordinateAtSeconds(event.end),
       },
     })),
+    vocalEvidence: (core as Partial<SongModelData>).vocalEvidence,
   };
 }
 
@@ -155,6 +168,8 @@ function validateV2Coordinates(input: Record<string, unknown>, issues: MutableIs
     ["chords", Array.isArray(input.chords) ? input.chords : []],
     ["bars", Array.isArray(input.bars) ? input.bars : []],
     ["lyrics", Array.isArray(input.lyrics) ? input.lyrics : []],
+    ["vocalEvidence.observedVoicedWindows", isRecord(input.vocalEvidence) && Array.isArray(input.vocalEvidence.observedVoicedWindows) ? input.vocalEvidence.observedVoicedWindows : []],
+    ["vocalEvidence.observedSilentWindows", isRecord(input.vocalEvidence) && Array.isArray(input.vocalEvidence.observedSilentWindows) ? input.vocalEvidence.observedSilentWindows : []],
   ];
   for (const [name, events] of rangeEvents) {
     let previousStartTick = -1;
@@ -438,6 +453,74 @@ function validateBassEvidence(value: unknown, duration: number | undefined, issu
       issues.push(issue("INVALID_BASS_EVIDENCE", "error", path, "Bass evidence must have valid timing, pitch, confidence, and optional provider."));
     }
   });
+}
+
+function validateVocalEvidence(value: unknown, duration: number | undefined, issues: MutableIssue[]): void {
+  if (!isRecord(value)) {
+    issues.push(issue("MISSING_VOCAL_EVIDENCE", "error", "vocalEvidence", "v2 Song Models require explicit vocal evidence."));
+    return;
+  }
+  const status = value.status;
+  if (!["detected", "low_confidence", "not_available", "failed"].includes(String(status))) {
+    issues.push(issue("INVALID_VOCAL_EVIDENCE", "error", "vocalEvidence.status", "Vocal evidence status is invalid."));
+  }
+  if (!(value.reason === null || typeof value.reason === "string")) {
+    issues.push(issue("INVALID_VOCAL_EVIDENCE", "error", "vocalEvidence.reason", "Vocal evidence reason must be a string or null."));
+  }
+  const voiced = value.observedVoicedWindows;
+  const silent = value.observedSilentWindows;
+  if (!Array.isArray(voiced) || !Array.isArray(silent)) {
+    issues.push(issue("INVALID_VOCAL_EVIDENCE", "error", "vocalEvidence", "Vocal evidence windows must be arrays."));
+    return;
+  }
+  const all: Array<{ start: number; end: number; path: string }> = [];
+  for (const [name, windows] of [["observedVoicedWindows", voiced], ["observedSilentWindows", silent]] as const) {
+    let priorEnd = -1;
+    windows.forEach((window, index) => {
+      const path = `vocalEvidence.${name}.${index}`;
+      if (isRecord(window) && isFiniteNumber(window.start) && isFiniteNumber(window.end) &&
+        window.start >= 0 && window.end > window.start) {
+        all.push({ start: window.start, end: window.end, path });
+      }
+      if (!isRecord(window) || !isFiniteNumber(window.start) || !isFiniteNumber(window.end) ||
+        window.start < 0 || window.end <= window.start ||
+        (duration !== undefined && window.end > duration + 0.000_001) ||
+        window.start < priorEnd
+      ) {
+        issues.push(issue("INVALID_VOCAL_WINDOW", "error", path, "Vocal windows must be ordered, non-overlapping, and within audio bounds."));
+      } else {
+        priorEnd = window.end;
+      }
+    });
+  }
+  all.sort((left, right) => left.start - right.start || left.end - right.end);
+  for (let index = 1; index < all.length; index += 1) {
+    if (all[index].start < all[index - 1].end) {
+      issues.push(issue("OVERLAPPING_VOCAL_WINDOWS", "error", all[index].path, "Voiced and silent windows must not overlap."));
+    }
+  }
+  const hasMeasurements = status === "detected" || status === "low_confidence";
+  if (hasMeasurements) {
+    if (!isRecord(value.provenance) || typeof value.provenance.sourceStemRole !== "string" ||
+      !value.provenance.sourceStemRole.trim() || typeof value.provenance.objectPath !== "string" ||
+      !value.provenance.objectPath.trim() || typeof value.provenance.provider !== "string" ||
+      !value.provenance.provider.trim() ||
+      (value.provenance.contentChecksum !== undefined &&
+        (typeof value.provenance.contentChecksum !== "string" || !/^[a-f0-9]{64}$/i.test(value.provenance.contentChecksum))) ||
+      !isFiniteNumber(value.sampleRate) || value.sampleRate < 1 ||
+      !Number.isInteger(value.channels) || (value.channels as number) < 1 ||
+      !Number.isInteger(value.frameSizeSamples) || (value.frameSizeSamples as number) < 1 ||
+      !isRecord(value.thresholds) ||
+      !["rms", "peak", "activitySample", "activityRatio"].every((key) =>
+        isFiniteNumber((value.thresholds as Record<string, unknown>)[key]) &&
+        ((value.thresholds as Record<string, unknown>)[key] as number) >= 0
+      )
+    ) {
+      issues.push(issue("INVALID_VOCAL_EVIDENCE", "error", "vocalEvidence", "Observed vocal evidence requires PCM metadata, thresholds, and stem provenance."));
+    }
+  } else if (voiced.length || silent.length) {
+    issues.push(issue("INVALID_VOCAL_EVIDENCE", "error", "vocalEvidence", "Unavailable or failed vocal evidence must not contain windows."));
+  }
 }
 
 function validateChords(value: unknown, duration: number | undefined, issues: MutableIssue[]): void {
@@ -925,6 +1008,17 @@ export function fuseProviderSongModels(
   const model = {
     ...(isRecord(selected.original) ? selected.original : {}),
     ...canonicalizeCoordinates(selected.model),
+    vocalEvidence: canonicalizeCoordinates(selected.model).vocalEvidence ?? {
+          status: "not_available" as const,
+          reason: "No decoded vocal or voice stem PCM evidence was supplied.",
+          provenance: null,
+          sampleRate: null,
+          channels: null,
+          frameSizeSamples: null,
+          thresholds: null,
+          observedVoicedWindows: [],
+          observedSilentWindows: [],
+        },
     contractVersion: SONG_MODEL_CONTRACT_VERSION,
     timebase: {
       ppq: CANONICAL_SONG_MODEL_PPQ,
@@ -979,6 +1073,8 @@ export function validateCanonicalSongModel(input: unknown): ValidationResult<Son
         `Song Model ${SONG_MODEL_CONTRACT_VERSION} requires PPQ ${CANONICAL_SONG_MODEL_PPQ}, zero-second origin, and seconds+ticks coordinates.`,
       ));
     }
+    validateVocalEvidence(input.vocalEvidence, isRecord(input.audio) && isFiniteNumber(input.audio.durationSeconds)
+      ? input.audio.durationSeconds : undefined, issues);
     validateV2Coordinates(input, issues);
   }
   if (!isRecord(input.validation) || !["accepted", "flagged"].includes(String(input.validation.status))) {
