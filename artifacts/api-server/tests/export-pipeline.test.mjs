@@ -247,6 +247,108 @@ test("persisted stem bytes match the checksum in authorized artifact metadata", 
   );
 });
 
+test("downloadable export reports exclude private evaluation fingerprints", () => {
+  const privateSentinel = "PRIVATE-FINGERPRINT-SENTINEL";
+  const project = {
+    id: "private-evaluation-project",
+    name: "Private Evaluation",
+    duration: "0:04",
+    bpm: 120,
+    meter: "4/4",
+    key: "C major",
+    sourceType: "PROMPT",
+    sections: [{ name: "Verse", startBar: 1, endBar: 1, energy: 0.6 }],
+    energy: [0.6],
+    providers: [],
+  };
+  const arrangement = {
+    id: "private-evaluation-arrangement",
+    projectId: project.id,
+    name: "Safe report",
+    style: "Pop",
+    mode: "STUDIO",
+    version: 1,
+    harmonyComplexity: 4,
+    energy: 0.6,
+    density: 0.5,
+    orchestraSize: 0.5,
+    rhythmIntensity: 0.5,
+    sections: [{
+      name: "Verse",
+      startBar: 1,
+      endBar: 1,
+      energy: 0.6,
+      density: 0.5,
+      tracks: [],
+    }],
+    generationProvenance: {
+      provider: "TEST",
+      modelVersion: "1",
+      reportedModelVersion: "1",
+      checkpointSha256: null,
+      candidateId: "candidate-safe",
+      providerRequestId: "request-safe",
+      seed: 17,
+      parentArtifactIds: ["parent-safe"],
+      evaluation: {
+        status: "evaluated",
+        providerScore: 0.77,
+        renderArtifactIds: ["audio-safe"],
+        artifacts: [],
+        qualityReport: null,
+        musicCritic: {
+          score: 0.91,
+          dimensions: {},
+          strengths: ["clear structure"],
+          weaknesses: [],
+          coverage: { availableDimensions: 1, totalDimensions: 8, sparse: true },
+        },
+        error: null,
+        diversity: {
+          fingerprint: {
+            sectionCount: privateSentinel,
+            privateVector: [privateSentinel],
+          },
+          comparedToCandidateId: "candidate-baseline",
+          distance: 0.42,
+          threshold: 0.25,
+          rejected: false,
+          reason: "distinct",
+        },
+      },
+    },
+  };
+  const bundle = createExportBundle(
+    project,
+    arrangement,
+    [],
+    { includeStems: false, includeMidi: false, includeMix: false, includeMetadata: true },
+    1,
+    "",
+    "private-evaluation-export",
+  );
+  const jsonReports = [...openStoredZip(bundle.zip)]
+    .filter(([name]) => name.endsWith(".json"));
+  assert.ok(jsonReports.length >= 3);
+  for (const [name, data] of jsonReports) {
+    const serialized = data.toString("utf8");
+    assert.equal(serialized.includes('"fingerprint"'), false, `${name} exposed a fingerprint key`);
+    assert.equal(serialized.includes(privateSentinel), false, `${name} exposed private fingerprint data`);
+  }
+  const arrangementReport = JSON.parse(
+    openStoredZip(bundle.zip).get("metadata/arrangement.json").toString("utf8"),
+  );
+  const evaluation = arrangementReport.arrangement.generationProvenance.evaluation;
+  assert.equal(evaluation.musicCritic.score, 0.91);
+  assert.deepEqual(evaluation.diversity, {
+    comparedToCandidateId: "candidate-baseline",
+    distance: 0.42,
+    threshold: 0.25,
+    rejected: false,
+    reason: "distinct",
+  });
+});
+
 function readVariableLength(buffer, initialOffset) {
   let offset = initialOffset;
   let value = 0;
