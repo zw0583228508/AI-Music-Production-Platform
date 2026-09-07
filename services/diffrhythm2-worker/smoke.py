@@ -16,7 +16,6 @@ def describe(path: Path) -> dict:
         "channels": audio.shape[1], "peakAmplitude": float(abs(audio).max()),
         "rmsAmplitude": float((audio ** 2).mean() ** .5),
     }
-
 COMPARISON_SAMPLE_RATE = 8000
 MAX_OFFSET_SECONDS = 5.0
 MIN_OVERLAP_SECONDS = 1.0
@@ -30,6 +29,7 @@ MAX_CHANNEL_PROJECTIONS = 4
 MAX_DECODED_CHANNELS = 32
 DECODED_SAMPLE_BYTES = np.dtype(np.float64).itemsize
 MAX_DECODED_AUDIO_BYTES = 256 * 1024 * 1024
+MAX_INPUT_SAMPLE_RATE = 192000
 
 def _read_bounded_audio(path: Path) -> tuple[np.ndarray, int]:
     metadata = sf.info(str(path))
@@ -38,6 +38,11 @@ def _read_bounded_audio(path: Path) -> tuple[np.ndarray, int]:
         raise RuntimeError(
             f"audio channel count {channel_count} exceeds supported maximum "
             f"of {MAX_DECODED_CHANNELS}"
+        )
+    if metadata.samplerate > MAX_INPUT_SAMPLE_RATE:
+        raise RuntimeError(
+            f"audio sample rate {metadata.samplerate} Hz exceeds supported maximum "
+            f"of {MAX_INPUT_SAMPLE_RATE} Hz"
         )
     maximum_frames = int(
         metadata.samplerate * MAX_SUPPORTED_SMOKE_DURATION_SECONDS

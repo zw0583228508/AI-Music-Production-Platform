@@ -10,6 +10,7 @@ from smoke import (
  MAX_CHANNEL_PROJECTIONS,
  MAX_DECODED_AUDIO_BYTES,
  MAX_DECODED_CHANNELS,
+ MAX_INPUT_SAMPLE_RATE,
  MAX_SUPPORTED_SMOKE_DURATION_SECONDS,
  signal_comparison,
 )
@@ -56,12 +57,14 @@ class DiffRhythmContract(unittest.TestCase):
    "CC-BY-NC-4.0",
   )
   self.assertEqual(len(m["source"]["revision"]),40); self.assertNotIn("main",json.dumps(m))
+
  def test_private_provisioning_only_contract(self):
   source=(ROOT/"modal_provision.py").read_text(); config=(ROOT/"modal_config.py").read_text()
   self.assertIn("private",config); self.assertIn("bootstrap_assets.py",source)
   self.assertIn('RUNTIME_SECRET_NAME="music-ai-worker-runtime"',config)
   self.assertNotIn("diffrhythm2-runtime-v1",config)
   self.assertIn("HF_HUB_OFFLINE=1", (ROOT/"Dockerfile").read_text())
+
  def test_image_verifies_checkout_and_prints_requirements_before_install(self):
   docker=(ROOT/"Dockerfile").read_text()
   revision="13a7b091f45124f611e36ee674973234f38d55b6"
@@ -71,6 +74,7 @@ class DiffRhythmContract(unittest.TestCase):
   inspection=docker.index("cat /opt/diffrhythm2/requirements.txt")
   installation=docker.index("pip install --no-cache-dir -r /opt/diffrhythm2/requirements.txt")
   self.assertLess(inspection,installation)
+
  def test_image_has_native_build_toolchain_for_pinned_pyopenjtalk(self):
   docker=(ROOT/"Dockerfile").read_text()
   install=next(line for line in docker.splitlines() if "apt-get install" in line)
@@ -78,6 +82,7 @@ class DiffRhythmContract(unittest.TestCase):
   self.assertIn("cmake",install)
   self.assertIn("python3.11-dev",install)
   self.assertIn("inflect==7.5.0",(ROOT/"Dockerfile").read_text())
+
  def test_modal_python_detection_uses_the_exact_venv_interpreter(self):
   docker=(ROOT/"Dockerfile").read_text()
   modal_app=(ROOT/"modal_app.py").read_text()
@@ -91,12 +96,14 @@ class DiffRhythmContract(unittest.TestCase):
   self.assertIn("modal_app.py",(ROOT/"modal_config.py").read_text())
   self.assertIn("modal_config.py",(ROOT/"modal_config.py").read_text())
   self.assertIn('"PYTHONPATH": "/opt/diffrhythm2-venv/lib/python3.11/site-packages"',modal_app)
+
  def test_bearer_token_prefers_provider_specific_then_shared_runtime(self):
   source=(ROOT/"app.py").read_text()
   provider=source.index('os.getenv("DIFFRHYTHM2_API_TOKEN")')
   shared=source.index('os.getenv("MUSIC_AI_WORKER_TOKEN")',provider)
   self.assertLess(provider,shared)
   self.assertIn('(os.getenv("DIFFRHYTHM2_API_TOKEN") or "").strip() or (os.getenv("MUSIC_AI_WORKER_TOKEN") or "").strip()',source)
+
  def test_real_smoke_and_offline_serving_gates_remain_enforced(self):
   app=(ROOT/"app.py").read_text(); smoke=(ROOT/"smoke.py").read_text()
   provision=(ROOT/"modal_provision.py").read_text()
@@ -500,6 +507,35 @@ print(json.dumps({"elapsedSeconds":elapsed,"peakResidentMiB":peak_kib/1024,"resu
    result["channelProjectionPolicy"]["sourceProjections"],
    ["channel-0","channel-1"],
   )
+
+ def test_source_copy_detection_rejects_extreme_sample_rates_before_decode(self):
+  extreme_sample_rate=MAX_INPUT_SAMPLE_RATE+1
+  with tempfile.TemporaryDirectory() as directory:
+   directory=Path(directory)
+   extreme=directory/"extreme.wav"
+   normal=directory/"normal.wav"
+   sf.write(extreme,np.zeros(32),extreme_sample_rate,subtype="PCM_16")
+   sf.write(normal,np.zeros(32),8000,subtype="PCM_16")
+   with mock.patch("smoke.sf.read",wraps=sf.read) as decode:
+    with self.assertRaisesRegex(
+     RuntimeError,
+     rf"audio sample rate {extreme_sample_rate} Hz exceeds supported maximum "
+     rf"of {MAX_INPUT_SAMPLE_RATE} Hz",
+    ):
+     signal_comparison(extreme,normal)
+   decode.assert_not_called()
+
+ def test_source_copy_detection_supports_192_khz_input(self):
+  with tempfile.TemporaryDirectory() as directory:
+   directory=Path(directory)
+   source=directory/"source.wav"
+   output=directory/"output.wav"
+   source_time=np.arange(MAX_INPUT_SAMPLE_RATE*2)/MAX_INPUT_SAMPLE_RATE
+   output_time=np.arange(8000*2)/8000
+   sf.write(source,.3*np.sin(2*np.pi*440*source_time),MAX_INPUT_SAMPLE_RATE,subtype="PCM_16")
+   sf.write(output,.3*np.sin(2*np.pi*440*output_time),8000,subtype="PCM_16")
+   result=signal_comparison(source,output)
+  self.assertIn("passesNotSourceCopy",result)
 
 def time_stretch(audio,rate):
  _,_,spectrum=stft(audio,nperseg=1024,noverlap=768)
