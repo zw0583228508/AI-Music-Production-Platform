@@ -4,7 +4,7 @@ import hashlib, json, os
 from pathlib import Path
 import numpy as np
 import soundfile as sf
-from scipy.signal import correlate, correlation_lags, resample_poly
+from scipy.signal import correlate, correlation_lags, resample_poly, stft
 from app import ASSETS, SPEC, sha
 from inference import infer
 
@@ -23,6 +23,9 @@ MIN_OVERLAP_SECONDS = 1.0
 MAX_SUPPORTED_SMOKE_DURATION_SECONDS = 210.0
 COPY_LIKE_CORRELATION_THRESHOLD = 0.95
 COPY_LIKE_DIFFERENCE_THRESHOLD = 0.25
+TEMPO_RATIOS = (0.90, 0.95, 1.0, 1.05, 1.10)
+PITCH_SEMITONES = tuple(range(-4, 5))
+CHROMA_CORRELATION_THRESHOLD = 0.90
 
 def _resample(audio: np.ndarray, source_rate: int, target_rate: int) -> np.ndarray:
     if source_rate == target_rate:
@@ -33,11 +36,7 @@ def _resample(audio: np.ndarray, source_rate: int, target_rate: int) -> np.ndarr
 def _window_sum(prefix: np.ndarray, start: np.ndarray, length: np.ndarray) -> np.ndarray:
     return prefix[start + length] - prefix[start]
 
-def signal_comparison(source_path: Path, output_path: Path) -> dict:
-    source, source_rate = sf.read(str(source_path), always_2d=True)
-    output, output_rate = sf.read(str(output_path), always_2d=True)
-    source = _resample(source.mean(axis=1), source_rate, COMPARISON_SAMPLE_RATE)
-    output = _resample(output.mean(axis=1), output_rate, COMPARISON_SAMPLE_RATE)
+def _strongest_waveform_match(source: np.ndarray, output: np.ndarray) -> dict:
     minimum_overlap = max(
         int(MIN_OVERLAP_SECONDS * COMPARISON_SAMPLE_RATE),
         min(len(source), len(output)) // 2,
@@ -95,23 +94,45 @@ def signal_comparison(source_path: Path, output_path: Path) -> dict:
         where=denominators > 1e-8,
     )
     strongest_index = int(np.argmax(np.abs(correlations)))
-    strongest_correlation = float(correlations[strongest_index])
+    return {
+        "correlation": float(correlations[strongest_index]),
+        "lag": int(candidate_lags[strongest_index]),
+        "overlap": int(overlaps[strongest_index]),
+        "searchedLagCount": int(len(candidate_lags)),
+    }
+def signal_comparison(source_path: Path, output_path: Path) -> dict:
+    source, source_rate = sf.read(str(source_path), always_2d=True)
+    output, output_rate = sf.read(str(output_path), always_2d=True)
+    source = _resample(source.mean(axis=1), source_rate, COMPARISON_SAMPLE_RATE)
+    output = _resample(output.mean(axis=1), output_rate, COMPARISON_SAMPLE_RATE)
+    waveform_matches = []
+    for tempo_ratio in TEMPO_RATIOS:
+        transformed = resample_poly(source, 100, int(round(100 * tempo_ratio)))
+        match = _strongest_waveform_match(transformed, output)
+        match["tempoRatio"] = tempo_ratio
+        waveform_matches.append(match)
+    waveform = max(waveform_matches, key=lambda match: abs(match["correlation"]))
+    chroma = _strongest_chroma_match(source, output)
+    strongest_correlation = waveform["correlation"]
     absolute_correlation = abs(strongest_correlation)
     normalized_difference = float(np.sqrt(max(0.0, 1.0 - absolute_correlation)))
-    strongest_lag = int(candidate_lags[strongest_index])
-    compared_samples = int(overlaps[strongest_index])
+    strongest_lag = waveform["lag"]
+    compared_samples = waveform["overlap"]
     passes = (
         absolute_correlation < COPY_LIKE_CORRELATION_THRESHOLD
         and normalized_difference > COPY_LIKE_DIFFERENCE_THRESHOLD
+        and chroma["correlation"] < CHROMA_CORRELATION_THRESHOLD
     )
     return {
-        "method": "bounded-offset-normalized-cross-correlation-v2",
+        "method": "bounded-tempo-pitch-source-similarity-v3",
         "sourceSampleRate": source_rate,
         "outputSampleRate": output_rate,
         "comparisonSampleRate": COMPARISON_SAMPLE_RATE,
         "maxOffsetSeconds": MAX_OFFSET_SECONDS,
         "minimumOverlapSeconds": MIN_OVERLAP_SECONDS,
-        "searchedLagCount": int(len(candidate_lags)),
+        "searchedLagCount": waveform["searchedLagCount"],
+        "searchedTempoRatios": list(TEMPO_RATIOS),
+        "searchedPitchSemitones": list(PITCH_SEMITONES),
         "strongestOffsetSamples": strongest_lag,
         "strongestOffsetSeconds": strongest_lag / COMPARISON_SAMPLE_RATE,
         "comparedSamples": compared_samples,
@@ -121,6 +142,16 @@ def signal_comparison(source_path: Path, output_path: Path) -> dict:
         "polarityInvariantNormalizedDifference": normalized_difference,
         "copyLikeCorrelationThreshold": COPY_LIKE_CORRELATION_THRESHOLD,
         "copyLikeDifferenceThreshold": COPY_LIKE_DIFFERENCE_THRESHOLD,
+        "chromaCorrelationThreshold": CHROMA_CORRELATION_THRESHOLD,
+        "strongestTransform": {
+            "tempoRatio": chroma["tempoRatio"],
+            "pitchSemitones": chroma["pitchSemitones"],
+            "offsetSeconds": chroma["offsetSeconds"],
+            "similarity": chroma["correlation"],
+        },
+        "strongestWaveformTempoRatio": waveform["tempoRatio"],
+        "searchedTransformCount": chroma["searchedTransformCount"],
+        "searchedTransformAlignmentCount": chroma["searchedAlignmentCount"],
         "passesNotSourceCopy": passes,
     }
 
@@ -152,3 +183,58 @@ def main(fixture: Path) -> dict:
     (ASSETS/SPEC["smoke_proof"]).write_text(json.dumps(proof,indent=2,sort_keys=True))
     return proof
 if __name__=="__main__": main(Path(os.environ["DIFFRHYTHM2_SMOKE_AUDIO"]))
+
+def _chroma(audio: np.ndarray) -> np.ndarray:
+    _, _, spectrum = stft(
+        audio, fs=COMPARISON_SAMPLE_RATE, nperseg=1024, noverlap=512,
+        boundary=None, padded=False,
+    )
+    magnitudes = np.abs(spectrum)
+    frequencies = np.fft.rfftfreq(1024, 1 / COMPARISON_SAMPLE_RATE)
+    valid = frequencies >= 55.0
+    pitch_classes = np.mod(
+        np.rint(12 * np.log2(frequencies[valid] / 440.0) + 9).astype(int), 12
+    )
+    chroma = np.zeros((magnitudes.shape[1], 12), dtype=np.float64)
+    for pitch_class in range(12):
+        chroma[:, pitch_class] = magnitudes[valid][pitch_classes == pitch_class].sum(axis=0)
+    norms = np.linalg.norm(chroma, axis=1, keepdims=True)
+    return np.divide(chroma, norms, out=np.zeros_like(chroma), where=norms > 1e-8)
+
+def _strongest_chroma_match(source: np.ndarray, output: np.ndarray) -> dict:
+    source_chroma, output_chroma = _chroma(source), _chroma(output)
+    frames_per_second = COMPARISON_SAMPLE_RATE / 512
+    max_lag = int(MAX_OFFSET_SECONDS * frames_per_second)
+    minimum_frames = max(int(MIN_OVERLAP_SECONDS * frames_per_second), 4)
+    best = {"correlation": 0.0, "tempoRatio": 1.0, "pitchSemitones": 0, "lagFrames": 0}
+    searched = 0
+    for tempo_ratio in TEMPO_RATIOS:
+        target_frames = max(1, int(round(len(source_chroma) / tempo_ratio)))
+        indices = np.linspace(0, max(len(source_chroma) - 1, 0), target_frames)
+        stretched = np.vstack([
+            np.interp(indices, np.arange(len(source_chroma)), source_chroma[:, column])
+            for column in range(12)
+        ]).T
+        for pitch_semitones in PITCH_SEMITONES:
+            candidate = np.roll(stretched, pitch_semitones, axis=1)
+            for lag in range(-max_lag, max_lag + 1):
+                source_start, output_start = max(-lag, 0), max(lag, 0)
+                overlap = min(len(candidate) - source_start, len(output_chroma) - output_start)
+                if overlap < minimum_frames:
+                    continue
+                left = candidate[source_start:source_start + overlap].ravel()
+                right = output_chroma[output_start:output_start + overlap].ravel()
+                left = left - left.mean()
+                right = right - right.mean()
+                denominator = np.linalg.norm(left) * np.linalg.norm(right)
+                correlation = abs(float(np.dot(left, right) / denominator)) if denominator > 1e-8 else 0.0
+                searched += 1
+                if correlation > best["correlation"]:
+                    best = {
+                        "correlation": correlation, "tempoRatio": tempo_ratio,
+                        "pitchSemitones": pitch_semitones, "lagFrames": lag,
+                    }
+    best["searchedTransformCount"] = len(TEMPO_RATIOS) * len(PITCH_SEMITONES)
+    best["searchedAlignmentCount"] = searched
+    best["offsetSeconds"] = best.pop("lagFrames") / frames_per_second
+    return best

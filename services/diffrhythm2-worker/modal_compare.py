@@ -86,3 +86,8 @@ def refresh_retained_smoke_comparisons():
         proofs[label] = proof
     models.commit()
     return proofs
+
+
+@app.local_entrypoint()
+def main():
+    refresh_retained_smoke_comparisons.remote()
