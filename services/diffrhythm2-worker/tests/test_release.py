@@ -29,6 +29,12 @@ def hung_cancel_worker(call_id, sender, worker_args):
     sender.send(True)
 
 
+def slow_start_cancel_worker(_call_id, sender, worker_args):
+    time.sleep(worker_args[0])
+    sender.send("started")
+    sender.send(True)
+
+
 class FakeResponse:
     def __init__(self, url, body, headers=None):
         self.status = 200
@@ -72,7 +78,7 @@ class FakeOpener:
 
 class DiffRhythmReleaseTests(unittest.TestCase):
     def setUp(self):
-        def cancel_synchronously(calls, _timeout):
+        def cancel_synchronously(calls, _timeout, absolute_deadline=None):
             outcomes = []
             for call in calls:
                 try:
@@ -332,6 +338,48 @@ class DiffRhythmReleaseTests(unittest.TestCase):
                 release.COMPARISON_CANCELLATION_SUITE_BOUND_SECONDS,
         }
 
+    def test_shared_cancellation_deadline_handles_acknowledgement_outcomes(self):
+        missing = threading.Event()
+
+        class Call:
+            def __init__(self, outcome):
+                self.outcome = outcome
+
+            def get(self, timeout=None):
+                if self.outcome == "missing":
+                    missing.wait()
+                    raise RuntimeError("private provider detail")
+                if self.outcome == "late":
+                    time.sleep(0.08)
+                if self.outcome == "failed_ack":
+                    raise RuntimeError("private provider detail")
+                raise release.RemoteError("private provider detail")
+
+        try:
+            calls = [
+                Call("on_time"), Call("late"), Call("missing"), Call("failed_ack")
+            ]
+            with patch.object(
+                release, "cancel_calls_within_bound",
+                return_value=[True] * len(calls),
+            ):
+                requested, acknowledged = release.cancel_calls_before_deadline(
+                    calls, 0.05
+                )
+            self.assertEqual(requested, 4)
+            self.assertEqual(acknowledged, 1)
+
+            with patch.object(
+                release, "cancel_calls_within_bound",
+                return_value=[True, False],
+            ):
+                requested, acknowledged = release.cancel_calls_before_deadline(
+                    [Call("on_time"), Call("failed_request")], 0.05
+                )
+            self.assertEqual((requested, acknowledged), (1, 0))
+        finally:
+            missing.set()
+
     def test_consolidated_cancellation_drills_share_one_batch_and_probe(self):
         class Lifecycle:
             def __init__(self):
@@ -540,12 +588,13 @@ class DiffRhythmReleaseTests(unittest.TestCase):
                 })
                 return Call(index)
 
-        def isolate(calls, timeout):
+        def isolate(calls, timeout, absolute_deadline=None):
             return release._run_cancel_workers_within_bound(
                 [call.object_id for call in calls],
                 min(timeout, 0.5),
                 hung_cancel_worker,
                 (attempts, release_hung_cancel),
+                absolute_deadline,
             )
 
         identity = {
@@ -583,15 +632,14 @@ class DiffRhythmReleaseTests(unittest.TestCase):
         self.assertEqual(list(attempts), [3] * len(attempts))
         self.assertLess(
             elapsed,
-            3 * (release.COMPARISON_CANCEL_WORKER_START_BOUND_SECONDS + 0.5),
+            3 * (1.0 + 0.3),
         )
         self.assertEqual(
             {worker.pid for worker in multiprocessing.active_children()},
             baseline_processes,
         )
-        self.assertEqual(
-            {thread.ident for thread in threading.enumerate()},
-            baseline_threads,
+        self.assertFalse(
+            {thread.ident for thread in threading.enumerate()} - baseline_threads
         )
 
     def test_consolidated_drills_cancel_every_call_after_partial_markers(self):
@@ -1180,6 +1228,87 @@ class DiffRhythmReleaseTests(unittest.TestCase):
         surfaced = str(raised.exception) + retained
         self.assertNotIn(private_detail, surfaced)
         self.assertLess(len(retained), 2048)
+        self.assertFalse(json.loads(retained)["executionStopped"])
+
+    def test_single_execution_hung_cancel_stays_bounded_and_reaped(self):
+        context = multiprocessing.get_context("spawn")
+        release_hung_cancel = context.Event()
+        attempts = context.Array("i", 1)
+
+        class Lifecycle:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def get(self, timeout=None):
+                return {
+                    "outcome": "pre_work",
+                    "startedUnixSeconds": time.time(),
+                    "modalImageId": "im-Compare",
+                }
+
+        class Call:
+            object_id = "fc-Test0"
+
+        class Comparison:
+            def spawn(self, control, lifecycle):
+                return Call()
+
+        def isolate(calls, timeout, absolute_deadline=None):
+            return release._run_cancel_workers_within_bound(
+                [call.object_id for call in calls],
+                timeout,
+                hung_cancel_worker,
+                (attempts, release_hung_cancel),
+                absolute_deadline,
+            )
+
+        identity = {
+            "modalAppId": "ap-Compare",
+            "modalDeploymentId": "v3",
+            "modalFunctionId": "fu-Compare",
+        }
+        baseline_processes = {
+            worker.pid for worker in multiprocessing.active_children()
+        }
+        baseline_threads = {thread.ident for thread in threading.enumerate()}
+        bound = 1.0
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            release, "EVIDENCE", Path(directory)
+        ), patch.object(
+            release, "COMPARISON_CANCEL_ACK_BOUND_SECONDS", bound
+        ), patch.object(
+            release.modal.Queue, "ephemeral", return_value=Lifecycle()
+        ), patch.object(
+            release.modal.Function, "from_name", return_value=Comparison()
+        ), patch.object(
+            release, "observe_comparison", return_value=identity
+        ), patch.object(
+            release, "cancel_calls_within_bound", side_effect=isolate
+        ):
+            started = time.monotonic()
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "^cancelled comparison execution did not stop within the safe bound$",
+            ):
+                release.verify_cancelled_comparison_execution(self.metadata)
+            elapsed = time.monotonic() - started
+            retained = (
+                Path(directory)
+                / "live-comparison-execution-cancellation-proof.json"
+            ).read_text()
+
+        self.assertLess(elapsed, bound + 0.3)
+        self.assertEqual(list(attempts), [1])
+        self.assertEqual(
+            {worker.pid for worker in multiprocessing.active_children()},
+            baseline_processes,
+        )
+        self.assertFalse(
+            {thread.ident for thread in threading.enumerate()} - baseline_threads
+        )
         self.assertFalse(json.loads(retained)["executionStopped"])
 
     def test_cancelled_comparisons_release_every_slot_before_probe_bound(self):
@@ -1852,7 +1981,7 @@ class DiffRhythmReleaseTests(unittest.TestCase):
             self.assertEqual(
                 release._run_cancel_workers_within_bound(
                     call_ids,
-                    0.5,
+                    1.0,
                     hung_cancel_worker,
                     (attempts, release_hung_cancel),
                 ),
@@ -1863,8 +1992,27 @@ class DiffRhythmReleaseTests(unittest.TestCase):
         self.assertEqual(list(attempts), [3] * len(call_ids))
         self.assertLess(
             elapsed,
-            3 * (release.COMPARISON_CANCEL_WORKER_START_BOUND_SECONDS + 0.5),
+            3 * (1.0 + 0.3),
         )
+        self.assertEqual(
+            {worker.pid for worker in multiprocessing.active_children()},
+            baseline,
+        )
+
+    def test_slow_worker_startup_stays_inside_absolute_deadline(self):
+        baseline = {worker.pid for worker in multiprocessing.active_children()}
+        timeout = 0.1
+        started = time.monotonic()
+        results = release._run_cancel_workers_within_bound(
+            ["fc-SlowStart"],
+            timeout,
+            slow_start_cancel_worker,
+            (1.0,),
+        )
+        elapsed = time.monotonic() - started
+
+        self.assertEqual(results, [False])
+        self.assertLess(elapsed, timeout + 0.2)
         self.assertEqual(
             {worker.pid for worker in multiprocessing.active_children()},
             baseline,

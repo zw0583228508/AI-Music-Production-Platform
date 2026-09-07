@@ -73,7 +73,14 @@ def _run_cancel_workers_within_bound(
     timeout_seconds: float,
     worker_target=_cancel_modal_call,
     worker_args: tuple = (),
+    absolute_deadline: float | None = None,
 ) -> list[bool]:
+    overall_deadline = (
+        absolute_deadline
+        if absolute_deadline is not None
+        else time.monotonic() + timeout_seconds
+    )
+    cleanup_reserve = min(0.2, timeout_seconds / 2)
     context = multiprocessing.get_context("spawn")
     receivers = []
     workers = []
@@ -89,8 +96,9 @@ def _run_cancel_workers_within_bound(
             receivers.append(receiver)
             workers.append(worker)
 
-        startup_deadline = (
-            time.monotonic() + COMPARISON_CANCEL_WORKER_START_BOUND_SECONDS
+        startup_deadline = min(
+            overall_deadline - cleanup_reserve,
+            time.monotonic() + COMPARISON_CANCEL_WORKER_START_BOUND_SECONDS,
         )
         started = []
         for receiver in receivers:
@@ -103,8 +111,6 @@ def _run_cancel_workers_within_bound(
             else:
                 started.append(False)
 
-        overall_deadline = time.monotonic() + timeout_seconds
-        cleanup_reserve = min(0.2, timeout_seconds / 2)
         result_deadline = overall_deadline - cleanup_reserve
         results = []
         for receiver, worker_started in zip(receivers, started):
@@ -118,9 +124,6 @@ def _run_cancel_workers_within_bound(
                 results.append(False)
         return results
     finally:
-        if "overall_deadline" not in locals():
-            overall_deadline = time.monotonic() + timeout_seconds
-            cleanup_reserve = min(0.2, timeout_seconds / 2)
         for receiver in receivers:
             receiver.close()
         for worker in workers:
@@ -136,11 +139,31 @@ def _run_cancel_workers_within_bound(
             worker.join(timeout=max(0, overall_deadline - time.monotonic()))
 
 
-def cancel_calls_within_bound(calls: list, timeout_seconds: float) -> list[bool]:
+def cancel_calls_within_bound(
+    calls: list,
+    timeout_seconds: float,
+    absolute_deadline: float | None = None,
+) -> list[bool]:
     """Cancel call IDs in fresh clients and reap workers within a shared bound."""
     return _run_cancel_workers_within_bound(
-        [str(call.object_id) for call in calls], timeout_seconds
+        [str(call.object_id) for call in calls],
+        timeout_seconds,
+        absolute_deadline=absolute_deadline,
     )
+
+
+def cancel_calls_before_deadline(calls: list, timeout_seconds: float) -> tuple[int, int]:
+    """Request and observe cancellation against one monotonic deadline."""
+    deadline = time.monotonic() + timeout_seconds
+    request_results = cancel_calls_within_bound(
+        calls,
+        max(0, deadline - time.monotonic()),
+        absolute_deadline=deadline,
+    )
+    requested = sum(request_results)
+    if requested != len(calls):
+        return requested, 0
+    return requested, count_cancellation_acknowledgements(calls, deadline)
 
 
 def canonical(value: object) -> str:
@@ -740,19 +763,6 @@ def verify_cancelled_comparison_capacity(metadata: dict) -> dict:
     result = None
     probe = None
     cancellation_requested = time.time()
-    acknowledgement_results = queue.Queue()
-
-    def await_cancellation(call, deadline: float) -> None:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            return
-        try:
-            call.get(timeout=remaining)
-        except RemoteError:
-            acknowledgement_results.put(True)
-        except Exception:
-            acknowledgement_results.put(False)
-
     with modal.Queue.ephemeral() as readiness:
         calls = [
             comparison.spawn("stall", readiness)
@@ -776,41 +786,15 @@ def verify_cancelled_comparison_capacity(metadata: dict) -> dict:
         if len(starts) == COMPARISON_MAX_CONCURRENT_INPUTS:
             cancellation_requested = time.time()
             cancellation_requests_started = True
-            cancellation_requests_succeeded = sum(
-                cancel_calls_within_bound(
-                    calls, COMPARISON_CANCEL_ACK_BOUND_SECONDS
-                )
+            _, cancellation_acknowledged = cancel_calls_before_deadline(
+                calls, COMPARISON_CANCEL_ACK_BOUND_SECONDS
             )
-            if cancellation_requests_succeeded == len(calls):
-                acknowledgement_deadline = (
-                    time.monotonic() + COMPARISON_CANCEL_ACK_BOUND_SECONDS
-                )
-                for call in calls:
-                    threading.Thread(
-                        target=await_cancellation,
-                        args=(call, acknowledgement_deadline),
-                        daemon=True,
-                    ).start()
-                awaiting_acknowledgements = len(calls)
-                while awaiting_acknowledgements:
-                    remaining = acknowledgement_deadline - time.monotonic()
-                    if remaining <= 0:
-                        break
-                    try:
-                        acknowledged = acknowledgement_results.get(
-                            timeout=remaining
-                        )
-                    except queue.Empty:
-                        break
-                    awaiting_acknowledgements -= 1
-                    if acknowledged:
-                        cancellation_acknowledged += 1
-                if cancellation_acknowledged == len(calls):
-                    probe = comparison.spawn("probe")
-                    try:
-                        result = probe.get(timeout=COMPARISON_RECOVERY_BOUND_SECONDS)
-                    except Exception:
-                        result = None
+            if cancellation_acknowledged == len(calls):
+                probe = comparison.spawn("probe")
+                try:
+                    result = probe.get(timeout=COMPARISON_RECOVERY_BOUND_SECONDS)
+                except Exception:
+                    result = None
     observed = time.time()
     image_ids = {marker["modalImageId"] for marker in starts}
     valid = (
@@ -918,6 +902,7 @@ def verify_cancelled_comparison_execution(metadata: dict) -> dict:
     call = None
     start = None
     cancellation_acknowledged = False
+    cancellation_started = False
     post_work_marker_observed = False
     operational_failure = False
     with modal.Queue.ephemeral() as lifecycle:
@@ -936,11 +921,11 @@ def verify_cancelled_comparison_execution(metadata: dict) -> dict:
                 }
             ):
                 start = marker
-                call.cancel()
-                try:
-                    call.get(timeout=COMPARISON_CANCEL_ACK_BOUND_SECONDS)
-                except RemoteError:
-                    cancellation_acknowledged = True
+                cancellation_started = True
+                _, acknowledgements = cancel_calls_before_deadline(
+                    [call], COMPARISON_CANCEL_ACK_BOUND_SECONDS
+                )
+                cancellation_acknowledged = acknowledgements == 1
                 if cancellation_acknowledged:
                     try:
                         post_marker = lifecycle.get(
@@ -978,11 +963,10 @@ def verify_cancelled_comparison_execution(metadata: dict) -> dict:
         EVIDENCE / "live-comparison-execution-cancellation-proof.json", proof
     )
     if not valid:
-        if call is not None:
-            try:
-                call.cancel()
-            except Exception:
-                pass
+        if call is not None and not cancellation_started:
+            cancel_calls_within_bound(
+                [call], COMPARISON_CANCEL_TIMEOUT_SECONDS
+            )
         raise RuntimeError(
             "cancelled comparison execution did not stop within the safe bound"
         ) from None
@@ -1104,22 +1088,13 @@ def verify_cancelled_comparison_batch_execution(metadata: dict) -> dict:
                 starts.append(marker)
             if len(starts) == len(calls):
                 cancellation_requests_started = True
-                cancellation_requests_succeeded = sum(
-                    cancel_calls_within_bound(
+                cancellation_requests_succeeded, cancellations_acknowledged = (
+                    cancel_calls_before_deadline(
                         calls, COMPARISON_CANCEL_ACK_BOUND_SECONDS
                     )
                 )
                 if cancellation_requests_succeeded != len(calls):
                     operational_failure = True
-                if cancellation_requests_succeeded == len(calls):
-                    acknowledgement_deadline = (
-                        time.monotonic() + COMPARISON_CANCEL_ACK_BOUND_SECONDS
-                    )
-                    cancellations_acknowledged = (
-                        count_cancellation_acknowledgements(
-                            calls, acknowledgement_deadline
-                        )
-                    )
                 if cancellations_acknowledged == len(calls):
                     deadline = (
                         time.monotonic() + COMPARISON_EXECUTION_STOP_BOUND_SECONDS
@@ -1278,22 +1253,13 @@ def verify_cancelled_comparison_drills(metadata: dict) -> tuple[dict, dict, dict
             if len(starts) == len(calls):
                 cancellation_requested = time.time()
                 cancellation_started = True
-                requests_succeeded = sum(
-                    cancel_calls_within_bound(
+                requests_succeeded, cancellations_acknowledged = (
+                    cancel_calls_before_deadline(
                         calls, COMPARISON_CANCEL_ACK_BOUND_SECONDS
                     )
                 )
                 if requests_succeeded != len(calls):
                     operational_failure = True
-                if requests_succeeded == len(calls):
-                    acknowledgement_deadline = (
-                        time.monotonic() + COMPARISON_CANCEL_ACK_BOUND_SECONDS
-                    )
-                    cancellations_acknowledged = (
-                        count_cancellation_acknowledgements(
-                            calls, acknowledgement_deadline
-                        )
-                    )
                 if cancellations_acknowledged == len(calls):
                     deadline = (
                         time.monotonic() + COMPARISON_EXECUTION_STOP_BOUND_SECONDS
