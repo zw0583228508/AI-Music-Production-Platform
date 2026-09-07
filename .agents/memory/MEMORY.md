@@ -31,3 +31,4 @@
 - [Modal digest-only image references](modal-digest-only-image-references.md) — use repository@sha256 in Modal, but verify GHCR digest availability and prefer the platform manifest.
 - [Checkpoint license provenance](checkpoint-license-provenance.md) — code/model-card licenses do not authorize external weights; invalid remote digests require direct byte hashing.
 - [Blocked-provider evidence preimages](blocked-provider-evidence-preimages.md) — retain hash preimages and keep provisioning manifest schemas identical to runtime validators.
+- [Attested generation I/O](attested-generation-response-urls.md) — results repeat health provenance; artifact origins and source allowlists are deployment gates, never request-host defaults.

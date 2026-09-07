@@ -1,4 +1,6 @@
 import importlib.util
+import copy
+import json
 import unittest
 from pathlib import Path
 
@@ -154,3 +156,19 @@ class AuditFixtures(unittest.TestCase):
                   "modelRevision":"sha256:"+"b"*64,"blockers":[]})
         errors=audit.audit(m, root=Path("/definitely/missing"))
         self.assertTrue(any("BASIC_PITCH: READY lacks" in x for x in errors))
+
+    def test_anyaccomp_ready_retained_evidence_passes(self):
+        matrix = json.loads(Path("installation-matrix-v2.json").read_text())
+        errors = audit.evidence_errors(audit.effective(matrix), Path("."))
+        self.assertFalse(any(error.startswith("ANYACCOMP:") for error in errors))
+
+    def test_anyaccomp_ready_rejects_source_identity_drift(self):
+        matrix = json.loads(Path("installation-matrix-v2.json").read_text())
+        drifted = copy.deepcopy(matrix)
+        row = next(
+            item for item in drifted["providers"]
+            if item["provider"] == "ANYACCOMP"
+        )
+        row["codeRevision"] = "0" * 40
+        errors = audit.evidence_errors(audit.effective(drifted), Path("."))
+        self.assertTrue(any(error.startswith("ANYACCOMP:") for error in errors))

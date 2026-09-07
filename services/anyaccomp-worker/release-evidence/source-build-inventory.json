@@ -2,15 +2,15 @@
   "schemaVersion": 1,
   "provider": "ANYACCOMP",
   "files": [
-    {"path": "Dockerfile", "bytes": 1899, "sha256": "b6203674a3c212cf9b696275e6cf6e33690ebad91ed44fc3957babe3d2410cb7"},
-    {"path": "app.py", "bytes": 15626, "sha256": "c0198f568edb23b2c1db779ad8ca7bfab944957703d2ec3c8b25426ac5d9a96a"},
+    {"path": "Dockerfile", "bytes": 1998, "sha256": "db387584d65efe64fe1d8b2800172c949d6e9ff577f623c87c112a052285a438"},
+    {"path": "app.py", "bytes": 17137, "sha256": "837a61eac2cf57b888f287df1b74f50d3d6981d93c6294124ddbc460b4155b23"},
     {"path": "fixture.py", "bytes": 3099, "sha256": "74204e6dc83bfa32dbc3c2a8cb94b91d0e81c580dda4973e0467b8654dc7cd43"},
     {"path": "inference.py", "bytes": 1514, "sha256": "9acfac69ace9e6ee2e68f3c239e4b0b2addee145c16919e62481bb1c5e03d2a7"},
-    {"path": "license_manifest.json", "bytes": 554, "sha256": "a542f8310174fd1868d44e1f36eda9f821637539265469128533d40af5c4d20b"},
+    {"path": "license_manifest.json", "bytes": 651, "sha256": "79b43b10fa4be6dd1d2852abfa387eb3311e5eeed70613ce0174a1d93ecd7487"},
     {"path": "model_manifest.json", "bytes": 3153, "sha256": "1025e740d514befdf9491f2eb5431932b067d91753c63c42326078236599eb0d"},
     {"path": "runner.py", "bytes": 2554, "sha256": "51e62665eb0d9f5ffc1dc30a20628080b7db37b29ff5d702b48d51502fc0c834"},
-    {"path": "runtime-requirements.txt", "bytes": 283, "sha256": "67feb8ed05893f2d6c63bdf70e9eee2c48ec29990aded44762449c9cf37cded0"},
+    {"path": "runtime-requirements.txt", "bytes": 302, "sha256": "908b1662843c74111c4590a9bfa7c1274b316e55395b90c39e0707c00ba4323b"},
     {"path": "smoke.py", "bytes": 5052, "sha256": "b47d9bb7401c6baace0e284bc5be13127eed41af5494e8df91ea239c08a2f6d9"}
   ],
-  "sourceBuildSha256": "73ea0220b42826b7603162855ab2b6fdf5695a8b265403aa38462ae206690fd3"
+  "sourceBuildSha256": "aed30e61de548b1d9bb12c714697394ca61c888381c22de1ac498354b9873bde"
 }

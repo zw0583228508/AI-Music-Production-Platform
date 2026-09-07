@@ -1285,7 +1285,7 @@ export const musicProviderIds = [
   "STABLE_AUDIO_3_MEDIUM",
 ] as const;
 
-class HttpMusicGenerationProvider implements MusicGenerationProvider {
+export class HttpMusicGenerationProvider implements MusicGenerationProvider {
   readiness: ProviderRuntimeSnapshot;
   private attestedChecksum: string | null = null;
 

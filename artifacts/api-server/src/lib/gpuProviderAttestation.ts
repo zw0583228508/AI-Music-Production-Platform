@@ -179,8 +179,11 @@ function promotionBundle(providerId: string): PromotionBundle | null {
   const committed = providerId === "BEAT_THIS"
     ? committedBeatThisPromotionBundle.trim()
     : genericCommitted;
-  const bundleValue = committed ||
-    process.env[`MUSIC_PROVIDER_${key}_PROMOTION_BUNDLE`]?.trim();
+  const bundleValue = committed || (
+    providerId === "ANYACCOMP"
+      ? undefined
+      : process.env[`MUSIC_PROVIDER_${key}_PROMOTION_BUNDLE`]?.trim()
+  );
   if (!bundleValue) return null;
   try {
     const bundle = JSON.parse(bundleValue) as unknown;
@@ -225,10 +228,13 @@ function promotionPublicKey(providerId: string): string | null {
       : "")
     : hasGenericCommittedBundle ? genericPublicKey : "";
   const publicKey = (
-    committedPublicKey ||
-    providerSpecific ||
-    process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY ||
-    process.env.MUSIC_GPU_PROMOTION_PUBLIC_KEY
+    committedPublicKey || (
+      providerId === "ANYACCOMP"
+        ? undefined
+        : providerSpecific ||
+          process.env.MUSIC_PROVIDER_PROMOTION_PUBLIC_KEY ||
+          process.env.MUSIC_GPU_PROMOTION_PUBLIC_KEY
+    )
   )?.trim();
   return publicKey || null;
 }
@@ -409,6 +415,7 @@ export function expectedGpuSourceImageDigest(providerId: string): string | null 
 export const expectedGpuContainerDigest = expectedGpuSourceImageDigest;
 
 export function anyAccompCommercialUseAuthorized(): boolean {
-  return process.env.MUSIC_PROVIDER_ANYACCOMP_COMMERCIAL_USE_AUTHORIZED === "true" ||
-    process.env.ANYACCOMP_COMMERCIAL_USE_AUTHORIZED === "true";
+  const bundle = promotionBundle("ANYACCOMP");
+  return bundle !== null &&
+    validPromotionSignature(bundle.record, bundle.signature);
 }

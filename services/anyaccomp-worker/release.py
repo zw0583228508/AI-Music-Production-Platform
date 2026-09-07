@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 import time
 import urllib.request
+import wave
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -158,13 +159,19 @@ def install_identity(metadata: dict) -> dict:
             cwd=WORKSPACE,
             check=True,
         )
-    remaining = command_json(
-        "container", "list", "--app-id", metadata["modalAppId"], "--json"
-    )
-    stale = [
-        item.get("container_id") for item in remaining
-        if isinstance(item, dict) and item.get("container_id") in previous
-    ] if isinstance(remaining, list) else previous
+    stale = previous
+    for attempt in range(30):
+        remaining = command_json(
+            "container", "list", "--app-id", metadata["modalAppId"], "--json"
+        )
+        stale = [
+            item.get("container_id") for item in remaining
+            if isinstance(item, dict) and item.get("container_id") in previous
+        ] if isinstance(remaining, list) else previous
+        if not stale:
+            break
+        if attempt < 29:
+            time.sleep(2)
     proof = {
         "schemaVersion": 1,
         "provider": "ANYACCOMP",
@@ -197,6 +204,111 @@ def fetch_health(metadata: dict) -> dict:
         if response.status != 200 or response.geturl() != url:
             raise RuntimeError("AnyAccomp health did not return directly from Modal")
         return json.loads(response.read(2 * 1024 * 1024))
+
+
+def verify_generation(metadata: dict, source_url_file: Path) -> dict:
+    validate_metadata(metadata)
+    if source_url_file.stat().st_mode & 0o077:
+        raise ValueError("private source URL file must not be group/world accessible")
+    source_url = source_url_file.read_text().strip()
+    source = urlsplit(source_url)
+    if (
+        source.scheme != "https"
+        or source.hostname != "storage.googleapis.com"
+        or not source.query
+        or source.username
+        or source.password
+    ):
+        raise ValueError("private source URL is not an authorized signed GCS URL")
+    token = os.getenv("MUSIC_AI_WORKER_TOKEN", "")
+    if not token:
+        raise ValueError("music worker token is unavailable")
+    health = fetch_health(metadata)
+    if health.get("ready") is not True:
+        raise ValueError("AnyAccomp live health is not ready for generation verification")
+    body = canonical({
+        "provider": "ANYACCOMP",
+        "prompt": "",
+        "vocalSource": {"url": source_url},
+    }).encode()
+    request = urllib.request.Request(
+        f"{metadata['endpointOrigin']}/generate",
+        data=body,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+    with urllib.request.build_opener(NoRedirect).open(request, timeout=1800) as response:
+        if response.status != 200 or response.geturl() != request.full_url:
+            raise RuntimeError("AnyAccomp generation did not return directly from Modal")
+        result = json.loads(response.read(2 * 1024 * 1024))
+    candidates = result.get("candidates")
+    artifact = candidates[0].get("artifact") if isinstance(candidates, list) and candidates else None
+    if not isinstance(artifact, dict):
+        raise ValueError("AnyAccomp generation omitted its audio artifact")
+    artifact_url = str(artifact.get("url", ""))
+    parsed_artifact = urlsplit(artifact_url)
+    if (
+        origin(artifact_url.split("?", 1)[0]) != metadata["endpointOrigin"]
+        or not parsed_artifact.query
+        or "expires=" not in parsed_artifact.query
+        or "capability=" not in parsed_artifact.query
+    ):
+        raise ValueError("AnyAccomp generation returned an untrusted artifact URL")
+    with urllib.request.build_opener(NoRedirect).open(artifact_url, timeout=1800) as response:
+        if response.status != 200 or response.geturl() != artifact_url:
+            raise RuntimeError("AnyAccomp capability artifact was not directly retrievable")
+        audio = response.read(128 * 1024 * 1024 + 1)
+    if len(audio) > 128 * 1024 * 1024:
+        raise ValueError("AnyAccomp artifact exceeds release verification limit")
+    observed_sha = hashlib.sha256(audio).hexdigest()
+    if observed_sha != artifact.get("sha256") or len(audio) != artifact.get("bytes"):
+        raise ValueError("AnyAccomp artifact bytes differ from response metadata")
+    with tempfile.NamedTemporaryFile(suffix=".wav") as handle:
+        handle.write(audio)
+        handle.flush()
+        with wave.open(handle.name, "rb") as rendered:
+            sample_rate = rendered.getframerate()
+            channels = rendered.getnchannels()
+            duration = rendered.getnframes() / sample_rate
+    expected_result = {
+        "provider": "ANYACCOMP",
+        "modelVersion": health.get("modelVersion"),
+        "checkpointSha256": health.get("checkpointSha256"),
+        "revision": health.get("revision"),
+        "modalImageId": health.get("modalImageId"),
+        "sourceImageDigest": health.get("sourceImageDigest"),
+        "cudaVersion": health.get("runtime", {}).get("cudaVersion"),
+        "pytorchVersion": health.get("runtime", {}).get("pytorchVersion"),
+        "gpu": health.get("runtime", {}).get("gpu"),
+        "smokeTested": True,
+    }
+    if any(result.get(field) != expected for field, expected in expected_result.items()):
+        raise ValueError("AnyAccomp generation provenance differs from live health")
+    proof = {
+        "schemaVersion": 1,
+        "provider": "ANYACCOMP",
+        "modalDeploymentId": metadata["modalDeploymentId"],
+        "modalImageId": result["modalImageId"],
+        "sourceImageDigest": result["sourceImageDigest"],
+        "sourceFixtureSha256": json.loads(
+            (EVIDENCE / "smoke-proof.json").read_text()
+        )["input"]["sha256"],
+        "outputSha256": observed_sha,
+        "bytes": len(audio),
+        "durationSeconds": duration,
+        "sampleRate": sample_rate,
+        "channels": channels,
+        "artifactHashVerified": True,
+        "capabilityRetrieved": True,
+        "sourceOrigin": "https://storage.googleapis.com",
+        "artifactOrigin": metadata["endpointOrigin"],
+    }
+    atomic_json(EVIDENCE / "live-generation-proof.json", proof)
+    return proof
 
 
 def source_build_digest() -> str:
@@ -291,6 +403,7 @@ def validate_release(value: object) -> dict:
         "smokeOutputSha256": digest(EVIDENCE / "smoke-output.wav"),
         "licenseEvidenceSha256": digest(EVIDENCE / "license-review.json"),
         "sourceBuildInventorySha256": digest(EVIDENCE / "source-build-inventory.json"),
+        "liveGenerationProofSha256": digest(EVIDENCE / "live-generation-proof.json"),
     }
     if value.get("retainedEvidence") != retained:
         raise ValueError("AnyAccomp retained evidence hash set drifted")
@@ -298,6 +411,27 @@ def validate_release(value: object) -> dict:
         raise ValueError("AnyAccomp retained smoke proof differs from live health")
     if digest(EVIDENCE / "smoke-output.wav") != smoke["output"]["sha256"]:
         raise ValueError("AnyAccomp retained smoke audio hash mismatch")
+    generation = json.loads((EVIDENCE / "live-generation-proof.json").read_text())
+    expected_generation = {
+        "schemaVersion": 1,
+        "provider": "ANYACCOMP",
+        "modalDeploymentId": value["modalDeploymentId"],
+        "modalImageId": value["modalImageId"],
+        "sourceImageDigest": value["sourceImageDigest"],
+        "sourceFixtureSha256": smoke["input"]["sha256"],
+        "outputSha256": smoke["output"]["sha256"],
+        "artifactHashVerified": True,
+        "capabilityRetrieved": True,
+        "sourceOrigin": "https://storage.googleapis.com",
+        "artifactOrigin": value["endpointOrigin"],
+    }
+    if any(
+        generation.get(field) != expected
+        for field, expected in expected_generation.items()
+    ):
+        raise ValueError("AnyAccomp retained live generation proof is stale or invalid")
+    if value["liveHealth"].get("sourceOriginsReady") is not True:
+        raise ValueError("AnyAccomp live health did not attest source-origin readiness")
     return value
 
 
@@ -344,6 +478,7 @@ def capture(metadata: dict) -> dict:
             "smokeOutputSha256": digest(EVIDENCE / "smoke-output.wav"),
             "licenseEvidenceSha256": digest(EVIDENCE / "license-review.json"),
             "sourceBuildInventorySha256": digest(EVIDENCE / "source-build-inventory.json"),
+            "liveGenerationProofSha256": digest(EVIDENCE / "live-generation-proof.json"),
         },
         "smokeEvidence": health.get("smokeEvidence"),
         "liveHealth": health,
@@ -381,12 +516,21 @@ def private_key() -> tuple[Path, bool]:
 
 
 def sign(record: dict, key: Path) -> str:
-    result = subprocess.run(
-        ["openssl", "pkeyutl", "-sign", "-rawin", "-inkey", str(key)],
-        input=canonical(record).encode(),
-        capture_output=True,
-        check=False,
-    )
+    handle = tempfile.NamedTemporaryFile(mode="wb", delete=False)
+    try:
+        handle.write(canonical(record).encode())
+        handle.close()
+        os.chmod(handle.name, 0o600)
+        result = subprocess.run(
+            [
+                "openssl", "pkeyutl", "-sign", "-rawin",
+                "-inkey", str(key), "-in", handle.name,
+            ],
+            capture_output=True,
+            check=False,
+        )
+    finally:
+        Path(handle.name).unlink(missing_ok=True)
     if result.returncode or len(result.stdout) != 64:
         raise RuntimeError("AnyAccomp Ed25519 signing failed")
     return base64.b64encode(result.stdout).decode()
@@ -474,6 +618,9 @@ def main() -> None:
     install.add_argument("--metadata", type=Path, required=True)
     capture_command = commands.add_parser("capture")
     capture_command.add_argument("--metadata", type=Path, required=True)
+    generation = commands.add_parser("verify-generation")
+    generation.add_argument("--metadata", type=Path, required=True)
+    generation.add_argument("--source-url-file", type=Path, required=True)
     commands.add_parser("promote")
     commands.add_parser("activate")
     args = parser.parse_args()
@@ -485,6 +632,11 @@ def main() -> None:
         atomic_json(
             EVIDENCE / "release-evidence.json",
             capture(json.loads(args.metadata.read_text())),
+        )
+    elif args.command == "verify-generation":
+        verify_generation(
+            json.loads(args.metadata.read_text()),
+            args.source_url_file,
         )
     elif args.command == "promote":
         release = json.loads((EVIDENCE / "release-evidence.json").read_text())
