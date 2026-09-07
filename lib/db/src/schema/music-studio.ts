@@ -857,6 +857,17 @@ export type GenerationInputSnapshot = {
   };
   songModel: unknown;
   tracks: Array<{ id: string; name: string; role: string; instrument: string }>;
+  /** Absent on generation jobs persisted before bounded repairs were introduced. */
+  repair?: CandidateRepairSnapshot | null;
+};
+
+export type CriticRepairFinding = {
+  id: string;
+  affectedSections: string[];
+  startBar: number;
+  endBar: number;
+  affectedTrackIds: string[];
+  musicalReason: string;
 };
 export type ProviderFusionDecision = {
   provider: string;
@@ -1001,7 +1012,9 @@ export type CandidateEvaluationStatus =
   | "evaluated"
   | "render_failed"
   | "analysis_failed"
-  | "diversity_rejected";
+  | "diversity_rejected"
+  | "repair_not_improved"
+  | "repair_scope_violated";
 export type CandidatePlan = {
   sections: ArrangementSection[];
   tracks?: Array<{
@@ -1296,8 +1309,27 @@ export type CandidateEvaluation = {
   error: string | null;
   strategy?: CandidateStrategyEvidence;
   diversity?: CandidateDiversityEvidence;
+  repair?: CandidateRepairEvidence;
 };
 
+export type CandidateRepairEvidence = {
+  sourceCandidateId: string;
+  findingId: string;
+  seed: number;
+  attempt: number;
+  maxAttempts: number;
+  scope: {
+    affectedSections: string[];
+    startBar: number;
+    endBar: number;
+    affectedTrackIds: string[];
+  };
+  musicalReason: string;
+  outsideScopePreserved: boolean;
+  sourceQualityScore: number;
+  repairedQualityScore: number | null;
+  improved: boolean;
+};
 export type CandidateStrategyEvidence = {
   name: "sparse" | "balanced" | "rhythmic" | "harmonic" | "orchestral";
   index: number;
@@ -1375,4 +1407,14 @@ export type CandidateEvaluationArtifact = {
   type: "AUDIO_TRACK" | "MIDI" | "QUALITY_REPORT";
   label: string;
   url: string;
+};
+
+export type CandidateRepairSnapshot = {
+  sourceCandidateId: string;
+  sourceScore: number;
+  seed: number;
+  maxAttempts: number;
+  finding: CriticRepairFinding;
+  plan: ArrangementPlan;
+  trackModels: TrackModel[];
 };

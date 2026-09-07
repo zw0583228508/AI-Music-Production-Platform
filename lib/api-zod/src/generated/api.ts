@@ -603,6 +603,19 @@ export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluation
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationStrategySeedMin = 0;
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationStrategySeedMax = 2147483647;
 
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationRepairSeedMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationRepairSeedMax = 2147483647;
+
+
+
+
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax = 1;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax = 1;
+
 
 
 export const GetProjectResponse = zod.object({
@@ -733,7 +746,7 @@ export const GetProjectResponse = zod.object({
   "parameters": zod.record(zod.string(), zod.unknown()),
   "parentArtifactIds": zod.array(zod.string()),
   "evaluation": zod.object({
-  "status": zod.enum(['plan_received', 'rendering', 'render_succeeded', 'analyzing', 'evaluated', 'render_failed', 'analysis_failed', 'diversity_rejected']),
+  "status": zod.enum(['plan_received', 'rendering', 'render_succeeded', 'analyzing', 'evaluated', 'render_failed', 'analysis_failed', 'diversity_rejected', 'repair_not_improved', 'repair_scope_violated']),
   "providerScore": zod.number(),
   "renderArtifactIds": zod.array(zod.string()),
   "artifacts": zod.array(zod.object({
@@ -852,6 +865,24 @@ export const GetProjectResponse = zod.object({
   "threshold": zod.literal(0.25),
   "rejected": zod.boolean(),
   "reason": zod.enum(['baseline_retained', 'near_duplicate', 'sufficiently_distinct'])
+}).optional(),
+  "repair": zod.object({
+  "sourceCandidateId": zod.string(),
+  "findingId": zod.string(),
+  "seed": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationRepairSeedMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationRepairSeedMax),
+  "attempt": zod.number().min(1),
+  "maxAttempts": zod.number().min(1),
+  "scope": zod.object({
+  "affectedSections": zod.array(zod.string()),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string())
+}),
+  "musicalReason": zod.string(),
+  "outsideScopePreserved": zod.boolean(),
+  "sourceQualityScore": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax),
+  "repairedQualityScore": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax).nullable(),
+  "improved": zod.boolean()
 }).optional()
 })
 }),zod.null()]).optional(),
@@ -3100,6 +3131,19 @@ export const listArrangementsResponseGenerationProvenanceOneEvaluationStrategyBa
 export const listArrangementsResponseGenerationProvenanceOneEvaluationStrategySeedMin = 0;
 export const listArrangementsResponseGenerationProvenanceOneEvaluationStrategySeedMax = 2147483647;
 
+export const listArrangementsResponseGenerationProvenanceOneEvaluationRepairSeedMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationRepairSeedMax = 2147483647;
+
+
+
+
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax = 1;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax = 1;
+
 
 
 export const ListArrangementsResponseItem = zod.object({
@@ -3186,7 +3230,7 @@ export const ListArrangementsResponseItem = zod.object({
   "parameters": zod.record(zod.string(), zod.unknown()),
   "parentArtifactIds": zod.array(zod.string()),
   "evaluation": zod.object({
-  "status": zod.enum(['plan_received', 'rendering', 'render_succeeded', 'analyzing', 'evaluated', 'render_failed', 'analysis_failed', 'diversity_rejected']),
+  "status": zod.enum(['plan_received', 'rendering', 'render_succeeded', 'analyzing', 'evaluated', 'render_failed', 'analysis_failed', 'diversity_rejected', 'repair_not_improved', 'repair_scope_violated']),
   "providerScore": zod.number(),
   "renderArtifactIds": zod.array(zod.string()),
   "artifacts": zod.array(zod.object({
@@ -3305,6 +3349,24 @@ export const ListArrangementsResponseItem = zod.object({
   "threshold": zod.literal(0.25),
   "rejected": zod.boolean(),
   "reason": zod.enum(['baseline_retained', 'near_duplicate', 'sufficiently_distinct'])
+}).optional(),
+  "repair": zod.object({
+  "sourceCandidateId": zod.string(),
+  "findingId": zod.string(),
+  "seed": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationRepairSeedMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationRepairSeedMax),
+  "attempt": zod.number().min(1),
+  "maxAttempts": zod.number().min(1),
+  "scope": zod.object({
+  "affectedSections": zod.array(zod.string()),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string())
+}),
+  "musicalReason": zod.string(),
+  "outsideScopePreserved": zod.boolean(),
+  "sourceQualityScore": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax),
+  "repairedQualityScore": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax).nullable(),
+  "improved": zod.boolean()
 }).optional()
 })
 }),zod.null()]).optional(),
@@ -3403,6 +3465,19 @@ export const createArrangementResponseGenerationProvenanceOneEvaluationStrategyB
 export const createArrangementResponseGenerationProvenanceOneEvaluationStrategySeedMin = 0;
 export const createArrangementResponseGenerationProvenanceOneEvaluationStrategySeedMax = 2147483647;
 
+export const createArrangementResponseGenerationProvenanceOneEvaluationRepairSeedMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationRepairSeedMax = 2147483647;
+
+
+
+
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax = 1;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax = 1;
+
 
 
 export const CreateArrangementResponse = zod.object({
@@ -3489,7 +3564,7 @@ export const CreateArrangementResponse = zod.object({
   "parameters": zod.record(zod.string(), zod.unknown()),
   "parentArtifactIds": zod.array(zod.string()),
   "evaluation": zod.object({
-  "status": zod.enum(['plan_received', 'rendering', 'render_succeeded', 'analyzing', 'evaluated', 'render_failed', 'analysis_failed', 'diversity_rejected']),
+  "status": zod.enum(['plan_received', 'rendering', 'render_succeeded', 'analyzing', 'evaluated', 'render_failed', 'analysis_failed', 'diversity_rejected', 'repair_not_improved', 'repair_scope_violated']),
   "providerScore": zod.number(),
   "renderArtifactIds": zod.array(zod.string()),
   "artifacts": zod.array(zod.object({
@@ -3608,6 +3683,24 @@ export const CreateArrangementResponse = zod.object({
   "threshold": zod.literal(0.25),
   "rejected": zod.boolean(),
   "reason": zod.enum(['baseline_retained', 'near_duplicate', 'sufficiently_distinct'])
+}).optional(),
+  "repair": zod.object({
+  "sourceCandidateId": zod.string(),
+  "findingId": zod.string(),
+  "seed": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationRepairSeedMin).max(createArrangementResponseGenerationProvenanceOneEvaluationRepairSeedMax),
+  "attempt": zod.number().min(1),
+  "maxAttempts": zod.number().min(1),
+  "scope": zod.object({
+  "affectedSections": zod.array(zod.string()),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string())
+}),
+  "musicalReason": zod.string(),
+  "outsideScopePreserved": zod.boolean(),
+  "sourceQualityScore": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin).max(createArrangementResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax),
+  "repairedQualityScore": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin).max(createArrangementResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax).nullable(),
+  "improved": zod.boolean()
 }).optional()
 })
 }),zod.null()]).optional(),
@@ -3802,6 +3895,19 @@ export const updateArrangementResponseGenerationProvenanceOneEvaluationStrategyB
 export const updateArrangementResponseGenerationProvenanceOneEvaluationStrategySeedMin = 0;
 export const updateArrangementResponseGenerationProvenanceOneEvaluationStrategySeedMax = 2147483647;
 
+export const updateArrangementResponseGenerationProvenanceOneEvaluationRepairSeedMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationRepairSeedMax = 2147483647;
+
+
+
+
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax = 1;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax = 1;
+
 
 
 export const UpdateArrangementResponse = zod.object({
@@ -3888,7 +3994,7 @@ export const UpdateArrangementResponse = zod.object({
   "parameters": zod.record(zod.string(), zod.unknown()),
   "parentArtifactIds": zod.array(zod.string()),
   "evaluation": zod.object({
-  "status": zod.enum(['plan_received', 'rendering', 'render_succeeded', 'analyzing', 'evaluated', 'render_failed', 'analysis_failed', 'diversity_rejected']),
+  "status": zod.enum(['plan_received', 'rendering', 'render_succeeded', 'analyzing', 'evaluated', 'render_failed', 'analysis_failed', 'diversity_rejected', 'repair_not_improved', 'repair_scope_violated']),
   "providerScore": zod.number(),
   "renderArtifactIds": zod.array(zod.string()),
   "artifacts": zod.array(zod.object({
@@ -4007,6 +4113,24 @@ export const UpdateArrangementResponse = zod.object({
   "threshold": zod.literal(0.25),
   "rejected": zod.boolean(),
   "reason": zod.enum(['baseline_retained', 'near_duplicate', 'sufficiently_distinct'])
+}).optional(),
+  "repair": zod.object({
+  "sourceCandidateId": zod.string(),
+  "findingId": zod.string(),
+  "seed": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationRepairSeedMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationRepairSeedMax),
+  "attempt": zod.number().min(1),
+  "maxAttempts": zod.number().min(1),
+  "scope": zod.object({
+  "affectedSections": zod.array(zod.string()),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string())
+}),
+  "musicalReason": zod.string(),
+  "outsideScopePreserved": zod.boolean(),
+  "sourceQualityScore": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax),
+  "repairedQualityScore": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax).nullable(),
+  "improved": zod.boolean()
 }).optional()
 })
 }),zod.null()]).optional(),
@@ -4226,6 +4350,19 @@ export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluation
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationStrategySeedMin = 0;
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationStrategySeedMax = 2147483647;
 
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationRepairSeedMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationRepairSeedMax = 2147483647;
+
+
+
+
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax = 1;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax = 1;
+
 
 
 export const RestoreArrangementRevisionResponse = zod.object({
@@ -4312,7 +4449,7 @@ export const RestoreArrangementRevisionResponse = zod.object({
   "parameters": zod.record(zod.string(), zod.unknown()),
   "parentArtifactIds": zod.array(zod.string()),
   "evaluation": zod.object({
-  "status": zod.enum(['plan_received', 'rendering', 'render_succeeded', 'analyzing', 'evaluated', 'render_failed', 'analysis_failed', 'diversity_rejected']),
+  "status": zod.enum(['plan_received', 'rendering', 'render_succeeded', 'analyzing', 'evaluated', 'render_failed', 'analysis_failed', 'diversity_rejected', 'repair_not_improved', 'repair_scope_violated']),
   "providerScore": zod.number(),
   "renderArtifactIds": zod.array(zod.string()),
   "artifacts": zod.array(zod.object({
@@ -4431,6 +4568,24 @@ export const RestoreArrangementRevisionResponse = zod.object({
   "threshold": zod.literal(0.25),
   "rejected": zod.boolean(),
   "reason": zod.enum(['baseline_retained', 'near_duplicate', 'sufficiently_distinct'])
+}).optional(),
+  "repair": zod.object({
+  "sourceCandidateId": zod.string(),
+  "findingId": zod.string(),
+  "seed": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationRepairSeedMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationRepairSeedMax),
+  "attempt": zod.number().min(1),
+  "maxAttempts": zod.number().min(1),
+  "scope": zod.object({
+  "affectedSections": zod.array(zod.string()),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string())
+}),
+  "musicalReason": zod.string(),
+  "outsideScopePreserved": zod.boolean(),
+  "sourceQualityScore": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax),
+  "repairedQualityScore": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax).nullable(),
+  "improved": zod.boolean()
 }).optional()
 })
 }),zod.null()]).optional(),
@@ -4908,6 +5063,19 @@ export const listGenerationCandidatesResponseEvaluationStrategyBaseSeedMax = 214
 export const listGenerationCandidatesResponseEvaluationStrategySeedMin = 0;
 export const listGenerationCandidatesResponseEvaluationStrategySeedMax = 2147483647;
 
+export const listGenerationCandidatesResponseEvaluationRepairSeedMin = 0;
+export const listGenerationCandidatesResponseEvaluationRepairSeedMax = 2147483647;
+
+
+
+
+
+export const listGenerationCandidatesResponseEvaluationRepairSourceQualityScoreMin = 0;
+export const listGenerationCandidatesResponseEvaluationRepairSourceQualityScoreMax = 1;
+
+export const listGenerationCandidatesResponseEvaluationRepairRepairedQualityScoreMin = 0;
+export const listGenerationCandidatesResponseEvaluationRepairRepairedQualityScoreMax = 1;
+
 
 
 export const ListGenerationCandidatesResponseItem = zod.object({
@@ -4923,7 +5091,7 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "score": zod.number(),
   "confidence": zod.number(),
   "summary": zod.string(),
-  "status": zod.enum(['validated', 'selected', 'rejected', 'diversity_rejected']),
+  "status": zod.enum(['validated', 'selected', 'rejected', 'diversity_rejected', 'repair_not_improved']),
   "parameters": zod.record(zod.string(), zod.unknown()),
   "parentArtifactIds": zod.array(zod.string()),
   "plan": zod.object({
@@ -5155,7 +5323,7 @@ export const ListGenerationCandidatesResponseItem = zod.object({
 })).max(listGenerationCandidatesResponseHarmonyDecisionsItemBassSupportEvidenceMax).optional()
 })),
   "evaluation": zod.object({
-  "status": zod.enum(['plan_received', 'rendering', 'render_succeeded', 'analyzing', 'evaluated', 'render_failed', 'analysis_failed', 'diversity_rejected']),
+  "status": zod.enum(['plan_received', 'rendering', 'render_succeeded', 'analyzing', 'evaluated', 'render_failed', 'analysis_failed', 'diversity_rejected', 'repair_not_improved', 'repair_scope_violated']),
   "providerScore": zod.number(),
   "renderArtifactIds": zod.array(zod.string()),
   "artifacts": zod.array(zod.object({
@@ -5274,6 +5442,24 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "threshold": zod.literal(0.25),
   "rejected": zod.boolean(),
   "reason": zod.enum(['baseline_retained', 'near_duplicate', 'sufficiently_distinct'])
+}).optional(),
+  "repair": zod.object({
+  "sourceCandidateId": zod.string(),
+  "findingId": zod.string(),
+  "seed": zod.number().min(listGenerationCandidatesResponseEvaluationRepairSeedMin).max(listGenerationCandidatesResponseEvaluationRepairSeedMax),
+  "attempt": zod.number().min(1),
+  "maxAttempts": zod.number().min(1),
+  "scope": zod.object({
+  "affectedSections": zod.array(zod.string()),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string())
+}),
+  "musicalReason": zod.string(),
+  "outsideScopePreserved": zod.boolean(),
+  "sourceQualityScore": zod.number().min(listGenerationCandidatesResponseEvaluationRepairSourceQualityScoreMin).max(listGenerationCandidatesResponseEvaluationRepairSourceQualityScoreMax),
+  "repairedQualityScore": zod.number().min(listGenerationCandidatesResponseEvaluationRepairRepairedQualityScoreMin).max(listGenerationCandidatesResponseEvaluationRepairRepairedQualityScoreMax).nullable(),
+  "improved": zod.boolean()
 }).optional()
 }),
   "createdAt": zod.string()
@@ -5358,6 +5544,19 @@ export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationS
 
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationStrategySeedMin = 0;
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationStrategySeedMax = 2147483647;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationRepairSeedMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationRepairSeedMax = 2147483647;
+
+
+
+
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax = 1;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax = 1;
 
 
 
@@ -5445,7 +5644,7 @@ export const SelectGenerationCandidateResponse = zod.object({
   "parameters": zod.record(zod.string(), zod.unknown()),
   "parentArtifactIds": zod.array(zod.string()),
   "evaluation": zod.object({
-  "status": zod.enum(['plan_received', 'rendering', 'render_succeeded', 'analyzing', 'evaluated', 'render_failed', 'analysis_failed', 'diversity_rejected']),
+  "status": zod.enum(['plan_received', 'rendering', 'render_succeeded', 'analyzing', 'evaluated', 'render_failed', 'analysis_failed', 'diversity_rejected', 'repair_not_improved', 'repair_scope_violated']),
   "providerScore": zod.number(),
   "renderArtifactIds": zod.array(zod.string()),
   "artifacts": zod.array(zod.object({
@@ -5564,10 +5763,123 @@ export const SelectGenerationCandidateResponse = zod.object({
   "threshold": zod.literal(0.25),
   "rejected": zod.boolean(),
   "reason": zod.enum(['baseline_retained', 'near_duplicate', 'sufficiently_distinct'])
+}).optional(),
+  "repair": zod.object({
+  "sourceCandidateId": zod.string(),
+  "findingId": zod.string(),
+  "seed": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationRepairSeedMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationRepairSeedMax),
+  "attempt": zod.number().min(1),
+  "maxAttempts": zod.number().min(1),
+  "scope": zod.object({
+  "affectedSections": zod.array(zod.string()),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string())
+}),
+  "musicalReason": zod.string(),
+  "outsideScopePreserved": zod.boolean(),
+  "sourceQualityScore": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax),
+  "repairedQualityScore": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax).nullable(),
+  "improved": zod.boolean()
 }).optional()
 })
 }),zod.null()]).optional(),
   "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Queue a bounded repair from a concrete Music Critic finding
+ */
+export const RepairGenerationCandidateParams = zod.object({
+  "candidateId": zod.coerce.string()
+})
+
+export const repairGenerationCandidateBodyIdempotencyKeyMax = 200;
+
+
+
+
+
+
+
+
+export const repairGenerationCandidateBodyFindingMusicalReasonMax = 2000;
+
+
+
+export const RepairGenerationCandidateBody = zod.object({
+  "idempotencyKey": zod.string().max(repairGenerationCandidateBodyIdempotencyKeyMax).optional(),
+  "finding": zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(repairGenerationCandidateBodyFindingMusicalReasonMax)
+})
+})
+
+export const repairGenerationCandidateResponseProviderRuntimeOneRuntimeProvenanceOneCheckpointSha256RegExp = new RegExp('^[a-fA-F0-9]{64}$');
+export const repairGenerationCandidateResponseProviderRuntimeOneRuntimeProvenanceOneModalImageIdRegExp = new RegExp('^im-[A-Za-z0-9]+$');
+export const repairGenerationCandidateResponseProviderRuntimeOneRuntimeProvenanceOneSourceImageDigestRegExp = new RegExp('^sha256:[a-fA-F0-9]{64}$');
+export const repairGenerationCandidateResponseProgressMin = 0;
+export const repairGenerationCandidateResponseProgressMax = 100;
+
+export const repairGenerationCandidateResponseAttemptMin = 0;
+
+
+
+
+export const RepairGenerationCandidateResponse = zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "arrangementId": zod.string(),
+  "task": zod.enum(['SEPARATION', 'TRANSCRIPTION', 'ACCOMPANIMENT', 'ORCHESTRATION', 'ARRANGEMENT']),
+  "status": zod.enum(['queued', 'running', 'cancel_requested', 'cancelled', 'succeeded', 'failed']),
+  "provider": zod.enum(['BS_ROFORMER', 'ALL_IN_ONE', 'MT3', 'BASIC_PITCH', 'ACE_STEP', 'MUSICGEN', 'ANYACCOMP', 'LADA_BAND', 'HAFM', 'SYMPHONYGEN', 'METEOR', 'MIDI_SAG', 'MUSE_CONTROL_LITE', 'STABLE_AUDIO_3_SMALL_MUSIC', 'STABLE_AUDIO_3_MEDIUM']),
+  "modelVersion": zod.string(),
+  "providerRuntime": zod.union([zod.object({
+  "availability": zod.enum(['ready', 'configured', 'unavailable']),
+  "configurationReady": zod.boolean(),
+  "checkpointReady": zod.boolean(),
+  "runtimeReady": zod.boolean(),
+  "smokeTested": zod.boolean(),
+  "healthStatus": zod.enum(['healthy', 'unhealthy', 'unknown']),
+  "checkedAt": zod.string().nullable(),
+  "latencyMs": zod.number().nullable(),
+  "message": zod.string().nullable(),
+  "reportedVersion": zod.string().nullable(),
+  "reportedChecksum": zod.string().nullish(),
+  "runtimeProvenance": zod.union([zod.object({
+  "model": zod.string(),
+  "checkpointSha256": zod.string().regex(repairGenerationCandidateResponseProviderRuntimeOneRuntimeProvenanceOneCheckpointSha256RegExp),
+  "revision": zod.string(),
+  "modalImageId": zod.string().regex(repairGenerationCandidateResponseProviderRuntimeOneRuntimeProvenanceOneModalImageIdRegExp),
+  "sourceImageDigest": zod.string().regex(repairGenerationCandidateResponseProviderRuntimeOneRuntimeProvenanceOneSourceImageDigestRegExp),
+  "cudaVersion": zod.string(),
+  "pytorchVersion": zod.string(),
+  "gpu": zod.string()
+}).describe('Immutable worker attestation captured from live health and required to match the completion payload. The Modal image ID is the independently promoted runtime identity; the source image digest is retained as an additional compatibility check.'),zod.null()]).optional()
+}),zod.null()]),
+  "hardware": zod.enum(['AUTO', 'CPU', 'GPU']),
+  "speed": zod.enum(['FAST', 'BALANCED', 'QUALITY']),
+  "progress": zod.number().min(repairGenerationCandidateResponseProgressMin).max(repairGenerationCandidateResponseProgressMax),
+  "stage": zod.string(),
+  "providerRequestId": zod.string().nullish(),
+  "requestedCandidates": zod.number(),
+  "seed": zod.number(),
+  "parameters": zod.record(zod.string(), zod.unknown()),
+  "parentArtifactIds": zod.array(zod.string()),
+  "error": zod.string().nullish(),
+  "errorCode": zod.string().nullish(),
+  "retryable": zod.boolean(),
+  "attempt": zod.number().min(repairGenerationCandidateResponseAttemptMin),
+  "maxAttempts": zod.number().min(1),
+  "cancelRequestedAt": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string(),
+  "completedAt": zod.string().nullish()
 })
 
 
@@ -5914,3 +6226,5 @@ export const RunCopilotResponse = zod.object({
   "affectedSections": zod.array(zod.string()),
   "interpreter": zod.enum(['openai', 'deterministic'])
 })
+
+

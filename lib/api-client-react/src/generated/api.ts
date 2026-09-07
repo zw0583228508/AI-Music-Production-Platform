@@ -30,6 +30,7 @@ import type {
   Artifact,
   AuthUserEnvelope,
   BeginBrowserLoginParams,
+  CandidateRepairInput,
   CopilotInput,
   CopilotResult,
   Dashboard,
@@ -2939,6 +2940,78 @@ export const useSelectGenerationCandidate = <TError = ErrorType<NotFoundResponse
         TContext
       > => {
       return useMutation(getSelectGenerationCandidateMutationOptions(options));
+    }
+
+export const getRepairGenerationCandidateUrl = (candidateId: string,) => {
+
+
+
+
+  return `/api/generation-candidates/${candidateId}/repair`
+}
+
+/**
+ * @summary Queue a bounded repair from a concrete Music Critic finding
+ */
+export const repairGenerationCandidate = async (candidateId: string,
+    candidateRepairInput: CandidateRepairInput, options?: Parameters<typeof customFetch>[1]): Promise<GenerationJob> => {
+
+  return customFetch<GenerationJob>(getRepairGenerationCandidateUrl(candidateId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(candidateRepairInput)
+  }
+);}
+
+
+
+
+
+export const getRepairGenerationCandidateMutationOptions = <TError = ErrorType<NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof repairGenerationCandidate>>, TError,{candidateId: string;data: BodyType<CandidateRepairInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof repairGenerationCandidate>>, TError,{candidateId: string;data: BodyType<CandidateRepairInput>}, TContext> => {
+
+const mutationKey = ['repairGenerationCandidate'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof repairGenerationCandidate>>, {candidateId: string;data: BodyType<CandidateRepairInput>}> = (props) => {
+          const {candidateId,data} = props ?? {};
+
+          return  repairGenerationCandidate(candidateId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RepairGenerationCandidateMutationResult = NonNullable<Awaited<ReturnType<typeof repairGenerationCandidate>>>
+    export type RepairGenerationCandidateMutationBody = BodyType<CandidateRepairInput>
+    export type RepairGenerationCandidateMutationError = ErrorType<NotFoundResponse | void>
+
+    /**
+ * @summary Queue a bounded repair from a concrete Music Critic finding
+ */
+export const useRepairGenerationCandidate = <TError = ErrorType<NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof repairGenerationCandidate>>, TError,{candidateId: string;data: BodyType<CandidateRepairInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof repairGenerationCandidate>>,
+        TError,
+        {candidateId: string;data: BodyType<CandidateRepairInput>},
+        TContext
+      > => {
+      return useMutation(getRepairGenerationCandidateMutationOptions(options));
     }
 
 export const getListGenerationProvidersUrl = () => {

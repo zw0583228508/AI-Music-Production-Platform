@@ -19,6 +19,8 @@ import {
   type AceStepRegion,
   type ArrangementPlan,
   type CandidateEvaluation,
+  type CandidateRepairSnapshot,
+  type CriticRepairFinding,
   type GenerationParameters,
   type HarmonyDecisionEvidence,
   type MusicGenerationTask,
@@ -72,6 +74,12 @@ import {
   seedForCandidate,
   strategyForCandidate,
 } from "./candidateDiversity";
+import {
+  applyBoundedRepair,
+  MAX_REPAIR_ATTEMPTS,
+  normalizeRepairFinding,
+  repairTimeBounds,
+} from "./candidateRepair";
 import { evaluateCandidateMusicalFit } from "./candidateQuality";
 
 const sha256 = (value: string | Buffer): string =>
@@ -152,6 +160,7 @@ export type QueueGenerationInput = {
   sourceArtifactId?: string;
   instrument?: string;
   region?: Partial<AceStepRegion> & Pick<AceStepRegion, "unit" | "start" | "end">;
+  repair?: CandidateRepairSnapshot;
 };
 
 const LEGO_INSTRUMENT_FAMILIES = new Map([
@@ -618,6 +627,9 @@ export async function queueArrangementGeneration(
     speed,
   });
   const count = Math.max(1, Math.min(5, Math.round(input.candidates ?? 3)));
+  if (input.repair && count !== 1) {
+    throw new Error("A bounded repair produces exactly one candidate per attempt");
+  }
   if (
     provider.readiness.maximumCandidates !== null &&
     provider.readiness.maximumCandidates !== undefined &&
@@ -664,9 +676,9 @@ export async function queueArrangementGeneration(
   // request, not a general-purpose "return my last job" key.  In particular,
   // never let a changed provider, task, seed, or parameters silently reuse a
   // request that may already have reached a provider.
-  const normalizedSeed = input.seed === undefined
+  const normalizedSeed = input.repair?.seed ?? (input.seed === undefined
     ? null
-    : Math.max(0, Math.min(2_147_483_647, Math.trunc(input.seed)));
+    : Math.max(0, Math.min(2_147_483_647, Math.trunc(input.seed))));
   const requestedCandidates = count;
   const [existingJob] = await db
     .select()
@@ -741,7 +753,7 @@ export async function queueArrangementGeneration(
       progress: 0,
       stage: "queued",
       idempotencyKey,
-      maxAttempts: 3,
+      maxAttempts: input.repair?.maxAttempts ?? 3,
       retryable: true,
       requestedCandidates: count,
       seed,
@@ -771,6 +783,7 @@ export async function queueArrangementGeneration(
           role: track.role,
           instrument: track.name,
         })),
+        repair: input.repair ?? null,
       },
     })
     .onConflictDoNothing({
@@ -985,6 +998,17 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
         seed: job.seed,
         parameters: {
           ...job.parameters,
+          ...(snapshot.repair
+            ? {
+                repair: {
+                  sourceCandidateId: snapshot.repair.sourceCandidateId,
+                  finding: snapshot.repair.finding,
+                  seed: snapshot.repair.seed,
+                  attempt: job.attempt,
+                  maxAttempts: snapshot.repair.maxAttempts,
+                },
+              }
+            : {}),
           candidateStrategies: Array.from(
             { length: job.requestedCandidates },
             (_, index) => ({
@@ -1141,7 +1165,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
         const audioArtifactId = randomUUID();
         const midiArtifactId = randomUUID();
         const qualityArtifactId = randomUUID();
-        const materialized = materializeCandidate({
+        const proposedMaterialized = materializeCandidate({
           candidateId,
           version: snapshot.arrangement.version + 1,
           source: snapshot.arrangement,
@@ -1156,12 +1180,38 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
             trackModels: candidate.trackModels,
           },
         });
+        const bounded = snapshot.repair
+          ? applyBoundedRepair({
+              snapshot: snapshot.repair,
+              proposedPlan: proposedMaterialized.plan,
+              proposedTrackModels: proposedMaterialized.trackModels,
+              timeBounds: repairTimeBounds(
+                snapshot.repair.finding,
+                evaluationSongModel.tempoMap.map(({ time, bpm }) => ({ time, bpm })),
+                evaluationSongModel.meterMap.map(({ bar, meter }) => ({ bar, meter })),
+              ),
+            })
+          : null;
+        if (bounded && !bounded.outsideScopePreserved) {
+          phase = "analyzing";
+          throw new RepairScopeViolationError();
+        }
+        const materialized = bounded
+          ? {
+              ...proposedMaterialized,
+              plan: bounded.plan,
+              trackModels: bounded.trackModels,
+            }
+          : proposedMaterialized;
         materializedTrackModels = materialized.trackModels;
         materializedHarmonyDecisions = materialized.harmonyDecisions;
         evaluatedPlan = materialized.plan;
         evaluatedStyleSpec = materialized.styleSpec;
         const evaluatedAt = new Date().toISOString();
-        const providerWav = candidate.audioArtifact
+        // Provider audio is a whole-file result. A bounded repair may only use
+        // the canonically merged TrackModels unless a future provider supplies
+        // a verifiable regional audio splice contract.
+        const providerWav = candidate.audioArtifact && !snapshot.repair
           ? await ingestProviderAudio(candidate.audioArtifact)
           : null;
         const hasSymbolicTrackModels = materialized.trackModels.length > 0;
@@ -1305,9 +1355,36 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
             baseSeed: job.seed,
             seed: candidate.seed,
           },
+          ...(snapshot.repair
+            ? {
+                repair: {
+                  sourceCandidateId: snapshot.repair.sourceCandidateId,
+                  findingId: snapshot.repair.finding.id,
+                  seed: snapshot.repair.seed,
+                  attempt: job.attempt,
+                  maxAttempts: snapshot.repair.maxAttempts,
+                  scope: {
+                    affectedSections: snapshot.repair.finding.affectedSections,
+                    startBar: snapshot.repair.finding.startBar,
+                    endBar: snapshot.repair.finding.endBar,
+                    affectedTrackIds: snapshot.repair.finding.affectedTrackIds,
+                  },
+                  musicalReason: snapshot.repair.finding.musicalReason,
+                  outsideScopePreserved: true,
+                  sourceQualityScore: snapshot.repair.sourceScore,
+                  repairedQualityScore: musicCritic.score,
+                  improved: musicCritic.score > snapshot.repair.sourceScore,
+                },
+              }
+            : {}),
         };
         evaluationScore = musicCritic.score;
-        candidateStatus = "validated";
+        candidateStatus = snapshot.repair && musicCritic.score <= snapshot.repair.sourceScore
+          ? "repair_not_improved"
+          : "validated";
+        if (candidateStatus === "repair_not_improved") {
+          evaluation.status = "repair_not_improved";
+        }
         const artifactParentIds = [planArtifactId, ...candidateParentIds];
         artifactRows.push({
             id: audioArtifactId,
@@ -1422,7 +1499,9 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           if (index >= 0) unpublishedEvaluationUrls.splice(index, 1);
         }
         evaluation = {
-          status: phase === "analyzing" ? "analysis_failed" : "render_failed",
+          status: error instanceof RepairScopeViolationError
+            ? "repair_scope_violated"
+            : phase === "analyzing" ? "analysis_failed" : "render_failed",
           providerScore: candidate.score,
           renderArtifactIds: [],
           artifacts: [],
@@ -1435,6 +1514,28 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
             baseSeed: job.seed,
             seed: candidate.seed,
           },
+          ...(snapshot.repair
+            ? {
+                repair: {
+                  sourceCandidateId: snapshot.repair.sourceCandidateId,
+                  findingId: snapshot.repair.finding.id,
+                  seed: snapshot.repair.seed,
+                  attempt: job.attempt,
+                  maxAttempts: snapshot.repair.maxAttempts,
+                  scope: {
+                    affectedSections: snapshot.repair.finding.affectedSections,
+                    startBar: snapshot.repair.finding.startBar,
+                    endBar: snapshot.repair.finding.endBar,
+                    affectedTrackIds: snapshot.repair.finding.affectedTrackIds,
+                  },
+                  musicalReason: snapshot.repair.finding.musicalReason,
+                  outsideScopePreserved: !(error instanceof RepairScopeViolationError),
+                  sourceQualityScore: snapshot.repair.sourceScore,
+                  repairedQualityScore: null,
+                  improved: false,
+                },
+              }
+            : {}),
         };
       }
       candidateRows.push({
@@ -1679,6 +1780,65 @@ class ProviderIncompleteResultError extends Error {
       `${providerId} returned an incomplete candidate set: requested ${requested}, received ${received}`,
     );
   }
+}
+
+class RepairScopeViolationError extends Error {
+  constructor() {
+    super("Repair changed canonical content outside the critic-declared scope");
+  }
+}
+
+export async function queueCandidateRepair(
+  candidateId: string,
+  finding: CriticRepairFinding,
+  ownerId: string,
+  idempotencyKey?: string,
+) {
+  const [candidate] = await db
+    .select()
+    .from(musicGenerationCandidatesTable)
+    .where(eq(musicGenerationCandidatesTable.id, candidateId))
+    .limit(1);
+  if (
+    !candidate ||
+    candidate.status !== "validated" ||
+    !candidate.evaluatedPlan ||
+    !candidate.trackModels ||
+    !hasCompleteQualityEvidence(candidate.evaluation)
+  ) return null;
+  const [project] = await db
+    .select({ ownerId: musicProjectsTable.ownerId })
+    .from(musicProjectsTable)
+    .where(eq(musicProjectsTable.id, candidate.projectId))
+    .limit(1);
+  if (project?.ownerId !== ownerId) return null;
+  const normalizedFinding = normalizeRepairFinding(
+    finding,
+    candidate.evaluatedPlan,
+    candidate.trackModels,
+  );
+  const seed = Number.parseInt(
+    sha256(`${candidate.id}:${normalizedFinding.id}`).slice(0, 8),
+    16,
+  ) % 2_147_483_647;
+  return queueArrangementGeneration(candidate.arrangementId, {
+    candidates: 1,
+    provider: candidate.provider as MusicProviderId,
+    task: "ARRANGEMENT",
+    seed,
+    idempotencyKey: idempotencyKey?.trim() ||
+      `repair:${candidate.id}:${sha256(JSON.stringify(normalizedFinding)).slice(0, 24)}`,
+    parameters: { repairSourceCandidateId: candidate.id },
+    repair: {
+      sourceCandidateId: candidate.id,
+      sourceScore: candidate.evaluation.musicCritic!.score,
+      seed,
+      maxAttempts: MAX_REPAIR_ATTEMPTS,
+      finding: normalizedFinding,
+      plan: candidate.evaluatedPlan,
+      trackModels: candidate.trackModels,
+    },
+  }, ownerId);
 }
 
 export async function resumePendingGenerationJobs(): Promise<void> {

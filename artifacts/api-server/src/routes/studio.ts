@@ -78,6 +78,9 @@ import {
   RetryProjectDeletionResponse,
   RetryGenerationJobParams,
   RetryGenerationJobResponse,
+  RepairGenerationCandidateBody,
+  RepairGenerationCandidateParams,
+  RepairGenerationCandidateResponse,
   UpdateArrangementBody,
   UpdateArrangementParams,
   UpdateArrangementResponse,
@@ -169,6 +172,7 @@ import {
   listGenerationCandidatesForOwner,
   listProviderCatalog,
   queueArrangementGeneration,
+  queueCandidateRepair,
   retryGenerationJob,
   selectGenerationCandidate,
 } from "../lib/arrangementGeneration";
@@ -2629,6 +2633,45 @@ router.get(
         candidates.map(generationCandidateResponse),
       ),
     );
+  },
+);
+
+router.post(
+  "/generation-candidates/:candidateId/repair",
+  async (req, res): Promise<void> => {
+    if (!req.isAuthenticated()) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const params = RepairGenerationCandidateParams.safeParse(req.params);
+    const body = RepairGenerationCandidateBody.safeParse(req.body);
+    if (!params.success || !body.success) {
+      res.status(400).json({
+        error: !params.success ? params.error.message : body.success
+          ? "Invalid repair request"
+          : body.error.message,
+      });
+      return;
+    }
+    try {
+      const job = await queueCandidateRepair(
+        params.data.candidateId,
+        body.data.finding,
+        req.user.id,
+        body.data.idempotencyKey,
+      );
+      if (!job) {
+        res.status(404).json({ error: "Validated source candidate not found" });
+        return;
+      }
+      res.status(202).json(
+        RepairGenerationCandidateResponse.parse(generationJobResponse(job)),
+      );
+    } catch (error) {
+      res.status(422).json({
+        error: error instanceof Error ? error.message : "Repair request is invalid",
+      });
+    }
   },
 );
 
