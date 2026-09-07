@@ -138,5 +138,44 @@ class ControlledCancellationContractTests(unittest.TestCase):
         self.assertIsNone(error.__cause__)
 
 
+class ControlledStallContractTests(unittest.TestCase):
+    def test_started_marker_is_safe_and_emitted_before_stall(self):
+        events = []
+        lifecycle = FakeLifecycle(events)
+
+        class StallEntered(Exception):
+            pass
+
+        def observed_sleep(seconds):
+            events.append(("sleep", seconds))
+            raise StallEntered
+
+        with mock.patch.dict(os.environ, {"MODAL_IMAGE_ID": "im-Safe123"}), \
+             mock.patch("time.time", return_value=1000.0), \
+             mock.patch("time.sleep", side_effect=observed_sleep):
+            with self.assertRaises(StallEntered):
+                modal_compare.drill_retained_smoke_comparison.local(
+                    "stall", lifecycle
+                )
+
+        self.assertEqual(
+            events,
+            [
+                ("marker", "started"),
+                ("sleep", 120),
+            ],
+        )
+        self.assertEqual(
+            lifecycle.markers,
+            [
+                {
+                    "outcome": "started",
+                    "startedUnixSeconds": 1000.0,
+                    "modalImageId": "im-Safe123",
+                },
+            ],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
