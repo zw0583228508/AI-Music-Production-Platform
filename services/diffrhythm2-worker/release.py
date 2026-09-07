@@ -7,6 +7,7 @@ import hashlib
 import io
 import json
 import math
+import multiprocessing
 import os
 import queue
 import re
@@ -44,6 +45,7 @@ COMPARISON_APP_NAME = f"{APP_NAME}-comparison"
 COMPARISON_BURST_REQUESTS = max(3, COMPARISON_MAX_CONCURRENT_INPUTS + 1)
 COMPARISON_BURST_TIMEOUT_SECONDS = 600
 COMPARISON_CANCEL_TIMEOUT_SECONDS = 0.25
+COMPARISON_CANCEL_WORKER_START_BOUND_SECONDS = 5
 COMPARISON_STALL_START_BOUND_SECONDS = 60
 COMPARISON_CANCEL_ACK_BOUND_SECONDS = 30
 COMPARISON_RECOVERY_BOUND_SECONDS = 30
@@ -53,6 +55,94 @@ COMPARISON_CANCELLATION_SUITE_BOUND_SECONDS = (
     + COMPARISON_EXECUTION_STOP_BOUND_SECONDS
     + COMPARISON_RECOVERY_BOUND_SECONDS
 )
+
+
+def _cancel_modal_call(call_id: str, sender, _worker_args: tuple) -> None:
+    try:
+        sender.send("started")
+        modal.FunctionCall.from_id(call_id).cancel()
+        sender.send(True)
+    except Exception:
+        sender.send(False)
+    finally:
+        sender.close()
+
+
+def _run_cancel_workers_within_bound(
+    call_ids: list[str],
+    timeout_seconds: float,
+    worker_target=_cancel_modal_call,
+    worker_args: tuple = (),
+) -> list[bool]:
+    context = multiprocessing.get_context("spawn")
+    receivers = []
+    workers = []
+    try:
+        for call_id in call_ids:
+            receiver, sender = context.Pipe(duplex=False)
+            worker = context.Process(
+                target=worker_target, args=(call_id, sender, worker_args)
+            )
+            worker.daemon = True
+            worker.start()
+            sender.close()
+            receivers.append(receiver)
+            workers.append(worker)
+
+        startup_deadline = (
+            time.monotonic() + COMPARISON_CANCEL_WORKER_START_BOUND_SECONDS
+        )
+        started = []
+        for receiver in receivers:
+            remaining = startup_deadline - time.monotonic()
+            if remaining > 0 and receiver.poll(remaining):
+                try:
+                    started.append(receiver.recv() == "started")
+                except EOFError:
+                    started.append(False)
+            else:
+                started.append(False)
+
+        overall_deadline = time.monotonic() + timeout_seconds
+        cleanup_reserve = min(0.2, timeout_seconds / 2)
+        result_deadline = overall_deadline - cleanup_reserve
+        results = []
+        for receiver, worker_started in zip(receivers, started):
+            remaining = result_deadline - time.monotonic()
+            if worker_started and remaining > 0 and receiver.poll(remaining):
+                try:
+                    results.append(receiver.recv() is True)
+                except EOFError:
+                    results.append(False)
+            else:
+                results.append(False)
+        return results
+    finally:
+        if "overall_deadline" not in locals():
+            overall_deadline = time.monotonic() + timeout_seconds
+            cleanup_reserve = min(0.2, timeout_seconds / 2)
+        for receiver in receivers:
+            receiver.close()
+        for worker in workers:
+            if worker.is_alive():
+                worker.terminate()
+        termination_deadline = overall_deadline - cleanup_reserve / 2
+        for worker in workers:
+            worker.join(timeout=max(0, termination_deadline - time.monotonic()))
+        for worker in workers:
+            if worker.is_alive():
+                worker.kill()
+        for worker in workers:
+            worker.join(timeout=max(0, overall_deadline - time.monotonic()))
+
+
+def cancel_calls_within_bound(calls: list, timeout_seconds: float) -> list[bool]:
+    """Cancel call IDs in fresh clients and reap workers within a shared bound."""
+    return _run_cancel_workers_within_bound(
+        [str(call.object_id) for call in calls], timeout_seconds
+    )
+
+
 def canonical(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
@@ -454,7 +544,6 @@ def verify_comparison_burst(metadata: dict) -> dict:
     started = time.time()
     outcomes = []
     results = queue.Queue()
-    cancellations = queue.Queue()
     calls = {}
 
     def await_comparison(index: int, call) -> None:
@@ -462,13 +551,6 @@ def verify_comparison_burst(metadata: dict) -> dict:
             results.put((index, call.get()))
         except Exception:
             results.put((index, None))
-
-    def cancel_comparison(index: int, call) -> None:
-        try:
-            call.cancel()
-            cancellations.put((index, True))
-        except Exception:
-            cancellations.put((index, False))
 
     for index in range(COMPARISON_BURST_REQUESTS):
         try:
@@ -523,28 +605,14 @@ def verify_comparison_burst(metadata: dict) -> dict:
             "modalImageId": result.get("modalImageId", "") if valid else "",
         })
     cancellable = {index for index in pending if index in calls}
-    for index in cancellable:
-        call = calls.get(index)
-        threading.Thread(
-            target=cancel_comparison, args=(index, call), daemon=True
-        ).start()
-    cancellation_deadline = time.monotonic() + COMPARISON_CANCEL_TIMEOUT_SECONDS
     cancellation_failed = set(pending - cancellable)
-    awaiting_cancellation = set(cancellable)
-    while awaiting_cancellation:
-        remaining = cancellation_deadline - time.monotonic()
-        if remaining <= 0:
-            break
-        try:
-            index, succeeded = cancellations.get(timeout=remaining)
-        except queue.Empty:
-            break
-        if index not in awaiting_cancellation:
-            continue
-        awaiting_cancellation.remove(index)
+    cancellation_results = cancel_calls_within_bound(
+        [calls[index] for index in sorted(cancellable)],
+        COMPARISON_CANCEL_TIMEOUT_SECONDS,
+    )
+    for index, succeeded in zip(sorted(cancellable), cancellation_results):
         if not succeeded:
             cancellation_failed.add(index)
-    cancellation_failed.update(awaiting_cancellation)
     for index in pending:
         outcomes.append({
             "requestIndex": index,
@@ -672,15 +740,7 @@ def verify_cancelled_comparison_capacity(metadata: dict) -> dict:
     result = None
     probe = None
     cancellation_requested = time.time()
-    cancellation_results = queue.Queue()
     acknowledgement_results = queue.Queue()
-
-    def cancel_call(call) -> None:
-        try:
-            call.cancel()
-            cancellation_results.put(True)
-        except Exception:
-            cancellation_results.put(False)
 
     def await_cancellation(call, deadline: float) -> None:
         remaining = deadline - time.monotonic()
@@ -716,25 +776,11 @@ def verify_cancelled_comparison_capacity(metadata: dict) -> dict:
         if len(starts) == COMPARISON_MAX_CONCURRENT_INPUTS:
             cancellation_requested = time.time()
             cancellation_requests_started = True
-            for call in calls:
-                threading.Thread(
-                    target=cancel_call, args=(call,), daemon=True
-                ).start()
-            cancellation_deadline = (
-                time.monotonic() + COMPARISON_CANCEL_ACK_BOUND_SECONDS
+            cancellation_requests_succeeded = sum(
+                cancel_calls_within_bound(
+                    calls, COMPARISON_CANCEL_ACK_BOUND_SECONDS
+                )
             )
-            cancellation_requests_succeeded = 0
-            for _ in calls:
-                remaining = cancellation_deadline - time.monotonic()
-                if remaining <= 0:
-                    break
-                try:
-                    succeeded = cancellation_results.get(timeout=remaining)
-                except queue.Empty:
-                    break
-                if not succeeded:
-                    break
-                cancellation_requests_succeeded += 1
             if cancellation_requests_succeeded == len(calls):
                 acknowledgement_deadline = (
                     time.monotonic() + COMPARISON_CANCEL_ACK_BOUND_SECONDS
@@ -812,12 +858,9 @@ def verify_cancelled_comparison_capacity(metadata: dict) -> dict:
     atomic_json(EVIDENCE / "live-comparison-cancellation-proof.json", proof)
     if not valid:
         if not cancellation_requests_started:
-            for call in calls:
-                threading.Thread(
-                    target=cancel_call, args=(call,), daemon=True
-                ).start()
+            cancel_calls_within_bound(calls, COMPARISON_CANCEL_TIMEOUT_SECONDS)
         if probe is not None:
-            threading.Thread(target=cancel_call, args=(probe,), daemon=True).start()
+            cancel_calls_within_bound([probe], COMPARISON_CANCEL_TIMEOUT_SECONDS)
         raise RuntimeError(
             "cancelled comparison capacity was not released within the safe bound"
         ) from None
@@ -1035,15 +1078,7 @@ def verify_cancelled_comparison_batch_execution(metadata: dict) -> dict:
     cancellations_acknowledged = 0
     post_work_markers_observed = 0
     operational_failure = False
-    cancellation_results = queue.Queue()
     cancellation_requests_started = False
-
-    def cancel_call(call) -> None:
-        try:
-            call.cancel()
-            cancellation_results.put(True)
-        except Exception:
-            cancellation_results.put(False)
 
     with modal.Queue.ephemeral() as lifecycle:
         try:
@@ -1069,28 +1104,13 @@ def verify_cancelled_comparison_batch_execution(metadata: dict) -> dict:
                 starts.append(marker)
             if len(starts) == len(calls):
                 cancellation_requests_started = True
-                for call in calls:
-                    threading.Thread(
-                        target=cancel_call, args=(call,), daemon=True
-                    ).start()
-                cancellation_deadline = (
-                    time.monotonic() + COMPARISON_CANCEL_ACK_BOUND_SECONDS
+                cancellation_requests_succeeded = sum(
+                    cancel_calls_within_bound(
+                        calls, COMPARISON_CANCEL_ACK_BOUND_SECONDS
+                    )
                 )
-                cancellation_requests_succeeded = 0
-                for _ in calls:
-                    remaining = cancellation_deadline - time.monotonic()
-                    if remaining <= 0:
-                        operational_failure = True
-                        break
-                    try:
-                        succeeded = cancellation_results.get(timeout=remaining)
-                    except queue.Empty:
-                        operational_failure = True
-                        break
-                    if not succeeded:
-                        operational_failure = True
-                        break
-                    cancellation_requests_succeeded += 1
+                if cancellation_requests_succeeded != len(calls):
+                    operational_failure = True
                 if cancellation_requests_succeeded == len(calls):
                     acknowledgement_deadline = (
                         time.monotonic() + COMPARISON_CANCEL_ACK_BOUND_SECONDS
@@ -1148,10 +1168,7 @@ def verify_cancelled_comparison_batch_execution(metadata: dict) -> dict:
     )
     if not valid:
         if not cancellation_requests_started:
-            for call in calls:
-                threading.Thread(
-                    target=cancel_call, args=(call,), daemon=True
-                ).start()
+            cancel_calls_within_bound(calls, COMPARISON_CANCEL_TIMEOUT_SECONDS)
         raise RuntimeError(
             "cancelled comparison batch did not stop within the safe bound"
         ) from None
@@ -1236,15 +1253,7 @@ def verify_cancelled_comparison_drills(metadata: dict) -> tuple[dict, dict, dict
     result = None
     probe = None
     cancellation_requested = time.time()
-    cancellation_results = queue.Queue()
     cancellation_started = False
-
-    def cancel_call(call) -> None:
-        try:
-            call.cancel()
-            cancellation_results.put(True)
-        except Exception:
-            cancellation_results.put(False)
 
     with modal.Queue.ephemeral() as lifecycle:
         try:
@@ -1269,26 +1278,13 @@ def verify_cancelled_comparison_drills(metadata: dict) -> tuple[dict, dict, dict
             if len(starts) == len(calls):
                 cancellation_requested = time.time()
                 cancellation_started = True
-                for call in calls:
-                    threading.Thread(
-                        target=cancel_call, args=(call,), daemon=True
-                    ).start()
-                deadline = time.monotonic() + COMPARISON_CANCEL_ACK_BOUND_SECONDS
-                requests_succeeded = 0
-                for _ in calls:
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        operational_failure = True
-                        break
-                    try:
-                        succeeded = cancellation_results.get(timeout=remaining)
-                    except queue.Empty:
-                        operational_failure = True
-                        break
-                    if not succeeded:
-                        operational_failure = True
-                        break
-                    requests_succeeded += 1
+                requests_succeeded = sum(
+                    cancel_calls_within_bound(
+                        calls, COMPARISON_CANCEL_ACK_BOUND_SECONDS
+                    )
+                )
+                if requests_succeeded != len(calls):
+                    operational_failure = True
                 if requests_succeeded == len(calls):
                     acknowledgement_deadline = (
                         time.monotonic() + COMPARISON_CANCEL_ACK_BOUND_SECONDS
@@ -1323,10 +1319,7 @@ def verify_cancelled_comparison_drills(metadata: dict) -> tuple[dict, dict, dict
             operational_failure = True
         if calls and not cancellation_started:
             cancellation_started = True
-            for call in calls:
-                threading.Thread(
-                    target=cancel_call, args=(call,), daemon=True
-                ).start()
+            cancel_calls_within_bound(calls, COMPARISON_CANCEL_TIMEOUT_SECONDS)
 
     observed = time.time()
     image_ids = {marker["modalImageId"] for marker in starts}
