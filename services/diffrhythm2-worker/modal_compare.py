@@ -3,6 +3,10 @@ from __future__ import annotations
 
 import modal
 
+from comparison_resources import (
+    COMPARISON_CONTAINER_MEMORY_MIB,
+    COMPARISON_MAX_CONCURRENT_INPUTS,
+)
 from modal_config import (
     APP_NAME,
     DEPLOYMENT_BASE_IMAGE_ID,
@@ -34,6 +38,11 @@ image = (
         copy=True,
     )
     .add_local_file(
+        WORKER_ROOT / "comparison_resources.py",
+        remote_path="/app/comparison_resources.py",
+        copy=True,
+    )
+    .add_local_file(
         WORKER_ROOT / "release-evidence/known-good-short-smoke-proof.json",
         remote_path="/app/known-good-short-smoke-proof.json",
         copy=True,
@@ -55,8 +64,10 @@ smoke = modal.Volume.from_name(SMOKE_VOLUME_NAME, create_if_missing=False)
 @app.function(
     image=image,
     volumes={MODEL_MOUNT: models, SMOKE_MOUNT: smoke},
+    memory=COMPARISON_CONTAINER_MEMORY_MIB,
     timeout=600,
 )
+@modal.concurrent(max_inputs=COMPARISON_MAX_CONCURRENT_INPUTS)
 def refresh_retained_smoke_comparisons():
     import hashlib
     import json
@@ -77,7 +88,15 @@ def refresh_retained_smoke_comparisons():
             != proof.get("artifactSha256")
         ):
             raise RuntimeError("retained smoke bytes do not match their proof")
-        comparison = signal_comparison(fixture, output)
+        try:
+            comparison = signal_comparison(fixture, output)
+        except Exception:
+            # Modal queues work above max_inputs. If a queued comparison later
+            # fails, keep its error useful to operators without leaking paths,
+            # hashes, or audio metadata through an exception chain.
+            raise RuntimeError(
+                f"retained {label} comparison failed within the worker resource limit"
+            ) from None
         if not comparison["passesNotSourceCopy"]:
             raise RuntimeError("retained output remains copy-like")
         proof["signalComparison"] = comparison

@@ -20,6 +20,13 @@ ROOT=Path(__file__).parents[1]
 from scipy.signal import istft, stft
 from app import Generate
 from contract import MAX_DURATION_SECONDS
+from comparison_resources import (
+ COMPARISON_CONTAINER_MEMORY_MIB,
+ COMPARISON_CONTAINER_RESERVE_MIB,
+ COMPARISON_MAX_CONCURRENT_INPUTS,
+ COMPARISON_MEASURED_PEAK_MIB,
+ COMPARISON_PER_INPUT_BUDGET_MIB,
+)
 
 def music_fixture(kind,sample_rate,channels):
  time=np.arange(sample_rate*4,dtype=np.float64)/sample_rate
@@ -51,6 +58,36 @@ def decode_with_ffmpeg(source,target):
  )
 
 class DiffRhythmContract(unittest.TestCase):
+ def test_comparison_deployment_concurrency_fits_measured_memory_budget(self):
+  modal_compare=(ROOT/"modal_compare.py").read_text()
+  self.assertEqual(
+   COMPARISON_MEASURED_PEAK_MIB*1024*1024,
+   MAX_COMPARISON_WORKING_BYTES-MIN_COMPARISON_MEMORY_HEADROOM_BYTES,
+  )
+  self.assertEqual(
+   COMPARISON_PER_INPUT_BUDGET_MIB*1024*1024,
+   MAX_COMPARISON_WORKING_BYTES,
+  )
+  self.assertEqual(
+   COMPARISON_MAX_CONCURRENT_INPUTS,
+   (COMPARISON_CONTAINER_MEMORY_MIB-COMPARISON_CONTAINER_RESERVE_MIB)
+   // COMPARISON_PER_INPUT_BUDGET_MIB,
+  )
+  self.assertGreaterEqual(
+   COMPARISON_CONTAINER_MEMORY_MIB-COMPARISON_CONTAINER_RESERVE_MIB,
+   COMPARISON_MAX_CONCURRENT_INPUTS*COMPARISON_PER_INPUT_BUDGET_MIB,
+  )
+  self.assertLess(
+   COMPARISON_CONTAINER_MEMORY_MIB-COMPARISON_CONTAINER_RESERVE_MIB,
+   (COMPARISON_MAX_CONCURRENT_INPUTS+1)*COMPARISON_PER_INPUT_BUDGET_MIB,
+  )
+  self.assertIn("memory=COMPARISON_CONTAINER_MEMORY_MIB",modal_compare)
+  self.assertIn(
+   "@modal.concurrent(max_inputs=COMPARISON_MAX_CONCURRENT_INPUTS)",modal_compare,
+  )
+  self.assertIn('from None',modal_compare)
+  self.assertNotIn('raise RuntimeError(f"retained {label} comparison failed")',modal_compare)
+
  def test_api_and_provisioning_share_the_public_duration_ceiling(self):
   self.assertEqual(
    Generate.model_json_schema()["properties"]["duration"]["maximum"],
