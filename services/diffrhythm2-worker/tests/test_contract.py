@@ -5,6 +5,7 @@ import soundfile as sf
 from smoke import (
  COPY_LIKE_CORRELATION_THRESHOLD,
  COPY_LIKE_DIFFERENCE_THRESHOLD,
+ MAX_CHANNEL_PROJECTIONS,
  MAX_SUPPORTED_SMOKE_DURATION_SECONDS,
  signal_comparison,
 )
@@ -379,6 +380,52 @@ print(json.dumps({"elapsedSeconds":elapsed,"peakResidentMiB":peak_kib/1024,"resu
     )
    unrelated_result=signal_comparison(source,unrelated)
    self.assertTrue(unrelated_result["passesNotSourceCopy"])
+
+ def test_source_copy_detection_bounds_surround_and_malformed_channel_layouts(self):
+  sample_rate=8000
+  time=np.arange(sample_rate*2,dtype=np.float64)/sample_rate
+  copied=.44*np.sin(2*np.pi*(211*time+13*time*time))+.17*np.sin(2*np.pi*619*time)
+  unrelated=.37*np.sin(2*np.pi*(307*time+5*time*time))+.13*np.sin(2*np.pi*881*time)
+  cases=(("surround",6,8),("malformed",24,31))
+  with tempfile.TemporaryDirectory() as directory:
+   directory=Path(directory)
+   for label,source_channels,output_channels in cases:
+    source_audio=np.zeros((len(time),source_channels))
+    output_audio=np.zeros((len(time),output_channels))
+    source_audio[:,source_channels-1]=copied
+    output_audio[:,output_channels-1]=copied*.43
+    source_audio[:,:-1]=unrelated[:,None]*.01
+    output_audio[:,:-1]=unrelated[:,None]*.01
+    source=directory/f"{label}-source.wav"
+    output=directory/f"{label}-output.wav"
+    sf.write(source,source_audio,sample_rate,subtype="PCM_16")
+    sf.write(output,output_audio,sample_rate,subtype="PCM_16")
+    result=signal_comparison(source,output)
+    self.assertFalse(result["passesNotSourceCopy"],label)
+    self.assertLessEqual(
+     result["comparedProjectionPairs"],MAX_CHANNEL_PROJECTIONS**2,label,
+    )
+    policy=result["channelProjectionPolicy"]
+    self.assertEqual(policy["maximumPerAudio"],MAX_CHANNEL_PROJECTIONS)
+    self.assertIn(f"channel-{source_channels-1}",policy["sourceProjections"],label)
+    self.assertIn(f"channel-{output_channels-1}",policy["outputProjections"],label)
+
+ def test_source_copy_detection_keeps_stereo_projection_behavior(self):
+  sample_rate=8000
+  source_audio=music_fixture("melodic",sample_rate,2)
+  with tempfile.TemporaryDirectory() as directory:
+   directory=Path(directory)
+   source=directory/"source.wav"
+   swapped=directory/"swapped.wav"
+   sf.write(source,source_audio,sample_rate,subtype="PCM_16")
+   sf.write(swapped,source_audio[:,::-1],sample_rate,subtype="PCM_16")
+   result=signal_comparison(source,swapped)
+  self.assertFalse(result["passesNotSourceCopy"])
+  self.assertEqual(result["comparedProjectionPairs"],4)
+  self.assertEqual(
+   result["channelProjectionPolicy"]["sourceProjections"],
+   ["channel-0","channel-1"],
+  )
 
 def time_stretch(audio,rate):
  _,_,spectrum=stft(audio,nperseg=1024,noverlap=768)
