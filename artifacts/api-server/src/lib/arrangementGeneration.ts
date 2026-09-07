@@ -63,6 +63,7 @@ import {
 import {
   hasCompleteQualityEvidence,
   isSelectableCandidate,
+  publicCandidateEvaluation,
   rankEvaluatedCandidates,
 } from "./candidateRanking";
 import {
@@ -71,6 +72,7 @@ import {
   seedForCandidate,
   strategyForCandidate,
 } from "./candidateDiversity";
+import { evaluateCandidateMusicalFit } from "./candidateQuality";
 
 const sha256 = (value: string | Buffer): string =>
   createHash("sha256").update(value).digest("hex");
@@ -256,7 +258,9 @@ export const generationCandidateResponse = (
   parentArtifactIds: row.parentArtifactIds,
   plan: row.plan,
   trackModels: row.trackModels,
-  evaluation: row.evaluation,
+  // Historical candidates remain readable with an explicit null critic, while
+  // internal diversity fingerprints never cross the API boundary.
+  evaluation: publicCandidateEvaluation(row.evaluation),
   createdAt: row.createdAt.toISOString(),
 });
 
@@ -1205,6 +1209,12 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
               },
             )
           : pipeline.quality;
+        const musicCritic = evaluateCandidateMusicalFit({
+          songModel: evaluationSongModel,
+          plan: materialized.plan,
+          tracks: materialized.trackModels,
+          harmonyDecisions: materialized.harmonyDecisions,
+        });
         const candidateDuration =
           candidate.audioArtifact?.durationSeconds ?? pipeline.durationSeconds;
         const midi = hasSymbolicTrackModels
@@ -1266,6 +1276,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           runtimeProvenance: result.runtimeProvenance ?? null,
           providerScore: candidate.score,
           quality,
+          musicCritic,
         }, null, 2));
         const qualityUrl = await saveExportObject(
           `${objectPrefix}/quality-report.json`,
@@ -1286,6 +1297,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
             { id: qualityArtifactId, type: "QUALITY_REPORT", label: "Quality report", url: qualityUrl },
           ],
           qualityReport: quality,
+          musicCritic,
           error: null,
           strategy: {
             name: strategy,
@@ -1294,7 +1306,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
             seed: candidate.seed,
           },
         };
-        evaluationScore = quality.score;
+        evaluationScore = musicCritic.score;
         candidateStatus = "validated";
         const artifactParentIds = [planArtifactId, ...candidateParentIds];
         artifactRows.push({
@@ -1415,6 +1427,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           renderArtifactIds: [],
           artifacts: [],
           qualityReport: null,
+          musicCritic: null,
           error: error instanceof Error ? error.message : "Candidate evaluation failed",
           strategy: {
             name: strategy,
@@ -1473,7 +1486,11 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
     }
     const acceptedFingerprints: Array<{ id: string; fingerprint: ReturnType<typeof fingerprintCandidate> }> = [];
     for (const candidate of candidateRows) {
-      if (!candidate.evaluatedPlan || !candidate.trackModels) continue;
+      if (
+        !candidate.evaluatedPlan ||
+        !candidate.trackModels ||
+        !hasCompleteQualityEvidence(candidate.evaluation)
+      ) continue;
       const evidence = diversityEvidence(
         fingerprintCandidate(candidate.evaluatedPlan, candidate.trackModels),
         acceptedFingerprints,

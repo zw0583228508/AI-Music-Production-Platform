@@ -9,6 +9,7 @@ import type { CandidateEvaluationArtifactsItem } from './candidateEvaluationArti
 import type { CandidateEvaluationDiversity } from './candidateEvaluationDiversity';
 import type { CandidateEvaluationStatus } from './candidateEvaluationStatus';
 import type { CandidateEvaluationStrategy } from './candidateEvaluationStrategy';
+import type { CandidateMusicCriticReport } from './candidateMusicCriticReport';
 import type { CandidateQualityReport } from './candidateQualityReport';
 
 export interface CandidateEvaluation {
@@ -17,6 +18,7 @@ export interface CandidateEvaluation {
   renderArtifactIds: string[];
   artifacts: CandidateEvaluationArtifactsItem[];
   qualityReport: CandidateQualityReport | null;
+  musicCritic: CandidateMusicCriticReport | null;
   /** @nullable */
   error: string | null;
   strategy?: CandidateEvaluationStrategy;

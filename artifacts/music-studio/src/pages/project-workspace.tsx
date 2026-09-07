@@ -1368,7 +1368,8 @@ export default function ProjectWorkspace() {
                    <div className="space-y-4">
                       {generationCandidates.map((candidate: GenerationCandidate) => {
                         const quality = candidate.evaluation.qualityReport;
-                        const evaluated = candidate.evaluation.status === "evaluated" && quality;
+                         const critic = candidate.evaluation.musicCritic;
+                         const evaluated = candidate.evaluation.status === "evaluated" && quality && critic;
                         return (
                           <Card key={candidate.id} className="group hover:border-primary/50 transition-colors shadow-sm">
                             <CardContent className="p-4 space-y-4">
@@ -1380,8 +1381,8 @@ export default function ProjectWorkspace() {
                                       ? "bg-primary/10 text-primary"
                                       : "bg-destructive/10 text-destructive",
                                   )}>
-                                    <span>{Math.round(candidate.score * 100)}</span>
-                                    <span className="text-[8px] font-sans font-medium uppercase">quality</span>
+                                    <span>{critic ? Math.round(critic.score * 100) : "—"}</span>
+                                    <span className="text-[8px] font-sans font-medium uppercase">fit</span>
                                   </div>
                                   <div>
                                     <div className="flex flex-wrap items-center gap-2">
@@ -1467,6 +1468,29 @@ export default function ProjectWorkspace() {
                               </div>
                               {evaluated ? (
                                 <div className="grid gap-3 border-t pt-3 text-xs sm:grid-cols-2">
+                                  <div className="sm:col-span-2">
+                                    <div className="font-medium text-foreground">Music Critic</div>
+                                    <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                                      {Object.entries(critic.dimensions).map(([name, dimension]) => (
+                                        <div key={name} className="rounded-md border bg-card p-2">
+                                          <div className="flex items-center justify-between gap-2">
+                                            <span className="font-medium capitalize">{name.replace(/([A-Z])/g, " $1")}</span>
+                                            <Badge variant={dimension.status === "failed" ? "destructive" : "outline"}>
+                                              {dimension.status === "available" && dimension.score !== null
+                                                ? `${Math.round(dimension.score * 100)}`
+                                                : dimension.status}
+                                            </Badge>
+                                          </div>
+                                          <p className="mt-1 text-[10px] text-muted-foreground">{dimension.explanation}</p>
+                                          {dimension.evidence.map((item, index) => (
+                                            <p key={`${item.source}-${index}`} className="mt-1 text-[10px] text-muted-foreground">
+                                              {item.summary}
+                                            </p>
+                                          ))}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
                                   <div>
                                     <div className="font-medium text-foreground">Strongest dimensions</div>
                                     <div className="mt-1 text-muted-foreground">

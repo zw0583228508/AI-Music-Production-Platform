@@ -1,4 +1,5 @@
 import type { CandidateEvaluation } from "@workspace/db";
+import { musicCriticDimensions } from "./candidateQuality";
 
 const requiredQualityChecks = [
   "silence",
@@ -8,6 +9,23 @@ const requiredQualityChecks = [
   "sectionCoverage",
   "lineage",
 ];
+
+export function publicCandidateEvaluation(evaluation: CandidateEvaluation) {
+  const { fingerprint: _fingerprint, ...publicDiversity } =
+    evaluation.diversity ?? {
+      fingerprint: undefined,
+      comparedToCandidateId: null,
+      distance: null,
+      threshold: 0.25,
+      rejected: false,
+      reason: "baseline_retained" as const,
+    };
+  return {
+    ...evaluation,
+    musicCritic: evaluation.musicCritic ?? null,
+    ...(evaluation.diversity ? { diversity: publicDiversity } : {}),
+  };
+}
 
 /**
  * A provider score is only a preference, not independent evidence. A candidate
@@ -21,6 +39,7 @@ export function hasCompleteQualityEvidence(evaluation: CandidateEvaluation): boo
     evaluation.diversity?.rejected ||
     evaluation.error !== null ||
     !evaluation.qualityReport ||
+    !evaluation.musicCritic ||
     !evaluation.qualityReport.lineageComplete
   ) return false;
   const renderArtifactIds = new Set(evaluation.renderArtifactIds);
@@ -45,6 +64,17 @@ export function hasCompleteQualityEvidence(evaluation: CandidateEvaluation): boo
   ) return false;
   const report = evaluation.qualityReport;
   return Number.isFinite(report.score) &&
+    Number.isFinite(evaluation.musicCritic.score) &&
+    musicCriticDimensions.every((name) => {
+      const dimension = evaluation.musicCritic?.dimensions[name];
+      return Boolean(
+        dimension &&
+        dimension.status !== "failed" &&
+        (dimension.status === "unavailable"
+          ? dimension.score === null
+          : Number.isFinite(dimension.score)),
+      );
+    }) &&
     !Number.isNaN(Date.parse(report.evaluatedAt)) &&
     report.renderArtifactIds.length === renderArtifactIds.size &&
     report.renderArtifactIds.every((id) => renderArtifactIds.has(id)) &&
@@ -81,7 +111,7 @@ export function isSelectableCandidate(candidate: {
 }
 
 export function rankEvaluatedCandidates<
-  T extends { score: number; evaluation: CandidateEvaluation },
+  T extends { id?: string; score: number; evaluation: CandidateEvaluation },
 >(candidates: T[]): Array<T & { rank: number | null }> {
   let nextRank = 1;
   return [...candidates]
@@ -89,8 +119,10 @@ export function rankEvaluatedCandidates<
       const leftEvaluated = hasCompleteQualityEvidence(left.evaluation) ? 1 : 0;
       const rightEvaluated = hasCompleteQualityEvidence(right.evaluation) ? 1 : 0;
       return rightEvaluated - leftEvaluated ||
-        right.score - left.score ||
-        right.evaluation.providerScore - left.evaluation.providerScore;
+        (right.evaluation.musicCritic?.score ?? -1) -
+          (left.evaluation.musicCritic?.score ?? -1) ||
+        right.evaluation.providerScore - left.evaluation.providerScore ||
+        (left.id ?? "").localeCompare(right.id ?? "");
     })
     .map((candidate) => {
       const rank = hasCompleteQualityEvidence(candidate.evaluation)

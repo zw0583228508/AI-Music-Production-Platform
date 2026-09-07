@@ -6,7 +6,4 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type CandidateEvaluationDiversityFingerprintDensityEnergyItem = {
-  density: number;
-  energy: number;
-};
+export type CandidateMusicCriticEvidenceObservations = {[key: string]: string | number | boolean};

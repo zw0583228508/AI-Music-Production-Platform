@@ -172,6 +172,7 @@ import {
   retryGenerationJob,
   selectGenerationCandidate,
 } from "../lib/arrangementGeneration";
+import { publicCandidateEvaluation } from "../lib/candidateRanking";
 import { revisionSummary } from "../lib/arrangementRevisions";
 
 const router: IRouter = Router();
@@ -514,6 +515,14 @@ const arrangementResponse = (
   arrangement: typeof arrangementsTable.$inferSelect,
 ) => ({
   ...arrangement,
+  generationProvenance: arrangement.generationProvenance
+    ? {
+        ...arrangement.generationProvenance,
+        evaluation: publicCandidateEvaluation(
+          arrangement.generationProvenance.evaluation,
+        ),
+      }
+    : arrangement.generationProvenance,
   createdAt: iso(arrangement.createdAt),
 });
 

@@ -5,11 +5,9 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
-import type { CandidateEvaluationDiversityFingerprint } from './candidateEvaluationDiversityFingerprint';
 import type { CandidateEvaluationDiversityReason } from './candidateEvaluationDiversityReason';
 
 export type CandidateEvaluationDiversity = {
-  fingerprint: CandidateEvaluationDiversityFingerprint;
   /** @nullable */
   comparedToCandidateId: string | null;
   /** @nullable */

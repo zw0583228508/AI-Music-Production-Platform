@@ -1059,6 +1059,7 @@ export const musicGenerationCandidatesTable = pgTable(
         renderArtifactIds: [],
         artifacts: [],
         qualityReport: null,
+        musicCritic: null,
         error: null,
       }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -1291,6 +1292,7 @@ export type CandidateEvaluation = {
   renderArtifactIds: string[];
   artifacts: CandidateEvaluationArtifact[];
   qualityReport: CandidateQualityReport | null;
+  musicCritic: CandidateMusicCriticReport | null;
   error: string | null;
   strategy?: CandidateStrategyEvidence;
   diversity?: CandidateDiversityEvidence;
@@ -1328,6 +1330,44 @@ export type CandidateQualityReport = {
   evaluatedAt: string;
   renderArtifactIds: string[];
   lineageComplete: boolean;
+};
+
+export type CandidateMusicCriticDimension =
+  | "vocalFit"
+  | "harmony"
+  | "development"
+  | "contrastAndTransitions"
+  | "registerCollisions"
+  | "playability"
+  | "repetition"
+  | "styleAndControlAdherence";
+
+export type CandidateMusicCriticEvidence = {
+  source:
+    | "vocal_activity"
+    | "harmony_decisions"
+    | "section_plan"
+    | "track_notes"
+    | "instrument_constraints"
+    | "style_and_directives";
+  summary: string;
+  observations: Record<string, string | number | boolean>;
+};
+
+export type CandidateMusicCriticDimensionResult = {
+  status: "available" | "unavailable" | "failed";
+  score: number | null;
+  evidence: CandidateMusicCriticEvidence[];
+  explanation: string;
+};
+
+export type CandidateMusicCriticReport = {
+  version: "music-critic-v1";
+  score: number;
+  dimensions: Record<
+    CandidateMusicCriticDimension,
+    CandidateMusicCriticDimensionResult
+  >;
 };
 
 export type CandidateEvaluationArtifact = {

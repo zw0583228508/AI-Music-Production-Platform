@@ -568,6 +568,33 @@ export const getProjectResponseArrangementsItemSectionsItemTransposeSemitonesMax
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationQualityReportOneScoreMin = 0;
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
 
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneScoreMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneScoreMax = 1;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
+
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationStrategyIndexMin = 0;
 
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationStrategyBaseSeedMin = 0;
@@ -726,6 +753,92 @@ export const GetProjectResponse = zod.object({
   "renderArtifactIds": zod.array(zod.string()),
   "lineageComplete": zod.boolean()
 }),zod.null()]),
+  "musicCritic": zod.union([zod.object({
+  "version": zod.literal("music-critic-v1"),
+  "score": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneScoreMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneScoreMax),
+  "dimensions": zod.object({
+  "vocalFit": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "harmony": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "development": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "contrastAndTransitions": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "registerCollisions": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "playability": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "repetition": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "styleAndControlAdherence": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+})
+})
+}),zod.null()]),
   "error": zod.string().nullable(),
   "strategy": zod.object({
   "name": zod.enum(['sparse', 'balanced', 'rhythmic', 'harmonic', 'orchestral']),
@@ -734,16 +847,6 @@ export const GetProjectResponse = zod.object({
   "seed": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationStrategySeedMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationStrategySeedMax)
 }).optional(),
   "diversity": zod.object({
-  "fingerprint": zod.object({
-  "activeTracks": zod.array(zod.string()),
-  "densityEnergy": zod.array(zod.object({
-  "density": zod.number(),
-  "energy": zod.number()
-})),
-  "harmonySequence": zod.array(zod.string()),
-  "trackRoleInstruments": zod.array(zod.string()),
-  "noteShape": zod.array(zod.number())
-}),
   "comparedToCandidateId": zod.string().nullable(),
   "distance": zod.number().nullable(),
   "threshold": zod.literal(0.25),
@@ -2962,6 +3065,33 @@ export const listArrangementsResponseSectionsItemTransposeSemitonesMax = 24;
 export const listArrangementsResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin = 0;
 export const listArrangementsResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
 
+export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMax = 1;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
+
 export const listArrangementsResponseGenerationProvenanceOneEvaluationStrategyIndexMin = 0;
 
 export const listArrangementsResponseGenerationProvenanceOneEvaluationStrategyBaseSeedMin = 0;
@@ -3076,6 +3206,92 @@ export const ListArrangementsResponseItem = zod.object({
   "renderArtifactIds": zod.array(zod.string()),
   "lineageComplete": zod.boolean()
 }),zod.null()]),
+  "musicCritic": zod.union([zod.object({
+  "version": zod.literal("music-critic-v1"),
+  "score": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMax),
+  "dimensions": zod.object({
+  "vocalFit": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "harmony": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "development": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "contrastAndTransitions": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "registerCollisions": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "playability": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "repetition": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "styleAndControlAdherence": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+})
+})
+}),zod.null()]),
   "error": zod.string().nullable(),
   "strategy": zod.object({
   "name": zod.enum(['sparse', 'balanced', 'rhythmic', 'harmonic', 'orchestral']),
@@ -3084,16 +3300,6 @@ export const ListArrangementsResponseItem = zod.object({
   "seed": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationStrategySeedMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationStrategySeedMax)
 }).optional(),
   "diversity": zod.object({
-  "fingerprint": zod.object({
-  "activeTracks": zod.array(zod.string()),
-  "densityEnergy": zod.array(zod.object({
-  "density": zod.number(),
-  "energy": zod.number()
-})),
-  "harmonySequence": zod.array(zod.string()),
-  "trackRoleInstruments": zod.array(zod.string()),
-  "noteShape": zod.array(zod.number())
-}),
   "comparedToCandidateId": zod.string().nullable(),
   "distance": zod.number().nullable(),
   "threshold": zod.literal(0.25),
@@ -3161,6 +3367,33 @@ export const createArrangementResponseSectionsItemTransposeSemitonesMax = 24;
 
 export const createArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin = 0;
 export const createArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMax = 1;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
 
 export const createArrangementResponseGenerationProvenanceOneEvaluationStrategyIndexMin = 0;
 
@@ -3276,6 +3509,92 @@ export const CreateArrangementResponse = zod.object({
   "renderArtifactIds": zod.array(zod.string()),
   "lineageComplete": zod.boolean()
 }),zod.null()]),
+  "musicCritic": zod.union([zod.object({
+  "version": zod.literal("music-critic-v1"),
+  "score": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMin).max(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMax),
+  "dimensions": zod.object({
+  "vocalFit": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMin).max(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "harmony": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin).max(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "development": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMin).max(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "contrastAndTransitions": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin).max(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "registerCollisions": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMin).max(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "playability": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin).max(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "repetition": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMin).max(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "styleAndControlAdherence": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin).max(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+})
+})
+}),zod.null()]),
   "error": zod.string().nullable(),
   "strategy": zod.object({
   "name": zod.enum(['sparse', 'balanced', 'rhythmic', 'harmonic', 'orchestral']),
@@ -3284,16 +3603,6 @@ export const CreateArrangementResponse = zod.object({
   "seed": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationStrategySeedMin).max(createArrangementResponseGenerationProvenanceOneEvaluationStrategySeedMax)
 }).optional(),
   "diversity": zod.object({
-  "fingerprint": zod.object({
-  "activeTracks": zod.array(zod.string()),
-  "densityEnergy": zod.array(zod.object({
-  "density": zod.number(),
-  "energy": zod.number()
-})),
-  "harmonySequence": zod.array(zod.string()),
-  "trackRoleInstruments": zod.array(zod.string()),
-  "noteShape": zod.array(zod.number())
-}),
   "comparedToCandidateId": zod.string().nullable(),
   "distance": zod.number().nullable(),
   "threshold": zod.literal(0.25),
@@ -3458,6 +3767,33 @@ export const updateArrangementResponseSectionsItemTransposeSemitonesMax = 24;
 export const updateArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin = 0;
 export const updateArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
 
+export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMax = 1;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
+
 export const updateArrangementResponseGenerationProvenanceOneEvaluationStrategyIndexMin = 0;
 
 export const updateArrangementResponseGenerationProvenanceOneEvaluationStrategyBaseSeedMin = 0;
@@ -3572,6 +3908,92 @@ export const UpdateArrangementResponse = zod.object({
   "renderArtifactIds": zod.array(zod.string()),
   "lineageComplete": zod.boolean()
 }),zod.null()]),
+  "musicCritic": zod.union([zod.object({
+  "version": zod.literal("music-critic-v1"),
+  "score": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMax),
+  "dimensions": zod.object({
+  "vocalFit": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "harmony": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "development": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "contrastAndTransitions": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "registerCollisions": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "playability": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "repetition": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "styleAndControlAdherence": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+})
+})
+}),zod.null()]),
   "error": zod.string().nullable(),
   "strategy": zod.object({
   "name": zod.enum(['sparse', 'balanced', 'rhythmic', 'harmonic', 'orchestral']),
@@ -3580,16 +4002,6 @@ export const UpdateArrangementResponse = zod.object({
   "seed": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationStrategySeedMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationStrategySeedMax)
 }).optional(),
   "diversity": zod.object({
-  "fingerprint": zod.object({
-  "activeTracks": zod.array(zod.string()),
-  "densityEnergy": zod.array(zod.object({
-  "density": zod.number(),
-  "energy": zod.number()
-})),
-  "harmonySequence": zod.array(zod.string()),
-  "trackRoleInstruments": zod.array(zod.string()),
-  "noteShape": zod.array(zod.number())
-}),
   "comparedToCandidateId": zod.string().nullable(),
   "distance": zod.number().nullable(),
   "threshold": zod.literal(0.25),
@@ -3779,6 +4191,33 @@ export const restoreArrangementRevisionResponseSectionsItemTransposeSemitonesMax
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin = 0;
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
 
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMax = 1;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
+
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationStrategyIndexMin = 0;
 
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationStrategyBaseSeedMin = 0;
@@ -3893,6 +4332,92 @@ export const RestoreArrangementRevisionResponse = zod.object({
   "renderArtifactIds": zod.array(zod.string()),
   "lineageComplete": zod.boolean()
 }),zod.null()]),
+  "musicCritic": zod.union([zod.object({
+  "version": zod.literal("music-critic-v1"),
+  "score": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMax),
+  "dimensions": zod.object({
+  "vocalFit": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "harmony": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "development": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "contrastAndTransitions": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "registerCollisions": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "playability": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "repetition": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "styleAndControlAdherence": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+})
+})
+}),zod.null()]),
   "error": zod.string().nullable(),
   "strategy": zod.object({
   "name": zod.enum(['sparse', 'balanced', 'rhythmic', 'harmonic', 'orchestral']),
@@ -3901,16 +4426,6 @@ export const RestoreArrangementRevisionResponse = zod.object({
   "seed": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationStrategySeedMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationStrategySeedMax)
 }).optional(),
   "diversity": zod.object({
-  "fingerprint": zod.object({
-  "activeTracks": zod.array(zod.string()),
-  "densityEnergy": zod.array(zod.object({
-  "density": zod.number(),
-  "energy": zod.number()
-})),
-  "harmonySequence": zod.array(zod.string()),
-  "trackRoleInstruments": zod.array(zod.string()),
-  "noteShape": zod.array(zod.number())
-}),
   "comparedToCandidateId": zod.string().nullable(),
   "distance": zod.number().nullable(),
   "threshold": zod.literal(0.25),
@@ -4358,6 +4873,33 @@ export const listGenerationCandidatesResponseHarmonyDecisionsItemBassSupportEvid
 export const listGenerationCandidatesResponseEvaluationQualityReportOneScoreMin = 0;
 export const listGenerationCandidatesResponseEvaluationQualityReportOneScoreMax = 1;
 
+export const listGenerationCandidatesResponseEvaluationMusicCriticOneScoreMin = 0;
+export const listGenerationCandidatesResponseEvaluationMusicCriticOneScoreMax = 1;
+
+export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsVocalFitScoreMin = 0;
+export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
+
+export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
+export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsDevelopmentScoreMin = 0;
+export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
+
+export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
+export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMin = 0;
+export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
+
+export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
+export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsRepetitionScoreMin = 0;
+export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
+
+export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
+export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
+
 export const listGenerationCandidatesResponseEvaluationStrategyIndexMin = 0;
 
 export const listGenerationCandidatesResponseEvaluationStrategyBaseSeedMin = 0;
@@ -4633,6 +5175,92 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "renderArtifactIds": zod.array(zod.string()),
   "lineageComplete": zod.boolean()
 }),zod.null()]),
+  "musicCritic": zod.union([zod.object({
+  "version": zod.literal("music-critic-v1"),
+  "score": zod.number().min(listGenerationCandidatesResponseEvaluationMusicCriticOneScoreMin).max(listGenerationCandidatesResponseEvaluationMusicCriticOneScoreMax),
+  "dimensions": zod.object({
+  "vocalFit": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsVocalFitScoreMin).max(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsVocalFitScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "harmony": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsHarmonyScoreMin).max(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsHarmonyScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "development": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsDevelopmentScoreMin).max(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsDevelopmentScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "contrastAndTransitions": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin).max(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "registerCollisions": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMin).max(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "playability": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsPlayabilityScoreMin).max(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsPlayabilityScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "repetition": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsRepetitionScoreMin).max(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsRepetitionScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "styleAndControlAdherence": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin).max(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+})
+})
+}),zod.null()]),
   "error": zod.string().nullable(),
   "strategy": zod.object({
   "name": zod.enum(['sparse', 'balanced', 'rhythmic', 'harmonic', 'orchestral']),
@@ -4641,16 +5269,6 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "seed": zod.number().min(listGenerationCandidatesResponseEvaluationStrategySeedMin).max(listGenerationCandidatesResponseEvaluationStrategySeedMax)
 }).optional(),
   "diversity": zod.object({
-  "fingerprint": zod.object({
-  "activeTracks": zod.array(zod.string()),
-  "densityEnergy": zod.array(zod.object({
-  "density": zod.number(),
-  "energy": zod.number()
-})),
-  "harmonySequence": zod.array(zod.string()),
-  "trackRoleInstruments": zod.array(zod.string()),
-  "noteShape": zod.array(zod.number())
-}),
   "comparedToCandidateId": zod.string().nullable(),
   "distance": zod.number().nullable(),
   "threshold": zod.literal(0.25),
@@ -4705,6 +5323,33 @@ export const selectGenerationCandidateResponseSectionsItemTransposeSemitonesMax 
 
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin = 0;
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMax = 1;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
 
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationStrategyIndexMin = 0;
 
@@ -4820,6 +5465,92 @@ export const SelectGenerationCandidateResponse = zod.object({
   "renderArtifactIds": zod.array(zod.string()),
   "lineageComplete": zod.boolean()
 }),zod.null()]),
+  "musicCritic": zod.union([zod.object({
+  "version": zod.literal("music-critic-v1"),
+  "score": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneScoreMax),
+  "dimensions": zod.object({
+  "vocalFit": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "harmony": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "development": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "contrastAndTransitions": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "registerCollisions": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "playability": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "repetition": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+}),
+  "styleAndControlAdherence": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax).nullable(),
+  "evidence": zod.array(zod.object({
+  "source": zod.enum(['vocal_activity', 'harmony_decisions', 'section_plan', 'track_notes', 'instrument_constraints', 'style_and_directives']),
+  "summary": zod.string(),
+  "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
+})),
+  "explanation": zod.string()
+})
+})
+}),zod.null()]),
   "error": zod.string().nullable(),
   "strategy": zod.object({
   "name": zod.enum(['sparse', 'balanced', 'rhythmic', 'harmonic', 'orchestral']),
@@ -4828,16 +5559,6 @@ export const SelectGenerationCandidateResponse = zod.object({
   "seed": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationStrategySeedMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationStrategySeedMax)
 }).optional(),
   "diversity": zod.object({
-  "fingerprint": zod.object({
-  "activeTracks": zod.array(zod.string()),
-  "densityEnergy": zod.array(zod.object({
-  "density": zod.number(),
-  "energy": zod.number()
-})),
-  "harmonySequence": zod.array(zod.string()),
-  "trackRoleInstruments": zod.array(zod.string()),
-  "noteShape": zod.array(zod.number())
-}),
   "comparedToCandidateId": zod.string().nullable(),
   "distance": zod.number().nullable(),
   "threshold": zod.literal(0.25),
