@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import concurrent.futures
 import hashlib
 import io
 import json
@@ -21,6 +22,7 @@ from urllib.parse import urlsplit
 import modal
 
 from modal_config import APP_NAME, PROMOTION_SECRET_NAME
+from comparison_resources import COMPARISON_MAX_CONCURRENT_INPUTS
 
 ROOT = Path(__file__).resolve().parent
 WORKSPACE = ROOT.parents[1]
@@ -32,6 +34,9 @@ RESEARCH_LICENSE = (
     "Apache-2.0 source and DiffRhythm2 weights; "
     "CC-BY-NC-4.0 MuQ-MuLan and MuQ weights"
 )
+COMPARISON_APP_NAME = f"{APP_NAME}-comparison"
+COMPARISON_BURST_REQUESTS = max(3, COMPARISON_MAX_CONCURRENT_INPUTS + 1)
+COMPARISON_BURST_TIMEOUT_SECONDS = 600
 
 
 def canonical(value: object) -> str:
@@ -119,6 +124,39 @@ def observe() -> dict:
         if re.fullmatch(pattern, metadata[field]) is None:
             raise ValueError(f"invalid observed {field}")
     return metadata
+
+
+def observe_comparison() -> dict:
+    apps = modal_json("app", "list", "--json")
+    matches = [
+        item
+        for item in apps
+        if isinstance(item, dict)
+        and item.get("description") == COMPARISON_APP_NAME
+        and item.get("state") == "deployed"
+    ]
+    if len(matches) != 1:
+        raise ValueError("expected exactly one deployed DiffRhythm2 comparison app")
+    app_id = str(matches[0]["app_id"])
+    history = modal_json("app", "history", app_id, "--json")
+    if not isinstance(history, list) or not history:
+        raise ValueError("DiffRhythm2 comparison deployment history is empty")
+    function = modal.Function.from_name(
+        COMPARISON_APP_NAME, "drill_retained_smoke_comparison"
+    )
+    function.hydrate()
+    identity = {
+        "modalAppId": app_id,
+        "modalDeploymentId": str(history[0]["version"]),
+        "modalFunctionId": function.object_id,
+    }
+    if (
+        re.fullmatch(r"ap-[A-Za-z0-9]+", identity["modalAppId"]) is None
+        or re.fullmatch(r"v[1-9][0-9]*", identity["modalDeploymentId"]) is None
+        or re.fullmatch(r"fu-[A-Za-z0-9]+", identity["modalFunctionId"]) is None
+    ):
+        raise ValueError("DiffRhythm2 comparison deployment identity is invalid")
+    return identity
 
 
 def install_identity(metadata: dict) -> None:
@@ -383,6 +421,181 @@ def validate_generation_proof(proof: dict, metadata: dict, health: dict) -> None
         raise ValueError("DiffRhythm2 retained generation audio evidence is invalid")
 
 
+def verify_comparison_burst(metadata: dict) -> dict:
+    identity = observe_comparison()
+    comparison = modal.Function.from_name(
+        COMPARISON_APP_NAME, "drill_retained_smoke_comparison"
+    )
+    started = time.time()
+    outcomes = []
+    executor = concurrent.futures.ThreadPoolExecutor(
+        max_workers=COMPARISON_BURST_REQUESTS
+    )
+    futures = {
+        executor.submit(comparison.remote): index
+        for index in range(COMPARISON_BURST_REQUESTS)
+    }
+    try:
+        for future in concurrent.futures.as_completed(
+            futures, timeout=COMPARISON_BURST_TIMEOUT_SECONDS
+        ):
+            index = futures[future]
+            try:
+                result = future.result()
+                valid = (
+                    isinstance(result, dict)
+                    and result.get("outcome") == "completed"
+                    and isinstance(result.get("startedUnixSeconds"), (int, float))
+                    and isinstance(result.get("finishedUnixSeconds"), (int, float))
+                    and result["startedUnixSeconds"] <= result["finishedUnixSeconds"]
+                    and (
+                        result["finishedUnixSeconds"] - result["startedUnixSeconds"]
+                        <= COMPARISON_BURST_TIMEOUT_SECONDS
+                    )
+                    and result.get("modalImageId")
+                    and set(result) == {
+                        "outcome", "startedUnixSeconds", "finishedUnixSeconds",
+                        "modalImageId",
+                    }
+                )
+                outcomes.append({
+                    "requestIndex": index,
+                    "outcome": "completed" if valid else "failed",
+                    "startedUnixSeconds": (
+                        float(result["startedUnixSeconds"]) if valid else time.time()
+                    ),
+                    "finishedUnixSeconds": (
+                        float(result["finishedUnixSeconds"]) if valid else time.time()
+                    ),
+                    "modalImageId": result.get("modalImageId", "") if valid else "",
+                })
+            except Exception:
+                outcomes.append({
+                    "requestIndex": index,
+                    "outcome": "failed",
+                    "startedUnixSeconds": time.time(),
+                    "finishedUnixSeconds": time.time(),
+                    "modalImageId": "",
+                })
+    except TimeoutError:
+        completed = {item["requestIndex"] for item in outcomes}
+        for index in range(COMPARISON_BURST_REQUESTS):
+            if index not in completed:
+                outcomes.append({
+                    "requestIndex": index,
+                    "outcome": "timeout",
+                    "startedUnixSeconds": started,
+                    "finishedUnixSeconds": started + COMPARISON_BURST_TIMEOUT_SECONDS,
+                    "modalImageId": "",
+                })
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+    completed = [
+        item for item in outcomes if item["outcome"] == "completed"
+    ]
+    image_ids = {item["modalImageId"] for item in completed}
+    ordered = sorted(completed, key=lambda item: item["startedUnixSeconds"])
+    queue_observed = (
+        len(ordered) == COMPARISON_BURST_REQUESTS
+        and len(image_ids) == 1
+        and ordered[COMPARISON_MAX_CONCURRENT_INPUTS]["startedUnixSeconds"]
+        >= min(
+            item["finishedUnixSeconds"]
+            for item in ordered[:COMPARISON_MAX_CONCURRENT_INPUTS]
+        )
+    )
+    safe_outcomes = [
+        {
+            "requestIndex": item["requestIndex"],
+            "outcome": item["outcome"],
+            "startedAfterSeconds": round(
+                max(0, item["startedUnixSeconds"] - started), 3
+            ),
+            "durationSeconds": round(
+                max(0, item["finishedUnixSeconds"] - item["startedUnixSeconds"]), 3
+            ),
+        }
+        for item in outcomes
+    ]
+    identity_unchanged = observe_comparison() == identity
+    proof = {
+        "schemaVersion": 1,
+        "provider": "DIFFRHYTHM_2",
+        "workerModalDeploymentId": metadata["modalDeploymentId"],
+        "comparisonModalAppId": identity["modalAppId"],
+        "comparisonModalDeploymentId": identity["modalDeploymentId"],
+        "comparisonModalFunctionId": identity["modalFunctionId"],
+        "comparisonModalImageId": next(iter(image_ids), ""),
+        "requestCount": COMPARISON_BURST_REQUESTS,
+        "concurrencyLimit": COMPARISON_MAX_CONCURRENT_INPUTS,
+        "timeoutSeconds": COMPARISON_BURST_TIMEOUT_SECONDS,
+        "wallDurationSeconds": round(time.time() - started, 3),
+        "queueObserved": queue_observed and identity_unchanged,
+        "outcomes": sorted(safe_outcomes, key=lambda item: item["requestIndex"]),
+    }
+    atomic_json(EVIDENCE / "live-comparison-burst-proof.json", proof)
+    if (
+        any(item["outcome"] != "completed" for item in outcomes)
+        or not queue_observed
+        or not identity_unchanged
+    ):
+        raise RuntimeError(
+            "live comparison burst did not queue safely within the worker resource limit"
+        ) from None
+    return proof
+
+
+def validate_comparison_burst(proof: dict, metadata: dict) -> None:
+    if (
+        set(proof) != {
+            "schemaVersion", "provider", "workerModalDeploymentId",
+            "comparisonModalAppId", "comparisonModalDeploymentId",
+            "comparisonModalFunctionId", "comparisonModalImageId", "requestCount",
+            "concurrencyLimit", "timeoutSeconds", "wallDurationSeconds",
+            "queueObserved", "outcomes",
+        }
+        or proof.get("schemaVersion") != 1
+        or proof.get("provider") != "DIFFRHYTHM_2"
+        or proof.get("workerModalDeploymentId") != metadata["modalDeploymentId"]
+        or re.fullmatch(
+            r"ap-[A-Za-z0-9]+", str(proof.get("comparisonModalAppId", ""))
+        ) is None
+        or re.fullmatch(
+            r"v[1-9][0-9]*", str(proof.get("comparisonModalDeploymentId", ""))
+        ) is None
+        or re.fullmatch(
+            r"fu-[A-Za-z0-9]+", str(proof.get("comparisonModalFunctionId", ""))
+        ) is None
+        or re.fullmatch(
+            r"im-[A-Za-z0-9]+", str(proof.get("comparisonModalImageId", ""))
+        ) is None
+        or proof.get("requestCount") != COMPARISON_BURST_REQUESTS
+        or proof.get("concurrencyLimit") != COMPARISON_MAX_CONCURRENT_INPUTS
+        or proof["requestCount"] <= proof["concurrencyLimit"]
+        or proof.get("timeoutSeconds") != COMPARISON_BURST_TIMEOUT_SECONDS
+        or not isinstance(proof.get("wallDurationSeconds"), (int, float))
+        or proof["wallDurationSeconds"] < 0
+        or proof.get("queueObserved") is not True
+        or not isinstance(proof.get("outcomes"), list)
+        or len(proof["outcomes"]) != COMPARISON_BURST_REQUESTS
+    ):
+        raise ValueError("DiffRhythm2 comparison burst evidence is invalid")
+    for index, outcome in enumerate(proof["outcomes"]):
+        if (
+            outcome != {
+                "requestIndex": index,
+                "outcome": "completed",
+                "startedAfterSeconds": outcome.get("startedAfterSeconds"),
+                "durationSeconds": outcome.get("durationSeconds"),
+            }
+            or not isinstance(outcome.get("startedAfterSeconds"), (int, float))
+            or outcome["startedAfterSeconds"] < 0
+            or not isinstance(outcome.get("durationSeconds"), (int, float))
+            or not 0 <= outcome["durationSeconds"] <= COMPARISON_BURST_TIMEOUT_SECONDS
+        ):
+            raise ValueError("DiffRhythm2 comparison burst outcome is invalid")
+
+
 def validate_release(release: dict) -> dict:
     metadata = {
         field: release.get(field)
@@ -393,8 +606,11 @@ def validate_release(release: dict) -> dict:
     }
     health = release.get("liveHealth")
     proof = release.get("liveResearchGeneration")
-    if not isinstance(health, dict) or not isinstance(proof, dict):
-        raise ValueError("DiffRhythm2 release lacks live health or generation proof")
+    burst = release.get("liveComparisonBurst")
+    if not all(isinstance(item, dict) for item in (health, proof, burst)):
+        raise ValueError(
+            "DiffRhythm2 release lacks live health, generation, or comparison proof"
+        )
     if (
         release.get("provider") != "DIFFRHYTHM_2"
         or release.get("licenseStatus") != "RESEARCH_ONLY"
@@ -408,18 +624,24 @@ def validate_release(release: dict) -> dict:
     ):
         raise ValueError("DiffRhythm2 release identity or readiness is invalid")
     validate_generation_proof(proof, metadata, health)
-    path = EVIDENCE / "live-research-generation-proof.json"
-    if (
-        json.loads(path.read_text()) != proof
-        or release.get("retainedEvidence", {}).get(path.name)
-        != {"sha256": sha256(path), "bytes": path.stat().st_size}
+    validate_comparison_burst(burst, metadata)
+    for name, expected in (
+        ("live-research-generation-proof.json", proof),
+        ("live-comparison-burst-proof.json", burst),
     ):
-        raise ValueError("DiffRhythm2 generation proof digest is not retained")
+        path = EVIDENCE / name
+        if (
+            json.loads(path.read_text()) != expected
+            or release.get("retainedEvidence", {}).get(path.name)
+            != {"sha256": sha256(path), "bytes": path.stat().st_size}
+        ):
+            raise ValueError(f"DiffRhythm2 {name} digest is not retained")
     return release
 
 
 def capture(metadata: dict) -> dict:
     health = fetch_health(metadata)
+    burst = verify_comparison_burst(metadata)
     generation = verify_research_generation(metadata, health)
     if observe() != metadata:
         raise ValueError("DiffRhythm2 deployment identity changed during capture")
@@ -433,6 +655,7 @@ def capture(metadata: dict) -> dict:
         "full-fixture-output.mp3",
         "full-fixture-diagnostic.json",
         "live-research-generation-proof.json",
+        "live-comparison-burst-proof.json",
     )
     retained = {}
     for name in retained_names:
@@ -452,6 +675,7 @@ def capture(metadata: dict) -> dict:
         "retainedEvidence": retained,
         "liveHealth": health,
         "liveResearchGeneration": generation,
+        "liveComparisonBurst": burst,
     }
     atomic_json(EVIDENCE / "release-evidence.json", release)
     return validate_release(release)

@@ -65,6 +65,47 @@ smoke = modal.Volume.from_name(SMOKE_VOLUME_NAME, create_if_missing=False)
     image=image,
     volumes={MODEL_MOUNT: models, SMOKE_MOUNT: smoke},
     memory=COMPARISON_CONTAINER_MEMORY_MIB,
+    max_containers=1,
+    timeout=600,
+)
+@modal.concurrent(max_inputs=COMPARISON_MAX_CONCURRENT_INPUTS)
+def drill_retained_smoke_comparison():
+    import os
+    import re
+    import time
+    from pathlib import Path
+
+    from smoke import signal_comparison
+
+    image_id = os.getenv("MODAL_IMAGE_ID", "")
+    if re.fullmatch(r"im-[A-Za-z0-9]+", image_id) is None:
+        raise RuntimeError(
+            "retained comparison burst request lacks runtime image identity"
+        ) from None
+    started = time.time()
+    try:
+        comparison = signal_comparison(
+            Path(SMOKE_MOUNT) / "golden-30s.wav",
+            Path(MODEL_MOUNT) / "full-fixture-output.mp3",
+        )
+        if not comparison["passesNotSourceCopy"]:
+            raise RuntimeError("copy-like result")
+    except Exception:
+        raise RuntimeError(
+            "retained comparison burst request failed within the worker resource limit"
+        ) from None
+    return {
+        "outcome": "completed",
+        "startedUnixSeconds": started,
+        "finishedUnixSeconds": time.time(),
+        "modalImageId": image_id,
+    }
+
+
+@app.function(
+    image=image,
+    volumes={MODEL_MOUNT: models, SMOKE_MOUNT: smoke},
+    memory=COMPARISON_CONTAINER_MEMORY_MIB,
     timeout=600,
 )
 @modal.concurrent(max_inputs=COMPARISON_MAX_CONCURRENT_INPUTS)

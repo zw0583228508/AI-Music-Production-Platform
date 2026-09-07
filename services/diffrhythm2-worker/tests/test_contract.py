@@ -85,6 +85,7 @@ class DiffRhythmContract(unittest.TestCase):
    (COMPARISON_MAX_CONCURRENT_INPUTS+1)*COMPARISON_PER_INPUT_BUDGET_MIB,
   )
   self.assertIn("memory=COMPARISON_CONTAINER_MEMORY_MIB",modal_compare)
+  self.assertIn("max_containers=1",modal_compare)
   self.assertIn(
    "@modal.concurrent(max_inputs=COMPARISON_MAX_CONCURRENT_INPUTS)",modal_compare,
   )
