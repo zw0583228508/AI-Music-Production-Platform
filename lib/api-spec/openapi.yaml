@@ -904,6 +904,59 @@ paths:
                 $ref: "#/components/schemas/ProductionJob"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: An approved mix/master revision is required
+  /projects/{projectId}/mix-master-revisions:
+    get:
+      operationId: listMixMasterRevisions
+      tags: [studio]
+      summary: List immutable mix and master revisions
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Revisions ordered newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/MixMasterRevision" }
+    post:
+      operationId: createMixMasterRevision
+      tags: [studio]
+      summary: Render an immutable WAV audition revision
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MixMasterRevisionInput" }
+      responses:
+        "201":
+          description: Rendered revision
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MixMasterRevision" }
+        "409": { description: Arrangement is unavailable or has no renderable tracks }
+  /projects/{projectId}/mix-master-revisions/{revisionId}/approve:
+    post:
+      operationId: approveMixMasterRevision
+      tags: [studio]
+      summary: Approve an immutable revision for export
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: revisionId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Approved revision
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MixMasterRevision" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /production-jobs/{jobId}:
     get:
       operationId: getProductionJob
@@ -2931,6 +2984,7 @@ components:
       properties:
         idempotencyKey: { type: string, minLength: 1, maxLength: 200 }
         arrangementId: { type: ["string", "null"] }
+        approvedRevisionId: { type: string, minLength: 1 }
         includeStems: { type: boolean }
         includeMidi: { type: boolean }
         includeMix: { type: boolean }
@@ -2938,6 +2992,130 @@ components:
         masterProfile:
           type: string
           enum: [STREAMING, DYNAMIC, CLASSICAL, POP, LOUD, FILM]
+    MixMasterTrackControl:
+      type: object
+      required: [levelDb, pan, bus, sendDb, processing]
+      properties:
+        levelDb: { type: number, minimum: -60, maximum: 12 }
+        pan: { type: number, minimum: -1, maximum: 1 }
+        bus: { type: string, enum: [MIX, DRUMS, MUSIC, VOCALS, FX] }
+        sendDb: { type: number, minimum: -80, maximum: 6 }
+        processing:
+          type: object
+          required: [highPassHz, compressorRatio, saturation]
+          properties:
+            highPassHz: { type: number, minimum: 20, maximum: 20000 }
+            compressorRatio: { type: number, minimum: 1, maximum: 20 }
+            saturation: { type: number, minimum: 0, maximum: 1 }
+    MixMasterRevisionInput:
+      type: object
+      required: [arrangementId, tracks, master]
+      properties:
+        arrangementId: { type: string, minLength: 1 }
+        tracks:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/MixMasterTrackControl" }
+        master:
+          type: object
+          required: [targetLufs, truePeakDbtp, processing]
+          properties:
+            targetLufs: { type: number, minimum: -24, maximum: -6 }
+            truePeakDbtp: { type: number, minimum: -6, maximum: -0.1 }
+            processing:
+              type: object
+              required: [limiter, stereoWidth]
+              properties:
+                limiter: { type: boolean }
+                stereoWidth: { type: number, minimum: 0, maximum: 2 }
+    MixMasterFinding:
+      type: object
+      required: [id, severity, message, control, startSeconds, endSeconds]
+      properties:
+        id: { type: string }
+        severity: { type: string, enum: [info, warning, error] }
+        message: { type: string }
+        control: { type: string }
+        startSeconds: { type: number, minimum: 0 }
+        endSeconds: { type: number, minimum: 0 }
+    MixMasterPreviewVariant:
+      type: object
+      required: [url, timelineSha256, durationSeconds]
+      properties:
+        url: { type: string }
+        timelineSha256: { type: string }
+        durationSeconds: { type: number, minimum: 0 }
+        sourceId: { type: string }
+        artifactId: { type: string }
+        checksum: { type: string }
+    MixMasterRevision:
+      type: object
+      required: [id, projectId, arrangementId, version, controls, previewUrl, variants, evidence, approvedAt, approvedBy, createdAt]
+      properties:
+        id: { type: string }
+        projectId: { type: string }
+        arrangementId: { type: string }
+        version: { type: number }
+        controls:
+          type: object
+          required: [tracks, master]
+          properties:
+            tracks:
+              type: object
+              additionalProperties: { $ref: "#/components/schemas/MixMasterTrackControl" }
+            master:
+              type: object
+              required: [targetLufs, truePeakDbtp, processing]
+              properties:
+                targetLufs: { type: number }
+                truePeakDbtp: { type: number }
+                processing:
+                  type: object
+                  required: [limiter, stereoWidth]
+                  properties:
+                    limiter: { type: boolean }
+                    stereoWidth: { type: number }
+        previewUrl: { type: string }
+        variants:
+          type: object
+          required: [original, repaired, mixed, mastered]
+          properties:
+            original:
+              oneOf: [{ $ref: "#/components/schemas/MixMasterPreviewVariant" }, { type: "null" }]
+            repaired:
+              oneOf: [{ $ref: "#/components/schemas/MixMasterPreviewVariant" }, { type: "null" }]
+            mixed: { $ref: "#/components/schemas/MixMasterPreviewVariant" }
+            mastered: { $ref: "#/components/schemas/MixMasterPreviewVariant" }
+        evidence:
+          type: object
+          required: [arrangementId, arrangementVersion, songModelVersion, timelineSha256, artifactIds, variants, renderer, quality]
+          properties:
+            arrangementId: { type: string }
+            arrangementVersion: { type: number }
+            songModelVersion: { type: ["number", "null"] }
+            timelineSha256: { type: string }
+            artifactIds: { type: array, items: { type: string } }
+            variants:
+              type: object
+              required: [original, repaired, mixed, mastered]
+              properties:
+                original:
+                  oneOf: [{ $ref: "#/components/schemas/MixMasterPreviewVariant" }, { type: "null" }]
+                repaired:
+                  oneOf: [{ $ref: "#/components/schemas/MixMasterPreviewVariant" }, { type: "null" }]
+                mixed: { $ref: "#/components/schemas/MixMasterPreviewVariant" }
+                mastered: { $ref: "#/components/schemas/MixMasterPreviewVariant" }
+            renderer: { type: string }
+            quality:
+              type: object
+              required: [integratedLufs, truePeakDbtp, truePeakMethod, findings]
+              properties:
+                integratedLufs: { type: number }
+                truePeakDbtp: { type: number }
+                truePeakMethod: { type: string, enum: [4x-windowed-sinc-estimate] }
+                findings: { type: array, items: { $ref: "#/components/schemas/MixMasterFinding" } }
+        approvedAt: { type: ["string", "null"] }
+        approvedBy: { type: ["string", "null"] }
+        createdAt: { type: string }
     ProductionJob:
       type: object
       required: [id, projectId, kind, status, stage, progress, attempt, maxAttempts, retryable, outputArtifactIds, createdAt, updatedAt]

@@ -160,6 +160,41 @@ export type ExportFileRecord = {
   url: string;
 };
 
+/** Immutable producer-facing mix/master decision, including render proof. */
+export type MixMasterControls = {
+  tracks: Record<string, {
+    levelDb: number;
+    pan: number;
+    bus: "MIX" | "DRUMS" | "MUSIC" | "VOCALS" | "FX";
+    sendDb: number;
+    processing: { highPassHz: number; compressorRatio: number; saturation: number };
+  }>;
+  master: { targetLufs: number; truePeakDbtp: number; processing: { limiter: boolean; stereoWidth: number } };
+};
+export type MixMasterFinding = {
+  id: string;
+  severity: "info" | "warning" | "error";
+  message: string;
+  control: string;
+  startSeconds: number;
+  endSeconds: number;
+};
+export type MixMasterRevisionEvidence = {
+  arrangementId: string;
+  arrangementVersion: number;
+  songModelVersion: number | null;
+  timelineSha256: string;
+  artifactIds: string[];
+  variants: {
+    original: { url: string; sourceId: string; timelineSha256: string; durationSeconds: number } | null;
+    repaired: { url: string; artifactId: string; checksum: string; timelineSha256: string; durationSeconds: number } | null;
+    mixed: { url: string; artifactId: string; checksum: string; timelineSha256: string; durationSeconds: number };
+    mastered: { url: string; artifactId: string; checksum: string; timelineSha256: string; durationSeconds: number };
+  };
+  renderer: string;
+  quality: { integratedLufs: number; truePeakDbtp: number; truePeakMethod: "4x-windowed-sinc-estimate"; findings: MixMasterFinding[] };
+};
+
 export type SongModelField =
   | "tempo"
   | "meter"
@@ -868,6 +903,24 @@ export const musicExportsTable = pgTable("music_exports", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
 });
+
+export const mixMasterRevisionsTable = pgTable(
+  "music_mix_master_revisions",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id").notNull().references(() => musicProjectsTable.id, { onDelete: "cascade" }),
+    arrangementId: text("arrangement_id").notNull().references(() => arrangementsTable.id, { onDelete: "restrict" }),
+    version: integer("version").notNull(),
+    controls: jsonb("controls").$type<MixMasterControls>().notNull(),
+    evidence: jsonb("evidence").$type<MixMasterRevisionEvidence>().notNull(),
+    previewArtifactId: text("preview_artifact_id").notNull().references(() => musicArtifactsTable.id, { onDelete: "restrict" }),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    approvedBy: text("approved_by"),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("music_mix_master_revisions_project_version_unique").on(table.projectId, table.version)],
+);
 
 export const studioActivitiesTable = pgTable("studio_activities", {
   id: text("id").primaryKey(),

@@ -210,6 +210,7 @@ function completeMusicCriticReport(score) {
           observations: { validated: true },
         }],
         explanation: `${name} passed`,
+         findings: [],
       },
     ])),
   };
@@ -1018,6 +1019,38 @@ test("project and export endpoints enforce owner authorization", async () => {
 
   assert.equal((await request(`/api/projects/${projectId}`, ownerSession)).status, 200);
   assert.equal((await request(`/api/projects/${projectId}`, otherSession)).status, 404);
+  assert.equal(
+    (await request(`/api/projects/${projectId}/mix-master-revisions`, ownerSession)).status,
+    200,
+  );
+  assert.equal(
+    (await request(`/api/projects/${projectId}/mix-master-revisions`, otherSession)).status,
+    404,
+  );
+  assert.equal(
+    (await request(`/api/projects/${projectId}/mix-master-revisions`, otherSession, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        arrangementId,
+        tracks: {},
+        master: {
+          targetLufs: -14,
+          truePeakDbtp: -1,
+          processing: { limiter: true, stereoWidth: 1 },
+        },
+      }),
+    })).status,
+    404,
+  );
+  assert.equal(
+    (await request(
+      `/api/projects/${projectId}/mix-master-revisions/private-revision/approve`,
+      otherSession,
+      { method: "POST" },
+    )).status,
+    404,
+  );
   assert.equal(
     (await request(`/api/arrangements/${arrangementId}`, null, {
       method: "PATCH",

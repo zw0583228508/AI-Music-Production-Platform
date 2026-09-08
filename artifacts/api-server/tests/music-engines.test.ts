@@ -17,6 +17,16 @@ import {
   parseHarmony,
 } from "../src/lib/analysisProviders";
 import { fuseProviderSongModels } from "../src/lib/songModelValidation";
+import { estimateTruePeak4x } from "../src/lib/audioMeter";
+
+test("4x windowed-sinc true peak meter detects an inter-sample over", () => {
+  const samples = Float32Array.from({ length: 128 }, (_, index) =>
+    .82 * Math.sin(2 * Math.PI * .47 * index + .38));
+  const samplePeak = Math.max(...samples.map(Math.abs));
+  const truePeak = estimateTruePeak4x(samples);
+  assert.ok(truePeak > samplePeak + .001, `${truePeak} must exceed sample peak ${samplePeak}`);
+  assert.ok(Number.isFinite(truePeak) && truePeak < 2);
+});
 
 const song = (overrides: Partial<SongModelData> = {}): SongModelData => ({
   contractVersion: "1.0",

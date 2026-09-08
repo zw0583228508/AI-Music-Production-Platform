@@ -6,6 +6,7 @@ import type {
   SongModelData,
   StyleSpec,
   TrackModel,
+  MixMasterControls,
 } from "@workspace/db";
 import {
   MasterEngine,
@@ -315,6 +316,59 @@ export function encodeWav(samples: Float32Array): Buffer {
   return buffer;
 }
 
+/** Bounded deterministic DSP used by audition revisions; never mutates source buffers. */
+export function applyMixMasterControls(
+  tracks: RenderedTrack[],
+  controls: MixMasterControls,
+): { tracks: RenderedTrack[]; mixed: Float32Array; mastered: Float32Array; integratedLufs: number; truePeakDbtp: number } {
+  const processed = tracks.map((track) => {
+    const control = controls.tracks[track.trackModel.id];
+    if (!control) return track;
+    const samples = new Float32Array(track.samples.length);
+    const gain = 10 ** (control.levelDb / 20);
+    const panLeft = Math.cos((control.pan + 1) * Math.PI / 4);
+    const panRight = Math.sin((control.pan + 1) * Math.PI / 4);
+    const send = 10 ** (control.sendDb / 20);
+    // The one-pole DC/high-pass approximation and soft saturation are stable,
+    // bounded, and ensure each persisted control changes audible PCM.
+    const hp = Math.exp(-2 * Math.PI * control.processing.highPassHz / SAMPLE_RATE);
+    let previousL = 0; let previousR = 0; let filteredL = 0; let filteredR = 0;
+    const busGain = control.bus === "FX" ? .8 : control.bus === "VOCALS" ? 1.04 :
+      control.bus === "DRUMS" ? .96 : control.bus === "MUSIC" ? 1.02 : 1;
+    for (let i = 0; i < samples.length; i += 2) {
+      const left = track.samples[i]; const right = track.samples[i + 1];
+      filteredL = hp * (filteredL + left - previousL); previousL = left;
+      filteredR = hp * (filteredR + right - previousR); previousR = right;
+      const ratio = control.processing.compressorRatio;
+      const compress = (value: number) => Math.tanh(value * (1 + (ratio - 1) * .12));
+      const saturate = (value: number) => Math.tanh(value * (1 + control.processing.saturation * 4));
+      const wetL = filteredL * send * .16; const wetR = filteredR * send * .16;
+      samples[i] = saturate(compress((filteredL * .8 + left * .2) * gain * panLeft * busGain + wetR));
+      samples[i + 1] = saturate(compress((filteredR * .8 + right * .2) * gain * panRight * busGain + wetL));
+    }
+    return { ...track, samples };
+  });
+  const mixed = new MixGraph().mix(processed, { production: { stereoWidth: controls.master.processing.stereoWidth } } as StyleSpec, Math.ceil((processed[0]?.samples.length ?? 0) / CHANNELS));
+  const ceiling = 10 ** (controls.master.truePeakDbtp / 20);
+  const targetRms = 10 ** (controls.master.targetLufs / 20);
+  let sum = 0;
+  for (const value of mixed) sum += value * value;
+  const rms = Math.sqrt(sum / Math.max(1, mixed.length));
+  const targetGain = Math.min(8, targetRms / Math.max(rms, 1e-9));
+  const mastered = new Float32Array(mixed.length);
+  let peak = 0; let masteredSum = 0;
+  for (let i = 0; i < mixed.length; i += 1) {
+    const value = mixed[i] * targetGain;
+    const output = controls.master.processing.limiter ? Math.max(-ceiling, Math.min(ceiling, value)) : Math.tanh(value);
+    mastered[i] = output; peak = Math.max(peak, Math.abs(output)); masteredSum += output * output;
+  }
+  return {
+    tracks: processed, mixed, mastered,
+    integratedLufs: 20 * Math.log10(Math.sqrt(masteredSum / Math.max(1, mastered.length)) + 1e-12),
+    truePeakDbtp: 20 * Math.log10(peak + 1e-12),
+  };
+}
+
 function vlq(value: number): number[] {
   let buffer = value & 0x7f;
   const bytes: number[] = [];
@@ -586,6 +640,7 @@ export async function renderArrangementExport(input: {
   durationSeconds?: number;
   includeStems: boolean;
   includeMidi: boolean;
+  mixMasterControls?: MixMasterControls;
 }): Promise<GeneratedExportFile[]> {
   const [meterNumerator, meterDenominator] = input.meter.split("/").map(Number);
   const beatsPerBar = Number.isFinite(meterNumerator) && meterNumerator > 0
@@ -698,8 +753,13 @@ export async function renderArrangementExport(input: {
         rendererAttestation,
       };
     }));
-  const mix = new MixGraph().mix(remoteTracks, input.styleSpec, Math.ceil(SAMPLE_RATE * pipeline.durationSeconds));
-  const mastered = new MasterEngine().process(mix, input.masterProfile);
+  const controlled = input.mixMasterControls
+    ? applyMixMasterControls(remoteTracks, input.mixMasterControls)
+    : null;
+  const mix = controlled?.mixed ?? new MixGraph().mix(remoteTracks, input.styleSpec, Math.ceil(SAMPLE_RATE * pipeline.durationSeconds));
+  const mastered = controlled
+    ? { premaster: mix, master: controlled.mastered }
+    : new MasterEngine().process(mix, input.masterProfile);
   const quality = new QualityEngine().assess(
     remoteTracks.map((track) => track.trackModel),
     mix,

@@ -17,6 +17,10 @@ import {
   useListProjectSources,
   useRunCopilot,
   useCreateProjectExport,
+  useListMixMasterRevisions,
+  useCreateMixMasterRevision,
+  useApproveMixMasterRevision,
+  getListMixMasterRevisionsQueryKey,
   useGetProductionJob,
   getGetProductionJobQueryKey,
   useGetProjectSongModel,
@@ -154,6 +158,11 @@ export default function ProjectWorkspace() {
   const selectGenerationCandidate = useSelectGenerationCandidate();
   const repairGenerationCandidate = useRepairGenerationCandidate();
   const createExport = useCreateProjectExport();
+  const { data: mixMasterRevisions } = useListMixMasterRevisions(projectId, {
+    query: { queryKey: getListMixMasterRevisionsQueryKey(projectId), staleTime: 5_000 },
+  });
+  const createMixMasterRevision = useCreateMixMasterRevision();
+  const approveMixMasterRevision = useApproveMixMasterRevision();
 
   const [activeTab, setActiveTab] = useState("editor");
   const [revisionPreviewing, setRevisionPreviewing] = useState(false);
@@ -178,6 +187,28 @@ export default function ProjectWorkspace() {
   const [includeStems, setIncludeStems] = useState(true);
   const [includeMidi, setIncludeMidi] = useState(true);
   const [masterProfile, setMasterProfile] = useState("STREAMING");
+  const [masterLufs, setMasterLufs] = useState(-14);
+  const [truePeakDbtp, setTruePeakDbtp] = useState(-1);
+  const [limiter, setLimiter] = useState(true);
+  const [stereoWidth, setStereoWidth] = useState(1);
+  type LocalTrackMix = { levelDb: number; pan: number; bus: "MIX" | "DRUMS" | "MUSIC" | "VOCALS" | "FX"; sendDb: number; processing: { highPassHz: number; compressorRatio: number; saturation: number } };
+  const [selectedMixTrackId, setSelectedMixTrackId] = useState("");
+  const [trackMixControls, setTrackMixControls] = useState<Record<string, LocalTrackMix>>({});
+  useEffect(() => {
+    if (!tracks?.length) return;
+    setSelectedMixTrackId((current) => current || tracks[0].id);
+    setTrackMixControls((current) => Object.fromEntries(tracks.map((track) => [track.id, current[track.id] ?? {
+      levelDb: track.volume, pan: 0, bus: "MIX" as const, sendDb: -80,
+      processing: { highPassHz: 20, compressorRatio: 1, saturation: 0 },
+    }])));
+  }, [tracks]);
+  const selectedTrackMix = trackMixControls[selectedMixTrackId];
+  const updateSelectedTrackMix = (update: (control: LocalTrackMix) => LocalTrackMix) =>
+    setTrackMixControls((current) => selectedMixTrackId && current[selectedMixTrackId]
+      ? { ...current, [selectedMixTrackId]: update(current[selectedMixTrackId]) } : current);
+  const [selectedMixControl, setSelectedMixControl] = useState<string | null>(null);
+  const [auditionRevisionId, setAuditionRevisionId] = useState<string | null>(null);
+  const [auditionVariant, setAuditionVariant] = useState<"original" | "repaired" | "mixed" | "mastered">("mastered");
   const [exportResult, setExportResult] = useState<ExportResult | null>(null);
   const [exportJobId, setExportJobId] = useState<string | null>(null);
   const { data: exportJob } = useGetProductionJob(exportJobId ?? "", {
@@ -248,8 +279,10 @@ export default function ProjectWorkspace() {
     currentSource?.durationSeconds
     ?? songModel?.audio?.durationSeconds
     ?? parseDuration(workspace?.project.duration);
+  const auditionRevision = mixMasterRevisions?.find((revision) => revision.id === auditionRevisionId);
+  const auditionVariantUrl = auditionRevision?.variants[auditionVariant]?.url ?? null;
   const transport = useAudioTransport(
-    candidatePreview?.url ??
+    auditionVariantUrl ?? auditionRevision?.previewUrl ?? candidatePreview?.url ??
       (sourceReady && currentSource
         ? `/api/projects/${projectId}/playback?sourceId=${encodeURIComponent(currentSource.id)}`
         : null),
@@ -752,12 +785,19 @@ export default function ProjectWorkspace() {
 
   const handleExport = () => {
     if (!activeArrangement) return;
+    const approved = mixMasterRevisions?.find((revision) =>
+      revision.arrangementId === activeArrangement.id && revision.approvedAt);
+    if (!approved) {
+      toast({ title: "Approval required", description: "Approve a rendered mix/master revision before exporting.", variant: "destructive" });
+      return;
+    }
     setExportResult(null);
     createExport.mutate({
       projectId,
       data: {
         idempotencyKey: crypto.randomUUID(),
         arrangementId: activeArrangement.id,
+        approvedRevisionId: approved.id,
         includeStems,
         includeMidi,
         includeMix: true,
@@ -1161,6 +1201,7 @@ export default function ProjectWorkspace() {
                 <TabsTrigger value="model" data-testid="tab-model" disabled={revisionPreviewing}>Song Model</TabsTrigger>
                 <TabsTrigger value="arrangement" data-testid="tab-director" disabled={revisionPreviewing}>Director</TabsTrigger>
                 <TabsTrigger value="candidates" data-testid="tab-candidates" disabled={revisionPreviewing}>Candidates</TabsTrigger>
+                <TabsTrigger value="mix-master" data-testid="tab-mix-master" disabled={!activeArrangement || revisionPreviewing}>Mix & master</TabsTrigger>
               </TabsList>
             </div>
 
@@ -1496,6 +1537,65 @@ export default function ProjectWorkspace() {
                     action={<Button onClick={handleCreateArrangement}>Create Arrangement</Button>}
                   />
                 )}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="mix-master" className="flex-1 m-0 p-6 min-h-0 overflow-auto">
+              <div className="mx-auto max-w-4xl space-y-5">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Audition revision</CardTitle>
+                    <p className="text-sm text-muted-foreground">Create immutable WAV previews from the current arrangement. All versions share the project’s canonical timeline.</p>
+                  </CardHeader>
+                  <CardContent className="space-y-5">
+                    <div><Label>Track</Label><Select value={selectedMixTrackId} onValueChange={setSelectedMixTrackId}><SelectTrigger><SelectValue placeholder="Select track" /></SelectTrigger><SelectContent>{(tracks ?? []).map((track) => <SelectItem key={track.id} value={track.id}>{track.name}</SelectItem>)}</SelectContent></Select></div>
+                    {selectedTrackMix && <>
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <div className={cn(selectedMixControl?.endsWith(".levelDb") && "rounded border-2 border-amber-500 p-2")}><Label>Track level {selectedTrackMix.levelDb.toFixed(1)} dB</Label><Slider min={-60} max={12} step={0.5} value={[selectedTrackMix.levelDb]} onValueChange={([value]) => updateSelectedTrackMix((control) => ({ ...control, levelDb: value }))} /></div>
+                      <div className={cn(selectedMixControl === "master.targetLufs" && "rounded border-2 border-amber-500 p-2")}><Label>Master target {masterLufs} LUFS</Label><Slider min={-24} max={-6} step={1} value={[masterLufs]} onValueChange={([value]) => setMasterLufs(value)} /></div>
+                      <div className={cn(selectedMixControl === "master.truePeakDbtp" && "rounded border-2 border-amber-500 p-2")}><Label>True peak {truePeakDbtp.toFixed(1)} dBTP</Label><Slider min={-6} max={-0.1} step={0.1} value={[truePeakDbtp]} onValueChange={([value]) => setTruePeakDbtp(value)} /></div>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <div><Label>Pan {selectedTrackMix.pan.toFixed(2)}</Label><Slider min={-1} max={1} step={.05} value={[selectedTrackMix.pan]} onValueChange={([value]) => updateSelectedTrackMix((control) => ({ ...control, pan: value }))} /></div>
+                      <div><Label>Send {selectedTrackMix.sendDb} dB</Label><Slider min={-80} max={6} step={1} value={[selectedTrackMix.sendDb]} onValueChange={([value]) => updateSelectedTrackMix((control) => ({ ...control, sendDb: value }))} /></div>
+                      <div><Label>Bus</Label><Select value={selectedTrackMix.bus} onValueChange={(value) => updateSelectedTrackMix((control) => ({ ...control, bus: value as LocalTrackMix["bus"] }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["MIX","DRUMS","MUSIC","VOCALS","FX"].map((bus) => <SelectItem key={bus} value={bus}>{bus}</SelectItem>)}</SelectContent></Select></div>
+                      <div><Label>HPF {selectedTrackMix.processing.highPassHz} Hz</Label><Slider min={20} max={20000} step={10} value={[selectedTrackMix.processing.highPassHz]} onValueChange={([value]) => updateSelectedTrackMix((control) => ({ ...control, processing: { ...control.processing, highPassHz: value } }))} /></div>
+                      <div><Label>Compressor {selectedTrackMix.processing.compressorRatio.toFixed(1)}:1</Label><Slider min={1} max={20} step={.5} value={[selectedTrackMix.processing.compressorRatio]} onValueChange={([value]) => updateSelectedTrackMix((control) => ({ ...control, processing: { ...control.processing, compressorRatio: value } }))} /></div>
+                      <div><Label>Saturation {selectedTrackMix.processing.saturation.toFixed(2)}</Label><Slider min={0} max={1} step={.05} value={[selectedTrackMix.processing.saturation]} onValueChange={([value]) => updateSelectedTrackMix((control) => ({ ...control, processing: { ...control.processing, saturation: value } }))} /></div>
+                      <div><Label>Stereo width {stereoWidth.toFixed(2)}</Label><Slider min={0} max={2} step={.05} value={[stereoWidth]} onValueChange={([value]) => setStereoWidth(value)} /></div>
+                      <div className="flex items-center gap-2 pt-5"><Checkbox checked={limiter} onCheckedChange={(checked) => setLimiter(checked === true)} /><Label>Master limiter</Label></div>
+                    </div>
+                    </>}
+                    <Button disabled={!activeArrangement || createMixMasterRevision.isPending} onClick={() => {
+                      if (!activeArrangement) return;
+                      const controlledTracks = trackMixControls;
+                      createMixMasterRevision.mutate({ projectId, data: {
+                        arrangementId: activeArrangement.id, tracks: controlledTracks,
+                        master: { targetLufs: masterLufs, truePeakDbtp, processing: { limiter, stereoWidth } },
+                      } }, { onSuccess: (revision) => {
+                        setAuditionRevisionId(revision.id);
+                        void queryClient.invalidateQueries({ queryKey: getListMixMasterRevisionsQueryKey(projectId) });
+                        toast({ title: "WAV audition rendered", description: `Revision v${revision.version} is ready for A/B audition.` });
+                      }, onError: () => toast({ title: "Audition render failed", description: "The immutable revision could not be rendered.", variant: "destructive" }) });
+                    }}>
+                      {createMixMasterRevision.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}Render audition
+                    </Button>
+                  </CardContent>
+                </Card>
+                <div className="space-y-3">
+                  {(mixMasterRevisions ?? []).filter((revision) => revision.arrangementId === activeArrangement?.id).map((revision) => (
+                    <Card key={revision.id} className={cn(auditionRevisionId === revision.id && "border-primary")}>
+                      <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div><div className="font-medium">Mix/master v{revision.version} {revision.approvedAt ? "· Approved" : ""}</div>
+                          <p className="text-xs text-muted-foreground">Timeline {revision.evidence.timelineSha256.slice(0, 12)} · {revision.evidence.quality.integratedLufs} LUFS · {revision.evidence.quality.truePeakDbtp} dBTP</p>
+                          {revision.evidence.quality.findings.map((finding) => <button key={finding.id} className="block text-left text-xs text-amber-600 hover:underline" onClick={() => { setAuditionRevisionId(revision.id); setSelectedMixControl(finding.control); const match = /^tracks\\.([^.]+)\\./.exec(finding.control); if (match) setSelectedMixTrackId(match[1]); transport.seek(finding.startSeconds); }}>{finding.message} → {finding.control}</button>)}
+                        </div>
+                        <div className="flex flex-wrap gap-2">{(["original", "repaired", "mixed", "mastered"] as const).map((variant) => <Button key={variant} size="sm" variant={auditionRevisionId === revision.id && auditionVariant === variant ? "secondary" : "outline"} disabled={!revision.variants[variant]} onClick={() => { setAuditionRevisionId(revision.id); setAuditionVariant(variant); }}>{variant}</Button>)}
+                          <Button size="sm" disabled={Boolean(revision.approvedAt) || approveMixMasterRevision.isPending} onClick={() => approveMixMasterRevision.mutate({ projectId, revisionId: revision.id }, { onSuccess: () => { void queryClient.invalidateQueries({ queryKey: getListMixMasterRevisionsQueryKey(projectId) }); toast({ title: "Revision approved", description: "Exports now use this exact approved master WAV." }); } })}>Approve</Button></div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
               </div>
             </TabsContent>
 

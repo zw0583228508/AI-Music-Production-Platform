@@ -9166,9 +9166,11 @@ export const exportArrangementBodyIdempotencyKeyMax = 200;
 
 
 
+
 export const ExportArrangementBody = zod.object({
   "idempotencyKey": zod.string().min(1).max(exportArrangementBodyIdempotencyKeyMax).optional(),
   "arrangementId": zod.string().nullish(),
+  "approvedRevisionId": zod.string().min(1).optional(),
   "includeStems": zod.boolean().optional(),
   "includeMidi": zod.boolean().optional(),
   "includeMix": zod.boolean().optional(),
@@ -9566,9 +9568,11 @@ export const createProjectExportBodyIdempotencyKeyMax = 200;
 
 
 
+
 export const CreateProjectExportBody = zod.object({
   "idempotencyKey": zod.string().min(1).max(createProjectExportBodyIdempotencyKeyMax).optional(),
   "arrangementId": zod.string().nullish(),
+  "approvedRevisionId": zod.string().min(1).optional(),
   "includeStems": zod.boolean().optional(),
   "includeMidi": zod.boolean().optional(),
   "includeMix": zod.boolean().optional(),
@@ -9595,6 +9599,564 @@ export const CreateProjectExportResponse = zod.object({
   "createdAt": zod.string(),
   "updatedAt": zod.string(),
   "completedAt": zod.string().nullish()
+})
+
+
+/**
+ * @summary List immutable mix and master revisions
+ */
+export const ListMixMasterRevisionsParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+export const listMixMasterRevisionsResponseControlsTracksLevelDbMin = -60;
+export const listMixMasterRevisionsResponseControlsTracksLevelDbMax = 12;
+
+export const listMixMasterRevisionsResponseControlsTracksPanMin = -1;
+export const listMixMasterRevisionsResponseControlsTracksPanMax = 1;
+
+export const listMixMasterRevisionsResponseControlsTracksSendDbMin = -80;
+export const listMixMasterRevisionsResponseControlsTracksSendDbMax = 6;
+
+export const listMixMasterRevisionsResponseControlsTracksProcessingHighPassHzMin = 20;
+export const listMixMasterRevisionsResponseControlsTracksProcessingHighPassHzMax = 20000;
+
+export const listMixMasterRevisionsResponseControlsTracksProcessingCompressorRatioMax = 20;
+
+export const listMixMasterRevisionsResponseControlsTracksProcessingSaturationMin = 0;
+export const listMixMasterRevisionsResponseControlsTracksProcessingSaturationMax = 1;
+
+export const listMixMasterRevisionsResponseVariantsOriginalOneDurationSecondsMin = 0;
+
+export const listMixMasterRevisionsResponseVariantsRepairedOneDurationSecondsMin = 0;
+
+export const listMixMasterRevisionsResponseVariantsMixedDurationSecondsMin = 0;
+
+export const listMixMasterRevisionsResponseVariantsMasteredDurationSecondsMin = 0;
+
+export const listMixMasterRevisionsResponseEvidenceVariantsOriginalOneDurationSecondsMin = 0;
+
+export const listMixMasterRevisionsResponseEvidenceVariantsRepairedOneDurationSecondsMin = 0;
+
+export const listMixMasterRevisionsResponseEvidenceVariantsMixedDurationSecondsMin = 0;
+
+export const listMixMasterRevisionsResponseEvidenceVariantsMasteredDurationSecondsMin = 0;
+
+export const listMixMasterRevisionsResponseEvidenceQualityFindingsItemStartSecondsMin = 0;
+
+export const listMixMasterRevisionsResponseEvidenceQualityFindingsItemEndSecondsMin = 0;
+
+
+
+export const ListMixMasterRevisionsResponseItem = zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "arrangementId": zod.string(),
+  "version": zod.number(),
+  "controls": zod.object({
+  "tracks": zod.record(zod.string(), zod.object({
+  "levelDb": zod.number().min(listMixMasterRevisionsResponseControlsTracksLevelDbMin).max(listMixMasterRevisionsResponseControlsTracksLevelDbMax),
+  "pan": zod.number().min(listMixMasterRevisionsResponseControlsTracksPanMin).max(listMixMasterRevisionsResponseControlsTracksPanMax),
+  "bus": zod.enum(['MIX', 'DRUMS', 'MUSIC', 'VOCALS', 'FX']),
+  "sendDb": zod.number().min(listMixMasterRevisionsResponseControlsTracksSendDbMin).max(listMixMasterRevisionsResponseControlsTracksSendDbMax),
+  "processing": zod.object({
+  "highPassHz": zod.number().min(listMixMasterRevisionsResponseControlsTracksProcessingHighPassHzMin).max(listMixMasterRevisionsResponseControlsTracksProcessingHighPassHzMax),
+  "compressorRatio": zod.number().min(1).max(listMixMasterRevisionsResponseControlsTracksProcessingCompressorRatioMax),
+  "saturation": zod.number().min(listMixMasterRevisionsResponseControlsTracksProcessingSaturationMin).max(listMixMasterRevisionsResponseControlsTracksProcessingSaturationMax)
+})
+})),
+  "master": zod.object({
+  "targetLufs": zod.number(),
+  "truePeakDbtp": zod.number(),
+  "processing": zod.object({
+  "limiter": zod.boolean(),
+  "stereoWidth": zod.number()
+})
+})
+}),
+  "previewUrl": zod.string(),
+  "variants": zod.object({
+  "original": zod.union([zod.object({
+  "url": zod.string(),
+  "timelineSha256": zod.string(),
+  "durationSeconds": zod.number().min(listMixMasterRevisionsResponseVariantsOriginalOneDurationSecondsMin),
+  "sourceId": zod.string().optional(),
+  "artifactId": zod.string().optional(),
+  "checksum": zod.string().optional()
+}),zod.null()]),
+  "repaired": zod.union([zod.object({
+  "url": zod.string(),
+  "timelineSha256": zod.string(),
+  "durationSeconds": zod.number().min(listMixMasterRevisionsResponseVariantsRepairedOneDurationSecondsMin),
+  "sourceId": zod.string().optional(),
+  "artifactId": zod.string().optional(),
+  "checksum": zod.string().optional()
+}),zod.null()]),
+  "mixed": zod.object({
+  "url": zod.string(),
+  "timelineSha256": zod.string(),
+  "durationSeconds": zod.number().min(listMixMasterRevisionsResponseVariantsMixedDurationSecondsMin),
+  "sourceId": zod.string().optional(),
+  "artifactId": zod.string().optional(),
+  "checksum": zod.string().optional()
+}),
+  "mastered": zod.object({
+  "url": zod.string(),
+  "timelineSha256": zod.string(),
+  "durationSeconds": zod.number().min(listMixMasterRevisionsResponseVariantsMasteredDurationSecondsMin),
+  "sourceId": zod.string().optional(),
+  "artifactId": zod.string().optional(),
+  "checksum": zod.string().optional()
+})
+}),
+  "evidence": zod.object({
+  "arrangementId": zod.string(),
+  "arrangementVersion": zod.number(),
+  "songModelVersion": zod.number().nullable(),
+  "timelineSha256": zod.string(),
+  "artifactIds": zod.array(zod.string()),
+  "variants": zod.object({
+  "original": zod.union([zod.object({
+  "url": zod.string(),
+  "timelineSha256": zod.string(),
+  "durationSeconds": zod.number().min(listMixMasterRevisionsResponseEvidenceVariantsOriginalOneDurationSecondsMin),
+  "sourceId": zod.string().optional(),
+  "artifactId": zod.string().optional(),
+  "checksum": zod.string().optional()
+}),zod.null()]),
+  "repaired": zod.union([zod.object({
+  "url": zod.string(),
+  "timelineSha256": zod.string(),
+  "durationSeconds": zod.number().min(listMixMasterRevisionsResponseEvidenceVariantsRepairedOneDurationSecondsMin),
+  "sourceId": zod.string().optional(),
+  "artifactId": zod.string().optional(),
+  "checksum": zod.string().optional()
+}),zod.null()]),
+  "mixed": zod.object({
+  "url": zod.string(),
+  "timelineSha256": zod.string(),
+  "durationSeconds": zod.number().min(listMixMasterRevisionsResponseEvidenceVariantsMixedDurationSecondsMin),
+  "sourceId": zod.string().optional(),
+  "artifactId": zod.string().optional(),
+  "checksum": zod.string().optional()
+}),
+  "mastered": zod.object({
+  "url": zod.string(),
+  "timelineSha256": zod.string(),
+  "durationSeconds": zod.number().min(listMixMasterRevisionsResponseEvidenceVariantsMasteredDurationSecondsMin),
+  "sourceId": zod.string().optional(),
+  "artifactId": zod.string().optional(),
+  "checksum": zod.string().optional()
+})
+}),
+  "renderer": zod.string(),
+  "quality": zod.object({
+  "integratedLufs": zod.number(),
+  "truePeakDbtp": zod.number(),
+  "truePeakMethod": zod.enum(['4x-windowed-sinc-estimate']),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "severity": zod.enum(['info', 'warning', 'error']),
+  "message": zod.string(),
+  "control": zod.string(),
+  "startSeconds": zod.number().min(listMixMasterRevisionsResponseEvidenceQualityFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(listMixMasterRevisionsResponseEvidenceQualityFindingsItemEndSecondsMin)
+}))
+})
+}),
+  "approvedAt": zod.string().nullable(),
+  "approvedBy": zod.string().nullable(),
+  "createdAt": zod.string()
+})
+export const ListMixMasterRevisionsResponse = zod.array(ListMixMasterRevisionsResponseItem)
+
+
+/**
+ * @summary Render an immutable WAV audition revision
+ */
+export const CreateMixMasterRevisionParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+
+export const createMixMasterRevisionBodyTracksLevelDbMin = -60;
+export const createMixMasterRevisionBodyTracksLevelDbMax = 12;
+
+export const createMixMasterRevisionBodyTracksPanMin = -1;
+export const createMixMasterRevisionBodyTracksPanMax = 1;
+
+export const createMixMasterRevisionBodyTracksSendDbMin = -80;
+export const createMixMasterRevisionBodyTracksSendDbMax = 6;
+
+export const createMixMasterRevisionBodyTracksProcessingHighPassHzMin = 20;
+export const createMixMasterRevisionBodyTracksProcessingHighPassHzMax = 20000;
+
+export const createMixMasterRevisionBodyTracksProcessingCompressorRatioMax = 20;
+
+export const createMixMasterRevisionBodyTracksProcessingSaturationMin = 0;
+export const createMixMasterRevisionBodyTracksProcessingSaturationMax = 1;
+
+export const createMixMasterRevisionBodyMasterTargetLufsMin = -24;
+export const createMixMasterRevisionBodyMasterTargetLufsMax = -6;
+
+export const createMixMasterRevisionBodyMasterTruePeakDbtpMin = -6;
+export const createMixMasterRevisionBodyMasterTruePeakDbtpMax = -0.1;
+
+export const createMixMasterRevisionBodyMasterProcessingStereoWidthMin = 0;
+export const createMixMasterRevisionBodyMasterProcessingStereoWidthMax = 2;
+
+
+
+export const CreateMixMasterRevisionBody = zod.object({
+  "arrangementId": zod.string().min(1),
+  "tracks": zod.record(zod.string(), zod.object({
+  "levelDb": zod.number().min(createMixMasterRevisionBodyTracksLevelDbMin).max(createMixMasterRevisionBodyTracksLevelDbMax),
+  "pan": zod.number().min(createMixMasterRevisionBodyTracksPanMin).max(createMixMasterRevisionBodyTracksPanMax),
+  "bus": zod.enum(['MIX', 'DRUMS', 'MUSIC', 'VOCALS', 'FX']),
+  "sendDb": zod.number().min(createMixMasterRevisionBodyTracksSendDbMin).max(createMixMasterRevisionBodyTracksSendDbMax),
+  "processing": zod.object({
+  "highPassHz": zod.number().min(createMixMasterRevisionBodyTracksProcessingHighPassHzMin).max(createMixMasterRevisionBodyTracksProcessingHighPassHzMax),
+  "compressorRatio": zod.number().min(1).max(createMixMasterRevisionBodyTracksProcessingCompressorRatioMax),
+  "saturation": zod.number().min(createMixMasterRevisionBodyTracksProcessingSaturationMin).max(createMixMasterRevisionBodyTracksProcessingSaturationMax)
+})
+})),
+  "master": zod.object({
+  "targetLufs": zod.number().min(createMixMasterRevisionBodyMasterTargetLufsMin).max(createMixMasterRevisionBodyMasterTargetLufsMax),
+  "truePeakDbtp": zod.number().min(createMixMasterRevisionBodyMasterTruePeakDbtpMin).max(createMixMasterRevisionBodyMasterTruePeakDbtpMax),
+  "processing": zod.object({
+  "limiter": zod.boolean(),
+  "stereoWidth": zod.number().min(createMixMasterRevisionBodyMasterProcessingStereoWidthMin).max(createMixMasterRevisionBodyMasterProcessingStereoWidthMax)
+})
+})
+})
+
+export const createMixMasterRevisionResponseControlsTracksLevelDbMin = -60;
+export const createMixMasterRevisionResponseControlsTracksLevelDbMax = 12;
+
+export const createMixMasterRevisionResponseControlsTracksPanMin = -1;
+export const createMixMasterRevisionResponseControlsTracksPanMax = 1;
+
+export const createMixMasterRevisionResponseControlsTracksSendDbMin = -80;
+export const createMixMasterRevisionResponseControlsTracksSendDbMax = 6;
+
+export const createMixMasterRevisionResponseControlsTracksProcessingHighPassHzMin = 20;
+export const createMixMasterRevisionResponseControlsTracksProcessingHighPassHzMax = 20000;
+
+export const createMixMasterRevisionResponseControlsTracksProcessingCompressorRatioMax = 20;
+
+export const createMixMasterRevisionResponseControlsTracksProcessingSaturationMin = 0;
+export const createMixMasterRevisionResponseControlsTracksProcessingSaturationMax = 1;
+
+export const createMixMasterRevisionResponseVariantsOriginalOneDurationSecondsMin = 0;
+
+export const createMixMasterRevisionResponseVariantsRepairedOneDurationSecondsMin = 0;
+
+export const createMixMasterRevisionResponseVariantsMixedDurationSecondsMin = 0;
+
+export const createMixMasterRevisionResponseVariantsMasteredDurationSecondsMin = 0;
+
+export const createMixMasterRevisionResponseEvidenceVariantsOriginalOneDurationSecondsMin = 0;
+
+export const createMixMasterRevisionResponseEvidenceVariantsRepairedOneDurationSecondsMin = 0;
+
+export const createMixMasterRevisionResponseEvidenceVariantsMixedDurationSecondsMin = 0;
+
+export const createMixMasterRevisionResponseEvidenceVariantsMasteredDurationSecondsMin = 0;
+
+export const createMixMasterRevisionResponseEvidenceQualityFindingsItemStartSecondsMin = 0;
+
+export const createMixMasterRevisionResponseEvidenceQualityFindingsItemEndSecondsMin = 0;
+
+
+
+export const CreateMixMasterRevisionResponse = zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "arrangementId": zod.string(),
+  "version": zod.number(),
+  "controls": zod.object({
+  "tracks": zod.record(zod.string(), zod.object({
+  "levelDb": zod.number().min(createMixMasterRevisionResponseControlsTracksLevelDbMin).max(createMixMasterRevisionResponseControlsTracksLevelDbMax),
+  "pan": zod.number().min(createMixMasterRevisionResponseControlsTracksPanMin).max(createMixMasterRevisionResponseControlsTracksPanMax),
+  "bus": zod.enum(['MIX', 'DRUMS', 'MUSIC', 'VOCALS', 'FX']),
+  "sendDb": zod.number().min(createMixMasterRevisionResponseControlsTracksSendDbMin).max(createMixMasterRevisionResponseControlsTracksSendDbMax),
+  "processing": zod.object({
+  "highPassHz": zod.number().min(createMixMasterRevisionResponseControlsTracksProcessingHighPassHzMin).max(createMixMasterRevisionResponseControlsTracksProcessingHighPassHzMax),
+  "compressorRatio": zod.number().min(1).max(createMixMasterRevisionResponseControlsTracksProcessingCompressorRatioMax),
+  "saturation": zod.number().min(createMixMasterRevisionResponseControlsTracksProcessingSaturationMin).max(createMixMasterRevisionResponseControlsTracksProcessingSaturationMax)
+})
+})),
+  "master": zod.object({
+  "targetLufs": zod.number(),
+  "truePeakDbtp": zod.number(),
+  "processing": zod.object({
+  "limiter": zod.boolean(),
+  "stereoWidth": zod.number()
+})
+})
+}),
+  "previewUrl": zod.string(),
+  "variants": zod.object({
+  "original": zod.union([zod.object({
+  "url": zod.string(),
+  "timelineSha256": zod.string(),
+  "durationSeconds": zod.number().min(createMixMasterRevisionResponseVariantsOriginalOneDurationSecondsMin),
+  "sourceId": zod.string().optional(),
+  "artifactId": zod.string().optional(),
+  "checksum": zod.string().optional()
+}),zod.null()]),
+  "repaired": zod.union([zod.object({
+  "url": zod.string(),
+  "timelineSha256": zod.string(),
+  "durationSeconds": zod.number().min(createMixMasterRevisionResponseVariantsRepairedOneDurationSecondsMin),
+  "sourceId": zod.string().optional(),
+  "artifactId": zod.string().optional(),
+  "checksum": zod.string().optional()
+}),zod.null()]),
+  "mixed": zod.object({
+  "url": zod.string(),
+  "timelineSha256": zod.string(),
+  "durationSeconds": zod.number().min(createMixMasterRevisionResponseVariantsMixedDurationSecondsMin),
+  "sourceId": zod.string().optional(),
+  "artifactId": zod.string().optional(),
+  "checksum": zod.string().optional()
+}),
+  "mastered": zod.object({
+  "url": zod.string(),
+  "timelineSha256": zod.string(),
+  "durationSeconds": zod.number().min(createMixMasterRevisionResponseVariantsMasteredDurationSecondsMin),
+  "sourceId": zod.string().optional(),
+  "artifactId": zod.string().optional(),
+  "checksum": zod.string().optional()
+})
+}),
+  "evidence": zod.object({
+  "arrangementId": zod.string(),
+  "arrangementVersion": zod.number(),
+  "songModelVersion": zod.number().nullable(),
+  "timelineSha256": zod.string(),
+  "artifactIds": zod.array(zod.string()),
+  "variants": zod.object({
+  "original": zod.union([zod.object({
+  "url": zod.string(),
+  "timelineSha256": zod.string(),
+  "durationSeconds": zod.number().min(createMixMasterRevisionResponseEvidenceVariantsOriginalOneDurationSecondsMin),
+  "sourceId": zod.string().optional(),
+  "artifactId": zod.string().optional(),
+  "checksum": zod.string().optional()
+}),zod.null()]),
+  "repaired": zod.union([zod.object({
+  "url": zod.string(),
+  "timelineSha256": zod.string(),
+  "durationSeconds": zod.number().min(createMixMasterRevisionResponseEvidenceVariantsRepairedOneDurationSecondsMin),
+  "sourceId": zod.string().optional(),
+  "artifactId": zod.string().optional(),
+  "checksum": zod.string().optional()
+}),zod.null()]),
+  "mixed": zod.object({
+  "url": zod.string(),
+  "timelineSha256": zod.string(),
+  "durationSeconds": zod.number().min(createMixMasterRevisionResponseEvidenceVariantsMixedDurationSecondsMin),
+  "sourceId": zod.string().optional(),
+  "artifactId": zod.string().optional(),
+  "checksum": zod.string().optional()
+}),
+  "mastered": zod.object({
+  "url": zod.string(),
+  "timelineSha256": zod.string(),
+  "durationSeconds": zod.number().min(createMixMasterRevisionResponseEvidenceVariantsMasteredDurationSecondsMin),
+  "sourceId": zod.string().optional(),
+  "artifactId": zod.string().optional(),
+  "checksum": zod.string().optional()
+})
+}),
+  "renderer": zod.string(),
+  "quality": zod.object({
+  "integratedLufs": zod.number(),
+  "truePeakDbtp": zod.number(),
+  "truePeakMethod": zod.enum(['4x-windowed-sinc-estimate']),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "severity": zod.enum(['info', 'warning', 'error']),
+  "message": zod.string(),
+  "control": zod.string(),
+  "startSeconds": zod.number().min(createMixMasterRevisionResponseEvidenceQualityFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(createMixMasterRevisionResponseEvidenceQualityFindingsItemEndSecondsMin)
+}))
+})
+}),
+  "approvedAt": zod.string().nullable(),
+  "approvedBy": zod.string().nullable(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Approve an immutable revision for export
+ */
+export const ApproveMixMasterRevisionParams = zod.object({
+  "projectId": zod.coerce.string(),
+  "revisionId": zod.coerce.string()
+})
+
+export const approveMixMasterRevisionResponseControlsTracksLevelDbMin = -60;
+export const approveMixMasterRevisionResponseControlsTracksLevelDbMax = 12;
+
+export const approveMixMasterRevisionResponseControlsTracksPanMin = -1;
+export const approveMixMasterRevisionResponseControlsTracksPanMax = 1;
+
+export const approveMixMasterRevisionResponseControlsTracksSendDbMin = -80;
+export const approveMixMasterRevisionResponseControlsTracksSendDbMax = 6;
+
+export const approveMixMasterRevisionResponseControlsTracksProcessingHighPassHzMin = 20;
+export const approveMixMasterRevisionResponseControlsTracksProcessingHighPassHzMax = 20000;
+
+export const approveMixMasterRevisionResponseControlsTracksProcessingCompressorRatioMax = 20;
+
+export const approveMixMasterRevisionResponseControlsTracksProcessingSaturationMin = 0;
+export const approveMixMasterRevisionResponseControlsTracksProcessingSaturationMax = 1;
+
+export const approveMixMasterRevisionResponseVariantsOriginalOneDurationSecondsMin = 0;
+
+export const approveMixMasterRevisionResponseVariantsRepairedOneDurationSecondsMin = 0;
+
+export const approveMixMasterRevisionResponseVariantsMixedDurationSecondsMin = 0;
+
+export const approveMixMasterRevisionResponseVariantsMasteredDurationSecondsMin = 0;
+
+export const approveMixMasterRevisionResponseEvidenceVariantsOriginalOneDurationSecondsMin = 0;
+
+export const approveMixMasterRevisionResponseEvidenceVariantsRepairedOneDurationSecondsMin = 0;
+
+export const approveMixMasterRevisionResponseEvidenceVariantsMixedDurationSecondsMin = 0;
+
+export const approveMixMasterRevisionResponseEvidenceVariantsMasteredDurationSecondsMin = 0;
+
+export const approveMixMasterRevisionResponseEvidenceQualityFindingsItemStartSecondsMin = 0;
+
+export const approveMixMasterRevisionResponseEvidenceQualityFindingsItemEndSecondsMin = 0;
+
+
+
+export const ApproveMixMasterRevisionResponse = zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "arrangementId": zod.string(),
+  "version": zod.number(),
+  "controls": zod.object({
+  "tracks": zod.record(zod.string(), zod.object({
+  "levelDb": zod.number().min(approveMixMasterRevisionResponseControlsTracksLevelDbMin).max(approveMixMasterRevisionResponseControlsTracksLevelDbMax),
+  "pan": zod.number().min(approveMixMasterRevisionResponseControlsTracksPanMin).max(approveMixMasterRevisionResponseControlsTracksPanMax),
+  "bus": zod.enum(['MIX', 'DRUMS', 'MUSIC', 'VOCALS', 'FX']),
+  "sendDb": zod.number().min(approveMixMasterRevisionResponseControlsTracksSendDbMin).max(approveMixMasterRevisionResponseControlsTracksSendDbMax),
+  "processing": zod.object({
+  "highPassHz": zod.number().min(approveMixMasterRevisionResponseControlsTracksProcessingHighPassHzMin).max(approveMixMasterRevisionResponseControlsTracksProcessingHighPassHzMax),
+  "compressorRatio": zod.number().min(1).max(approveMixMasterRevisionResponseControlsTracksProcessingCompressorRatioMax),
+  "saturation": zod.number().min(approveMixMasterRevisionResponseControlsTracksProcessingSaturationMin).max(approveMixMasterRevisionResponseControlsTracksProcessingSaturationMax)
+})
+})),
+  "master": zod.object({
+  "targetLufs": zod.number(),
+  "truePeakDbtp": zod.number(),
+  "processing": zod.object({
+  "limiter": zod.boolean(),
+  "stereoWidth": zod.number()
+})
+})
+}),
+  "previewUrl": zod.string(),
+  "variants": zod.object({
+  "original": zod.union([zod.object({
+  "url": zod.string(),
+  "timelineSha256": zod.string(),
+  "durationSeconds": zod.number().min(approveMixMasterRevisionResponseVariantsOriginalOneDurationSecondsMin),
+  "sourceId": zod.string().optional(),
+  "artifactId": zod.string().optional(),
+  "checksum": zod.string().optional()
+}),zod.null()]),
+  "repaired": zod.union([zod.object({
+  "url": zod.string(),
+  "timelineSha256": zod.string(),
+  "durationSeconds": zod.number().min(approveMixMasterRevisionResponseVariantsRepairedOneDurationSecondsMin),
+  "sourceId": zod.string().optional(),
+  "artifactId": zod.string().optional(),
+  "checksum": zod.string().optional()
+}),zod.null()]),
+  "mixed": zod.object({
+  "url": zod.string(),
+  "timelineSha256": zod.string(),
+  "durationSeconds": zod.number().min(approveMixMasterRevisionResponseVariantsMixedDurationSecondsMin),
+  "sourceId": zod.string().optional(),
+  "artifactId": zod.string().optional(),
+  "checksum": zod.string().optional()
+}),
+  "mastered": zod.object({
+  "url": zod.string(),
+  "timelineSha256": zod.string(),
+  "durationSeconds": zod.number().min(approveMixMasterRevisionResponseVariantsMasteredDurationSecondsMin),
+  "sourceId": zod.string().optional(),
+  "artifactId": zod.string().optional(),
+  "checksum": zod.string().optional()
+})
+}),
+  "evidence": zod.object({
+  "arrangementId": zod.string(),
+  "arrangementVersion": zod.number(),
+  "songModelVersion": zod.number().nullable(),
+  "timelineSha256": zod.string(),
+  "artifactIds": zod.array(zod.string()),
+  "variants": zod.object({
+  "original": zod.union([zod.object({
+  "url": zod.string(),
+  "timelineSha256": zod.string(),
+  "durationSeconds": zod.number().min(approveMixMasterRevisionResponseEvidenceVariantsOriginalOneDurationSecondsMin),
+  "sourceId": zod.string().optional(),
+  "artifactId": zod.string().optional(),
+  "checksum": zod.string().optional()
+}),zod.null()]),
+  "repaired": zod.union([zod.object({
+  "url": zod.string(),
+  "timelineSha256": zod.string(),
+  "durationSeconds": zod.number().min(approveMixMasterRevisionResponseEvidenceVariantsRepairedOneDurationSecondsMin),
+  "sourceId": zod.string().optional(),
+  "artifactId": zod.string().optional(),
+  "checksum": zod.string().optional()
+}),zod.null()]),
+  "mixed": zod.object({
+  "url": zod.string(),
+  "timelineSha256": zod.string(),
+  "durationSeconds": zod.number().min(approveMixMasterRevisionResponseEvidenceVariantsMixedDurationSecondsMin),
+  "sourceId": zod.string().optional(),
+  "artifactId": zod.string().optional(),
+  "checksum": zod.string().optional()
+}),
+  "mastered": zod.object({
+  "url": zod.string(),
+  "timelineSha256": zod.string(),
+  "durationSeconds": zod.number().min(approveMixMasterRevisionResponseEvidenceVariantsMasteredDurationSecondsMin),
+  "sourceId": zod.string().optional(),
+  "artifactId": zod.string().optional(),
+  "checksum": zod.string().optional()
+})
+}),
+  "renderer": zod.string(),
+  "quality": zod.object({
+  "integratedLufs": zod.number(),
+  "truePeakDbtp": zod.number(),
+  "truePeakMethod": zod.enum(['4x-windowed-sinc-estimate']),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "severity": zod.enum(['info', 'warning', 'error']),
+  "message": zod.string(),
+  "control": zod.string(),
+  "startSeconds": zod.number().min(approveMixMasterRevisionResponseEvidenceQualityFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(approveMixMasterRevisionResponseEvidenceQualityFindingsItemEndSecondsMin)
+}))
+})
+}),
+  "approvedAt": zod.string().nullable(),
+  "approvedBy": zod.string().nullable(),
+  "createdAt": zod.string()
 })
 
 
