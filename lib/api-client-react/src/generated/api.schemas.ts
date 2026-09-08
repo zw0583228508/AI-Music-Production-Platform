@@ -2415,6 +2415,7 @@ export interface TrackPerformanceEvidence {
   performedMaterialSha256: string;
 }
 
+export type TrackHarmonyEvidenceVersion = typeof TrackHarmonyEvidenceVersion[keyof typeof TrackHarmonyEvidenceVersion];
 export interface TrackModel {
   id: string;
   instrument: string;
@@ -2431,6 +2432,7 @@ export interface TrackModel {
   appliedDirectives?: AppliedTrackDirective[];
   mapping?: TrackMappingMetadata;
   performanceEvidence?: TrackPerformanceEvidence;
+  harmonyEvidence?: TrackHarmonyEvidence;
 }
 
 export interface Track {
@@ -3869,3 +3871,30 @@ projectId?: string;
 limit?: number;
 };
 
+
+export type TrackHarmonyEvidenceMode = typeof TrackHarmonyEvidenceMode[keyof typeof TrackHarmonyEvidenceMode];
+
+export const TrackHarmonyEvidenceMode = {
+  advanced_voicing: 'advanced_voicing',
+  phrase_countermelody: 'phrase_countermelody',
+} as const;
+
+export const TrackHarmonyEvidenceVersion = {
+  '20': '2.0',
+} as const;
+
+export interface TrackHarmonyEvidence {
+  version: TrackHarmonyEvidenceVersion;
+  mode: TrackHarmonyEvidenceMode;
+  /** @minimum 0 */
+  selectedMotion?: number;
+  /** @minimum 0 */
+  baselineMotion?: number;
+  /** @minimum 0 */
+  maximumLeap?: number;
+  motifRefs?: string[];
+  /** @minimum 0 */
+  resolutionObligations?: number;
+  melodyEvidencePreserved: boolean;
+  bassEvidencePreserved: boolean;
+}

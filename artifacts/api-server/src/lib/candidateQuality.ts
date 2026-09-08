@@ -175,6 +175,7 @@ function scoreVocalFit(
 
 function scoreHarmony(
   decisions: HarmonyDecisionEvidence[],
+  tracks: TrackModel[],
 ): CandidateMusicCriticDimensionResult {
   if (!decisions.length) {
     return unavailable("No harmony decision evidence was recorded.", "harmony_decisions");
@@ -184,16 +185,34 @@ function scoreHarmony(
   if (!scored.length) {
     return unavailable("Harmony decisions do not include melody and bass fit scores.", "harmony_decisions");
   }
-  const score = scored.reduce(
+  const evidenceFit = scored.reduce(
     (sum, item) => sum + ((item.melodyFit ?? 0) + (item.bassFit ?? 0)) / 2,
     0,
   ) / scored.length;
+  const voicing = tracks.flatMap((track) =>
+    track.harmonyEvidence?.mode === "advanced_voicing" &&
+    Number.isFinite(track.harmonyEvidence.selectedMotion) &&
+    Number.isFinite(track.harmonyEvidence.baselineMotion)
+      ? [track.harmonyEvidence]
+      : []);
+  const improvedVoicings = voicing.filter((item) =>
+    item.melodyEvidencePreserved &&
+    item.bassEvidencePreserved &&
+    (item.selectedMotion ?? Infinity) <= (item.baselineMotion ?? -Infinity)).length;
+  const score = voicing.length
+    ? evidenceFit * .8 + improvedVoicings / voicing.length * .2
+    : evidenceFit;
   return available(
     score,
     "Combines observed melody and bass compatibility for recorded harmony choices.",
     "harmony_decisions",
     "Scored harmony choices with melody and bass evidence.",
-    { scoredDecisions: scored.length, totalDecisions: decisions.length },
+    {
+      scoredDecisions: scored.length,
+      totalDecisions: decisions.length,
+      measuredVoicingTracks: voicing.length,
+      improvedVoicingTracks: improvedVoicings,
+    },
   );
 }
 
@@ -549,7 +568,7 @@ export function evaluateCandidateMusicalFit(input: {
 }): CandidateMusicCriticReport {
   const results: Record<CandidateMusicCriticDimension, CandidateMusicCriticDimensionResult> = {
     vocalFit: scoreVocalFit(input.songModel, input.tracks),
-    harmony: scoreHarmony(input.harmonyDecisions),
+    harmony: scoreHarmony(input.harmonyDecisions, input.tracks),
     development: scoreDevelopment(input.plan),
     contrastAndTransitions: scoreContrast(input.plan),
     registerCollisions: scoreRegisterCollisions(input.tracks),
