@@ -230,3 +230,44 @@ test("critic keeps 6/8 harmony findings inclusive, section-bounded, and track-sc
   assert.deepEqual(finding.affectedTrackIds, ["piano"]);
   assert.doesNotMatch(finding.id, /::/);
 });
+
+test("dense collisions retain one deterministic finding per separate trouble spot", () => {
+  const denseTrack = (id: string, pitch: number): TrackModel => ({
+    ...track(id, id, pitch),
+    notes: Array.from({ length: 200 }, (_, index) => {
+      const inChorus = index >= 100;
+      return {
+        id: `${id}-${index}`,
+        start: (inChorus ? 17 : 1) + (index % 100) * 0.001,
+        duration: 1,
+        pitch: pitch + (index % 2),
+        velocity: 80,
+      };
+    }),
+  } as TrackModel);
+  const input = {
+    songModel: {
+      tempoMap: [{ time: 0, bpm: 60, confidence: 1 }],
+      meterMap: [{ bar: 1, meter: "4/4", confidence: 1 }],
+    } as unknown as SongModelData,
+    plan,
+    tracks: [
+      denseTrack("z-piano", 60),
+      denseTrack("a-bass", 61),
+      denseTrack("m-strings", 62),
+    ],
+    harmonyDecisions: [],
+  };
+
+  const findings = evaluateCandidateMusicalFit(input).dimensions.registerCollisions.findings;
+  const repeatedFindings =
+    evaluateCandidateMusicalFit(input).dimensions.registerCollisions.findings;
+
+  assert.equal(findings.length, 2);
+  assert.deepEqual(findings.map(({ startBar }) => startBar), [1, 5]);
+  assert.deepEqual(findings.map(({ affectedTrackIds }) => affectedTrackIds), [
+    ["a-bass", "m-strings"],
+    ["a-bass", "m-strings"],
+  ]);
+  assert.deepEqual(repeatedFindings.map(({ id }) => id), findings.map(({ id }) => id));
+});
