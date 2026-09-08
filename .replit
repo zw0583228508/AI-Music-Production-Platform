@@ -135,3 +135,17 @@ MUSIC_PROVIDER_STABLE_AUDIO_3_MEDIUM_HEALTH_TIMEOUT_MS = "180000"
 MUSIC_PROVIDER_STABLE_AUDIO_3_SMALL_MUSIC_HEALTH_TIMEOUT_MS = "180000"
 STABLE_AUDIO_3_MEDIUM_API_URL = "https://windot100--stable-audio3.modal.run"
 STABLE_AUDIO_3_SMALL_MUSIC_API_URL = "https://windot100--stable-audio3.modal.run"
+MUSICGEN_API_URL = "https://windot100--musicgen-worker-endpoint.modal.run"
+MUSIC_PROVIDER_MUSICGEN_HEALTH_TIMEOUT_MS = "900000"
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
+
+[[ports]]
+localPort = 8081
+externalPort = 80
+
+[[ports]]
+localPort = 22226
+externalPort = 3000

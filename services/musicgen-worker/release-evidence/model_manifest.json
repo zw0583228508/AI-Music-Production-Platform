@@ -1,0 +1,578 @@
+{
+  "dependencies": {
+    "encodec-32khz": {
+      "files": [
+        {
+          "bytes": 1477,
+          "path": ".gitattributes",
+          "sha256": "db7c0371f46f0840b8f25794c1e3321c9b5820a8cb6ba9694a46fc64b8fae5a6"
+        },
+        {
+          "bytes": 5591,
+          "path": "README.md",
+          "sha256": "9f9b9d78835171e49863d77a390c1123d3a10edd64d95559fb13baf18e054e33"
+        },
+        {
+          "bytes": 758,
+          "path": "config.json",
+          "sha256": "7def02be473b8dd396cbfc2528c18a29107bb9964537e0a3c56caa41c8fff784"
+        },
+        {
+          "bytes": 235972432,
+          "path": "model.safetensors",
+          "sha256": "0e78f34d2ff3259f29bd51f7a99060151fe4ba5776fee216f58847f06082f1ca"
+        },
+        {
+          "bytes": 234,
+          "path": "preprocessor_config.json",
+          "sha256": "8a27f6994d117629380e03fa70981bbf6ce967a4242858b539f0b2e98799306c"
+        },
+        {
+          "bytes": 235996573,
+          "path": "pytorch_model.bin",
+          "sha256": "e67175a1bedb126fc0871e4f7b3a29a2fc1711e8ad80c258a160910b6748b711"
+        }
+      ],
+      "path": "hf-cache/hub/models--facebook--encodec_32khz/snapshots/d0c45384f6c44db055f78200cfdcb9c1c8706727",
+      "repository": "facebook/encodec_32khz",
+      "resolvedRevision": "d0c45384f6c44db055f78200cfdcb9c1c8706727"
+    },
+    "t5-base": {
+      "files": [
+        {
+          "bytes": 537,
+          "path": ".gitattributes",
+          "sha256": "9cb6af9979ddc57566b17a283ee7e56957066c3646b3ca2b2d8f23646c51b02e"
+        },
+        {
+          "bytes": 8477,
+          "path": "README.md",
+          "sha256": "c43c23f205b6839a6adb10f0757265f76c1c6f96b7793a4e53582d3a61cbfb23"
+        },
+        {
+          "bytes": 1208,
+          "path": "config.json",
+          "sha256": "46dd7cb62d29c81fb551e0ef1ea274c24a46ba441eeb948897706252933df033"
+        },
+        {
+          "bytes": 891625348,
+          "path": "flax_model.msgpack",
+          "sha256": "d96ab4b2e2ac1743c32e80669ec37905151c78d8136ff0ce4ba6566bde6e932f"
+        },
+        {
+          "bytes": 147,
+          "path": "generation_config.json",
+          "sha256": "f5a1c7e2be8092018d8835128987edf0111637dd98e90599cc80310fef75d95a"
+        },
+        {
+          "bytes": 891646390,
+          "path": "model.safetensors",
+          "sha256": "a90903540cc02cbeb7ff9f823f1a80eb778c7e22426a0e620b01c77a5ec8f5b4"
+        },
+        {
+          "bytes": 891691430,
+          "path": "pytorch_model.bin",
+          "sha256": "ab97165968edc4aacd30554d18d7beca7f18b3a83e1a47abbad29792d984651f"
+        },
+        {
+          "bytes": 891679884,
+          "path": "rust_model.ot",
+          "sha256": "d53fb0a3dbc251585dc6d863e8be405128b7d426ac860b9fc26ecefbcc88afeb"
+        },
+        {
+          "bytes": 791656,
+          "path": "spiece.model",
+          "sha256": "d60acb128cf7b7f2536e8f38a5b18a05535c9e14c7a355904270e15b0945ea86"
+        },
+        {
+          "bytes": 892146080,
+          "path": "tf_model.h5",
+          "sha256": "700a1c9ebae4b74d6046636e6fedea5cfba821730429cdd0a7d56541b21c2789"
+        },
+        {
+          "bytes": 1389353,
+          "path": "tokenizer.json",
+          "sha256": "d2acde0d8d71dd30a711834b07781b9c89feaac33fd332f60507699282740066"
+        }
+      ],
+      "path": "hf-cache/hub/models--t5-base/snapshots/a9723ea7f1b39c1eae772870f3b547bf6ef7e6c1",
+      "repository": "t5-base",
+      "resolvedRevision": "a9723ea7f1b39c1eae772870f3b547bf6ef7e6c1"
+    }
+  },
+  "license": "CC-BY-NC-4.0",
+  "models": {
+    "melody": {
+      "files": [
+        {
+          "bytes": 1,
+          "path": ".cache/huggingface/.gitignore",
+          "sha256": "684888c0ebb17f374298b65ee2807526c066094c701bcc7ebbe1c1095f494fc1"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/.gitattributes.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 100,
+          "path": ".cache/huggingface/download/.gitattributes.metadata",
+          "sha256": "3feb13bf6cab8c57b3d4e6436cca16e4dd5da5e8782ea1048168f884e41324b8"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/README.md.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 100,
+          "path": ".cache/huggingface/download/README.md.metadata",
+          "sha256": "31880b86ce3f987d44d265744f0d94d0aa34314850a2ad9680bc36ba68235a99"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/compression_state_dict.bin.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 125,
+          "path": ".cache/huggingface/download/compression_state_dict.bin.metadata",
+          "sha256": "9bf061749d60bcbefbbf9a3829c7ca745d5364c206cea444ef6d579321edffe0"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/config.json.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 101,
+          "path": ".cache/huggingface/download/config.json.metadata",
+          "sha256": "b07de6d50135b08542f8a72ed9354f9e5be97ff9f35001a088354a71775274f8"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/generation_config.json.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 101,
+          "path": ".cache/huggingface/download/generation_config.json.metadata",
+          "sha256": "6e0f6cadf3d09f58dc18c873ad631b8dbc2cd89f24e754fec6b11bc7f005f514"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/model-00001-of-00003.safetensors.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 125,
+          "path": ".cache/huggingface/download/model-00001-of-00003.safetensors.metadata",
+          "sha256": "c3a1cd914c82e87b084839cde045a12e5147c004281aaeb0ddb3533a1be9648a"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/model-00002-of-00003.safetensors.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 125,
+          "path": ".cache/huggingface/download/model-00002-of-00003.safetensors.metadata",
+          "sha256": "a358ecb94e789979b09919ec909c5ea369643ef2880f4c7c081478a3b7bd3a0d"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/model-00003-of-00003.safetensors.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 124,
+          "path": ".cache/huggingface/download/model-00003-of-00003.safetensors.metadata",
+          "sha256": "4523f7a30d2230c9cade73dae8fb0e5fa1a05e00f6cf362d698c2b44807b0a50"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/model.safetensors.index.json.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 101,
+          "path": ".cache/huggingface/download/model.safetensors.index.json.metadata",
+          "sha256": "ff05058428e7d637f1acce55f962ab0c231262cfc1f172d3a3497d6dfd853513"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/preprocessor_config.json.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 100,
+          "path": ".cache/huggingface/download/preprocessor_config.json.metadata",
+          "sha256": "8b4b33b253587ed365d098cf4b965ae7ee2837bc486e4a779f628a7822c6d7f3"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/special_tokens_map.json.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 100,
+          "path": ".cache/huggingface/download/special_tokens_map.json.metadata",
+          "sha256": "abfbf679b67ce2cd7c0422f69c2568136024a6e24241eaa6f60f51be25c73c04"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/spiece.model.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 125,
+          "path": ".cache/huggingface/download/spiece.model.metadata",
+          "sha256": "9c7b9ac39613a069099fde0046c90012b71bf25c55361a203ecb946b5fb659e7"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/state_dict.bin.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 125,
+          "path": ".cache/huggingface/download/state_dict.bin.metadata",
+          "sha256": "7b3b205a48946e59b99ac7c3881cda6a37e8827bb9b0379bc0b29067b0ceb368"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/tokenizer.json.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 101,
+          "path": ".cache/huggingface/download/tokenizer.json.metadata",
+          "sha256": "94524dd7ade3b4aac348f9801cbcf8f7d1154c3306d21bd64dbfd330aad48c95"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/tokenizer_config.json.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 100,
+          "path": ".cache/huggingface/download/tokenizer_config.json.metadata",
+          "sha256": "84f43fa14631aaaa00635d019b3511cbbe2fa7271b8d3104337378ef9f8485a4"
+        },
+        {
+          "bytes": 1519,
+          "path": ".gitattributes",
+          "sha256": "11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361"
+        },
+        {
+          "bytes": 10650,
+          "path": "README.md",
+          "sha256": "3d016eb935a720cf2df3b88fd6dda6945bdaf0cc694cf9cf96c85f98ed4764c5"
+        },
+        {
+          "bytes": 589,
+          "path": "compression_state_dict.bin",
+          "sha256": "43c990a49a2c179f5d1a084db79f62a06384c186b4afc134c4eb49a8297a06a7"
+        },
+        {
+          "bytes": 7781,
+          "path": "config.json",
+          "sha256": "e17f0b50cb22b1e3f6db5117953918d3c2524716532c1886a12dec3997cb8a42"
+        },
+        {
+          "bytes": 224,
+          "path": "generation_config.json",
+          "sha256": "d7b18a12d2aaf81de615e5a333324107470ee92b6d93b84d09a345e68d9b8766"
+        },
+        {
+          "bytes": 4986994376,
+          "path": "model-00001-of-00003.safetensors",
+          "sha256": "a38e3ed0a1a1e9927278e20a2cb5e56bfce019b98f78295c99b9a747d9bda699"
+        },
+        {
+          "bytes": 4966890568,
+          "path": "model-00002-of-00003.safetensors",
+          "sha256": "ff7f57ef40b093d1f69851ecde50f57eb89904aa2abd02912868447b73b212b8"
+        },
+        {
+          "bytes": 543379288,
+          "path": "model-00003-of-00003.safetensors",
+          "sha256": "b5aace972db765f0d5c9c7ba88119b1c1e7aae9fed43d226522f596af65c1ccf"
+        },
+        {
+          "bytes": 68462,
+          "path": "model.safetensors.index.json",
+          "sha256": "87f872dcdd7c598e1d61b9a081328aefa51e83b22e5d139b9abe641c95568d67"
+        },
+        {
+          "bytes": 369,
+          "path": "preprocessor_config.json",
+          "sha256": "36784325e934e383bafadc6a3eb677a2c8bab251b2f27cfc212a9d89c170fb3a"
+        },
+        {
+          "bytes": 2201,
+          "path": "special_tokens_map.json",
+          "sha256": "5c87151ef0f72a99d1f766a4c418bd2a1f90aaa30a8e22fe5eca9641daebb64f"
+        },
+        {
+          "bytes": 791656,
+          "path": "spiece.model",
+          "sha256": "d60acb128cf7b7f2536e8f38a5b18a05535c9e14c7a355904270e15b0945ea86"
+        },
+        {
+          "bytes": 4903127890,
+          "path": "state_dict.bin",
+          "sha256": "a5cd1a73ccbaa3384546756cf5caf0dcce5bd4185c3386962dcbf1a3d5207dff"
+        },
+        {
+          "bytes": 2422191,
+          "path": "tokenizer.json",
+          "sha256": "a45ba2af379e1d559dbbdf176bb6a338945019534a20e15e07d22bbd0a7544b3"
+        },
+        {
+          "bytes": 20794,
+          "path": "tokenizer_config.json",
+          "sha256": "cf78390648a76b34c0b3b24f2625521963360f6b386eb159129917243b6ecd41"
+        }
+      ],
+      "path": "melody",
+      "repository": "facebook/musicgen-melody-large",
+      "requestedRevision": "6fdf8d3",
+      "resolvedRevision": "6fdf8d3d815995108c9bdb5183414ff464b171ac"
+    },
+    "text": {
+      "files": [
+        {
+          "bytes": 1,
+          "path": ".cache/huggingface/.gitignore",
+          "sha256": "684888c0ebb17f374298b65ee2807526c066094c701bcc7ebbe1c1095f494fc1"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/.gitattributes.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 101,
+          "path": ".cache/huggingface/download/.gitattributes.metadata",
+          "sha256": "6df9a5063e9bd4aa7e6de1ad11784c4345ea28723dfb024a50edca60ba2cce5f"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/README.md.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 100,
+          "path": ".cache/huggingface/download/README.md.metadata",
+          "sha256": "4e0fd030870e399d8e3559b52ddb22790ae1b6da317f0611628282764247d8ab"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/compression_state_dict.bin.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 125,
+          "path": ".cache/huggingface/download/compression_state_dict.bin.metadata",
+          "sha256": "4a1ff6a6cde666738bd0c565a1b897fd313465ead50f98a8a1d688c4ca6c6984"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/config.json.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 101,
+          "path": ".cache/huggingface/download/config.json.metadata",
+          "sha256": "f92b499007bbdfce3ea24381e46d1b892386a6ef4196bbf15a2c967190a0fd46"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/generation_config.json.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 101,
+          "path": ".cache/huggingface/download/generation_config.json.metadata",
+          "sha256": "94b86f0ab5e5bcc87e3bcbfc4f3971a2ec0e597453860e3f929c6b553cdf8ba6"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/preprocessor_config.json.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 101,
+          "path": ".cache/huggingface/download/preprocessor_config.json.metadata",
+          "sha256": "b9e345a7f57c5d4056b2eda735dccc0ac15a13ddb9a28ee433b92bf61947b720"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/pytorch_model-00001-of-00002.bin.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 125,
+          "path": ".cache/huggingface/download/pytorch_model-00001-of-00002.bin.metadata",
+          "sha256": "fb35337b8a9ba0e20d29945d00fce4f4be6f77114173392b49107fda81d5a36d"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/pytorch_model-00002-of-00002.bin.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 125,
+          "path": ".cache/huggingface/download/pytorch_model-00002-of-00002.bin.metadata",
+          "sha256": "4e31ef19dc4142e33bf582e17b05d53448229fc0dad76a4b35474720f60470a1"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/pytorch_model.bin.index.json.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 99,
+          "path": ".cache/huggingface/download/pytorch_model.bin.index.json.metadata",
+          "sha256": "4c37350ae30cd46a347f9a2a213d69ea045e002de6c5afbd33b52c47300efec2"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/special_tokens_map.json.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 101,
+          "path": ".cache/huggingface/download/special_tokens_map.json.metadata",
+          "sha256": "d08f6d29d73136c7f4fffaeb5741ff6bb97ba5da27c29b7f7ab2bbec2a3df326"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/spiece.model.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 124,
+          "path": ".cache/huggingface/download/spiece.model.metadata",
+          "sha256": "b66e74828b232a2adc4121960994643fe689b5b58005a8b0a1e10f7382cff8b3"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/state_dict.bin.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 125,
+          "path": ".cache/huggingface/download/state_dict.bin.metadata",
+          "sha256": "8c78723165c02d7d96ef52a7ea43bf1c6383c27ed8bcf421ee482ec01f704279"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/tokenizer.json.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 101,
+          "path": ".cache/huggingface/download/tokenizer.json.metadata",
+          "sha256": "1013a8f0c9908c0a5a58ea8ec039feb34b82623e3b2710f3d0824188677ad3a1"
+        },
+        {
+          "bytes": 0,
+          "path": ".cache/huggingface/download/tokenizer_config.json.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 101,
+          "path": ".cache/huggingface/download/tokenizer_config.json.metadata",
+          "sha256": "6b6d4398d131adf73f5c39a52e27639a7d3247e4fde71b05c3d23f3fce4de460"
+        },
+        {
+          "bytes": 1477,
+          "path": ".gitattributes",
+          "sha256": "db7c0371f46f0840b8f25794c1e3321c9b5820a8cb6ba9694a46fc64b8fae5a6"
+        },
+        {
+          "bytes": 12022,
+          "path": "README.md",
+          "sha256": "f8b843b624c5074f44b9663855a8121a71d6e34a5fb8f02714d9479f65962421"
+        },
+        {
+          "bytes": 236001935,
+          "path": "compression_state_dict.bin",
+          "sha256": "37d256b525d4117f8bbf790ab448a8e9f4746cd401900fe1ae72e154b1513a30"
+        },
+        {
+          "bytes": 7866,
+          "path": "config.json",
+          "sha256": "c3a17ac53995ad4911862c756dcd067869bc2b1bf05c54383b11d9434c06bb4d"
+        },
+        {
+          "bytes": 224,
+          "path": "generation_config.json",
+          "sha256": "3126e10627aad71cce75772137b1043bae6a066751f0aaebf7a1ba440a5fc3c4"
+        },
+        {
+          "bytes": 275,
+          "path": "preprocessor_config.json",
+          "sha256": "3f820c9214aed413cde1d72fe2bed2f5ce5e5929d4ac2cc12bfddaf0ba0b8465"
+        },
+        {
+          "bytes": 9987827539,
+          "path": "pytorch_model-00001-of-00002.bin",
+          "sha256": "a7ed8a0d95eff206263d1ae62955a7b8a7dab11a6b55e953887aea6ed54f85bd"
+        },
+        {
+          "bytes": 3731608779,
+          "path": "pytorch_model-00002-of-00002.bin",
+          "sha256": "f9923d2947297a9883404abfd4041a32cf486c763d36e00eb4f178823bf6bdac"
+        },
+        {
+          "bytes": 98104,
+          "path": "pytorch_model.bin.index.json",
+          "sha256": "3119e53023fda91c46ad313372a258c71459ffb104fae0a09383b8a079c43572"
+        },
+        {
+          "bytes": 2201,
+          "path": "special_tokens_map.json",
+          "sha256": "5c87151ef0f72a99d1f766a4c418bd2a1f90aaa30a8e22fe5eca9641daebb64f"
+        },
+        {
+          "bytes": 791656,
+          "path": "spiece.model",
+          "sha256": "d60acb128cf7b7f2536e8f38a5b18a05535c9e14c7a355904270e15b0945ea86"
+        },
+        {
+          "bytes": 6514108999,
+          "path": "state_dict.bin",
+          "sha256": "1f0cf17b5e65c5dd8ba71767371c377f174e4ce1db44bc4d6657825769f26ffd"
+        },
+        {
+          "bytes": 2422095,
+          "path": "tokenizer.json",
+          "sha256": "5f0ed8ab5b8cfa9812bb73752f1d80c292e52bcf5a87a144dc9ab2d251056cbb"
+        },
+        {
+          "bytes": 2366,
+          "path": "tokenizer_config.json",
+          "sha256": "88922cb67999604f60f3176db748b20975efc9ea7f72d5c80211be02d93c3b92"
+        }
+      ],
+      "path": "text",
+      "repository": "facebook/musicgen-large",
+      "requestedRevision": "15ccdc9",
+      "resolvedRevision": "15ccdc92099879e47b6da12c350cdb71d4eab3ca"
+    }
+  },
+  "provider": "AUDIOCRAFT_GENERATION",
+  "runtime": {
+    "cuda_image": "nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu20.04",
+    "ffmpeg_major_less_than": 5,
+    "python": "3.9",
+    "pytorch": "2.1.0+cu118"
+  },
+  "source": {
+    "repository": "facebookresearch/audiocraft",
+    "revision": "896ec7c47f5e5d1e5aa1e4b260c4405328bf009d"
+  }
+}

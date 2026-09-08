@@ -1,0 +1,28 @@
+{
+  "assetManifestSha256": "841c6cf0edef31ab81c757eddf4542a0d1cdce2d411463e881d56aada1c297c7",
+  "melody": {
+    "artifactPath": "release-evidence/melody-smoke.wav",
+    "artifactSha256": "4746ecc8c4b0311effe675527ed6a6e4998e4f488352e7783a979a4a79532ccb",
+    "correlation": -0.09635204618485933,
+    "nonSilent": true,
+    "notSourceCopy": true,
+    "rms": 0.23768073306145715,
+    "sampleRate": 32000,
+    "sourcePath": "release-evidence/melody-source.wav",
+    "sourceSha256": "95dde87ab8c3082605ec5e2ca72847058d4de33d0cf1a415edce9b517e1614f8"
+  },
+  "provider": "MUSICGEN",
+  "realInference": true,
+  "runtimeEvidence": {
+    "audiocraft": "1.4.0a2",
+    "ffmpeg": "ffmpeg version 4.4.2-0ubuntu0.22.04.1 Copyright (c) 2000-2021 the FFmpeg developers",
+    "torch": "2.1.0+cu118"
+  },
+  "text": {
+    "artifactPath": "release-evidence/text-smoke.wav",
+    "artifactSha256": "370ed8947612d643301b70d06aaf3b3285ac68f15659a4e5df2efeaf0839ef7b",
+    "nonSilent": true,
+    "rms": 0.21324056581977321,
+    "sampleRate": 32000
+  }
+}

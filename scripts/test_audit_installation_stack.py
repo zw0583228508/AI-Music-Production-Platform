@@ -1,8 +1,16 @@
 import importlib.util
+import array
+import base64
 import copy
+import hashlib
 import json
+import math
+import tempfile
+import subprocess
 import unittest
+import wave
 from pathlib import Path
+from unittest import mock
 
 spec = importlib.util.spec_from_file_location("audit", Path(__file__).with_name("audit-installation-stack.py"))
 audit = importlib.util.module_from_spec(spec); spec.loader.exec_module(audit)
@@ -72,8 +80,92 @@ class AuditFixtures(unittest.TestCase):
     def test_musicgen_pinned_unprovisioned_contradiction_fails(self):
         m=self.matrix(self.row())
         r=next(x for x in m["providers"] if x["provider"]=="MUSICGEN_LARGE")
-        r.update({"sourcePinned":True,"finalStatus":"BLOCKED_UPSTREAM","assetsDownloaded":True})
+        r.update({"sourcePinned":True,"finalStatus":"BLOCKED_NO_WEIGHTS","assetsDownloaded":True})
         self.assertTrue(any("pinned" in x for x in audit.audit(m)))
+
+    def test_musicgen_retained_evidence_tampering_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            worker=root/"services/musicgen-worker"
+            evidence=worker/"release-evidence"
+            evidence.mkdir(parents=True)
+            def wav(path, samples):
+                with wave.open(str(path),"wb") as handle:
+                    handle.setnchannels(1); handle.setsampwidth(2); handle.setframerate(32000)
+                    handle.writeframes(array.array("h",samples).tobytes())
+            wav(evidence/"text-smoke.wav",[int(8000*math.sin(i/5)) for i in range(256)])
+            wav(evidence/"melody-smoke.wav",[int(7000*math.sin(i/3)) for i in range(256)])
+            wav(evidence/"melody-source.wav",[int(6000*math.cos(i/7)) for i in range(256)])
+            sha=lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+            revision="a"*40
+            inventory={"models":{"text":{"repository":"facebook/musicgen-large",
+              "requestedRevision":"15ccdc9","resolvedRevision":revision,"path":"text",
+              "files":[{"path":"checkpoint.bin","bytes":8,"sha256":"b"*64}]}},
+              "dependencies":{}}
+            (evidence/"model_manifest.json").write_text(json.dumps(inventory))
+            inventory_sha=sha(evidence/"model_manifest.json")
+            proof={"provider":"MUSICGEN","realInference":True,"assetManifestSha256":inventory_sha,
+              "text":{"artifactSha256":sha(evidence/"text-smoke.wav"),"nonSilent":True},
+              "melody":{"artifactSha256":sha(evidence/"melody-smoke.wav"),
+                "sourceSha256":sha(evidence/"melody-source.wav"),"nonSilent":True,
+                "notSourceCopy":True}}
+            (evidence/"smoke-proof.json").write_text(json.dumps(proof))
+            smoke_sha=sha(evidence/"smoke-proof.json")
+            health={"status":"ready","healthy":True,"checkpointReady":True,"runtimeReady":True,
+              "gpuReady":True,"smokeTested":True,"checkpointSha256":inventory_sha,
+              "source":{"revision":"c"*40},"imageEvidence":"sha256:"+"d"*64}
+            (evidence/"live-health.json").write_text(json.dumps(health))
+            api={"id":"MUSICGEN","status":"ready","lastHealth":{"status":"healthy"}}
+            (evidence/"api-catalog.json").write_text(json.dumps(api))
+            (worker/"model_manifest.json").write_text(json.dumps({"source":{"revision":"c"*40}}))
+            status={"providers":{"MUSICGEN_LARGE":{"evidence":{"assetManifestSha256":inventory_sha,
+              "realSmokeArtifactSha256":proof["text"]["artifactSha256"],
+              "liveHealthStatus":"ready","apiProviderStatus":"ready"}}}}
+            (worker/"installation-status.json").write_text(json.dumps(status))
+            att={"source":{"revision":"c"*40},"license":{"classification":"RESEARCH_ONLY",
+              "explicitAcceptanceConfigured":True},"persistentInventory":{"sha256":inventory_sha},
+              "models":{"text":{"revision":revision,"fileCount":1,"bytes":8,
+                "inventorySha256":inventory_sha}},"realGpuSmoke":{"realInference":True,
+                "proofSha256":smoke_sha,"text":{"nonSilent":True}},
+              "liveHealth":health,"canonicalApiPath":{"providerId":"MUSICGEN","status":"ready",
+                "lastHealthStatus":"healthy"},"deployment":{"sourceImageDigest":health["imageEvidence"]},
+              "retainedEvidence":{"modelInventorySha256":inventory_sha,
+                "smokeProofSha256":smoke_sha,
+                "textOutputSha256":sha(evidence/"text-smoke.wav"),
+                "melodyOutputSha256":sha(evidence/"melody-smoke.wav"),
+                "melodySourceSha256":sha(evidence/"melody-source.wav"),
+                "liveHealthSha256":sha(evidence/"live-health.json"),
+                "apiCatalogSha256":sha(evidence/"api-catalog.json")},
+              "promotion":{"required":False}}
+            (worker/"release-attestation.json").write_text(json.dumps(att))
+            record={"schemaVersion":1,"provider":"MUSICGEN","sourceRevision":"c"*40,
+              "textModelRevision":revision,"melodyModelRevision":None,
+              "endpointOrigin":None,"evidence":{name:sha(evidence/name) for name in (
+                "model_manifest.json","smoke-proof.json","text-smoke.wav",
+                "melody-smoke.wav","melody-source.wav","live-health.json","api-catalog.json")}}
+            att["models"]["melody"]={"revision":None}
+            att["deployment"]["endpointOrigin"]=None
+            (worker/"release-attestation.json").write_text(json.dumps(att))
+            private=evidence/"private.pem"
+            public=evidence/"release-public-key.pem"
+            message=evidence/"record.json"
+            subprocess.run(["openssl","genpkey","-algorithm","Ed25519","-out",str(private)],check=True)
+            subprocess.run(["openssl","pkey","-in",str(private),"-pubout","-out",str(public)],check=True)
+            message.write_text(json.dumps(record,sort_keys=True,separators=(",",":"),ensure_ascii=False))
+            signed=subprocess.run(["openssl","pkeyutl","-sign","-rawin","-inkey",str(private),
+              "-in",str(message)],check=True,capture_output=True).stdout
+            (evidence/"release-bundle.json").write_text(json.dumps(
+              {"record":record,"signature":base64.b64encode(signed).decode()}))
+            private.unlink(); message.unlink()
+            row={"provider":"MUSICGEN_LARGE","finalStatus":"RESEARCH_READY","sourcePinned":True,
+              "modelRevision":revision,"codeRevision":"c"*40,
+              "modelRepository":"https://huggingface.co/facebook/musicgen-large"}
+            with mock.patch.object(audit,"MUSICGEN_EVIDENCE_PUBLIC_KEY_SHA256",sha(public)):
+                self.assertEqual(audit.evidence_errors([row],root),[])
+                proof["text"]["artifactSha256"]="0"*64
+                (evidence/"smoke-proof.json").write_text(json.dumps(proof))
+                self.assertTrue(any("MUSICGEN" in error
+                                    for error in audit.evidence_errors([row],root)))
 
     def test_moss_blocked_requires_retained_native_failure_evidence(self):
         m = self.matrix(self.row())

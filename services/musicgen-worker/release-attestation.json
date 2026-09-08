@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "providerFamily": "MUSICGEN",
+  "source": {
+    "repository": "https://github.com/facebookresearch/audiocraft",
+    "revision": "896ec7c47f5e5d1e5aa1e4b260c4405328bf009d"
+  },
+  "license": {
+    "name": "CC-BY-NC-4.0",
+    "classification": "RESEARCH_ONLY",
+    "explicitAcceptanceConfigured": true
+  },
+  "persistentInventory": {
+    "volume": "musicgen-models-private-v1",
+    "path": "model_manifest.json",
+    "sha256": "841c6cf0edef31ab81c757eddf4542a0d1cdce2d411463e881d56aada1c297c7"
+  },
+  "models": {
+    "text": {
+      "repository": "facebook/musicgen-large",
+      "revision": "15ccdc92099879e47b6da12c350cdb71d4eab3ca",
+      "fileCount": 43,
+      "bytes": 20472887069,
+      "inventorySha256": "841c6cf0edef31ab81c757eddf4542a0d1cdce2d411463e881d56aada1c297c7"
+    },
+    "melody": {
+      "repository": "facebook/musicgen-melody-large",
+      "revision": "6fdf8d3d815995108c9bdb5183414ff464b171ac",
+      "fileCount": 46,
+      "bytes": 15403720212,
+      "inventorySha256": "841c6cf0edef31ab81c757eddf4542a0d1cdce2d411463e881d56aada1c297c7"
+    }
+  },
+  "dependencies": {
+    "encodec-32khz": {
+      "revision": "d0c45384f6c44db055f78200cfdcb9c1c8706727",
+      "fileCount": 6,
+      "bytes": 471977065
+    },
+    "t5-base": {
+      "revision": "a9723ea7f1b39c1eae772870f3b547bf6ef7e6c1",
+      "fileCount": 11,
+      "bytes": 4460980510
+    }
+  },
+  "realGpuSmoke": {
+    "persistentPath": "musicgen-models-private-v1/smoke-proof.json",
+    "proofSha256": "e243a89c22715f9bd45b252bf1b9659c4fb00aa3b92188b91837023f058ad739",
+    "assetManifestSha256": "841c6cf0edef31ab81c757eddf4542a0d1cdce2d411463e881d56aada1c297c7",
+    "realInference": true,
+    "text": {
+      "artifactSha256": "370ed8947612d643301b70d06aaf3b3285ac68f15659a4e5df2efeaf0839ef7b",
+      "nonSilent": true,
+      "rms": 0.21324056581977321
+    },
+    "melody": {
+      "artifactSha256": "4746ecc8c4b0311effe675527ed6a6e4998e4f488352e7783a979a4a79532ccb",
+      "nonSilent": true,
+      "notSourceCopy": true,
+      "correlation": -0.09635204618485932,
+      "rms": 0.23768073306145715
+    }
+  },
+  "deployment": {
+    "modalAppId": "ap-q87uL3IJ9QLLD0wPlFatup",
+    "modalFunctionId": "fu-mXlbxarlnHKHJFagWydm4m",
+    "endpointOrigin": "https://windot100--musicgen-worker-endpoint.modal.run",
+    "sourceImageDigest": "sha256:49469b5af2cd93c38148064a86ed4454c61ded6906841a0aa12cef03ffc0f57e"
+  },
+  "liveHealth": {
+    "verifiedAt": "2026-09-08T13:39:04Z",
+    "status": "ready",
+    "healthy": true,
+    "checkpointReady": true,
+    "runtimeReady": true,
+    "gpuReady": true,
+    "smokeTested": true,
+    "checkpointSha256": "841c6cf0edef31ab81c757eddf4542a0d1cdce2d411463e881d56aada1c297c7"
+  },
+  "canonicalApiPath": {
+    "verifiedAt": "2026-09-08T13:39:52.756Z",
+    "route": "/api/providers",
+    "providerId": "MUSICGEN",
+    "status": "ready",
+    "lastHealthStatus": "healthy",
+    "reportedVersion": "musicgen-large"
+  },
+  "retainedEvidence": {
+    "modelInventorySha256": "841c6cf0edef31ab81c757eddf4542a0d1cdce2d411463e881d56aada1c297c7",
+    "smokeProofSha256": "e243a89c22715f9bd45b252bf1b9659c4fb00aa3b92188b91837023f058ad739",
+    "textOutputSha256": "370ed8947612d643301b70d06aaf3b3285ac68f15659a4e5df2efeaf0839ef7b",
+    "melodyOutputSha256": "4746ecc8c4b0311effe675527ed6a6e4998e4f488352e7783a979a4a79532ccb",
+    "melodySourceSha256": "95dde87ab8c3082605ec5e2ca72847058d4de33d0cf1a415edce9b517e1614f8",
+    "liveHealthSha256": "f2ab8c029049f7c99352153d22e7f0ea195c37575fb0959b28ed2ac733ea2c8a",
+    "apiCatalogSha256": "9c016534ee9b590e35769b6c6ab5d347a1f8630a723d7ef8df4e6bf406529d37"
+  },
+  "promotion": {
+    "required": false,
+    "signed": false,
+    "reason": "MUSICGEN is not in the API provider contract's Modal promotion-required set."
+  }
+}
