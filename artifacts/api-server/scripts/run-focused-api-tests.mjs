@@ -166,7 +166,6 @@ async function main() {
       bundledTests.push(outputPath);
 
       if (
-        suiteName === "validation" &&
         bundleIndex === 0 &&
         process.env.FOCUSED_API_TEST_INJECT_FAILURE === "later-esbuild"
       ) {
