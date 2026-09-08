@@ -13,6 +13,8 @@ import type {
   AutomationPoint,
   TrackDirective,
   ArrangementHierarchy,
+  CompositionIntelligencePlan,
+  CompositionIntelligenceVersion,
 } from "@workspace/db";
 import { createHash } from "node:crypto";
 
@@ -123,6 +125,16 @@ export function canonicalPerformancePhraseIds(songModel: SongModelData): string[
     songModel.vocalIntelligence?.phrases.status === "detected"
     ? songModel.vocalIntelligence.phrases.events.map((phrase) => phrase.id)
     : [];
+}
+
+export function compositionEvidenceSha256(
+  songModel: SongModelData,
+  songModelVersion: number,
+): string {
+  return createHash("sha256").update(canonicalJson({
+    songModelVersion,
+    songModel,
+  })).digest("hex");
 }
 
 export type LicensedInstrumentSmokeEvidence = {
@@ -490,10 +502,14 @@ export type ArrangementBrainSection = {
   targetEnergy: number;
   targetDensity: number;
   development: "initial" | "development" | "reprise" | "neutral";
+  tension: number;
+  release: number;
+  materialSourceSectionIndex: number | null;
 };
 
 export type ArrangementBrain = {
-  version: "1.0.0";
+  version: "1.0.0" | "2.0.0";
+  compositionVersion: CompositionIntelligenceVersion;
   enabled: boolean;
   sections: ArrangementBrainSection[];
 };
@@ -642,16 +658,21 @@ function buildArrangementHierarchy(
 export function buildArrangementBrain(input: {
   songModel: SongModelData;
   controls: { energy: number; density: number; orchestraSize?: number };
+  compositionVersion?: CompositionIntelligenceVersion;
 }): ArrangementBrain {
   const sections = input.songModel.sections;
   const neutral = (): ArrangementBrain => ({
-    version: "1.0.0",
+    version: input.compositionVersion === "2.0" ? "2.0.0" : "1.0.0",
+    compositionVersion: input.compositionVersion ?? "1.0",
     enabled: false,
     sections: sections.map(() => ({
       function: "neutral",
       targetEnergy: 0,
       targetDensity: 0,
       development: "neutral",
+      tension: 0,
+      release: 0,
+      materialSourceSectionIndex: null,
     })),
   });
   if (sections.length < 2) return neutral();
@@ -695,16 +716,26 @@ export function buildArrangementBrain(input: {
     return result;
   }, []);
   const occurrences = new Map<ArrangementBrainSection["function"], number>();
+  const firstOccurrence = new Map<ArrangementBrainSection["function"], number>();
   const drafts = targetEnergy.map((energy, index) => {
       const fn = functions[index];
       const occurrence = occurrences.get(fn) ?? 0;
       occurrences.set(fn, occurrence + 1);
+      if (!firstOccurrence.has(fn)) firstOccurrence.set(fn, index);
       const development: ArrangementBrainSection["development"] = fn === "chorus" && occurrence > 0
         ? (occurrence === 1 ? "development" : "reprise")
         : fn === "neutral" ? "neutral" : "initial";
       const developedEnergy = development === "development" || development === "reprise"
         ? clamp(energy + .04) : energy;
-      return { function: fn, energy: developedEnergy, development };
+      const previousEnergy = index ? targetEnergy[index - 1] : 0;
+      return {
+        function: fn,
+        energy: developedEnergy,
+        development,
+        tension: clamp(developedEnergy * .72 + Math.max(0, developedEnergy - previousEnergy) * .55),
+        release: clamp(Math.max(0, previousEnergy - developedEnergy) + (fn === "outro" ? .45 : .08)),
+        materialSourceSectionIndex: occurrence > 0 ? firstOccurrence.get(fn) ?? null : null,
+      };
     });
   const continuous = drafts.reduce<Array<typeof drafts[number]>>((result, draft) => {
     const previous = result.at(-1);
@@ -715,9 +746,10 @@ export function buildArrangementBrain(input: {
     return result;
   }, []);
   return {
-    version: "1.0.0",
+    version: input.compositionVersion === "2.0" ? "2.0.0" : "1.0.0",
+    compositionVersion: input.compositionVersion ?? "1.0",
     enabled: true,
-    sections: continuous.map(({ function: fn, energy, development }) => ({
+    sections: continuous.map(({ function: fn, energy, development, tension, release, materialSourceSectionIndex }) => ({
       function: fn,
       targetEnergy: round(energy),
       targetDensity: round(clamp(
@@ -725,6 +757,9 @@ export function buildArrangementBrain(input: {
         (development === "development" || development === "reprise" ? .04 : 0),
       )),
       development,
+      tension: round(tension),
+      release: round(release),
+      materialSourceSectionIndex,
     })),
   };
 }
@@ -738,6 +773,7 @@ export function createArrangementPlan(input: {
   parameters: Record<string, number | string | boolean>;
   parentIds?: string[];
   arrangementBrain?: ArrangementBrain;
+  compositionVersion?: CompositionIntelligenceVersion;
 }): ArrangementPlan {
   const sourceSections = input.songModel.sections.length
     ? input.songModel.sections
@@ -752,6 +788,7 @@ export function createArrangementPlan(input: {
       density: Number(input.parameters.density ?? input.style.orchestration.density),
       orchestraSize,
     },
+    compositionVersion: input.compositionVersion,
   });
   let priorLayerCount: number | undefined;
   const sections: ArrangementPlanSection[] = sourceSections.map((section, index) => {
@@ -815,6 +852,64 @@ export function createArrangementPlan(input: {
       operations,
     };
   });
+  const compositionVersion = input.compositionVersion ?? arrangementBrain.compositionVersion;
+  const evidenceSha256 = compositionEvidenceSha256(
+    input.songModel,
+    Number(input.parameters.songModelVersion ?? 0),
+  );
+  const roleForTrack = (track: typeof input.tracks[number]): CompositionIntelligencePlan["instrumentRoles"][number]["function"] => {
+    const identity = `${track.name} ${track.role}`.toLowerCase();
+    if (/bass/.test(identity)) return "foundation";
+    if (/drum|rhythm|percussion/.test(identity)) return "pulse";
+    if (/vocal|voice|melody|lead/.test(identity)) return "lead";
+    if (/string|brass|counter/.test(identity)) return "counterline";
+    if (/pad|texture|ambient/.test(identity)) return "texture";
+    return "harmony";
+  };
+  const hierarchy = buildArrangementHierarchy(input.arrangementId, input.songModel, arrangementBrain, sections);
+  const motifByFunction = new Map<string, string>();
+  const compositionIntelligence: CompositionIntelligencePlan = {
+    version: compositionVersion,
+    mode: compositionVersion === "2.0" ? "reasoning_core" : "legacy",
+    precedence: ["song_intent", "dramatic_arc", "section_function", "phrase_intent", "instrument_role", "motif", "harmony_rhythm_voicing", "event"],
+    seed: Number(input.parameters.seed ?? 0),
+    evidenceSha256,
+    songIntent: compositionVersion === "2.0" && arrangementBrain.enabled
+      ? "develop_observed_form" : "preserve_observed_form",
+    tensionRelease: hierarchy.sections.map((section, index) => ({
+      sectionId: section.id,
+      tension: compositionVersion === "2.0" ? arrangementBrain.sections[index]?.tension ?? 0 : 0,
+      release: compositionVersion === "2.0" ? arrangementBrain.sections[index]?.release ?? 0 : 0,
+    })),
+    phrases: hierarchy.sections.flatMap((section, index) => {
+      const brainSection = arrangementBrain.sections[index];
+      const phraseIds = section.phraseIds.length ? section.phraseIds : [`phrase:${section.id}:whole`];
+      const existingMotif = motifByFunction.get(section.function);
+      const motifRef = existingMotif ?? `motif:${hashSeed(`${evidenceSha256}:${section.function}:${section.id}`)}`;
+      if (!existingMotif) motifByFunction.set(section.function, motifRef);
+      return phraseIds.map((id, phraseIndex) => ({
+        id,
+        sectionId: section.id,
+        startBar: hierarchy.phrases.find((phrase) => phrase.id === id)?.startBar ?? section.startBar,
+        endBar: hierarchy.phrases.find((phrase) => phrase.id === id)?.endBar ?? section.endBar,
+        intent: compositionVersion !== "2.0" ? "state" as const
+          : section.phraseIds.length ? "protect_vocal" as const
+          : brainSection?.development === "development" ? "develop" as const
+          : brainSection?.development === "reprise" ? "answer" as const
+          : (brainSection?.tension ?? 0) > .62 ? "build" as const
+          : (brainSection?.release ?? 0) > .35 ? "release" as const
+          : phraseIndex ? "develop" as const : "state" as const,
+        tension: compositionVersion === "2.0" ? brainSection?.tension ?? 0 : 0,
+        motifRef,
+        sourceMotifRef: existingMotif ?? null,
+      }));
+    }),
+    instrumentRoles: input.tracks.map((track) => ({
+      trackId: track.id ?? track.name,
+      function: roleForTrack(track),
+      authority: "project_track",
+    })),
+  };
   return {
     id: input.arrangementId,
     version: input.version,
@@ -822,13 +917,13 @@ export function createArrangementPlan(input: {
     style: input.style,
     songModelVersion: Number(input.parameters.songModelVersion ?? 0),
     parameters: input.parameters,
-    provenance: provenance("ARRANGEMENT_DIRECTOR", "1.0.0", input.parameters, input.parentIds),
-    hierarchy: buildArrangementHierarchy(
-      input.arrangementId,
-      input.songModel,
-      arrangementBrain,
-      sections,
-    ),
+    provenance: provenance("ARRANGEMENT_DIRECTOR", compositionVersion === "2.0" ? "2.0.0" : "1.0.0", {
+      ...input.parameters,
+      compositionVersion,
+      compositionEvidenceSha256: evidenceSha256,
+    }, input.parentIds),
+    hierarchy,
+    compositionIntelligence,
   };
 }
 
@@ -1189,6 +1284,33 @@ function hierarchyEventIntent(
     : undefined;
 }
 
+function compositionPhraseAtTime(
+  plan: ArrangementPlan,
+  songModel: SongModelData,
+  sectionIndex: number,
+  time: number,
+  fallbackBarSeconds: number,
+): CompositionIntelligencePlan["phrases"][number] | undefined {
+  const reasoning = plan.compositionIntelligence;
+  const section = plan.hierarchy?.sections[sectionIndex];
+  if (reasoning?.version !== "2.0" || !section) return undefined;
+  const observedBar = songModel.bars.find((bar) => {
+    const start = bar.coordinates?.start.seconds ?? bar.start;
+    const end = bar.coordinates?.end.seconds ?? bar.end;
+    return time >= start && time < end;
+  })?.bar;
+  const bar = observedBar ?? Math.floor(time / fallbackBarSeconds) + 1;
+  return reasoning.phrases
+    .filter((phrase) =>
+      phrase.sectionId === section.id &&
+      phrase.startBar <= bar &&
+      phrase.endBar >= bar)
+    .sort((left, right) =>
+      (left.endBar - left.startBar) - (right.endBar - right.startBar) ||
+      left.startBar - right.startBar ||
+      left.id.localeCompare(right.id))[0];
+}
+
 function hierarchySpaceMapForTrack(
   songModel: SongModelData,
   plan: ArrangementPlan,
@@ -1286,6 +1408,13 @@ export class CompositionEngine {
           if (!active || action === "none") return;
           const directive = section.trackDirectives?.[track.id] ??
             section.trackDirectives?.[track.name];
+          const reasoning = input.plan.compositionIntelligence?.version === "2.0"
+            ? input.plan.compositionIntelligence : undefined;
+          const hierarchySection = input.plan.hierarchy?.sections[sectionIndex];
+          const roleDecision = reasoning?.instrumentRoles.find((role) => role.trackId === track.id);
+          const sectionArc = hierarchySection
+            ? reasoning?.tensionRelease.find((arc) => arc.sectionId === hierarchySection.id)
+            : undefined;
           if (directive) {
             appliedDirectives.push({
               section: section.section,
@@ -1296,11 +1425,18 @@ export class CompositionEngine {
               directive,
             });
           }
-          const rhythmic = directive?.rhythmicActivity ?? section.density;
+          const rhythmic = clamp((directive?.rhythmicActivity ?? section.density) +
+            (reasoning ? (sectionArc?.tension ?? 0) * .12 : 0));
           const step = identity.includes("drum") || identity.includes("rhythm")
             ? beat * (rhythmic > .7 ? .5 : 1)
             : beat * (directive?.harmonicActivity && directive.harmonicActivity > .65 ? 1 : 2);
           for (let time = sectionStart; time < sectionEnd; time += step) {
+            const phraseDecision = compositionPhraseAtTime(
+              input.plan, input.songModel, sectionIndex, time, barSeconds,
+            );
+            const motifOffset = phraseDecision
+              ? (hashSeed(`${phraseDecision.motifRef}:${roleDecision?.function ?? "harmony"}`) % 3) - 1
+              : 0;
             const beatIndex = Math.round((time - sectionStart) / beat);
             const chord = input.harmony.find((candidate) =>
               candidate.start <= time + .001 && candidate.end > time + .001)
@@ -1311,6 +1447,10 @@ export class CompositionEngine {
               : identity.includes("drum") || identity.includes("rhythm")
                 ? [36, 42, 38, 42][beatIndex % 4]
                 : chordTone + (directive?.register === "high" || identity.includes("string") || identity.includes("brass") ? 12 : 0);
+            if (reasoning && !identity.includes("drum") && !identity.includes("rhythm")) {
+              pitch += motifOffset * (roleDecision?.function === "counterline" ? 2 : 1);
+              if (phraseDecision?.intent === "answer" && beatIndex % 2 === 1) pitch -= 2;
+            }
             const targetRegister = directive?.register
               ? definition.registers.find((register) => register.name === directive.register)
               : undefined;
@@ -1339,6 +1479,8 @@ export class CompositionEngine {
                 duration,
                 pitch: midi(pitch),
                 velocity: midi(42 + (directive?.dynamicTarget ?? section.energy) * 66 +
+                  (reasoning ? (sectionArc?.tension ?? 0) * 10 - (sectionArc?.release ?? 0) * 8 +
+                    (phraseDecision?.tension ?? 0) * 4 : 0) +
                   (isEntry ? 6 : 0) + (directive?.transition === "build" ? beatIndex * .5 : 0) +
                   (beatIndex % 4 === 0 ? 8 : 0)),
                 voice: identity.includes("bass") ? "bass" : identity.includes("drum") ? "percussion" : "harmony",
@@ -1377,8 +1519,16 @@ export class CompositionEngine {
           controlMap: definition.directiveMappings?.controls,
         },
         source: "COMPOSITION_ENGINE",
-        version: 1,
-        provenance: provenance("COMPOSITION_ENGINE", "1.0.0", { bpm }),
+        version: input.plan.compositionIntelligence?.version === "2.0" ? 2 : 1,
+        provenance: provenance(
+          "COMPOSITION_ENGINE",
+          input.plan.compositionIntelligence?.version === "2.0" ? "2.0.0" : "1.0.0",
+          {
+            bpm,
+            compositionVersion: input.plan.compositionIntelligence?.version ?? "1.0",
+            compositionEvidenceSha256: input.plan.compositionIntelligence?.evidenceSha256 ?? "legacy",
+          },
+        ),
       };
     });
   }
@@ -1431,6 +1581,98 @@ export function applyPlanModulations(
   }, trackModels);
 }
 
+/**
+ * Applies v2 reasoning to externally composed canonical events. Provider audio
+ * has no TrackModels and remains outside this symbolic boundary.
+ */
+export function applyCompositionIntelligence(
+  trackModels: TrackModel[],
+  plan: ArrangementPlan,
+  songModel: SongModelData,
+): TrackModel[] {
+  const reasoning = plan.compositionIntelligence;
+  if (reasoning?.version !== "2.0") return trackModels;
+  if (reasoning.evidenceSha256 !== compositionEvidenceSha256(songModel, plan.songModelVersion)) {
+    throw new Error("Composition Intelligence v2 evidence does not match the canonical plan");
+  }
+  const bpm = songModel.tempoMap[0]?.bpm ?? 92;
+  const fallbackBarSeconds = secondsPerBar(bpm, songModel.meterMap[0]?.meter);
+  return trackModels.map((track) => {
+    const role = reasoning.instrumentRoles.find((candidate) => candidate.trackId === track.id);
+    const notes = track.notes.map((note) => {
+      const sectionIndex = plan.sections.findIndex((section) => {
+        const bounds = arrangementSectionSeconds(songModel, section, fallbackBarSeconds);
+        return note.start >= bounds.start && note.start < bounds.end;
+      });
+      const hierarchySection = plan.hierarchy.sections[sectionIndex];
+      const phrase = compositionPhraseAtTime(
+        plan, songModel, sectionIndex, note.start, fallbackBarSeconds,
+      );
+      const arc = hierarchySection
+        ? reasoning.tensionRelease.find((candidate) => candidate.sectionId === hierarchySection.id)
+        : undefined;
+      if (!phrase) return note;
+      const motifOffset = (hashSeed(`${phrase.motifRef}:${role?.function ?? "harmony"}`) % 3) - 1;
+      const pitched = track.instrumentDefinition.family === "drums"
+        ? note.pitch
+        : note.pitch + motifOffset * (role?.function === "counterline" ? 2 : 1);
+      return {
+        ...note,
+        pitch: midi(Math.max(
+          track.instrumentDefinition.playableRange.min,
+          Math.min(track.instrumentDefinition.playableRange.max, pitched),
+        )),
+        velocity: midi(note.velocity + (arc?.tension ?? 0) * 10 -
+          (arc?.release ?? 0) * 8 + phrase.tension * 4),
+      };
+    });
+    const transformed: TrackModel = {
+      ...track,
+      notes,
+      source: "COMPOSITION_INTELLIGENCE",
+      version: track.version + 1,
+      provenance: provenance("COMPOSITION_INTELLIGENCE", "2.0.0", {
+        seed: reasoning.seed,
+        compositionVersion: reasoning.version,
+        compositionEvidenceSha256: reasoning.evidenceSha256,
+      }, [track.provenance.model]),
+    };
+    const capability = getInstrumentPerformanceCapability(track.instrumentDefinition);
+    const violations = transformed.notes.flatMap((note) => {
+      const invalid = note.pitch < track.instrumentDefinition.playableRange.min ||
+        note.pitch > track.instrumentDefinition.playableRange.max ||
+        note.duration < track.instrumentDefinition.constraints.minNoteDuration;
+      return invalid ? [note.id] : [];
+    });
+    transformed.performanceEvidence = {
+      version: "1.0",
+      seed: reasoning.seed,
+      compositionSeed: reasoning.seed,
+      performanceSeed: reasoning.seed,
+      instrumentFamily: track.instrumentDefinition.family,
+      articulationProfile: capability.articulationProfile,
+      timingProfile: capability.timingProfile,
+      dynamicsProfile: capability.dynamicsProfile,
+      canonicalTimelineSha256: canonicalPerformanceTimelineSha256(songModel),
+      phraseIds: canonicalPerformancePhraseIds(songModel),
+      sectionRanges: (track.appliedDirectives ?? []).map((item) => ({
+        section: item.section,
+        startBar: item.startBar,
+        endBar: item.endBar,
+        start: item.start,
+        end: item.end,
+      })),
+      playability: {
+        valid: violations.length === 0,
+        checkedNotes: transformed.notes.length,
+        violations,
+      },
+      performedMaterialSha256: performedMaterialSha256(transformed),
+    };
+    return transformed;
+  });
+}
+
 export class VoiceLeadingEngine {
   apply(trackModels: TrackModel[]): TrackModel[] {
     return trackModels.map((track) => {
@@ -1466,6 +1708,9 @@ export class PerformanceEngine {
     context?: {
       canonicalTimelineSha256: string;
       phraseIds: string[];
+      compositionVersion: CompositionIntelligenceVersion;
+      compositionEvidenceSha256: string;
+      compositionSeed: number;
     },
   ): TrackModel {
     const profile: PerformanceProfile = /vocal|voice|melody/i.test(track.role)
@@ -1560,7 +1805,15 @@ export class PerformanceEngine {
       automation,
       source: "PERFORMANCE_ENGINE",
       version: track.version + 1,
-      provenance: provenance("PERFORMANCE_ENGINE", "1.0.0", { seed, timing: profile.timing, humanized: true }, [track.provenance.model]),
+      provenance: provenance("PERFORMANCE_ENGINE", context?.compositionVersion === "2.0" ? "2.0.0" : "1.0.0", {
+        seed,
+        compositionSeed: context?.compositionSeed ?? seed,
+        performanceSeed: seed,
+        timing: profile.timing,
+        humanized: true,
+        compositionVersion: context?.compositionVersion ?? "1.0",
+        compositionEvidenceSha256: context?.compositionEvidenceSha256 ?? "legacy",
+      }, [track.provenance.model]),
     };
     const capability = getInstrumentPerformanceCapability(track.instrumentDefinition);
     const violations = performedTrack.notes.flatMap((note) => {
@@ -1579,6 +1832,8 @@ export class PerformanceEngine {
       performanceEvidence: {
         version: "1.0",
         seed,
+        compositionSeed: context?.compositionSeed ?? seed,
+        performanceSeed: seed,
         instrumentFamily: track.instrumentDefinition.family,
         articulationProfile: capability.articulationProfile,
         timingProfile: capability.timingProfile,
@@ -2123,6 +2378,15 @@ export function buildTrackModels(input: {
   style: StyleSpec;
   seed?: number;
 }): TrackModel[] {
+  if (input.plan.compositionIntelligence?.version === "2.0" &&
+    (input.seed ?? 0) !== input.plan.compositionIntelligence.seed) {
+    throw new Error("Composition Intelligence v2 seed does not match the canonical plan");
+  }
+  if (input.plan.compositionIntelligence?.version === "2.0" &&
+    input.plan.compositionIntelligence.evidenceSha256 !==
+      compositionEvidenceSha256(input.songModel, input.plan.songModelVersion)) {
+    throw new Error("Composition Intelligence v2 evidence does not match the canonical plan");
+  }
   const harmony = new HarmonyEngine().generate(input.songModel, input.plan);
   const bpm = input.songModel.tempoMap[0]?.bpm ?? 92;
   const spaceMap = createArrangementSpaceMap(
@@ -2142,9 +2406,10 @@ export function buildTrackModels(input: {
   const voiced = new VoiceLeadingEngine().apply(modulated);
   // Version is part of the identity: regenerating a saved Song Model produces
   // byte-stable expressive events, while a corrected model intentionally does not.
-  const deterministicSeed = hashSeed(
-    `${input.plan.id}:song-model:${input.plan.songModelVersion}:${input.seed ?? 0}`,
-  );
+  const legacySeedIdentity = `${input.plan.id}:song-model:${input.plan.songModelVersion}:${input.seed ?? 0}`;
+  const deterministicSeed = hashSeed(input.plan.compositionIntelligence?.version === "2.0"
+    ? `${legacySeedIdentity}:composition:2.0:${input.plan.compositionIntelligence.evidenceSha256}`
+    : legacySeedIdentity);
   const canonicalTimelineSha256 = canonicalPerformanceTimelineSha256(input.songModel);
   const phraseIds = canonicalPerformancePhraseIds(input.songModel);
   return voiced.map((track) =>
@@ -2156,7 +2421,15 @@ export function buildTrackModels(input: {
         bpm,
         input.songModel.meterMap[0]?.meter,
       )),
-      { canonicalTimelineSha256, phraseIds },
+      {
+        canonicalTimelineSha256,
+        phraseIds,
+        compositionVersion: input.plan.compositionIntelligence?.version ?? "1.0",
+        compositionEvidenceSha256: input.plan.compositionIntelligence?.version === "2.0"
+          ? input.plan.compositionIntelligence.evidenceSha256
+          : "legacy",
+        compositionSeed: input.plan.compositionIntelligence?.seed ?? (input.seed ?? 0),
+      },
     ));
 }
 

@@ -44,6 +44,7 @@ import {
 } from "./musicProviders";
 import {
   applyPlanModulations,
+  applyCompositionIntelligence,
   buildArrangementBrain,
   buildTrackModels,
   createArrangementPlan,
@@ -337,6 +338,7 @@ function materializeCandidate(input: CandidateMaterializationInput): {
       density: source.density,
       orchestraSize: source.orchestraSize,
     },
+    compositionVersion: "2.0",
   });
   const generatedPlan = createArrangementPlan({
     arrangementId: input.candidateId,
@@ -347,6 +349,7 @@ function materializeCandidate(input: CandidateMaterializationInput): {
     parameters: { ...engineParameters, arrangementId: input.candidateId },
     parentIds: candidate.parentArtifactIds,
     arrangementBrain,
+    compositionVersion: "2.0",
   });
   const providerSections = new Map(
     candidate.plan.sections.map((section) => [section.name.toLowerCase(), section]),
@@ -424,11 +427,15 @@ function materializeCandidate(input: CandidateMaterializationInput): {
       })
     : input.trackModelsMaterialized
       ? candidate.trackModels
-      : applyPlanModulations(
-          candidate.trackModels,
+      : applyCompositionIntelligence(
+          applyPlanModulations(
+            candidate.trackModels,
+            plan,
+            songModel.tempoMap[0]?.bpm ?? 92,
+            songModel.meterMap[0]?.meter,
+          ),
           plan,
-          songModel.tempoMap[0]?.bpm ?? 92,
-          songModel.meterMap[0]?.meter,
+          songModel,
         );
   const harmonyDecisions = new HarmonyEngine().generate(songModel, plan).map((harmony) => {
     const decision = harmony.decision ?? {};
