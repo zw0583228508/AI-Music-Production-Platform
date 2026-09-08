@@ -578,9 +578,31 @@ export async function recoverProductionJobs(now = new Date()): Promise<void> {
     ));
 }
 
-export function structuredJobError(error: unknown, fallbackCode = "PRODUCTION_JOB_FAILED"): ProductionJobError {
-  const message = formatHostErrorMessage(error, "Production job failed");
-  const retryable = !/invalid|unauthorized|forbidden|cancel|not configured|license/i.test(message);
+function structuredRetryability(error: unknown): boolean | undefined {
+  try {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "retryable" in error
+    ) {
+      const retryable = (error as { retryable?: unknown }).retryable;
+      return typeof retryable === "boolean" ? retryable : undefined;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+export function structuredJobError(
+  error: unknown,
+  fallbackCode = "PRODUCTION_JOB_FAILED",
+  fallbackMessage = "Production job failed",
+): ProductionJobError {
+  const message = formatHostErrorMessage(error, fallbackMessage);
+  // Unknown failures remain retryable so a diagnostic format change cannot
+  // silently turn a transient provider or host outage into a terminal job.
+  const retryable = structuredRetryability(error) ?? true;
   return { code: fallbackCode, message, retryable };
 }
 

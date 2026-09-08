@@ -72,6 +72,13 @@ type ExportInputSnapshot = {
 
 const sha256 = (value: Buffer | string) => createHash("sha256").update(value).digest("hex");
 
+class PermanentExportError extends Error {
+  readonly retryable = false;
+}
+
+const permanentExportFailure = (message: string): PermanentExportError =>
+  new PermanentExportError(message);
+
 function validateProcessingEvidence(
   files: GeneratedExportFile[],
   evidenceByFile: Record<string, PedalboardProcessingEvidence>,
@@ -89,13 +96,13 @@ function validateProcessingEvidence(
     expectedNames.length !== evidenceNames.length ||
     expectedNames.some((name, index) => name !== evidenceNames[index])
   ) {
-    throw new Error("Pedalboard processing evidence does not match the shipped final WAVs");
+    throw permanentExportFailure("Pedalboard processing evidence does not match the shipped final WAVs");
   }
   for (const file of files) {
     const evidence = evidenceByFile[file.name];
     if (!expectedNames.includes(file.name)) {
       if (file.processingEvidence || evidence) {
-        throw new Error("Pedalboard processing evidence cannot be attached to remixable or non-audio files");
+        throw permanentExportFailure("Pedalboard processing evidence cannot be attached to remixable or non-audio files");
       }
       continue;
     }
@@ -104,7 +111,7 @@ function validateProcessingEvidence(
       file.processingEvidence !== evidence ||
       evidence.outputSha256 !== sha256(file.data)
     ) {
-      throw new Error(`Pedalboard processing evidence does not match shipped bytes for ${file.name}`);
+      throw permanentExportFailure(`Pedalboard processing evidence does not match shipped bytes for ${file.name}`);
     }
   }
 }
@@ -124,7 +131,7 @@ async function selectedProviderAudioExport(
   if (!artifact || artifact.createdBy !== "gpu-provider-output-ingest") return [];
   const prefix = "/api/storage/objects/";
   if (!artifact.storageUri?.startsWith(`${prefix}exports/`)) {
-    throw new Error("Selected provider audio has an invalid storage location");
+    throw permanentExportFailure("Selected provider audio has an invalid storage location");
   }
   const object = await getPrivateObject(artifact.storageUri.slice(prefix.length));
   if (!object) throw new Error("Selected provider audio is unavailable");
@@ -137,14 +144,14 @@ async function selectedProviderAudioExport(
     checksum !== artifact.checksum ||
     checksum !== artifact.hash
   ) {
-    throw new Error("Selected provider audio failed export verification");
+    throw permanentExportFailure("Selected provider audio failed export verification");
   }
   const provider = arrangement.generationProvenance?.provider ?? artifact.provider;
   const modelVersion =
     arrangement.generationProvenance?.modelVersion ?? artifact.modelVersion;
   const candidateId = arrangement.generationProvenance?.candidateId;
   if (!provider || !modelVersion || !candidateId) {
-    throw new Error("Selected provider audio is missing required generation lineage");
+    throw permanentExportFailure("Selected provider audio is missing required generation lineage");
   }
   return [{
     name: "mix/generated-accompaniment.wav",
@@ -174,7 +181,7 @@ function exportInput(snapshot: Record<string, unknown>): ExportInputSnapshot {
     typeof snapshot.version !== "number" ||
     typeof snapshot.arrangementId !== "string"
   ) {
-    throw new Error("Invalid export job input snapshot");
+    throw permanentExportFailure("Invalid export job input snapshot");
   }
   return snapshot as ExportInputSnapshot;
 }
@@ -224,9 +231,11 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
       db.select().from(songModelsTable).where(eq(songModelsTable.projectId, job.projectId)).orderBy(desc(songModelsTable.version)),
       db.select().from(musicArtifactsTable).where(eq(musicArtifactsTable.projectId, job.projectId)),
     ]);
-    if (!project || !arrangement) throw new Error("Export project or arrangement is unavailable");
+    if (!project || !arrangement) {
+      throw permanentExportFailure("Export project or arrangement is unavailable");
+    }
     if (!input.approvedRevisionId) {
-      throw new Error("Export requires an approved mix/master revision");
+      throw permanentExportFailure("Export requires an approved mix/master revision");
     }
     const [approvedRevision] = await db.select().from(mixMasterRevisionsTable).where(and(
       eq(mixMasterRevisionsTable.id, input.approvedRevisionId),
@@ -234,13 +243,13 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
       eq(mixMasterRevisionsTable.arrangementId, arrangement.id),
     )).limit(1);
     if (!approvedRevision?.approvedAt) {
-      throw new Error("Approved mix/master revision is unavailable");
+      throw permanentExportFailure("Approved mix/master revision is unavailable");
     }
     const approvedPreview = artifacts.find((artifact) =>
       artifact.id === approvedRevision.previewArtifactId && artifact.state === "ready" &&
       artifact.storageUri?.startsWith("/api/storage/objects/exports/"));
     if (!approvedPreview?.storageUri) {
-      throw new Error("Approved mix/master preview artifact is unavailable");
+      throw permanentExportFailure("Approved mix/master preview artifact is unavailable");
     }
     const approvedObject = await getPrivateObject(
       approvedPreview.storageUri.slice("/api/storage/objects/".length),
@@ -248,15 +257,17 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
     if (!approvedObject) throw new Error("Approved mix/master preview bytes are unavailable");
     const [approvedWav] = await approvedObject.download();
     if (sha256(approvedWav) !== approvedPreview.checksum || approvedWav.toString("ascii", 0, 4) !== "RIFF") {
-      throw new Error("Approved mix/master preview failed integrity verification");
+      throw permanentExportFailure("Approved mix/master preview failed integrity verification");
     }
     if (input.approvedPreviewChecksum !== approvedPreview.checksum ||
       input.approvedArrangementVersion !== approvedRevision.evidence.arrangementVersion ||
       input.approvedArrangementVersion !== arrangement.version) {
-      throw new Error("Approved revision no longer matches the export request snapshot");
+      throw permanentExportFailure("Approved revision no longer matches the export request snapshot");
     }
     const [exportArtifact] = artifacts.filter((artifact) => artifact.id === input.exportId);
-    if (!exportArtifact) throw new Error("Export artifact allocation is unavailable");
+    if (!exportArtifact) {
+      throw permanentExportFailure("Export artifact allocation is unavailable");
+    }
     if (exportArtifact.state === "ready") {
       await completeProductionJob(job.id, workerId, leaseVersion, [input.exportId]);
       return;
@@ -273,18 +284,20 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
       arrangement.songModelVersion,
     );
     if (!arrangement.plan || !arrangement.styleSpec) {
-      throw new Error("The selected arrangement has no persisted Song Model, plan, or style");
+      throw permanentExportFailure("The selected arrangement has no persisted Song Model, plan, or style");
     }
     const planArtifact = artifacts.find((artifact) => artifact.type === "ARRANGEMENT_PLAN" &&
       (artifact.storageUri === `db://music_arrangements/${arrangement.id}` || artifact.id === arrangement.sourceCandidateId));
-    if (!planArtifact) throw new Error("The selected arrangement plan artifact is unavailable");
+    if (!planArtifact) {
+      throw permanentExportFailure("The selected arrangement plan artifact is unavailable");
+    }
     const trackModelArtifactIds = Object.fromEntries(artifacts
       .filter((artifact) => artifact.type === "TRACK_MODEL" &&
         artifact.storageUri?.startsWith(`db://music_arrangements/${arrangement.id}/tracks/`))
       .map((artifact) => [String(artifact.parameters.trackId ?? artifact.storageUri?.split("/").at(-1)), artifact.id]));
     const expectedTrackIds = new Set(arrangement.trackModels.map((model) => model.id));
     if ([...expectedTrackIds].some((id) => !trackModelArtifactIds[id])) {
-      throw new Error("One or more selected TrackModel artifacts are unavailable");
+      throw permanentExportFailure("One or more selected TrackModel artifacts are unavailable");
     }
     const exportTrackModels = arrangement.trackModels.length > 0
       ? applyArrangementEditorChanges({
@@ -300,7 +313,7 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
       [...expectedTrackIds],
     );
     if (playabilityErrors.length) {
-      throw new Error("Arrangement editor changes are not playable");
+      throw permanentExportFailure("Arrangement editor changes are not playable");
     }
 
     await heartbeat("rendering", 25);
@@ -326,7 +339,7 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
       artifacts,
     );
     if (deterministicFiles.length === 0 && providerAudioFiles.length === 0) {
-      throw new Error(
+      throw permanentExportFailure(
         "The selected arrangement has neither symbolic tracks nor verified provider audio",
       );
     }
@@ -379,7 +392,7 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
         };
       }));
       if (!Object.keys(processingEvidence).length) {
-        throw new Error("Pedalboard processing was requested but no final WAV was available");
+        throw permanentExportFailure("Pedalboard processing was requested but no final WAV was available");
       }
       validateProcessingEvidence(renderedFiles, processingEvidence, Boolean(input.approvedRevisionId));
       renderedFiles = renderedFiles.map((file) => {
@@ -455,7 +468,7 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
         .where(eq(musicProjectsTable.id, project.id))
         .limit(1);
       if (!activeProject) {
-        throw new Error("Project was deleted before the export could be stored");
+        throw permanentExportFailure("Project was deleted before the export could be stored");
       }
       await persistExportBundle(bundle, storageObjectId);
       unpublishedObjectPath = storageObjectPath;
@@ -541,8 +554,9 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
       workerId,
       leaseVersion,
       structuredJobError(
-        new Error(formatHostErrorMessage(error, "Export production failed")),
+        error,
         "EXPORT_FAILED",
+        "Export production failed",
       ),
     );
     if (failed && exportId) {

@@ -829,6 +829,12 @@ test("invalid worker evidence leaves no ready export or published output", async
     productionJob(jobId),
   ]);
   assert.equal(failedJob.status, "failed");
+  assert.equal(
+    failedJob.retryable,
+    false,
+    "known permanent export failures must preserve structured retryability",
+  );
+  assert.equal(failedJob.error.retryable, false);
   assert.equal(failedExport.state, "failed");
   assert.equal(failedExport.storageUri, `db://music_exports/${exportId}`);
   const children = await db.select().from(musicArtifactsTable)
