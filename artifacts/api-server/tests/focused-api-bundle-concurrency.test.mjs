@@ -75,6 +75,34 @@ function runFocusedTest(script, env = process.env) {
   });
 }
 
+for (const [environmentVariable, invalidValue] of [
+  ["FOCUSED_API_TEST_INJECT_PROCESS_EXISTENCE_CHECK_FAILURE", "EPREM"],
+  ["FOCUSED_API_TEST_INJECT_PROCESS_STAT_READ_FAILURE", "EACCESS"],
+  ["FOCUSED_API_TEST_INJECT_DIRECT_PROCESS_SIGNAL_FAILURE", "SIGTREK:EPERM"],
+  ["FOCUSED_API_TEST_INJECT_PROCESS_GROUP_SIGNAL_FAILURE", "EPERM,EACCES"],
+]) {
+  test(`${environmentVariable} rejects unsupported cleanup fault values`, async () => {
+    const result = await runFocusedTest("test:validation", {
+      ...process.env,
+      [environmentVariable]: invalidValue,
+    });
+
+    assert.equal(
+      result.code,
+      1,
+      [
+        "unsupported cleanup fault setting did not fail",
+        result.stdout,
+        result.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    assert.match(result.stderr, new RegExp(`${environmentVariable} has unsupported cleanup fault`));
+    assert.match(result.stderr, new RegExp(invalidValue.replaceAll(",", "\\,")));
+  });
+}
+
 function interruptFocusedTestAfterBundles(
   script,
   signal = "SIGTERM",
@@ -1143,6 +1171,45 @@ test(
     );
   },
 );
+
+for (const errorCode of ["EPERM", "EACCES"]) {
+  test(
+    `a single ${errorCode} process record fault is injected during cleanup`,
+    { timeout: 15_000 },
+    async () => {
+      const before = await listBundleDirectories();
+      const interrupted = await interruptFocusedTestDuringAssertions(
+        "test:validation",
+        {
+          ...process.env,
+          FOCUSED_API_TEST_INJECT_FAILURE: "ignore-sigterm-during-esbuild",
+          FOCUSED_API_TEST_INJECT_PROCESS_STAT_READ_FAILURE: errorCode,
+        },
+        false,
+        `focused-api-single-${errorCode.toLowerCase()}-process-record`,
+      );
+
+      assert.equal(interrupted.interrupted, true);
+      assert.equal(interrupted.code, 143, [
+        `single ${errorCode} process record fault did not complete cleanup`,
+        interrupted.stdout,
+        interrupted.stderr,
+      ].filter(Boolean).join("\n"));
+      assert.match(
+        interrupted.stderr,
+        new RegExp(
+          `focused API cleanup could not read /proc/\\d+/stat: ${errorCode} injected unreadable process record`,
+        ),
+      );
+      await waitForProcessExit(interrupted.activeChildPid);
+      assert.equal(processExists(interrupted.activeChildPid), false);
+
+      const after = await listBundleDirectories();
+      const leaked = [...after].filter((directory) => !before.has(directory));
+      assert.deepEqual(leaked, []);
+    },
+  );
+}
 
 test(
   "mixed unreadable process records retain bounded per-code diagnostics and cannot strand cancellation cleanup",
