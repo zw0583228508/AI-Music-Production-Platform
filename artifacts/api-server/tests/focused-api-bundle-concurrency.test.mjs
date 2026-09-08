@@ -1290,6 +1290,19 @@ test(
       /focused API cleanup could not check whether process \d+ exists: EPERM injected denied process existence check/,
       "focused API cleanup did not report the denied process check with its PID",
     );
+    const detailedFailures = interrupted.stderr.match(
+      /focused API cleanup could not check whether process \d+ exists: EPERM injected denied process existence check/g,
+    ) ?? [];
+    assert.equal(
+      detailedFailures.length,
+      1,
+      `focused API cleanup emitted an unbounded number of detailed process existence-check failures: ${detailedFailures.length}`,
+    );
+    assert.match(
+      interrupted.stderr,
+      /focused API cleanup suppressed detailed EPERM process existence-check failures for \d+ additional processes; affected PIDs: \d+(?:, \d+)*(?:, and \d+ more)?/,
+      "focused API cleanup did not summarize additional denied process checks with their error code and affected PIDs",
+    );
     assert.match(
       interrupted.stderr,
       /focused API cleanup could not confirm process exit after bounded reaping: \d+(?:, \d+)*/,

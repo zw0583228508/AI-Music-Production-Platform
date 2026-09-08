@@ -89,6 +89,9 @@ const childReapingTimeoutMs = 3_000;
 let injectedProcessStatReadFailure = false;
 let injectedProcessDirectoryReadFailure = false;
 const reportedProcessExistenceFailures = new Set();
+const processExistenceFailureDetailLimit = 1;
+const processExistenceFailureSummaryPidLimit = 10;
+const processExistenceFailureGroups = new Map();
 const reportedDirectSignalFailures = new Set();
 const directSignalFailureDetailLimit = 1;
 const directSignalFailureSummaryPidLimit = 10;
@@ -205,11 +208,39 @@ function checkProcessState(pid) {
     const failureKey = `${pid}:${error?.code ?? "UNKNOWN"}`;
     if (!reportedProcessExistenceFailures.has(failureKey)) {
       reportedProcessExistenceFailures.add(failureKey);
-      console.error(
-        `focused API cleanup could not check whether process ${pid} exists: ${error?.code ?? "UNKNOWN"} ${error?.message ?? String(error)}`,
-      );
+      const errorCode = error?.code ?? "UNKNOWN";
+      const group = processExistenceFailureGroups.get(errorCode) ?? {
+        errorCode,
+        detailedCount: 0,
+        additionalPids: new Set(),
+      };
+      processExistenceFailureGroups.set(errorCode, group);
+      if (group.detailedCount < processExistenceFailureDetailLimit) {
+        group.detailedCount += 1;
+        console.error(
+          `focused API cleanup could not check whether process ${pid} exists: ${errorCode} ${error?.message ?? String(error)}`,
+        );
+      } else {
+        group.additionalPids.add(pid);
+      }
     }
     return "unknown";
+  }
+}
+
+function reportProcessExistenceFailureSummaries() {
+  for (const group of processExistenceFailureGroups.values()) {
+    if (group.additionalPids.size === 0) {
+      continue;
+    }
+    const sampledPids = [...group.additionalPids].slice(
+      0,
+      processExistenceFailureSummaryPidLimit,
+    );
+    const remainingCount = group.additionalPids.size - sampledPids.length;
+    console.error(
+      `focused API cleanup suppressed detailed ${group.errorCode} process existence-check failures for ${group.additionalPids.size} additional processes; affected PIDs: ${sampledPids.join(", ")}${remainingCount > 0 ? `, and ${remainingCount} more` : ""}`,
+    );
   }
 }
 
@@ -299,8 +330,13 @@ async function reapIsolatedProcessTree(rootPid, knownPids) {
     .filter(([, state]) => state === "unknown")
     .map(([pid]) => pid);
   if (unconfirmed.length > 0) {
+    const sampledPids = unconfirmed.slice(
+      0,
+      processExistenceFailureSummaryPidLimit,
+    );
+    const remainingCount = unconfirmed.length - sampledPids.length;
     console.error(
-      `focused API cleanup could not confirm process exit after bounded reaping: ${unconfirmed.join(", ")}`,
+      `focused API cleanup could not confirm process exit after bounded reaping: ${sampledPids.join(", ")}${remainingCount > 0 ? `, and ${remainingCount} more` : ""}`,
     );
   }
 }
@@ -369,6 +405,7 @@ async function main() {
       killChild(child, "SIGKILL");
       discoverChildPids(child.pid, childPids);
       await reapIsolatedProcessTree(child.pid, childPids);
+      reportProcessExistenceFailureSummaries();
       reportDirectSignalFailureSummaries();
     }
     await rm(bundleDirectory, { recursive: true, force: true });
