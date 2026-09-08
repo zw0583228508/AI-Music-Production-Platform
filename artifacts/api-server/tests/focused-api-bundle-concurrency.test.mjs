@@ -110,6 +110,42 @@ for (const [environmentVariable, invalidValue] of [
   });
 }
 
+for (const invalidValue of ["not-a-pid", "1.5", "0", "-7"]) {
+  test(`FOCUSED_API_TEST_INJECT_REUSED_PID_TARGET rejects ${invalidValue}`, async () => {
+    const result = await runFocusedTest("test:validation", {
+      ...process.env,
+      FOCUSED_API_TEST_INJECT_REUSED_PID_TARGET: invalidValue,
+    });
+
+    assert.equal(
+      result.code,
+      1,
+      [
+        "invalid reused-PID target did not fail before focused tests",
+        result.stdout,
+        result.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    assert.match(
+      result.stderr,
+      /FOCUSED_API_TEST_INJECT_REUSED_PID_TARGET has invalid process ID target:/,
+    );
+    assert.match(result.stderr, new RegExp(invalidValue.replace(".", "\\.")));
+    assert.match(
+      result.stderr,
+      /accepted format is a positive base-10 integer/,
+      "diagnostic did not explain the accepted reused-PID target format",
+    );
+    assert.doesNotMatch(
+      result.stdout,
+      /\besbuild\b|TAP version/u,
+      "invalid reused-PID target reached bundling or focused tests",
+    );
+  });
+}
+
 function interruptFocusedTestAfterBundles(
   script,
   signal = "SIGTERM",

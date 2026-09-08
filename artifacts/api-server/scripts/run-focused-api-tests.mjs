@@ -112,6 +112,23 @@ function validateFocusedFaultSetting(environmentVariable, supportedValues) {
   );
 }
 
+function parseOptionalPositiveInteger(environmentVariable) {
+  const configuredValue = process.env[environmentVariable] ?? "";
+  if (configuredValue === "") {
+    return undefined;
+  }
+  const parsedValue = Number(configuredValue);
+  if (
+    !/^[1-9]\d*$/u.test(configuredValue) ||
+    !Number.isSafeInteger(parsedValue)
+  ) {
+    throw new Error(
+      `${environmentVariable} has invalid process ID target: ${configuredValue}; accepted format is a positive base-10 integer`,
+    );
+  }
+  return parsedValue;
+}
+
 validateFocusedFaultSetting(
   "FOCUSED_API_TEST_INJECT_FAILURE",
   supportedFocusedFailureModes,
@@ -209,6 +226,9 @@ const directSignalFailureDetailLimit = 1;
 const directSignalFailureSummaryPidLimit = 10;
 const directSignalFailureGroups = new Map();
 const reportedReusedPids = new Set();
+const reusedPidTarget = parseOptionalPositiveInteger(
+  "FOCUSED_API_TEST_INJECT_REUSED_PID_TARGET",
+);
 const directSignalFailureConfiguration =
   parseDirectSignalFailureConfiguration();
 parsePermissionFailureCodes(
@@ -511,8 +531,7 @@ function signalProcess(
     if (!processRecord) {
       throw new Error(`unparseable /proc/${pid}/stat`);
     }
-    const injectSignalRace =
-      process.env.FOCUSED_API_TEST_INJECT_REUSED_PID_TARGET === String(pid);
+    const injectSignalRace = reusedPidTarget === pid;
     if (
       injectSignalRace ||
       processRecord.startTime !== expectedStartTime
@@ -682,10 +701,7 @@ function discoverChildPids(rootPid, knownPids) {
       knownPids.set(pid, startTime);
     }
   }
-  const reusedPidTarget = Number(
-    process.env.FOCUSED_API_TEST_INJECT_REUSED_PID_TARGET,
-  );
-  if (!Number.isInteger(reusedPidTarget) || knownPids.has(reusedPidTarget)) {
+  if (reusedPidTarget === undefined || knownPids.has(reusedPidTarget)) {
     return;
   }
   try {
