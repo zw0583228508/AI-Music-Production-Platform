@@ -17,11 +17,11 @@ async function listBundleDirectories() {
   );
 }
 
-function runFocusedTest(script) {
+function runFocusedTest(script, env = process.env) {
   return new Promise((resolve, reject) => {
     const child = spawn("pnpm", ["run", script], {
       cwd: new URL("..", import.meta.url),
-      env: process.env,
+      env,
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
@@ -74,6 +74,44 @@ test(
       leaked,
       [],
       `focused API tests left generated bundle directories behind: ${leaked.join(", ")}`,
+    );
+  },
+);
+
+test(
+  "failed focused API tests remove their generated bundle directory",
+  { timeout: 120_000 },
+  async () => {
+    const before = await listBundleDirectories();
+    const result = await runFocusedTest("test:validation", {
+      ...process.env,
+      FOCUSED_API_TEST_INJECT_FAILURE: "after-tempdir",
+    });
+
+    assert.equal(
+      result.code,
+      73,
+      [
+        "focused API test did not fail with the injected exit code",
+        result.signal ? `signal: ${result.signal}` : "",
+        result.stdout,
+        result.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    assert.match(
+      result.stderr,
+      /injected focused API failure after tempdir creation/,
+      "focused API test failed for an unexpected reason",
+    );
+
+    const after = await listBundleDirectories();
+    const leaked = [...after].filter((directory) => !before.has(directory));
+    assert.deepEqual(
+      leaked,
+      [],
+      `failed focused API test left generated bundle directories behind: ${leaked.join(", ")}`,
     );
   },
 );
