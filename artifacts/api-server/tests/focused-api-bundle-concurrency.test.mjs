@@ -208,3 +208,41 @@ test(
     );
   },
 );
+
+test(
+  "esbuild failures remove their generated focused API bundle directory",
+  { timeout: 120_000 },
+  async () => {
+    const before = await listBundleDirectories();
+    const result = await runFocusedTest("test:validation", {
+      ...process.env,
+      FOCUSED_API_TEST_INJECT_FAILURE: "esbuild",
+    });
+
+    assert.notEqual(
+      result.code,
+      0,
+      "focused API test unexpectedly succeeded with an invalid esbuild input",
+    );
+    assert.match(
+      result.stderr,
+      /\[ERROR\] Could not resolve ".*intentional-missing-entry\.ts"/,
+      [
+        "focused API test did not fail inside esbuild as expected",
+        result.signal ? `signal: ${result.signal}` : "",
+        result.stdout,
+        result.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+
+    const after = await listBundleDirectories();
+    const leaked = [...after].filter((directory) => !before.has(directory));
+    assert.deepEqual(
+      leaked,
+      [],
+      `esbuild failure left generated bundle directories behind: ${leaked.join(", ")}`,
+    );
+  },
+);
