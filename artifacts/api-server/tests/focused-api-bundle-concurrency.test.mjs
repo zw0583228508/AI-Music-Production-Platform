@@ -62,6 +62,13 @@ function auditBundledFocusedScript(name, command) {
     errors.push(`must install an EXIT trap that removes $${variable}`);
   }
 
+  const terminationTrap = command.match(/\btrap\s+(.+?)\s+TERM\b/u)?.[1];
+  if (!terminationTrap || !/\bexit(?:\s+\d+)?\b/u.test(terminationTrap)) {
+    errors.push(
+      "must install a TERM trap that exits through the EXIT cleanup path",
+    );
+  }
+
   return errors.map((error) => `${name}: ${error}`);
 }
 
@@ -88,6 +95,8 @@ test("focused API bundle audit rejects each unsafe path pattern", () => {
       "sh -c 'tmpdir=$(mktemp -d /tmp/music-studio-api-tests) && trap \"rm -rf \\\"$tmpdir\\\"\" EXIT && esbuild src/example.test.ts --bundle --outfile=\"$tmpdir/example.test.mjs\"'",
     "test:missing-cleanup":
       "sh -c 'tmpdir=$(mktemp -d /tmp/music-studio-api-tests.XXXXXX) && esbuild src/example.test.ts --bundle --outfile=\"$tmpdir/example.test.mjs\"'",
+    "test:missing-termination-cleanup":
+      "sh -c 'tmpdir=$(mktemp -d /tmp/music-studio-api-tests.XXXXXX) && trap \"rm -rf \\\"$tmpdir\\\"\" EXIT && esbuild src/example.test.ts --bundle --outfile=\"$tmpdir/example.test.mjs\"'",
   };
 
   const errors = findBundledFocusedScripts(unsafeScripts).flatMap(
@@ -97,6 +106,11 @@ test("focused API bundle audit rejects each unsafe path pattern", () => {
   assert.ok(errors.some((error) => error.startsWith("test:fixed-output:")));
   assert.ok(errors.some((error) => error.startsWith("test:shared-directory:")));
   assert.ok(errors.some((error) => error.startsWith("test:missing-cleanup:")));
+  assert.ok(
+    errors.some((error) =>
+      error.startsWith("test:missing-termination-cleanup:"),
+    ),
+  );
 });
 
 async function listBundleDirectories() {
