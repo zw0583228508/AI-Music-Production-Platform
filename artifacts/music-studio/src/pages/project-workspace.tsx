@@ -78,6 +78,7 @@ import {
   AudioTransportStatus,
 } from "@/components/studio/audio-transport";
 import { useAudioTransport } from "@/components/studio/use-audio-transport";
+import { getCandidatePlaybackPresentation } from "@/components/studio/candidate-playback";
 import { EditorConflictError } from "@/components/studio/editor-save-coordinator";
 import type { CopilotEditorResult, EditorSelection } from "@/components/studio/editor-types";
 import {
@@ -1606,28 +1607,27 @@ export default function ProjectWorkspace() {
                                     const audio = candidate.evaluation.artifacts.find(
                                       (artifact) => artifact.type === "AUDIO_TRACK",
                                     );
-                                    const active = candidatePreview?.id === candidate.id;
-                                    const playing = active && transport.status === "playing";
+                                     const playback = getCandidatePlaybackPresentation({
+                                       candidateId: candidate.id,
+                                       candidateLabel: candidate.label,
+                                       activeCandidateId: candidatePreview?.id ?? null,
+                                       hasAudio: Boolean(audio),
+                                       transportStatus: transport.status,
+                                     });
                                     return (
                                   <Button
                                     size="sm"
-                                    variant={active ? "secondary" : "outline"}
-                                    disabled={!audio || (active && transport.status === "loading")}
-                                    aria-label={
-                                      !audio
-                                        ? `${candidate.label} render unavailable`
-                                        : playing
-                                          ? `Pause ${candidate.label}`
-                                          : `Play ${candidate.label}`
-                                    }
+                                     variant={playback.active ? "secondary" : "outline"}
+                                     disabled={playback.disabled}
+                                     aria-label={playback.label}
                                     onClick={() => handleCandidatePlayback(candidate)}
                                   >
-                                    {playing ? (
+                                     {playback.playing ? (
                                       <Pause className="mr-2 h-4 w-4" />
                                     ) : (
                                       <Play className="mr-2 h-4 w-4" />
                                     )}
-                                    {!audio ? "Unavailable" : playing ? "Pause" : "Play"}
+                                     {playback.text}
                                   </Button>
                                     );
                                   })()}
