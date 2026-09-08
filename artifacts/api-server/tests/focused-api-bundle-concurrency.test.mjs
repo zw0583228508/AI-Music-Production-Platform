@@ -1072,6 +1072,7 @@ test(
         {
           ...process.env,
           FOCUSED_API_TEST_INJECT_FAILURE: "ignore-sigterm-during-esbuild",
+          FOCUSED_API_TEST_INJECT_DIRECT_PROCESS_SIGNAL_FAILURE: "true",
         },
         false,
         "focused-api-bundler",
@@ -1101,6 +1102,19 @@ test(
       ]
         .filter(Boolean)
         .join("\n"),
+    );
+    const directSignalFailures = interrupted.stderr.match(
+      /focused API cleanup could not signal process \d+ with SIGKILL: EPERM injected denied direct process signal/g,
+    ) ?? [];
+    assert.equal(
+      directSignalFailures.length,
+      1,
+      "a single denied direct signal should retain exactly one detailed diagnostic",
+    );
+    assert.doesNotMatch(
+      interrupted.stderr,
+      /focused API cleanup suppressed detailed SIGKILL EPERM signal failures/,
+      "a single denied direct signal should not emit an empty suppression summary",
     );
     await waitForProcessExit(interrupted.activeChildPid);
     assert.equal(
@@ -1345,6 +1359,18 @@ test(
       interrupted.stderr,
       /focused API cleanup could not signal process \d+ with SIGKILL: EPERM injected denied direct process signal/,
       "focused API cleanup did not report the denied direct signal with its PID and signal",
+    );
+    const detailedFailures = interrupted.stderr.match(
+      /focused API cleanup could not signal process \d+ with SIGKILL: EPERM injected denied direct process signal/g,
+    ) ?? [];
+    assert.ok(
+      detailedFailures.length === 1,
+      `focused API cleanup emitted an unbounded number of detailed signal failures: ${detailedFailures.length}`,
+    );
+    assert.match(
+      interrupted.stderr,
+      /focused API cleanup suppressed detailed SIGKILL EPERM signal failures for \d+ additional processes; affected PIDs: \d+(?:, \d+)*(?:, and \d+ more)?/,
+      "focused API cleanup did not summarize additional denied signals with their signal, error code, and affected PIDs",
     );
     assert.ok(
       cleanupDurationMs < 10_000,
