@@ -52,6 +52,7 @@ import {
   structuredJobError,
   recoverProductionJobs,
 } from "./productionJobs";
+import { formatHostErrorMessage } from "./hostErrorDiagnostics";
 
 type ExportInputSnapshot = {
   exportId: string;
@@ -535,7 +536,15 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
       }
       return;
     }
-    const failed = await failProductionJob(job.id, workerId, leaseVersion, structuredJobError(error, "EXPORT_FAILED"));
+    const failed = await failProductionJob(
+      job.id,
+      workerId,
+      leaseVersion,
+      structuredJobError(
+        new Error(formatHostErrorMessage(error, "Export production failed")),
+        "EXPORT_FAILED",
+      ),
+    );
     if (failed && exportId) {
       await db.update(musicArtifactsTable)
         .set({ state: "failed", size: "Failed" })
@@ -561,7 +570,10 @@ export async function recoverExportProductionJobs(): Promise<void> {
   );
   const reports = await Promise.all(terminalJobs.map(({ id }) =>
     reclaimTerminalExportJobObjects(id).catch((error) => {
-      logger.error({ err: error, jobId: id }, "export_object_reclamation_failed");
+      logger.error({
+        errorMessage: formatHostErrorMessage(error, "Export object reclamation failed"),
+        jobId: id,
+      }, "export_object_reclamation_failed");
       return emptyExportObjectReclamationReport();
     })
   ));
@@ -610,7 +622,10 @@ async function logExportObjectReclamation(
   }
   await recordExportCleanupRate(report, scope).catch((error) => {
     logger.error({
-      err: error,
+      errorMessage: formatHostErrorMessage(
+        error,
+        "Export cleanup rate recording failed",
+      ),
       service: EXPORT_CLEANUP_SERVICE,
       windowMinutes: EXPORT_CLEANUP_WINDOW_MS / 60_000,
     }, "export_cleanup_rate_recording_failed");

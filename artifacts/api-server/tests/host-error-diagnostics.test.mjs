@@ -70,6 +70,20 @@ for (const [entrypoint, format] of formatters) {
     assert.equal(format(hostile, "bounded fallback"), "root diagnostic");
   });
 
+  test(`${entrypoint} diagnostics survive hostile primitive conversion`, () => {
+    const hostile = Object.create(null, {
+      message: {
+        value: {
+          [Symbol.toPrimitive]() {
+            throw new Error("hostile primitive conversion escaped");
+          },
+        },
+      },
+    });
+
+    assert.equal(format(hostile, "bounded fallback"), "bounded fallback");
+  });
+
   test(`${entrypoint} diagnostics are sanitized and bounded`, () => {
     const diagnostic = format(
       { message: `root\u0000diagnostic ${"x".repeat(400)}` },

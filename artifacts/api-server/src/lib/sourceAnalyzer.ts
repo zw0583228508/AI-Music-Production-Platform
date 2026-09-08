@@ -42,6 +42,7 @@ import { logger } from "./logger";
 import { deriveVocalPhrasing, detectVocalActivity, isEffectivelySilent } from "./audioSignal";
 import { recordSheetSageCapacityRejection } from "./sheetSageCapacityAlerts";
 import { buildMeterAwareEvidence, createCanonicalTimeline } from "./canonicalTimeline";
+import { formatHostErrorMessage } from "./hostErrorDiagnostics";
 
 export { isEffectivelySilent };
 
@@ -1032,7 +1033,7 @@ async function retiredAnalysisPath(sourceId: string): Promise<void> {
     });
   } catch (error) {
     if (error instanceof LeaseLostError) return;
-    const message = error instanceof Error ? error.message : "Source analysis failed";
+    const message = formatHostErrorMessage(error, "Source analysis failed");
     await db.transaction(async (tx) => {
       const [failed] = await tx.update(analysisJobsTable)
         .set({
@@ -1193,7 +1194,7 @@ export async function analyzeProjectSource(
   const heartbeat = setInterval(() => {
     void heartbeatAnalysisLease(source.id, attempt.id).catch((error) => {
       logger.error({
-        err: error,
+        errorMessage: formatHostErrorMessage(error, "Analysis heartbeat failed"),
         sourceId: source.id,
         attemptId: attempt.id,
       }, "music_analysis_heartbeat_failed");
@@ -1359,9 +1360,7 @@ export async function analyzeProjectSource(
       } catch (error) {
         await deleteAnalysisObjects(source.projectId, job.id).catch(() => undefined);
         hasUncommittedAnalysisObjects = false;
-        const message = error instanceof Error
-          ? error.message
-          : "Stem persistence failed";
+        const message = formatHostErrorMessage(error, "Stem persistence failed");
         const provenance = providerResults.provenance.find((item) =>
           item.provider === providerResults.separation?.providerId
         );
@@ -1431,9 +1430,10 @@ export async function analyzeProjectSource(
             status: "unavailable",
             attempts: 0,
             errorCode: "verified-stem-read-unavailable",
-            errorMessage: error instanceof Error
-              ? error.message
-              : "The verified bass artifact could not be read.",
+            errorMessage: formatHostErrorMessage(
+              error,
+              "The verified bass artifact could not be read.",
+            ),
           });
         }
       } else {
@@ -1954,7 +1954,7 @@ export async function analyzeProjectSource(
       await deleteAnalysisObjects(source.projectId, attempt.id).catch(() => undefined);
       hasUncommittedAnalysisObjects = false;
     }
-    const message = error instanceof Error ? error.message : "Source analysis failed";
+    const message = formatHostErrorMessage(error, "Source analysis failed");
     const failedAt = new Date();
     if (error instanceof LeaseLostError || error instanceof AnalysisLeaseLostError) {
       await interruptAttempt(attempt.id, message);
@@ -2021,7 +2021,7 @@ export async function analyzeProjectSource(
           "Analysis lease expired before the error could be recorded.",
         );
         logger.warn({
-          err: error,
+          errorMessage: message,
           sourceId: source.id,
           attemptId: attempt.id,
           stage: currentStage,
@@ -2029,7 +2029,7 @@ export async function analyzeProjectSource(
         }, "music_analysis_failure_after_lease_lost");
       } else {
         logger.error({
-          err: error,
+          errorMessage: message,
           sourceId: source.id,
           attemptId: attempt.id,
           stage: currentStage,
@@ -2055,11 +2055,17 @@ export async function queueProjectSourceAnalysis(sourceId: string): Promise<bool
       resumed: claim.resumed,
     }, "music_analysis_attempt_queued");
     void analyzeProjectSource(sourceId, claim.attempt.id).catch((error) => {
-      logger.error({ err: error, sourceId }, "music_analysis_worker_crashed");
+      logger.error({
+        errorMessage: formatHostErrorMessage(error, "Music analysis worker crashed"),
+        sourceId,
+      }, "music_analysis_worker_crashed");
     });
     return true;
   } catch (error) {
-    logger.error({ err: error, sourceId }, "music_analysis_attempt_queue_failed");
+    logger.error({
+      errorMessage: formatHostErrorMessage(error, "Analysis attempt queue failed"),
+      sourceId,
+    }, "music_analysis_attempt_queue_failed");
     throw error;
   }
 }
