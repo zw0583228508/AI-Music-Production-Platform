@@ -4,6 +4,7 @@ import {
   reportHistoricalExportLeftovers,
 } from "./lib/artifactLifecycle";
 import type { ExportReconciliationReport } from "./lib/objectStorage";
+import { formatHostErrorMessage } from "./lib/hostErrorDiagnostics";
 
 function usage(): never {
   throw new Error(
@@ -61,6 +62,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : "Export reconciliation failed");
+  console.error(formatHostErrorMessage(error, "Export reconciliation failed"));
   process.exitCode = 1;
 });
