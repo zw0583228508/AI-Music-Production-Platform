@@ -131,6 +131,13 @@ function parseOptionalPositiveInteger(environmentVariable) {
     process.env.FOCUSED_API_TEST_PID_MAX_OVERRIDE_FILE ?? pidLimitSetting;
   let pidLimitValue;
   try {
+    const injectedReadFailure =
+      process.env.FOCUSED_API_TEST_INJECT_PID_MAX_READ_FAILURE;
+    if (injectedReadFailure) {
+      const error = new Error("injected denied host PID limit read");
+      error.code = injectedReadFailure;
+      throw error;
+    }
     pidLimitValue = readFileSync(pidLimitInput, "utf8").trim();
   } catch (error) {
     throw new Error(
@@ -166,6 +173,10 @@ for (const environmentVariable of [
 ]) {
   validateFocusedFaultSetting(environmentVariable, new Set(["true"]));
 }
+validateFocusedFaultSetting(
+  "FOCUSED_API_TEST_INJECT_PID_MAX_READ_FAILURE",
+  supportedPermissionFailureCodes,
+);
 
 function parsePermissionFailureCodes(
   environmentVariable,
