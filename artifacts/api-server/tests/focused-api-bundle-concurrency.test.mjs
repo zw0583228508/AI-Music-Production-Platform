@@ -80,6 +80,7 @@ for (const [environmentVariable, invalidValue] of [
   ["FOCUSED_API_TEST_INJECT_PROCESS_STAT_READ_FAILURE", "EACCESS"],
   ["FOCUSED_API_TEST_INJECT_DIRECT_PROCESS_SIGNAL_FAILURE", "SIGTREK:EPERM"],
   ["FOCUSED_API_TEST_INJECT_PROCESS_GROUP_SIGNAL_FAILURE", "EPERM,EACCES"],
+  ["FOCUSED_API_TEST_INJECT_PID_MAX_READ_FAILURE", "ENOENT"],
   ["FOCUSED_API_TEST_INJECT_FAILURE", "await-sigtrek"],
   ["FOCUSED_API_TEST_INJECT_PROCESS_DIRECTORY_READ_FAILURE", "ture"],
 ]) {
@@ -215,6 +216,35 @@ test("an unreadable host PID limit fails before focused work with a bounded diag
   } finally {
     await rm(overrideDirectory, { recursive: true, force: true });
   }
+});
+
+test("denied access to the host PID limit fails before focused work with a bounded diagnostic", async () => {
+  const deniedOverridePath = join(
+    tmpdir(),
+    `focused-api-denied-pid-limit-${randomUUID()}`,
+  );
+  const result = await runFocusedTest("test:validation", {
+    ...process.env,
+    FOCUSED_API_TEST_INJECT_REUSED_PID_TARGET: "1",
+    FOCUSED_API_TEST_PID_MAX_OVERRIDE_FILE: deniedOverridePath,
+    FOCUSED_API_TEST_INJECT_PID_MAX_READ_FAILURE: "EACCES",
+  });
+
+  assert.equal(result.code, 1);
+  assert.match(
+    result.stderr,
+    /focused API runner could not read host kernel setting \/proc\/sys\/kernel\/pid_max: EACCES/u,
+  );
+  assert.doesNotMatch(
+    result.stderr,
+    new RegExp(deniedOverridePath.replaceAll("/", "\\/")),
+    "diagnostic exposed the denied test input path",
+  );
+  assert.doesNotMatch(
+    result.stdout,
+    /\besbuild\b|TAP version/u,
+    "denied host PID limit reached bundling or focused tests",
+  );
 });
 
 test("a missing host PID limit fails before focused work with a bounded diagnostic", async () => {
