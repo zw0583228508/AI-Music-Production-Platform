@@ -149,15 +149,65 @@ test("structured job errors survive throwing string and primitive conversion", (
   }
 });
 
-test("structured job retryability uses the sanitized bounded diagnostic", () => {
+test("structured job errors preserve a structured permanent-failure signal across varied diagnostics", () => {
+  const diagnostics = [
+    `  invalid\u0000license  ${"x".repeat(400)}`,
+    "The requested model entitlement is unavailable for this account",
+    "Provider rejected this operation permanently",
+  ];
+
+  for (const message of diagnostics) {
+    const formatted = structuredJobError({
+      message,
+      retryable: false,
+    });
+    assert.equal(formatted.retryable, false);
+  }
+
   const formatted = structuredJobError({
-    message: `  invalid\u0000license  ${"x".repeat(400)}`,
+    message: diagnostics[0],
+    retryable: false,
   });
 
   assert.equal(formatted.message.length, 240);
   assert.match(formatted.message, /^invalid license /u);
   assert.match(formatted.message, /\.\.\.$/u);
-  assert.equal(formatted.retryable, false);
+});
+
+test("unknown job failures use the documented retryable default regardless of wording", () => {
+  for (const message of [
+    "invalid license",
+    "Provider response could not be classified",
+  ]) {
+    assert.equal(structuredJobError({ message }).retryable, true);
+  }
+});
+
+test("structured transient failures remain retryable regardless of wording", () => {
+  assert.equal(
+    structuredJobError({
+      message: "invalid license",
+      retryable: true,
+    }).retryable,
+    true,
+  );
+});
+
+test("malformed or hostile retryability signals use the conservative default", () => {
+  const hostile = Object.create(null, {
+    message: { value: "Permanent provider failure" },
+    retryable: {
+      get() {
+        throw new Error("hostile retryable getter escaped");
+      },
+    },
+  });
+
+  assert.equal(structuredJobError(hostile).retryable, true);
+  assert.equal(
+    structuredJobError({ message: "Permanent provider failure", retryable: "false" }).retryable,
+    true,
+  );
 });
 
 before(async () => {
