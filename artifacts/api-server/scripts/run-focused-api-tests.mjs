@@ -89,6 +89,7 @@ const childReapingTimeoutMs = 3_000;
 let injectedProcessStatReadFailure = false;
 let injectedProcessDirectoryReadFailure = false;
 const reportedProcessExistenceFailures = new Set();
+const reportedDirectSignalFailures = new Set();
 
 function killChild(child, signal) {
   try {
@@ -211,10 +212,28 @@ function checkProcessState(pid) {
 
 function killProcess(pid, signal) {
   try {
+    if (
+      process.env.FOCUSED_API_TEST_INJECT_DIRECT_PROCESS_SIGNAL_FAILURE ===
+      "true"
+    ) {
+      const error = new Error("injected denied direct process signal");
+      error.code = "EPERM";
+      throw error;
+    }
     process.kill(pid, signal);
   } catch (error) {
-    if (error?.code !== "ESRCH") {
+    if (error?.code === "ESRCH") {
+      return;
+    }
+    if (error?.code !== "EPERM" && error?.code !== "EACCES") {
       throw error;
+    }
+    const failureKey = `${pid}:${signal}:${error?.code ?? "UNKNOWN"}`;
+    if (!reportedDirectSignalFailures.has(failureKey)) {
+      reportedDirectSignalFailures.add(failureKey);
+      console.error(
+        `focused API cleanup could not signal process ${pid} with ${signal}: ${error?.code ?? "UNKNOWN"} ${error?.message ?? String(error)}`,
+      );
     }
   }
 }
