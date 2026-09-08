@@ -90,6 +90,9 @@ let injectedProcessStatReadFailure = false;
 let injectedProcessDirectoryReadFailure = false;
 const reportedProcessExistenceFailures = new Set();
 const reportedDirectSignalFailures = new Set();
+const directSignalFailureDetailLimit = 1;
+const directSignalFailureSummaryPidLimit = 10;
+const directSignalFailureGroups = new Map();
 
 function killChild(child, signal) {
   try {
@@ -231,10 +234,40 @@ function killProcess(pid, signal) {
     const failureKey = `${pid}:${signal}:${error?.code ?? "UNKNOWN"}`;
     if (!reportedDirectSignalFailures.has(failureKey)) {
       reportedDirectSignalFailures.add(failureKey);
-      console.error(
-        `focused API cleanup could not signal process ${pid} with ${signal}: ${error?.code ?? "UNKNOWN"} ${error?.message ?? String(error)}`,
-      );
+      const errorCode = error?.code ?? "UNKNOWN";
+      const groupKey = `${signal}:${errorCode}`;
+      const group = directSignalFailureGroups.get(groupKey) ?? {
+        signal,
+        errorCode,
+        detailedCount: 0,
+        additionalPids: new Set(),
+      };
+      directSignalFailureGroups.set(groupKey, group);
+      if (group.detailedCount < directSignalFailureDetailLimit) {
+        group.detailedCount += 1;
+        console.error(
+          `focused API cleanup could not signal process ${pid} with ${signal}: ${errorCode} ${error?.message ?? String(error)}`,
+        );
+      } else {
+        group.additionalPids.add(pid);
+      }
     }
+  }
+}
+
+function reportDirectSignalFailureSummaries() {
+  for (const group of directSignalFailureGroups.values()) {
+    if (group.additionalPids.size === 0) {
+      continue;
+    }
+    const sampledPids = [...group.additionalPids].slice(
+      0,
+      directSignalFailureSummaryPidLimit,
+    );
+    const remainingCount = group.additionalPids.size - sampledPids.length;
+    console.error(
+      `focused API cleanup suppressed detailed ${group.signal} ${group.errorCode} signal failures for ${group.additionalPids.size} additional processes; affected PIDs: ${sampledPids.join(", ")}${remainingCount > 0 ? `, and ${remainingCount} more` : ""}`,
+    );
   }
 }
 
@@ -330,9 +363,13 @@ async function main() {
         await delay(10);
         discoverChildPids(child.pid, childPids);
       }
+      for (const pid of [...childPids].toReversed()) {
+        killProcess(pid, "SIGKILL");
+      }
       killChild(child, "SIGKILL");
       discoverChildPids(child.pid, childPids);
       await reapIsolatedProcessTree(child.pid, childPids);
+      reportDirectSignalFailureSummaries();
     }
     await rm(bundleDirectory, { recursive: true, force: true });
     process.off("SIGINT", handleSigint);
