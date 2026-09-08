@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { readFileSync, rmSync } from "node:fs";
-import { readFile, readdir } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -184,6 +184,71 @@ test("FOCUSED_API_TEST_INJECT_REUSED_PID_TARGET rejects a PID outside the host r
     /\besbuild\b|TAP version/u,
     "out-of-range reused-PID target reached bundling or focused tests",
   );
+});
+
+test("an unreadable host PID limit fails before focused work with a bounded diagnostic", async () => {
+  const overrideDirectory = await mkdtemp(
+    join(tmpdir(), "focused-api-pid-limit."),
+  );
+  try {
+    const result = await runFocusedTest("test:validation", {
+      ...process.env,
+      FOCUSED_API_TEST_INJECT_REUSED_PID_TARGET: "1",
+      FOCUSED_API_TEST_PID_MAX_OVERRIDE_FILE: overrideDirectory,
+    });
+
+    assert.equal(result.code, 1);
+    assert.match(
+      result.stderr,
+      /focused API runner could not read host kernel setting \/proc\/sys\/kernel\/pid_max: EISDIR/u,
+    );
+    assert.doesNotMatch(
+      result.stderr,
+      new RegExp(overrideDirectory.replaceAll("/", "\\/")),
+      "diagnostic exposed the test input path",
+    );
+    assert.doesNotMatch(
+      result.stdout,
+      /\besbuild\b|TAP version/u,
+      "unreadable host PID limit reached bundling or focused tests",
+    );
+  } finally {
+    await rm(overrideDirectory, { recursive: true, force: true });
+  }
+});
+
+test("a malformed host PID limit fails before focused work without echoing its contents", async () => {
+  const overrideDirectory = await mkdtemp(
+    join(tmpdir(), "focused-api-pid-limit."),
+  );
+  const overridePath = join(overrideDirectory, "pid-max");
+  const malformedValue = "not-a-kernel-pid-limit";
+  try {
+    await writeFile(overridePath, malformedValue);
+    const result = await runFocusedTest("test:validation", {
+      ...process.env,
+      FOCUSED_API_TEST_INJECT_REUSED_PID_TARGET: "1",
+      FOCUSED_API_TEST_PID_MAX_OVERRIDE_FILE: overridePath,
+    });
+
+    assert.equal(result.code, 1);
+    assert.match(
+      result.stderr,
+      /focused API runner found malformed host kernel setting \/proc\/sys\/kernel\/pid_max; expected a base-10 integer greater than 1/u,
+    );
+    assert.doesNotMatch(
+      result.stderr,
+      new RegExp(malformedValue),
+      "diagnostic exposed malformed host input",
+    );
+    assert.doesNotMatch(
+      result.stdout,
+      /\besbuild\b|TAP version/u,
+      "malformed host PID limit reached bundling or focused tests",
+    );
+  } finally {
+    await rm(overrideDirectory, { recursive: true, force: true });
+  }
 });
 
 function interruptFocusedTestAfterBundles(

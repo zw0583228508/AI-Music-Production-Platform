@@ -126,9 +126,27 @@ function parseOptionalPositiveInteger(environmentVariable) {
       `${environmentVariable} has invalid process ID target: ${configuredValue}; accepted format is a positive base-10 integer`,
     );
   }
-  const pidWrapPoint = Number(
-    readFileSync("/proc/sys/kernel/pid_max", "utf8").trim(),
-  );
+  const pidLimitSetting = "/proc/sys/kernel/pid_max";
+  const pidLimitInput =
+    process.env.FOCUSED_API_TEST_PID_MAX_OVERRIDE_FILE ?? pidLimitSetting;
+  let pidLimitValue;
+  try {
+    pidLimitValue = readFileSync(pidLimitInput, "utf8").trim();
+  } catch (error) {
+    throw new Error(
+      `focused API runner could not read host kernel setting ${pidLimitSetting}: ${error?.code ?? "UNKNOWN"}`,
+    );
+  }
+  const pidWrapPoint = Number(pidLimitValue);
+  if (
+    !/^[1-9]\d*$/u.test(pidLimitValue) ||
+    !Number.isSafeInteger(pidWrapPoint) ||
+    pidWrapPoint <= 1
+  ) {
+    throw new Error(
+      `focused API runner found malformed host kernel setting ${pidLimitSetting}; expected a base-10 integer greater than 1`,
+    );
+  }
   const maximumSupportedPid = pidWrapPoint - 1;
   if (parsedValue > maximumSupportedPid) {
     throw new Error(
