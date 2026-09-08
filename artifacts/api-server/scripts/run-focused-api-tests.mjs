@@ -287,12 +287,15 @@ function reportProcessExistenceFailureSummaries() {
 
 function killProcess(pid, signal) {
   try {
+    const injectedFailure =
+      process.env.FOCUSED_API_TEST_INJECT_DIRECT_PROCESS_SIGNAL_FAILURE;
     if (
-      process.env.FOCUSED_API_TEST_INJECT_DIRECT_PROCESS_SIGNAL_FAILURE ===
-      "true"
+      injectedFailure === "true" ||
+      injectedFailure === "EPERM" ||
+      injectedFailure === "EACCES"
     ) {
       const error = new Error("injected denied direct process signal");
-      error.code = "EPERM";
+      error.code = injectedFailure === "true" ? "EPERM" : injectedFailure;
       throw error;
     }
     process.kill(pid, signal);
