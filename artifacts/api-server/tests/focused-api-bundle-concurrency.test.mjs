@@ -379,6 +379,76 @@ test(
 );
 
 test(
+  "a later esbuild failure does not disrupt a different healthy focused API check",
+  { timeout: 120_000 },
+  async () => {
+    const before = await listBundleDirectories();
+    const [failed, healthy] = await Promise.all([
+      runFocusedTest("test:validation", {
+        ...process.env,
+        FOCUSED_API_TEST_INJECT_FAILURE: "later-esbuild",
+      }),
+      runFocusedTest("test:source-ingestion"),
+    ]);
+
+    assert.notEqual(
+      failed.script,
+      healthy.script,
+      "expected two distinct focused API scripts to run concurrently",
+    );
+    assert.notEqual(
+      failed.code,
+      0,
+      "focused API test unexpectedly succeeded after its injected later esbuild failure",
+    );
+    assert.match(
+      failed.stderr,
+      /focused API first bundle ready before later esbuild failure/,
+      [
+        `${failed.script} did not confirm its initial bundle was written while the healthy focused check overlapped`,
+        failed.signal ? `signal: ${failed.signal}` : "",
+        failed.stdout,
+        failed.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    assert.match(
+      failed.stderr,
+      /\[ERROR\] Could not resolve ".*intentional-missing-later-entry\.ts"/,
+      [
+        `${failed.script} did not report the intended later esbuild failure`,
+        failed.signal ? `signal: ${failed.signal}` : "",
+        failed.stdout,
+        failed.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    assert.equal(
+      healthy.code,
+      0,
+      [
+        `${healthy.script} failed while a different focused check cleaned up after a later esbuild failure`,
+        healthy.signal ? `signal: ${healthy.signal}` : "",
+        healthy.stdout,
+        healthy.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+
+    const after = await listBundleDirectories();
+    const leaked = [...after].filter((directory) => !before.has(directory));
+    assert.deepEqual(
+      leaked,
+      [],
+      `mixed-outcome focused API tests left generated bundle directories behind: ${leaked.join(", ")}`,
+    );
+  },
+);
+
+test(
   "focused API assertion failures after bundling remove their generated bundle directory",
   { timeout: 120_000 },
   async () => {
