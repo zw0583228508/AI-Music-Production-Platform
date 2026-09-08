@@ -112,9 +112,10 @@ async function listBundleDirectories() {
 
 function runFocusedTest(script, env = process.env) {
   return new Promise((resolve, reject) => {
+    const { NODE_TEST_CONTEXT: _parentTestContext, ...childEnv } = env;
     const child = spawn("pnpm", ["run", script], {
       cwd: new URL("..", import.meta.url),
-      env,
+      env: childEnv,
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
@@ -243,6 +244,44 @@ test(
       leaked,
       [],
       `esbuild failure left generated bundle directories behind: ${leaked.join(", ")}`,
+    );
+  },
+);
+
+test(
+  "focused API assertion failures after bundling remove their generated bundle directory",
+  { timeout: 120_000 },
+  async () => {
+    const before = await listBundleDirectories();
+    const result = await runFocusedTest("test:validation", {
+      ...process.env,
+      FOCUSED_API_TEST_INJECT_FAILURE: "during-node-test",
+    });
+
+    assert.equal(
+      result.code,
+      1,
+      [
+        "focused API test did not fail through node --test",
+        result.signal ? `signal: ${result.signal}` : "",
+        result.stdout,
+        result.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    assert.match(
+      result.stdout,
+      /injected focused API assertion failure after bundling/,
+      "focused API test did not report the intended assertion failure",
+    );
+
+    const after = await listBundleDirectories();
+    const leaked = [...after].filter((directory) => !before.has(directory));
+    assert.deepEqual(
+      leaked,
+      [],
+      `assertion-failed focused API test left generated bundle directories behind: ${leaked.join(", ")}`,
     );
   },
 );
