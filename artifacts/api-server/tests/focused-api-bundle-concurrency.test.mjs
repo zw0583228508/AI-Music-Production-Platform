@@ -487,6 +487,71 @@ test(
 );
 
 test(
+  "a focused API assertion failure does not disrupt a different healthy focused check",
+  { timeout: 120_000 },
+  async () => {
+    const before = await listBundleDirectories();
+    const [failed, healthy] = await Promise.all([
+      runFocusedTest("test:validation", {
+        ...process.env,
+        FOCUSED_API_TEST_INJECT_FAILURE: "during-node-test",
+      }),
+      runFocusedTest("test:source-ingestion"),
+    ]);
+
+    assert.notEqual(
+      failed.script,
+      healthy.script,
+      "expected two distinct focused API scripts to run concurrently",
+    );
+    assert.equal(
+      failed.code,
+      1,
+      [
+        `${failed.script} did not fail through node --test while the healthy focused check overlapped`,
+        failed.signal ? `signal: ${failed.signal}` : "",
+        failed.stdout,
+        failed.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    assert.match(
+      failed.stdout,
+      /injected focused API assertion failure after bundling/,
+      [
+        `${failed.script} did not report the intended post-bundle assertion failure`,
+        failed.signal ? `signal: ${failed.signal}` : "",
+        failed.stdout,
+        failed.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    assert.equal(
+      healthy.code,
+      0,
+      [
+        `${healthy.script} failed while a different focused check cleaned up after an assertion failure`,
+        healthy.signal ? `signal: ${healthy.signal}` : "",
+        healthy.stdout,
+        healthy.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+
+    const after = await listBundleDirectories();
+    const leaked = [...after].filter((directory) => !before.has(directory));
+    assert.deepEqual(
+      leaked,
+      [],
+      `mixed assertion-outcome focused API tests left generated bundle directories behind: ${leaked.join(", ")}`,
+    );
+  },
+);
+
+test(
   "simultaneous focused API assertion failures remove every generated bundle directory",
   { timeout: 120_000 },
   async () => {
