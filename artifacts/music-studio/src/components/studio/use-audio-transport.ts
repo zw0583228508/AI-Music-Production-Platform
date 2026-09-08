@@ -26,6 +26,29 @@ function clampTime(time: number, duration: number): number {
   return Math.max(0, Math.min(duration > 0 ? duration : time, time));
 }
 
+export function getSourceChangePlayback(
+  previousSource: string | null,
+  nextSource: string | null,
+  currentTime: number,
+  paused: boolean,
+): { pendingTime: number; resumeAfterLoad: boolean } {
+  const switchingSource = Boolean(
+    previousSource && nextSource && previousSource !== nextSource,
+  );
+  return {
+    pendingTime: switchingSource ? currentTime : 0,
+    resumeAfterLoad: switchingSource && !paused,
+  };
+}
+
+export function getSynchronizedSourceTime(
+  pendingTime: number,
+  mediaDuration: number,
+  durationHint: number,
+): number {
+  return clampTime(pendingTime, mediaDuration || durationHint);
+}
+
 export function useAudioTransport(
   src: string | null,
   durationHint = 0,
@@ -78,9 +101,10 @@ export function useAudioTransport(
       if (Number.isFinite(audio.duration) && audio.duration > 0) {
         setDuration(audio.duration);
       }
-      const synchronizedTime = clampTime(
+      const synchronizedTime = getSynchronizedSourceTime(
         pendingSourceTimeRef.current,
-        audio.duration || durationHintRef.current,
+        audio.duration,
+        durationHintRef.current,
       );
       audio.currentTime = synchronizedTime;
       setCurrentTime(synchronizedTime);
@@ -147,9 +171,14 @@ export function useAudioTransport(
     const audio = audioRef.current;
     if (!audio) return;
     const previousSource = sourceRef.current;
-    const switchingSource = Boolean(previousSource && src && previousSource !== src);
-    pendingSourceTimeRef.current = switchingSource ? audio.currentTime : 0;
-    resumeAfterSourceChangeRef.current = switchingSource && !audio.paused;
+    const sourceChange = getSourceChangePlayback(
+      previousSource,
+      src,
+      audio.currentTime,
+      audio.paused,
+    );
+    pendingSourceTimeRef.current = sourceChange.pendingTime;
+    resumeAfterSourceChangeRef.current = sourceChange.resumeAfterLoad;
     sourceRef.current = src;
     playAttemptRef.current += 1;
     stopAnimation();
