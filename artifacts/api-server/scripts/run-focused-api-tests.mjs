@@ -285,6 +285,35 @@ async function main() {
         termination,
       ]);
     }
+    if (
+      process.env.FOCUSED_API_TEST_INJECT_FAILURE ===
+      "ignore-sigterm-bundler-helper-during-esbuild"
+    ) {
+      const resistantHelper = join(bundleDirectory, "resistant-helper.mjs");
+      const resistantBundler = join(
+        bundleDirectory,
+        "resistant-bundler-with-helper.mjs",
+      );
+      await writeFile(
+        resistantHelper,
+        'process.on("SIGTERM", () => {});\nawait new Promise(() => {});\n',
+      );
+      await writeFile(
+        resistantBundler,
+        'import { spawn } from "node:child_process";\nimport { writeFileSync } from "node:fs";\nprocess.on("SIGTERM", () => {});\nconst helper = spawn(process.execPath, [process.env.FOCUSED_API_TEST_HELPER_SCRIPT], { stdio: "ignore" });\nhelper.on("spawn", () => { writeFileSync(process.env.FOCUSED_API_TEST_HANDSHAKE_FILE, process.env.FOCUSED_API_TEST_RUNNER_PID + "," + process.pid + "," + helper.pid); });\nawait new Promise(() => {});\n',
+      );
+      const bundlerEnvironment = {
+        ...process.env,
+        FOCUSED_API_TEST_RUNNER_PID: String(process.pid),
+        FOCUSED_API_TEST_HELPER_SCRIPT: resistantHelper,
+      };
+      await Promise.race([
+        run(process.execPath, [resistantBundler], {
+          env: bundlerEnvironment,
+        }),
+        termination,
+      ]);
+    }
 
     const bundledTests = [];
     for (const [bundleIndex, [entry, output, extraArguments = []]] of
