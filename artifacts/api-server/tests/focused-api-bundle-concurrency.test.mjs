@@ -374,6 +374,62 @@ test(
 );
 
 test(
+  "different focused API assertion failures clean up independently when run together",
+  { timeout: 120_000 },
+  async () => {
+    const before = await listBundleDirectories();
+    const failingEnvironment = {
+      ...process.env,
+      FOCUSED_API_TEST_INJECT_FAILURE: "during-node-test",
+    };
+    const results = await Promise.all([
+      runFocusedTest("test:validation", failingEnvironment),
+      runFocusedTest("test:source-ingestion", failingEnvironment),
+    ]);
+
+    assert.equal(
+      new Set(results.map(({ script }) => script)).size,
+      2,
+      "expected two distinct focused API scripts to fail concurrently",
+    );
+    for (const result of results) {
+      assert.equal(
+        result.code,
+        1,
+        [
+          `${result.script} did not fail through node --test while a different focused check overlapped`,
+          result.signal ? `signal: ${result.signal}` : "",
+          result.stdout,
+          result.stderr,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      );
+      assert.match(
+        result.stdout,
+        /injected focused API assertion failure after bundling/,
+        [
+          `${result.script} failed for an unexpected reason while a different focused check overlapped`,
+          result.signal ? `signal: ${result.signal}` : "",
+          result.stdout,
+          result.stderr,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      );
+    }
+
+    const after = await listBundleDirectories();
+    const leaked = [...after].filter((directory) => !before.has(directory));
+    assert.deepEqual(
+      leaked,
+      [],
+      `different assertion-failed focused API tests left generated bundle directories behind: ${leaked.join(", ")}`,
+    );
+  },
+);
+
+test(
   "SIGTERM after bundling removes the interrupted focused API bundle directory",
   { timeout: 120_000 },
   async () => {
