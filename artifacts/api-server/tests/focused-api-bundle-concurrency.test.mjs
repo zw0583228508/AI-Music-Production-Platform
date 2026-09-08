@@ -31,6 +31,7 @@ test("every focused API bundle script uses the cleanup-safe runner", async () =>
   const runner = await readFile(focusedRunnerUrl, "utf8");
   assert.match(runner, /\bmktemp -d \/tmp\/music-studio-api-tests\.XXXXXX\b/u);
   assert.match(runner, /\btrap 'rm -rf -- "\$tmpdir"' EXIT\b/u);
+  assert.match(runner, /\btrap 'exit 130' INT\b/u);
   assert.match(runner, /\btrap 'exit 143' TERM\b/u);
 });
 
@@ -71,7 +72,11 @@ function runFocusedTest(script, env = process.env) {
   });
 }
 
-function interruptFocusedTestAfterBundles(script, env = process.env) {
+function interruptFocusedTestAfterBundles(
+  script,
+  signal = "SIGTERM",
+  env = process.env,
+) {
   return new Promise((resolve, reject) => {
     const { NODE_TEST_CONTEXT: _parentTestContext, ...childEnv } = env;
     const child = spawn("pnpm", ["run", script], {
@@ -93,10 +98,10 @@ function interruptFocusedTestAfterBundles(script, env = process.env) {
       stderr += chunk;
       if (
         !interrupted &&
-        stderr.includes("focused API bundles ready for SIGTERM")
+        stderr.includes(`focused API bundles ready for ${signal}`)
       ) {
         interrupted = true;
-        process.kill(-child.pid, "SIGTERM");
+        process.kill(-child.pid, signal);
       }
     });
     child.on("error", reject);
@@ -664,10 +669,14 @@ test(
   { timeout: 120_000 },
   async () => {
     const before = await listBundleDirectories();
-    const result = await interruptFocusedTestAfterBundles("test:validation", {
-      ...process.env,
-      FOCUSED_API_TEST_INJECT_FAILURE: "await-sigterm",
-    });
+    const result = await interruptFocusedTestAfterBundles(
+      "test:validation",
+      "SIGTERM",
+      {
+        ...process.env,
+        FOCUSED_API_TEST_INJECT_FAILURE: "await-sigterm",
+      },
+    );
 
     assert.equal(
       result.interrupted,
@@ -783,10 +792,14 @@ test(
   async () => {
     const before = await listBundleDirectories();
     const [interruptedResult, laterEsbuildResult] = await Promise.all([
-      interruptFocusedTestAfterBundles("test:validation", {
-        ...process.env,
-        FOCUSED_API_TEST_INJECT_FAILURE: "await-sigterm",
-      }),
+      interruptFocusedTestAfterBundles(
+        "test:validation",
+        "SIGTERM",
+        {
+          ...process.env,
+          FOCUSED_API_TEST_INJECT_FAILURE: "await-sigterm",
+        },
+      ),
       runFocusedTest("test:source-ingestion", {
         ...process.env,
         FOCUSED_API_TEST_INJECT_FAILURE: "later-esbuild",
@@ -856,6 +869,126 @@ test(
       leaked,
       [],
       `overlapping interrupted and later-esbuild-failed focused API tests left bundle directories behind: ${leaked.join(", ")}`,
+    );
+  },
+);
+
+test(
+  "SIGINT after bundling removes the interrupted focused API bundle directory",
+  { timeout: 120_000 },
+  async () => {
+    const before = await listBundleDirectories();
+    const result = await interruptFocusedTestAfterBundles(
+      "test:validation",
+      "SIGINT",
+      {
+        ...process.env,
+        FOCUSED_API_TEST_INJECT_FAILURE: "await-sigint",
+      },
+    );
+
+    assert.equal(
+      result.interrupted,
+      true,
+      [
+        "focused API test never reached the post-bundle keyboard interruption point",
+        result.stdout,
+        result.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    assert.equal(
+      result.signal,
+      "SIGINT",
+      [
+        "focused API test did not terminate through the intended SIGINT path",
+        `exit code: ${result.code}`,
+        result.stdout,
+        result.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    assert.match(
+      result.stderr,
+      /focused API bundles ready for SIGINT/,
+      "focused API test was interrupted before its bundles existed",
+    );
+
+    const after = await listBundleDirectories();
+    const leaked = [...after].filter((directory) => !before.has(directory));
+    assert.deepEqual(
+      leaked,
+      [],
+      `SIGINT-interrupted focused API test left generated bundle directories behind: ${leaked.join(", ")}`,
+    );
+  },
+);
+
+test(
+  "overlapping SIGINT and later esbuild failure leave no focused API bundles behind",
+  { timeout: 120_000 },
+  async () => {
+    const before = await listBundleDirectories();
+    const [interruptedResult, laterEsbuildResult] = await Promise.all([
+      interruptFocusedTestAfterBundles(
+        "test:validation",
+        "SIGINT",
+        {
+          ...process.env,
+          FOCUSED_API_TEST_INJECT_FAILURE: "await-sigint",
+        },
+      ),
+      runFocusedTest("test:source-ingestion", {
+        ...process.env,
+        FOCUSED_API_TEST_INJECT_FAILURE: "later-esbuild",
+      }),
+    ]);
+
+    assert.notEqual(
+      interruptedResult.script,
+      laterEsbuildResult.script,
+      "expected two distinct focused API scripts to exercise the overlapping failure paths",
+    );
+    assert.equal(interruptedResult.interrupted, true);
+    assert.equal(
+      interruptedResult.signal,
+      "SIGINT",
+      [
+        `${interruptedResult.script} did not terminate through the intended SIGINT path`,
+        `exit code: ${interruptedResult.code}`,
+        interruptedResult.stdout,
+        interruptedResult.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    assert.match(
+      interruptedResult.stderr,
+      /focused API bundles ready for SIGINT/,
+      `${interruptedResult.script} was interrupted before its bundles existed`,
+    );
+    assert.notEqual(
+      laterEsbuildResult.code,
+      0,
+      `${laterEsbuildResult.script} unexpectedly succeeded after its injected later esbuild failure`,
+    );
+    assert.match(
+      laterEsbuildResult.stderr,
+      /focused API first bundle ready before later esbuild failure/,
+    );
+    assert.match(
+      laterEsbuildResult.stderr,
+      /\[ERROR\] Could not resolve ".*intentional-missing-later-entry\.ts"/,
+    );
+
+    const after = await listBundleDirectories();
+    const leaked = [...after].filter((directory) => !before.has(directory));
+    assert.deepEqual(
+      leaked,
+      [],
+      `overlapping SIGINT and later-esbuild-failed focused API tests left bundle directories behind: ${leaked.join(", ")}`,
     );
   },
 );
