@@ -184,13 +184,24 @@ function killProcess(pid, signal) {
   }
 }
 
-async function waitForProcessesToExit(pids) {
+async function reapIsolatedProcessTree(rootPid, knownPids) {
   const deadline = Date.now() + childReapingTimeoutMs;
   while (Date.now() < deadline) {
-    if (pids.every((pid) => !processExists(pid))) {
+    discoverChildPids(rootPid, knownPids);
+    const survivors = [...knownPids].filter(processExists);
+    if (survivors.length === 0) {
       return;
     }
+    for (const pid of survivors.toReversed()) {
+      killProcess(pid, "SIGKILL");
+    }
     await delay(10);
+  }
+  const survivors = [...knownPids].filter(processExists);
+  if (survivors.length > 0) {
+    throw new Error(
+      `focused API cleanup timed out with surviving processes: ${survivors.join(", ")}`,
+    );
   }
 }
 
@@ -254,10 +265,7 @@ async function main() {
       }
       killChild(child, "SIGKILL");
       discoverChildPids(child.pid, childPids);
-      for (const pid of [...childPids].toReversed()) {
-        killProcess(pid, "SIGKILL");
-      }
-      await waitForProcessesToExit([...childPids]);
+      await reapIsolatedProcessTree(child.pid, childPids);
     }
     await rm(bundleDirectory, { recursive: true, force: true });
     process.off("SIGINT", handleSigint);
@@ -367,6 +375,39 @@ async function main() {
       await Promise.race([
         run(process.execPath, [resistantBundler], {
           env: bundlerEnvironment,
+        }),
+        termination,
+      ]);
+    }
+    if (
+      process.env.FOCUSED_API_TEST_INJECT_FAILURE ===
+      "continuously-launch-helpers-during-esbuild"
+    ) {
+      const resistantHelper = join(
+        bundleDirectory,
+        "replacement-resistant-helper.mjs",
+      );
+      const resistantBundler = join(
+        bundleDirectory,
+        "replacement-helper-bundler.mjs",
+      );
+      await writeFile(
+        resistantHelper,
+        'process.on("SIGTERM", () => {});\nawait new Promise(() => {});\n',
+      );
+      await writeFile(
+        resistantBundler,
+        'import { spawn } from "node:child_process";\nimport { appendFileSync, writeFileSync } from "node:fs";\nprocess.on("SIGTERM", () => { const launch = () => { const helper = spawn(process.execPath, [process.env.FOCUSED_API_TEST_HELPER_SCRIPT], { stdio: "ignore" }); helper.on("spawn", () => appendFileSync(process.env.FOCUSED_API_TEST_HANDSHAKE_FILE, "," + helper.pid)); }; launch(); setInterval(launch, 15); });\nwriteFileSync(process.env.FOCUSED_API_TEST_HANDSHAKE_FILE, process.env.FOCUSED_API_TEST_RUNNER_PID + "," + process.pid);\nsetInterval(() => {}, 1_000);\n',
+      );
+      const bundlerEnvironment = {
+        ...process.env,
+        FOCUSED_API_TEST_RUNNER_PID: String(process.pid),
+        FOCUSED_API_TEST_HELPER_SCRIPT: resistantHelper,
+      };
+      await Promise.race([
+        run(process.execPath, [resistantBundler], {
+          env: bundlerEnvironment,
+          detached: true,
         }),
         termination,
       ]);

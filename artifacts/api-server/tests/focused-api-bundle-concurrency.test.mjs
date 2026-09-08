@@ -139,19 +139,23 @@ function interruptFocusedTestDuringAssertions(
     let runnerPid;
     let testChildPid;
     let helperPid;
+    let helperPids = [];
     let repeatedSignalTimer;
 
     const interruptWhenAssertionIsActive = () => {
       try {
         const marker = readFileSync(handshakePath, "utf8").match(
-          /^(\d+),(\d+)(?:,(\d+))?$/u,
+          /^(\d+),(\d+)((?:,\d+)*)$/u,
         );
         if (!marker) {
           return;
         }
         runnerPid = Number(marker[1]);
         testChildPid = Number(marker[2]);
-        helperPid = marker[3] ? Number(marker[3]) : undefined;
+        helperPids = marker[3]
+          ? marker[3].slice(1).split(",").map(Number)
+          : [];
+        helperPid = helperPids[0];
         if (interrupted) {
           return;
         }
@@ -188,12 +192,15 @@ function interruptFocusedTestDuringAssertions(
     child.on("close", (code, signal) => {
       clearInterval(handshakePoll);
       clearTimeout(repeatedSignalTimer);
-      if (!helperPid) {
+      if (helperPids.length === 0) {
         try {
           const marker = readFileSync(handshakePath, "utf8").match(
-            /^(\d+),(\d+),(\d+)$/u,
+            /^(\d+),(\d+)((?:,\d+)*)$/u,
           );
-          helperPid = marker ? Number(marker[3]) : undefined;
+          helperPids = marker?.[3]
+            ? marker[3].slice(1).split(",").map(Number)
+            : [];
+          helperPid = helperPids[0];
         } catch (error) {
           if (error?.code !== "ENOENT") {
             reject(error);
@@ -212,6 +219,7 @@ function interruptFocusedTestDuringAssertions(
         runnerPid,
         testChildPid,
         helperPid,
+        helperPids,
         activeChildPid: testChildPid,
       });
     });
@@ -1322,6 +1330,61 @@ test(
       leaked,
       [],
       `mixed healthy and cancellation-race focused API tests left bundle directories behind: ${leaked.join(", ")}`,
+    );
+  },
+);
+
+test(
+  "SIGTERM converges while a bundler continuously launches replacement helpers",
+  { timeout: 120_000 },
+  async () => {
+    const before = await listBundleDirectories();
+    const [interrupted, healthy] = await Promise.all([
+      interruptFocusedTestDuringAssertions(
+        "test:validation",
+        {
+          ...process.env,
+          FOCUSED_API_TEST_INJECT_FAILURE:
+            "continuously-launch-helpers-during-esbuild",
+        },
+        false,
+        "focused-api-replacement-helpers",
+      ),
+      runFocusedTest("test:source-ingestion"),
+    ]);
+
+    assert.equal(interrupted.interrupted, true);
+    assert.equal(interrupted.code, 143, [
+      `${interrupted.script} did not finish bounded cancellation cleanup`,
+      interrupted.signal ? `signal: ${interrupted.signal}` : "",
+      interrupted.stdout,
+      interrupted.stderr,
+    ].filter(Boolean).join("\n"));
+    assert.ok(
+      interrupted.helperPids.length > 1,
+      `bundler launched only ${interrupted.helperPids.length} replacement helper(s)`,
+    );
+    await Promise.all(
+      [interrupted.activeChildPid, ...interrupted.helperPids].map((pid) =>
+        waitForProcessExit(pid),
+      ),
+    );
+    for (const pid of [interrupted.activeChildPid, ...interrupted.helperPids]) {
+      assert.equal(processExists(pid), false, `fixture process ${pid} remained alive`);
+    }
+    assert.equal(healthy.code, 0, [
+      `${healthy.script} failed while replacement-helper cleanup ran`,
+      healthy.signal ? `signal: ${healthy.signal}` : "",
+      healthy.stdout,
+      healthy.stderr,
+    ].filter(Boolean).join("\n"));
+
+    const after = await listBundleDirectories();
+    const leaked = [...after].filter((directory) => !before.has(directory));
+    assert.deepEqual(
+      leaked,
+      [],
+      `replacement-helper cancellation left bundle directories behind: ${leaked.join(", ")}`,
     );
   },
 );
