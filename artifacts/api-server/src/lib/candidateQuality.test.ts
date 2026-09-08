@@ -80,3 +80,37 @@ test("critic localizes a register collision to its bar and implicated tracks", (
   assert.match(finding.musicalReason, /close-register collision/);
   assert.match(finding.id, /^music-critic-v1:registerCollisions:chorus:5-5:/);
 });
+
+test("critic returns separate non-overlapping findings in one dimension", () => {
+  const separatedTrack = (id: string, instrument: string, pitch: number): TrackModel => ({
+    ...track(id, instrument, pitch),
+    notes: [
+      { id: `${id}-verse`, start: 1, duration: 1, pitch, velocity: 80 },
+      { id: `${id}-chorus`, start: 17, duration: 1, pitch, velocity: 80 },
+      { id: `${id}-3`, start: 19, duration: 1, pitch: pitch + 6, velocity: 80 },
+      { id: `${id}-4`, start: 21, duration: 1, pitch: pitch + 12, velocity: 80 },
+    ],
+  } as TrackModel);
+  const report = evaluateCandidateMusicalFit({
+    songModel: {
+      tempoMap: [{ time: 0, bpm: 60, confidence: 1 }],
+      meterMap: [{ bar: 1, meter: "4/4", confidence: 1 }],
+    } as unknown as SongModelData,
+    plan,
+    tracks: [
+      separatedTrack("piano", "piano", 60),
+      separatedTrack("bass", "bass", 61),
+    ],
+    harmonyDecisions: [],
+  });
+
+  const findings = report.dimensions.registerCollisions.findings;
+  assert.ok(findings.length >= 2);
+  assert.ok(findings.some((finding) =>
+    finding.affectedSections[0] === "verse" && finding.startBar === 1));
+  assert.ok(findings.some((finding) =>
+    finding.affectedSections[0] === "chorus" && finding.startBar === 5));
+  assert.ok(findings.every((finding, index) =>
+    findings.every((other, otherIndex) =>
+      index === otherIndex || finding.endBar < other.startBar || other.endBar < finding.startBar)));
+});

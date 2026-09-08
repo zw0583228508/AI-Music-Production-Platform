@@ -1673,13 +1673,6 @@ export default function ProjectWorkspace() {
                                     )}
                                     <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                                       {Object.entries(critic.dimensions).map(([name, dimension]) => {
-                                        const finding = dimension.findings[0];
-                                        const eligible = isRepairEligible(
-                                          candidate,
-                                          dimension,
-                                          repair,
-                                          finding,
-                                        );
                                         return (
                                         <div key={name} className="rounded-md border bg-card p-2">
                                           <div className="flex items-center justify-between gap-2">
@@ -1696,20 +1689,47 @@ export default function ProjectWorkspace() {
                                               {item.summary}
                                             </p>
                                           ))}
-                                          {eligible && (
-                                            <Button
-                                              size="sm"
-                                              variant="ghost"
-                                              className="mt-2 h-7 w-full text-[10px]"
-                                              onClick={() => setRepairPreview({
-                                                candidate,
-                                                dimensionName: name,
-                                                finding: finding!,
+                                          {dimension.findings.length > 0 && (
+                                            <div className="mt-2 space-y-2">
+                                              {dimension.findings.map((finding) => {
+                                                const eligible = isRepairEligible(
+                                                  candidate,
+                                                  dimension,
+                                                  repair,
+                                                  finding,
+                                                );
+                                                return (
+                                                  <div key={finding.id} className="rounded border bg-muted/20 p-2">
+                                                    <div className="font-medium text-foreground">
+                                                      {finding.affectedSections.join(" · ")} · Bars {finding.startBar}–{finding.endBar}
+                                                    </div>
+                                                    <div className="mt-1 text-[10px] text-muted-foreground">
+                                                      Tracks: {finding.affectedTrackIds.map((trackId) =>
+                                                        candidate.trackModels?.find((track) => track.id === trackId)?.instrument ?? trackId
+                                                      ).join(" · ")}
+                                                    </div>
+                                                    <p className="mt-1 text-[10px] text-muted-foreground">
+                                                      {finding.musicalReason}
+                                                    </p>
+                                                    {eligible && (
+                                                      <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        className="mt-2 h-7 w-full text-[10px]"
+                                                        onClick={() => setRepairPreview({
+                                                          candidate,
+                                                          dimensionName: name,
+                                                          finding,
+                                                        })}
+                                                      >
+                                                        <Wrench className="mr-1.5 h-3 w-3" />
+                                                        Preview this repair
+                                                      </Button>
+                                                    )}
+                                                  </div>
+                                                );
                                               })}
-                                            >
-                                              <Wrench className="mr-1.5 h-3 w-3" />
-                                              Repair this finding
-                                            </Button>
+                                            </div>
                                           )}
                                         </div>
                                       )})}
