@@ -92,6 +92,10 @@ const reportedProcessExistenceFailures = new Set();
 const processExistenceFailureDetailLimit = 1;
 const processExistenceFailureSummaryPidLimit = 10;
 const processExistenceFailureGroups = new Map();
+const reportedProcessStatReadFailures = new Set();
+const processStatReadFailureDetailLimit = 1;
+const processStatReadFailureSummaryPidLimit = 10;
+const processStatReadFailureGroups = new Map();
 const reportedDirectSignalFailures = new Set();
 const directSignalFailureDetailLimit = 1;
 const directSignalFailureSummaryPidLimit = 10;
@@ -145,10 +149,12 @@ function listIsolatedChildPids(rootPid) {
     }
     try {
       if (
-        !injectedProcessStatReadFailure &&
-        process.env.FOCUSED_API_TEST_INJECT_PROCESS_STAT_READ_FAILURE ===
-          "true" &&
-        entry.name === String(rootPid)
+        (process.env.FOCUSED_API_TEST_INJECT_PROCESS_STAT_READ_FAILURE ===
+          "all" ||
+          (!injectedProcessStatReadFailure &&
+            process.env.FOCUSED_API_TEST_INJECT_PROCESS_STAT_READ_FAILURE ===
+              "true" &&
+            entry.name === String(rootPid)))
       ) {
         injectedProcessStatReadFailure = true;
         const error = new Error("injected unreadable process record");
@@ -173,9 +179,25 @@ function listIsolatedChildPids(rootPid) {
       if (error?.code === "ENOENT" || error?.code === "ESRCH") {
         continue;
       }
-      console.error(
-        `focused API cleanup could not read /proc/${entry.name}/stat: ${error?.code ?? "UNKNOWN"} ${error?.message ?? String(error)}`,
-      );
+      const errorCode = error?.code ?? "UNKNOWN";
+      const failureKey = `${entry.name}:${errorCode}`;
+      if (!reportedProcessStatReadFailures.has(failureKey)) {
+        reportedProcessStatReadFailures.add(failureKey);
+        const group = processStatReadFailureGroups.get(errorCode) ?? {
+          errorCode,
+          detailedCount: 0,
+          additionalPids: new Set(),
+        };
+        processStatReadFailureGroups.set(errorCode, group);
+        if (group.detailedCount < processStatReadFailureDetailLimit) {
+          group.detailedCount += 1;
+          console.error(
+            `focused API cleanup could not read /proc/${entry.name}/stat: ${errorCode} ${error?.message ?? String(error)}`,
+          );
+        } else {
+          group.additionalPids.add(Number(entry.name));
+        }
+      }
     }
   }
 
@@ -187,6 +209,22 @@ function listIsolatedChildPids(rootPid) {
     pending.push(...(childrenByParent.get(pid) ?? []));
   }
   return [...new Set([rootPid, ...pidsInSession, ...descendants])];
+}
+
+function reportProcessStatReadFailureSummaries() {
+  for (const group of processStatReadFailureGroups.values()) {
+    if (group.additionalPids.size === 0) {
+      continue;
+    }
+    const sampledPids = [...group.additionalPids].slice(
+      0,
+      processStatReadFailureSummaryPidLimit,
+    );
+    const remainingCount = group.additionalPids.size - sampledPids.length;
+    console.error(
+      `focused API cleanup suppressed detailed ${group.errorCode} process record read failures for ${group.additionalPids.size} additional processes; affected PIDs: ${sampledPids.join(", ")}${remainingCount > 0 ? `, and ${remainingCount} more` : ""}`,
+    );
+  }
 }
 
 function checkProcessState(pid) {
@@ -410,6 +448,7 @@ async function main() {
       killChild(child, "SIGKILL");
       discoverChildPids(child.pid, childPids);
       await reapIsolatedProcessTree(child.pid, childPids);
+      reportProcessStatReadFailureSummaries();
       reportProcessExistenceFailureSummaries();
       reportDirectSignalFailureSummaries();
     }
