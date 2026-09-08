@@ -6,9 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { OrchestrationCue } from './orchestrationCue';
+import type { TrackDirectiveMusicalFunction } from './trackDirectiveMusicalFunction';
 
 export interface TrackDirective {
   role?: string;
+  musicalFunction?: TrackDirectiveMusicalFunction;
   register?: string;
   /**
      * @minimum 0
@@ -30,4 +32,6 @@ export interface TrackDirective {
   exit?: OrchestrationCue;
   transition?: string;
   fill?: boolean;
+  handoffFromTrackId?: string;
+  doublingTrackId?: string;
 }

@@ -3788,6 +3788,9 @@ components:
       type: object
       properties:
         role: { type: string }
+        musicalFunction:
+          type: string
+          enum: [foundation, pulse, groove, harmonic_support, texture, countermelody, hook, response, lift, transition, accent, doubling, pad]
         register: { type: string }
         rhythmicActivity: { type: number, minimum: 0, maximum: 1 }
         harmonicActivity: { type: number, minimum: 0, maximum: 1 }
@@ -3797,6 +3800,45 @@ components:
         exit: { $ref: "#/components/schemas/OrchestrationCue" }
         transition: { type: string }
         fill: { type: boolean }
+        handoffFromTrackId: { type: string }
+        doublingTrackId: { type: string }
+    OrchestrationAssignment:
+      type: object
+      required: [sectionId, phraseId, trackId, role, register, handoffFromTrackId, doublingTrackId]
+      properties:
+        sectionId: { type: string }
+        phraseId: { type: string }
+        trackId: { type: string }
+        role:
+          type: string
+          enum: [foundation, pulse, groove, harmonic_support, texture, countermelody, hook, response, lift, transition, accent, doubling, pad]
+        register: { type: string, enum: [low, middle, high] }
+        handoffFromTrackId: { type: [string, "null"] }
+        doublingTrackId: { type: [string, "null"] }
+    CompositionIntelligencePlan:
+      type: object
+      required: [version, mode, precedence, seed, evidenceSha256, songIntent, tensionRelease, phrases, instrumentRoles]
+      properties:
+        version: { type: string, enum: ["1.0", "2.0"] }
+        mode: { type: string, enum: [legacy, reasoning_core] }
+        precedence:
+          type: array
+          items: { type: string }
+        seed: { type: number }
+        evidenceSha256: { type: string }
+        songIntent: { type: string, enum: [preserve_observed_form, develop_observed_form] }
+        tensionRelease:
+          type: array
+          items: { type: object }
+        phrases:
+          type: array
+          items: { type: object }
+        instrumentRoles:
+          type: array
+          items: { type: object }
+        orchestrationAssignments:
+          type: array
+          items: { $ref: "#/components/schemas/OrchestrationAssignment" }
     AppliedTrackDirective:
       type: object
       required: [section, startBar, endBar, start, end, directive]
@@ -3854,3 +3896,4 @@ components:
         parameters: { type: object }
         provenance: { $ref: "#/components/schemas/ArtifactProvenance" }
         hierarchy: { $ref: "#/components/schemas/ArrangementHierarchy" }
+        compositionIntelligence: { $ref: "#/components/schemas/CompositionIntelligencePlan" }

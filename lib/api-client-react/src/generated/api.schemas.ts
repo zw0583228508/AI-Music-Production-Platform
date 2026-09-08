@@ -2276,6 +2276,25 @@ export interface ArtifactProvenance {
   createdBy: string;
 }
 
+export type TrackDirectiveMusicalFunction = typeof TrackDirectiveMusicalFunction[keyof typeof TrackDirectiveMusicalFunction];
+
+
+export const TrackDirectiveMusicalFunction = {
+  foundation: 'foundation',
+  pulse: 'pulse',
+  groove: 'groove',
+  harmonic_support: 'harmonic_support',
+  texture: 'texture',
+  countermelody: 'countermelody',
+  hook: 'hook',
+  response: 'response',
+  lift: 'lift',
+  transition: 'transition',
+  accent: 'accent',
+  doubling: 'doubling',
+  pad: 'pad',
+} as const;
+
 export interface OrchestrationCue {
   /** @minimum 0 */
   bar?: number;
@@ -2288,6 +2307,7 @@ export interface OrchestrationCue {
 
 export interface TrackDirective {
   role?: string;
+  musicalFunction?: TrackDirectiveMusicalFunction;
   register?: string;
   /**
      * @minimum 0
@@ -2309,6 +2329,8 @@ export interface TrackDirective {
   exit?: OrchestrationCue;
   transition?: string;
   fill?: boolean;
+  handoffFromTrackId?: string;
+  doublingTrackId?: string;
 }
 
 export interface AppliedTrackDirective {
@@ -3701,6 +3723,89 @@ export interface ArrangementHierarchy {
   events: ArrangementHierarchyEventsItem[];
 }
 
+export type OrchestrationAssignmentRole = typeof OrchestrationAssignmentRole[keyof typeof OrchestrationAssignmentRole];
+
+
+export const OrchestrationAssignmentRole = {
+  foundation: 'foundation',
+  pulse: 'pulse',
+  groove: 'groove',
+  harmonic_support: 'harmonic_support',
+  texture: 'texture',
+  countermelody: 'countermelody',
+  hook: 'hook',
+  response: 'response',
+  lift: 'lift',
+  transition: 'transition',
+  accent: 'accent',
+  doubling: 'doubling',
+  pad: 'pad',
+} as const;
+
+export type OrchestrationAssignmentRegister = typeof OrchestrationAssignmentRegister[keyof typeof OrchestrationAssignmentRegister];
+
+
+export const OrchestrationAssignmentRegister = {
+  low: 'low',
+  middle: 'middle',
+  high: 'high',
+} as const;
+
+export interface OrchestrationAssignment {
+  sectionId: string;
+  phraseId: string;
+  trackId: string;
+  role: OrchestrationAssignmentRole;
+  register: OrchestrationAssignmentRegister;
+  /** @nullable */
+  handoffFromTrackId: string | null;
+  /** @nullable */
+  doublingTrackId: string | null;
+}
+
+export type CompositionIntelligencePlanVersion = typeof CompositionIntelligencePlanVersion[keyof typeof CompositionIntelligencePlanVersion];
+
+
+export const CompositionIntelligencePlanVersion = {
+  '10': '1.0',
+  '20': '2.0',
+} as const;
+
+export type CompositionIntelligencePlanMode = typeof CompositionIntelligencePlanMode[keyof typeof CompositionIntelligencePlanMode];
+
+
+export const CompositionIntelligencePlanMode = {
+  legacy: 'legacy',
+  reasoning_core: 'reasoning_core',
+} as const;
+
+export type CompositionIntelligencePlanSongIntent = typeof CompositionIntelligencePlanSongIntent[keyof typeof CompositionIntelligencePlanSongIntent];
+
+
+export const CompositionIntelligencePlanSongIntent = {
+  preserve_observed_form: 'preserve_observed_form',
+  develop_observed_form: 'develop_observed_form',
+} as const;
+
+export type CompositionIntelligencePlanTensionReleaseItem = { [key: string]: unknown };
+
+export type CompositionIntelligencePlanPhrasesItem = { [key: string]: unknown };
+
+export type CompositionIntelligencePlanInstrumentRolesItem = { [key: string]: unknown };
+
+export interface CompositionIntelligencePlan {
+  version: CompositionIntelligencePlanVersion;
+  mode: CompositionIntelligencePlanMode;
+  precedence: string[];
+  seed: number;
+  evidenceSha256: string;
+  songIntent: CompositionIntelligencePlanSongIntent;
+  tensionRelease: CompositionIntelligencePlanTensionReleaseItem[];
+  phrases: CompositionIntelligencePlanPhrasesItem[];
+  instrumentRoles: CompositionIntelligencePlanInstrumentRolesItem[];
+  orchestrationAssignments?: OrchestrationAssignment[];
+}
+
 export type ArrangementPlanParameters = { [key: string]: unknown };
 
 export interface ArrangementPlan {
@@ -3712,6 +3817,7 @@ export interface ArrangementPlan {
   parameters: ArrangementPlanParameters;
   provenance: ArtifactProvenance;
   hierarchy: ArrangementHierarchy;
+  compositionIntelligence?: CompositionIntelligencePlan;
 }
 
 /**

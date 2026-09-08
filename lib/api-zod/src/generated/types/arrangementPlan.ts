@@ -9,6 +9,7 @@ import type { ArrangementHierarchy } from './arrangementHierarchy';
 import type { ArrangementPlanParameters } from './arrangementPlanParameters';
 import type { ArrangementPlanSection } from './arrangementPlanSection';
 import type { ArtifactProvenance } from './artifactProvenance';
+import type { CompositionIntelligencePlan } from './compositionIntelligencePlan';
 import type { StyleSpec } from './styleSpec';
 
 export interface ArrangementPlan {
@@ -20,4 +21,5 @@ export interface ArrangementPlan {
   parameters: ArrangementPlanParameters;
   provenance: ArtifactProvenance;
   hierarchy: ArrangementHierarchy;
+  compositionIntelligence?: CompositionIntelligencePlan;
 }

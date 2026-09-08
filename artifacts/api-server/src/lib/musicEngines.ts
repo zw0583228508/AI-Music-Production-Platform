@@ -15,6 +15,7 @@ import type {
   ArrangementHierarchy,
   CompositionIntelligencePlan,
   CompositionIntelligenceVersion,
+  OrchestrationRole,
 } from "@workspace/db";
 import { createHash } from "node:crypto";
 import { CANONICAL_PPQ, createCanonicalTimeline } from "./canonicalTimeline";
@@ -498,6 +499,12 @@ function operationForTrack(
   return section.energy > 0.7 ? "rhythmic_harmony" : "main_harmony";
 }
 
+type OrchestrationAssignment = {
+  trackId: string;
+  role: OrchestrationRole;
+  register: "low" | "middle" | "high";
+  doublingTrackId: string | null;
+};
 export type ArrangementBrainSection = {
   function: "intro" | "verse" | "prechorus" | "chorus" | "bridge" | "outro" | "neutral";
   targetEnergy: number;
@@ -1003,6 +1010,7 @@ export function createArrangementPlan(input: {
     compositionVersion: input.compositionVersion,
   });
   let priorLayerCount: number | undefined;
+  const sectionAssignments: OrchestrationAssignment[][] = [];
   const sections: ArrangementPlanSection[] = sourceSections.map((section, index) => {
     const brainSection = arrangementBrain.enabled ? arrangementBrain.sections[index] : undefined;
     const plannedEnergy = brainSection?.targetEnergy ?? section.energy;
@@ -1017,26 +1025,38 @@ export function createArrangementPlan(input: {
       operations.push(`modulate:${modulationSemitones}`);
     }
     const directives: Record<string, TrackDirective> = {};
-    const unconstrainedLayers = Math.max(1, Math.ceil(input.tracks.length *
-      clamp(.25 + orchestraSize * .55 + plannedEnergy * .2)));
-    const layerCount = arrangementBrain.enabled && priorLayerCount !== undefined
-      ? clamp(unconstrainedLayers, Math.max(1, priorLayerCount - 1), Math.min(input.tracks.length, priorLayerCount + 1))
+    const plannedAssignments = planSectionOrchestration({
+      tracks: input.tracks,
+      sectionFunction: brainSection?.function ?? "neutral",
+      energy: plannedEnergy,
+      density: plannedDensity,
+      orchestraSize,
+      sectionIndex: index,
+    });
+    const unconstrainedLayers = plannedAssignments.length;
+    const smoothedLayerCount = arrangementBrain.enabled && priorLayerCount !== undefined
+      ? Math.round(clamp(unconstrainedLayers, Math.max(1, priorLayerCount - 1), Math.min(input.tracks.length, priorLayerCount + 1)))
       : unconstrainedLayers;
+    const layerCount = brainSection && brainSection.release > .35 && priorLayerCount !== undefined
+      ? Math.max(1, Math.min(smoothedLayerCount, priorLayerCount - 1))
+      : smoothedLayerCount;
     priorLayerCount = layerCount;
-    const ordered = [...input.tracks].sort((left, right) =>
-      Number(/bass|drum|rhythm/.test(`${right.name} ${right.role}`.toLowerCase())) -
-      Number(/bass|drum|rhythm/.test(`${left.name} ${left.role}`.toLowerCase())));
-    const enabledIds = new Set(ordered.slice(0, layerCount).map((track) => track.id ?? track.name));
+    const assignments = plannedAssignments.slice(0, layerCount);
+    sectionAssignments.push(assignments);
+    const assignmentByTrack = new Map(assignments.map((assignment) => [assignment.trackId, assignment]));
+    const enabledIds = new Set(assignmentByTrack.keys());
     const tracks = Object.fromEntries(input.tracks.map((track) => {
       const identity = `${track.name} ${track.role}`.toLowerCase();
       const trackId = track.id ?? track.name;
+      const assignment = assignmentByTrack.get(trackId);
       const operation = enabledIds.has(trackId) ? operationForTrack(track, { energy: plannedEnergy }) : "none";
       const percussion = /drum|rhythm|percussion/.test(identity);
       const bass = identity.includes("bass");
       const melodic = /vocal|voice|melody/.test(identity);
       directives[trackId] = {
         role: track.role,
-        register: bass ? "low" : melodic ? "high" : plannedEnergy > .68 ? "high" : "middle",
+        musicalFunction: assignment?.role,
+        register: assignment?.register ?? (bass ? "low" : melodic ? "high" : "middle"),
         rhythmicActivity: round(clamp(percussion
           ? plannedEnergy * .45 + rhythmIntensity * .55
           : (input.style.rhythm.syncopation * .45 + plannedEnergy * .55) * (.55 + rhythmIntensity * .45))),
@@ -1047,6 +1067,7 @@ export function createArrangementPlan(input: {
         exit: { bar: section.endBar, mode: index === sourceSections.length - 1 ? "cadence" : "release" },
         transition: index === 0 ? "none" : plannedEnergy > (arrangementBrain.enabled ? arrangementBrain.sections[index - 1]?.targetEnergy : sourceSections[index - 1].energy) ? "build" : "thin",
         fill: percussion && index < sourceSections.length - 1 && plannedEnergy >= .55 && rhythmIntensity >= .45,
+        ...(assignment?.doublingTrackId ? { doublingTrackId: assignment.doublingTrackId } : {}),
       };
       return [track.name, operation];
     }));
@@ -1079,7 +1100,42 @@ export function createArrangementPlan(input: {
     return "harmony";
   };
   const hierarchy = buildArrangementHierarchy(input.arrangementId, input.songModel, arrangementBrain, sections);
+  const previousCarrier = new Map<string, string>();
   const motifByFunction = new Map<string, string>();
+  const compositionPhrases: CompositionIntelligencePlan["phrases"] = hierarchy.sections.flatMap((section, index) => {
+    const brainSection = arrangementBrain.sections[index];
+    const observedPhrases = section.phraseIds.map((id) => {
+      const phrase = hierarchy.phrases.find((candidate) => candidate.id === id)!;
+      return { id, startBar: phrase.startBar, endBar: phrase.endBar, protectsVocal: true };
+    });
+    const midpoint = Math.floor((section.startBar + section.endBar) / 2);
+    const phraseRanges = observedPhrases.length ? observedPhrases
+      : compositionVersion === "2.0" && section.endBar - section.startBar >= 3
+        ? [
+            { id: `phrase:${section.id}:a`, startBar: section.startBar, endBar: midpoint, protectsVocal: false },
+            { id: `phrase:${section.id}:b`, startBar: midpoint + 1, endBar: section.endBar, protectsVocal: false },
+          ]
+        : [{ id: `phrase:${section.id}:whole`, startBar: section.startBar, endBar: section.endBar, protectsVocal: false }];
+    const existingMotif = motifByFunction.get(section.function);
+    const motifRef = existingMotif ?? `motif:${hashSeed(`${evidenceSha256}:${section.function}:${section.id}`)}`;
+    if (!existingMotif) motifByFunction.set(section.function, motifRef);
+    return phraseRanges.map((phrase, phraseIndex) => ({
+      id: phrase.id,
+      sectionId: section.id,
+      startBar: phrase.startBar,
+      endBar: phrase.endBar,
+      intent: compositionVersion !== "2.0" ? "state" as const
+        : phrase.protectsVocal ? "protect_vocal" as const
+        : brainSection?.development === "development" ? "develop" as const
+        : brainSection?.development === "reprise" ? "answer" as const
+        : (brainSection?.tension ?? 0) > .62 ? "build" as const
+        : (brainSection?.release ?? 0) > .35 ? "release" as const
+        : phraseIndex ? "develop" as const : "state" as const,
+      tension: compositionVersion === "2.0" ? brainSection?.tension ?? 0 : 0,
+      motifRef,
+      sourceMotifRef: existingMotif ?? null,
+    }));
+  });
   const compositionIntelligence: CompositionIntelligencePlan = {
     version: compositionVersion,
     mode: compositionVersion === "2.0" ? "reasoning_core" : "legacy",
@@ -1093,34 +1149,51 @@ export function createArrangementPlan(input: {
       tension: compositionVersion === "2.0" ? arrangementBrain.sections[index]?.tension ?? 0 : 0,
       release: compositionVersion === "2.0" ? arrangementBrain.sections[index]?.release ?? 0 : 0,
     })),
-    phrases: hierarchy.sections.flatMap((section, index) => {
-      const brainSection = arrangementBrain.sections[index];
-      const phraseIds = section.phraseIds.length ? section.phraseIds : [`phrase:${section.id}:whole`];
-      const existingMotif = motifByFunction.get(section.function);
-      const motifRef = existingMotif ?? `motif:${hashSeed(`${evidenceSha256}:${section.function}:${section.id}`)}`;
-      if (!existingMotif) motifByFunction.set(section.function, motifRef);
-      return phraseIds.map((id, phraseIndex) => ({
-        id,
-        sectionId: section.id,
-        startBar: hierarchy.phrases.find((phrase) => phrase.id === id)?.startBar ?? section.startBar,
-        endBar: hierarchy.phrases.find((phrase) => phrase.id === id)?.endBar ?? section.endBar,
-        intent: compositionVersion !== "2.0" ? "state" as const
-          : section.phraseIds.length ? "protect_vocal" as const
-          : brainSection?.development === "development" ? "develop" as const
-          : brainSection?.development === "reprise" ? "answer" as const
-          : (brainSection?.tension ?? 0) > .62 ? "build" as const
-          : (brainSection?.release ?? 0) > .35 ? "release" as const
-          : phraseIndex ? "develop" as const : "state" as const,
-        tension: compositionVersion === "2.0" ? brainSection?.tension ?? 0 : 0,
-        motifRef,
-        sourceMotifRef: existingMotif ?? null,
-      }));
-    }),
+    phrases: compositionPhrases,
     instrumentRoles: input.tracks.map((track) => ({
       trackId: track.id ?? track.name,
       function: roleForTrack(track),
       authority: "project_track",
     })),
+    orchestrationAssignments: hierarchy.sections.flatMap((section, sectionIndex) => {
+      const phrases = compositionPhrases
+        .filter((phrase) => phrase.sectionId === section.id)
+        .map((phrase) => phrase.id);
+      const base = sectionAssignments[sectionIndex];
+      const melodicIndexes = base.flatMap((assignment, assignmentIndex) =>
+        ["hook", "response", "countermelody"].includes(assignment.role) ? [assignmentIndex] : []);
+      return phrases.flatMap((phraseId, phraseIndex) => {
+        const phraseAssignments = base.map((assignment, assignmentIndex) => {
+          const melodicPosition = melodicIndexes.indexOf(assignmentIndex);
+          if (melodicPosition < 0 || melodicIndexes.length < 2 || phraseIndex === 0) return assignment;
+          const sourceIndex = melodicIndexes[
+            (melodicPosition + phraseIndex) % melodicIndexes.length
+          ];
+          const source = base[sourceIndex];
+          return { ...assignment, role: source.role, register: source.register };
+        });
+        return phraseAssignments.map((assignment) => {
+        const idea = ["hook", "response", "countermelody"].includes(assignment.role)
+          ? `melodic:${assignment.role}` : `${assignment.role}:${assignment.register}`;
+        const prior = previousCarrier.get(idea) ?? null;
+        const handoffFromTrackId = prior && prior !== assignment.trackId ? prior : null;
+        previousCarrier.set(idea, assignment.trackId);
+        if (phraseIndex === 0 && handoffFromTrackId) {
+          const directive = sections[sectionIndex].trackDirectives?.[assignment.trackId];
+          if (directive) directive.handoffFromTrackId = handoffFromTrackId;
+        }
+        return {
+          sectionId: section.id,
+          phraseId,
+          trackId: assignment.trackId,
+          role: assignment.role,
+          register: assignment.register,
+          handoffFromTrackId,
+          doublingTrackId: assignment.doublingTrackId,
+        };
+        });
+      });
+    }),
   };
   if (compositionVersion === "2.0") {
     compositionIntelligence.groove = buildSharedGroovePlan(
@@ -1524,6 +1597,27 @@ function compositionPhraseAtTime(
       left.id.localeCompare(right.id))[0];
 }
 
+function orchestrationAssignmentAtTime(
+  plan: ArrangementPlan,
+  songModel: SongModelData,
+  sectionIndex: number,
+  trackId: string,
+  time: number,
+  fallbackBarSeconds: number,
+) {
+  const assignments = plan.compositionIntelligence?.orchestrationAssignments;
+  const section = plan.hierarchy?.sections[sectionIndex];
+  if (!assignments?.length || !section) return undefined;
+  const phrase = compositionPhraseAtTime(plan, songModel, sectionIndex, time, fallbackBarSeconds);
+  const exact = assignments.find((assignment) =>
+    assignment.sectionId === section.id &&
+    assignment.trackId === trackId &&
+    (!phrase || assignment.phraseId === phrase.id));
+  if (phrase && assignments.some((assignment) =>
+    assignment.sectionId === section.id && assignment.phraseId === phrase.id)) return exact;
+  return exact ?? assignments.find((assignment) =>
+      assignment.sectionId === section.id && assignment.trackId === trackId);
+}
 function hierarchySpaceMapForTrack(
   songModel: SongModelData,
   plan: ArrangementPlan,
@@ -1575,7 +1669,7 @@ export class CompositionEngine {
           input.songModel.meterMap.map(({ bar, meter }) => ({ bar, meter })),
         )
       : undefined;
-    return input.tracks.map((track) => {
+    const composed = input.tracks.map((track) => {
       const definition = getInstrumentDefinition(track.instrument || track.name, track.role);
       const notes: MusicalNote[] = [];
       const appliedDirectives: NonNullable<TrackModel["appliedDirectives"]> = [];
@@ -1649,10 +1743,14 @@ export class CompositionEngine {
           }
           const rhythmic = clamp((directive?.rhythmicActivity ?? section.density) +
             (reasoning ? (sectionArc?.tension ?? 0) * .12 : 0));
+          const musicalFunction = directive?.musicalFunction;
           const grooveEvents = reasoning?.groove?.events.filter((event) =>
             event.trackId === track.id && event.sectionId === hierarchySection?.id);
           const step = identity.includes("drum") || identity.includes("rhythm")
             ? beat * (rhythmic > .7 ? .5 : 1)
+            : musicalFunction === "pulse" || musicalFunction === "groove" ? beat
+            : musicalFunction === "accent" || musicalFunction === "transition" ? beat * 4
+            : musicalFunction === "pad" || musicalFunction === "texture" ? beat * 4
             : beat * (directive?.harmonicActivity && directive.harmonicActivity > .65 ? 1 : 2);
           const materializationEvents = grooveEvents?.length
             ? grooveEvents.map((event) => ({
@@ -1680,8 +1778,13 @@ export class CompositionEngine {
             const phraseDecision = compositionPhraseAtTime(
               input.plan, input.songModel, sectionIndex, time, barSeconds,
             );
+            const orchestrationAssignment = orchestrationAssignmentAtTime(
+              input.plan, input.songModel, sectionIndex, track.id, time, barSeconds,
+            );
+            if (reasoning?.orchestrationAssignments?.length && !orchestrationAssignment) continue;
+            const eventFunction = orchestrationAssignment?.role ?? musicalFunction;
             const motifOffset = phraseDecision
-              ? (hashSeed(`${phraseDecision.motifRef}:${roleDecision?.function ?? "harmony"}`) % 3) - 1
+              ? (hashSeed(`${phraseDecision.motifRef}:${eventFunction ?? roleDecision?.function ?? "harmony"}`) % 3) - 1
               : 0;
             const beatIndex = Math.round((time - sectionStart) / beat);
             const chord = input.harmony.find((candidate) =>
@@ -1691,14 +1794,22 @@ export class CompositionEngine {
             let pitch = identity.includes("bass")
               ? chordTone - 24
               : identity.includes("drum") || identity.includes("rhythm")
-                ? [36, 42, 38, 42][beatIndex % 4]
+                ? eventFunction === "groove"
+                  ? [36, 46, 38, 42][beatIndex % 4]
+                  : eventFunction === "transition"
+                    ? [41, 43, 45, 47][beatIndex % 4]
+                    : eventFunction === "accent"
+                      ? [49, 42, 49, 42][beatIndex % 4]
+                      : [36, 42, 38, 42][beatIndex % 4]
                 : chordTone + (directive?.register === "high" || identity.includes("string") || identity.includes("brass") ? 12 : 0);
             if (reasoning && !identity.includes("drum") && !identity.includes("rhythm")) {
-              pitch += motifOffset * (roleDecision?.function === "counterline" ? 2 : 1);
+              pitch += motifOffset * (eventFunction === "countermelody" ||
+                roleDecision?.function === "counterline" ? 2 : 1);
               if (phraseDecision?.intent === "answer" && beatIndex % 2 === 1) pitch -= 2;
             }
-            const targetRegister = directive?.register
-              ? definition.registers.find((register) => register.name === directive.register)
+            const targetRegisterName = orchestrationAssignment?.register ?? directive?.register;
+            const targetRegister = targetRegisterName
+              ? definition.registers.find((register) => register.name === targetRegisterName)
               : undefined;
             const preferred = targetRegister ?? definition.comfortableRange;
             while (pitch < preferred.min) pitch += 12;
@@ -1709,7 +1820,8 @@ export class CompositionEngine {
             const isExit = time + step >= sectionEnd;
             const eventStep = grooveEvents?.length ? grooveEvent.duration : step;
             const duration = round(Math.min(
-              eventStep * (identity.includes("pad") ? 1.8 : isExit ? .65 : .9),
+              eventStep * (eventFunction === "pad" || eventFunction === "texture" ||
+                identity.includes("pad") ? 1.8 : isExit ? .65 : .9),
               sectionEnd - time,
             ));
             const hierarchyIntent = hierarchyEventIntent(
@@ -1735,7 +1847,8 @@ export class CompositionEngine {
                     (beatIndex % 4 === 0 ? 8 : 0))
                   : midi(grooveEvent.velocity + (sectionArc?.tension ?? 0) * 10 -
                     (sectionArc?.release ?? 0) * 8 + (phraseDecision?.tension ?? 0) * 4),
-                voice: identity.includes("bass") ? "bass" : identity.includes("drum") ? "percussion" : "harmony",
+                voice: eventFunction ?? (identity.includes("bass") ? "foundation" :
+                  identity.includes("drum") ? "pulse" : "harmonic_support"),
               });
             }
             if (!grooveEvents?.length && directive?.fill && (identity.includes("drum") || identity.includes("rhythm")) && isExit &&
@@ -1783,6 +1896,219 @@ export class CompositionEngine {
         ),
       };
     });
+    return materializeExplicitDoublings(composed, input.plan, input.songModel, barSeconds);
+  }
+  private composeWithoutSharedGroove(input: {
+    songModel: SongModelData;
+    plan: ArrangementPlan;
+    tracks: Array<{ id: string; name: string; role: string; instrument?: string }>;
+    harmony: ReturnType<HarmonyEngine["generate"]>;
+    spaceMap?: ArrangementSpaceMap;
+  }): Array<TrackModel> {
+    const bpm = Math.max(40, input.songModel.tempoMap[0]?.bpm || 92);
+    const beat = 60 / bpm;
+    const barSeconds = secondsPerBar(
+      bpm,
+      input.songModel.meterMap[0]?.meter,
+    );
+    const composed = input.tracks.map((track) => {
+      const definition = getInstrumentDefinition(track.instrument || track.name, track.role);
+      const notes: MusicalNote[] = [];
+      const appliedDirectives: NonNullable<TrackModel["appliedDirectives"]> = [];
+      const identity = `${track.name} ${track.role}`.toLowerCase();
+      if (identity.includes("vocal") && input.songModel.melody.length) {
+        // Melody evidence is never extrapolated. It is merely split at
+        // explicitly active section boundaries so a vocal arrangement can
+        // enter/leave without leaking notes through inactive sections.
+        input.plan.sections.forEach((section, sectionIndex) => {
+          const bounds = arrangementSectionSeconds(input.songModel, section, barSeconds);
+          const sectionStart = bounds.start;
+          const sectionEnd = bounds.end;
+          const action = section.tracks[track.id] ?? section.tracks[track.name] ?? "main_harmony";
+          const active = section.activeTracks
+            ? section.activeTracks.includes(track.id) || section.activeTracks.includes(track.name)
+            : action !== "none";
+          if (!active || action === "none") return;
+          const directive = section.trackDirectives?.[track.id] ?? section.trackDirectives?.[track.name];
+          if (directive) {
+            appliedDirectives.push({
+              section: section.section,
+              startBar: section.startBar,
+              endBar: section.endBar,
+              start: sectionStart,
+              end: sectionEnd,
+              directive,
+            });
+          }
+          input.songModel.melody.forEach((note, noteIndex) => {
+            const start = Math.max(sectionStart, note.start);
+            const end = Math.min(sectionEnd, note.end);
+            if (end <= start) return;
+            notes.push({
+              id: `${track.id}-melody-${noteIndex}-${sectionIndex}`,
+              start: round(start),
+              duration: round(end - start),
+              pitch: Math.max(definition.playableRange.min, Math.min(definition.playableRange.max, midi(note.pitch))),
+              velocity: midi(note.velocity * 127),
+              voice: "melody",
+            });
+          });
+        });
+      } else if (!identity.includes("vocal")) {
+        input.plan.sections.forEach((section, sectionIndex) => {
+          const bounds = arrangementSectionSeconds(input.songModel, section, barSeconds);
+          const sectionStart = bounds.start;
+          const sectionEnd = bounds.end;
+          const action = section.tracks[track.id] ?? section.tracks[track.name] ?? "main_harmony";
+          const active = section.activeTracks
+            ? section.activeTracks.includes(track.id) || section.activeTracks.includes(track.name)
+            : action !== "none";
+          if (!active || action === "none") return;
+          const directive = section.trackDirectives?.[track.id] ??
+            section.trackDirectives?.[track.name];
+          const reasoning = input.plan.compositionIntelligence?.version === "2.0"
+            ? input.plan.compositionIntelligence : undefined;
+          const hierarchySection = input.plan.hierarchy?.sections[sectionIndex];
+          const roleDecision = reasoning?.instrumentRoles.find((role) => role.trackId === track.id);
+          const sectionArc = hierarchySection
+            ? reasoning?.tensionRelease.find((arc) => arc.sectionId === hierarchySection.id)
+            : undefined;
+          if (directive) {
+            appliedDirectives.push({
+              section: section.section,
+              startBar: section.startBar,
+              endBar: section.endBar,
+              start: sectionStart,
+              end: sectionEnd,
+              directive,
+            });
+          }
+          const rhythmic = clamp((directive?.rhythmicActivity ?? section.density) +
+            (reasoning ? (sectionArc?.tension ?? 0) * .12 : 0));
+          const musicalFunction = directive?.musicalFunction;
+          const step = identity.includes("drum") || identity.includes("rhythm")
+            ? beat * (rhythmic > .7 ? .5 : 1)
+            : musicalFunction === "pulse" || musicalFunction === "groove" ? beat
+            : musicalFunction === "accent" || musicalFunction === "transition" ? beat * 4
+            : musicalFunction === "pad" || musicalFunction === "texture" ? beat * 4
+            : beat * (directive?.harmonicActivity && directive.harmonicActivity > .65 ? 1 : 2);
+          for (let time = sectionStart; time < sectionEnd; time += step) {
+            const phraseDecision = compositionPhraseAtTime(
+              input.plan, input.songModel, sectionIndex, time, barSeconds,
+            );
+            const orchestrationAssignment = orchestrationAssignmentAtTime(
+              input.plan, input.songModel, sectionIndex, track.id, time, barSeconds,
+            );
+            if (reasoning?.orchestrationAssignments?.length && !orchestrationAssignment) continue;
+            const eventFunction = orchestrationAssignment?.role ?? musicalFunction;
+            const motifOffset = phraseDecision
+              ? (hashSeed(`${phraseDecision.motifRef}:${eventFunction ?? roleDecision?.function ?? "harmony"}`) % 3) - 1
+              : 0;
+            const beatIndex = Math.round((time - sectionStart) / beat);
+            const chord = input.harmony.find((candidate) =>
+              candidate.start <= time + .001 && candidate.end > time + .001)
+              ?? input.harmony.find((candidate) => candidate.start < sectionEnd && candidate.end > sectionStart);
+            const chordTone = chord?.tones[(beatIndex + sectionIndex) % (chord?.tones.length || 1)] ?? 60;
+            let pitch = identity.includes("bass")
+              ? chordTone - 24
+              : identity.includes("drum") || identity.includes("rhythm")
+                ? eventFunction === "groove"
+                  ? [36, 46, 38, 42][beatIndex % 4]
+                  : eventFunction === "transition"
+                    ? [41, 43, 45, 47][beatIndex % 4]
+                    : eventFunction === "accent"
+                      ? [49, 42, 49, 42][beatIndex % 4]
+                      : [36, 42, 38, 42][beatIndex % 4]
+                : chordTone + (directive?.register === "high" || identity.includes("string") || identity.includes("brass") ? 12 : 0);
+            if (reasoning && !identity.includes("drum") && !identity.includes("rhythm")) {
+              pitch += motifOffset * (eventFunction === "countermelody" ||
+                roleDecision?.function === "counterline" ? 2 : 1);
+              if (phraseDecision?.intent === "answer" && beatIndex % 2 === 1) pitch -= 2;
+            }
+            const targetRegisterName = orchestrationAssignment?.register ?? directive?.register;
+            const targetRegister = targetRegisterName
+              ? definition.registers.find((register) => register.name === targetRegisterName)
+              : undefined;
+            const preferred = targetRegister ?? definition.comfortableRange;
+            while (pitch < preferred.min) pitch += 12;
+            while (pitch > preferred.max) pitch -= 12;
+            pitch = Math.max(preferred.min, Math.min(preferred.max, pitch));
+            pitch = Math.max(definition.playableRange.min, Math.min(definition.playableRange.max, pitch));
+            const isEntry = Math.abs(time - sectionStart) < .001;
+            const isExit = time + step >= sectionEnd;
+            const duration = round(Math.min(
+              step * (musicalFunction === "pad" || musicalFunction === "texture" ||
+                identity.includes("pad") ? 1.8 : isExit ? .65 : .9),
+              sectionEnd - time,
+            ));
+            const hierarchyIntent = hierarchyEventIntent(
+              input.plan, sectionIndex, track.id, track.name, time, input.songModel, barSeconds,
+            );
+            // Do not replace a measured vocal rest with a guessed one. The
+            // observed silent map is intentionally permissive; only measured
+            // voiced occupancy removes a phrase/fill event.
+            if (hierarchyIntent !== "support_vocal" ||
+              !intersectsObservedVoice(time, time + duration, input.spaceMap)) {
+              notes.push({
+                id: `${track.id}-${sectionIndex}-${beatIndex}`,
+                start: round(time),
+                duration,
+                pitch: midi(pitch),
+                velocity: midi(42 + (directive?.dynamicTarget ?? section.energy) * 66 +
+                  (reasoning ? (sectionArc?.tension ?? 0) * 10 - (sectionArc?.release ?? 0) * 8 +
+                    (phraseDecision?.tension ?? 0) * 4 : 0) +
+                  (isEntry ? 6 : 0) + (directive?.transition === "build" ? beatIndex * .5 : 0) +
+                  (beatIndex % 4 === 0 ? 8 : 0)),
+                voice: eventFunction ?? (identity.includes("bass") ? "foundation" :
+                  identity.includes("drum") ? "pulse" : "harmonic_support"),
+              });
+            }
+            if (directive?.fill && (identity.includes("drum") || identity.includes("rhythm")) && isExit &&
+              (hierarchyIntent === undefined || hierarchyIntent === "use_vocal_space" || hierarchyIntent === "follow_section") &&
+              !intersectsObservedVoice(Math.max(sectionStart, sectionEnd - beat * .5), sectionEnd - beat * .28, input.spaceMap)) {
+              notes.push({
+                id: `${track.id}-${sectionIndex}-${beatIndex}-fill`,
+                start: round(Math.max(sectionStart, sectionEnd - beat * .5)),
+                duration: round(Math.max(definition.constraints.minNoteDuration, beat * .22)),
+                pitch: 45,
+                velocity: midi(62 + section.energy * 55),
+                voice: "percussion",
+              });
+            }
+          }
+        });
+      }
+      return {
+        id: track.id,
+        instrument: definition.id,
+        instrumentDefinition: definition,
+        role: track.role,
+        notes,
+        cc: [],
+        articulations: [],
+        automation: [],
+        directive: appliedDirectives.length === 1 ? appliedDirectives[0].directive : undefined,
+        appliedDirectives,
+        mapping: {
+          midiChannel: definition.family === "drums" ? 9 : undefined,
+          program: definition.id === "bass" ? 33 : definition.family === "strings" ? 48 : 0,
+          articulationMap: Object.fromEntries(definition.articulations.map((articulation, index) => [articulation, 24 + index])),
+          controlMap: definition.directiveMappings?.controls,
+        },
+        source: "COMPOSITION_ENGINE",
+        version: input.plan.compositionIntelligence?.version === "2.0" ? 2 : 1,
+        provenance: provenance(
+          "COMPOSITION_ENGINE",
+          input.plan.compositionIntelligence?.version === "2.0" ? "2.0.0" : "1.0.0",
+          {
+            bpm,
+            compositionVersion: input.plan.compositionIntelligence?.version ?? "1.0",
+            compositionEvidenceSha256: input.plan.compositionIntelligence?.evidenceSha256 ?? "legacy",
+          },
+        ),
+      };
+    });
+    return materializeExplicitDoublings(composed, input.plan, input.songModel, barSeconds);
   }
 }
 
@@ -1849,9 +2175,9 @@ export function applyCompositionIntelligence(
   }
   const bpm = songModel.tempoMap[0]?.bpm ?? 92;
   const fallbackBarSeconds = secondsPerBar(bpm, songModel.meterMap[0]?.meter);
-  return trackModels.map((track) => {
+  const transformedTracks = trackModels.map((track) => {
     const role = reasoning.instrumentRoles.find((candidate) => candidate.trackId === track.id);
-    const notes = track.notes.map((note) => {
+    const notes = track.notes.flatMap((note, noteIndex) => {
       const sectionIndex = plan.sections.findIndex((section) => {
         const bounds = arrangementSectionSeconds(songModel, section, fallbackBarSeconds);
         return note.start >= bounds.start && note.start < bounds.end;
@@ -1863,20 +2189,39 @@ export function applyCompositionIntelligence(
       const arc = hierarchySection
         ? reasoning.tensionRelease.find((candidate) => candidate.sectionId === hierarchySection.id)
         : undefined;
-      if (!phrase) return note;
-      const motifOffset = (hashSeed(`${phrase.motifRef}:${role?.function ?? "harmony"}`) % 3) - 1;
+      if (!phrase) return [note];
+      const assignment = orchestrationAssignmentAtTime(
+        plan, songModel, sectionIndex, track.id, note.start, fallbackBarSeconds,
+      );
+      if (reasoning.orchestrationAssignments?.length && !assignment) return [];
+      const eventFunction = assignment?.role ?? role?.function ?? "harmony";
+      if (track.instrumentDefinition.family === "drums" &&
+        (eventFunction === "pulse" && noteIndex % 2 === 1 ||
+          eventFunction === "groove" && noteIndex % 2 === 0)) return [];
+      const motifOffset = (hashSeed(`${phrase.motifRef}:${eventFunction}`) % 3) - 1;
       const pitched = track.instrumentDefinition.family === "drums"
         ? note.pitch
-        : note.pitch + motifOffset * (role?.function === "counterline" ? 2 : 1);
-      return {
+        : note.pitch + motifOffset * (eventFunction === "countermelody" ||
+          role?.function === "counterline" ? 2 : 1);
+      const register = assignment
+        ? track.instrumentDefinition.registers.find((candidate) =>
+          candidate.name === assignment.register)
+        : undefined;
+      let boundedPitch = pitched;
+      if (register && track.instrumentDefinition.family !== "drums") {
+        while (boundedPitch < register.min) boundedPitch += 12;
+        while (boundedPitch > register.max) boundedPitch -= 12;
+      }
+      return [{
         ...note,
         pitch: midi(Math.max(
           track.instrumentDefinition.playableRange.min,
-          Math.min(track.instrumentDefinition.playableRange.max, pitched),
+          Math.min(track.instrumentDefinition.playableRange.max, boundedPitch),
         )),
         velocity: midi(note.velocity + (arc?.tension ?? 0) * 10 -
           (arc?.release ?? 0) * 8 + phrase.tension * 4),
-      };
+        voice: assignment?.role ?? note.voice,
+      }];
     });
     const transformed: TrackModel = {
       ...track,
@@ -1923,6 +2268,7 @@ export function applyCompositionIntelligence(
     };
     return transformed;
   });
+  return materializeExplicitDoublings(transformedTracks, plan, songModel, fallbackBarSeconds);
 }
 
 export class VoiceLeadingEngine {
@@ -2669,7 +3015,7 @@ export function buildTrackModels(input: {
     : legacySeedIdentity);
   const canonicalTimelineSha256 = canonicalPerformanceTimelineSha256(input.songModel);
   const phraseIds = canonicalPerformancePhraseIds(input.songModel);
-  return voiced.map((track) =>
+  const performed = voiced.map((track) =>
     new PerformanceEngine().perform(
       track,
       input.style,
@@ -2688,6 +3034,12 @@ export function buildTrackModels(input: {
         compositionSeed: input.plan.compositionIntelligence?.seed ?? (input.seed ?? 0),
       },
     ));
+  return materializeExplicitDoublings(
+    performed,
+    input.plan,
+    input.songModel,
+    secondsPerBar(bpm, input.songModel.meterMap[0]?.meter),
+  );
 }
 
 function chordPitchClasses(symbol: string): number[] {
@@ -2964,4 +3316,147 @@ export function renderMusicPipeline(input: {
     provenance: [input.plan.provenance, ...trackModels.map((track) => track.provenance), ...renderProvenance, provenance("MIX_GRAPH", "1.0.0", { trackCount: rendered.length }), provenance("QUALITY_ENGINE", "1.0.0", { score: quality.score }), provenance("MASTER_ENGINE", "1.0.0", { profile: input.masterProfile })],
     durationSeconds,
   };
+}
+
+function orchestrationCandidates(
+  track: { id?: string; name: string; role: string },
+  sectionFunction: ArrangementBrainSection["function"],
+  energy: number,
+): OrchestrationRole[] {
+  const identity = `${track.name} ${track.role}`.toLowerCase();
+  if (/bass/.test(identity)) return ["foundation", "groove", "pulse"];
+  if (/drum|rhythm|percussion/.test(identity)) return ["pulse", "groove", "transition", "accent"];
+  if (/pad|ambient|texture/.test(identity)) return ["pad", "texture", "lift", "harmonic_support"];
+  if (/vocal|voice|lead|melody/.test(identity)) return ["hook", "response", "countermelody"];
+  if (/brass|horn/.test(identity)) return energy > .65
+    ? ["accent", "lift", "response", "countermelody"]
+    : ["texture", "harmonic_support", "response"];
+  if (/string|violin|cello/.test(identity)) return sectionFunction === "chorus"
+    ? ["lift", "countermelody", "pad", "harmonic_support"]
+    : ["harmonic_support", "texture", "countermelody", "pad"];
+  if (/guitar/.test(identity)) return ["groove", "harmonic_support", "response", "hook"];
+  return ["harmonic_support", "groove", "hook", "response", "texture"];
+}
+
+function phraseTimeBounds(
+  phrase: CompositionIntelligencePlan["phrases"][number],
+  songModel: SongModelData,
+  fallbackBarSeconds: number,
+): { start: number; end: number } {
+  const bars = songModel.bars.filter((bar) =>
+    bar.bar >= phrase.startBar && bar.bar <= phrase.endBar);
+  return {
+    start: bars[0]?.coordinates?.start.seconds ?? bars[0]?.start ??
+      (phrase.startBar - 1) * fallbackBarSeconds,
+    end: bars.at(-1)?.coordinates?.end.seconds ?? bars.at(-1)?.end ??
+      phrase.endBar * fallbackBarSeconds,
+  };
+}
+
+function materializeExplicitDoublings(
+  tracks: TrackModel[],
+  plan: ArrangementPlan,
+  songModel: SongModelData,
+  fallbackBarSeconds: number,
+): TrackModel[] {
+  const assignments = plan.compositionIntelligence?.orchestrationAssignments ?? [];
+  if (!assignments.some((assignment) => assignment.role === "doubling")) return tracks;
+  return tracks.map((track) => {
+    const doublingAssignments = assignments.filter((assignment) =>
+      assignment.trackId === track.id && assignment.role === "doubling" &&
+      assignment.doublingTrackId);
+    if (!doublingAssignments.length) return track;
+    let notes = [...track.notes];
+    for (const assignment of doublingAssignments) {
+      const source = tracks.find((candidate) => candidate.id === assignment.doublingTrackId);
+      const phrase = plan.compositionIntelligence?.phrases.find((candidate) =>
+        candidate.id === assignment.phraseId);
+      if (!source || !phrase) continue;
+      const bounds = phraseTimeBounds(phrase, songModel, fallbackBarSeconds);
+      notes = notes.filter((note) => note.start < bounds.start || note.start >= bounds.end);
+      notes.push(...source.notes.filter((note) =>
+        note.start >= bounds.start && note.start < bounds.end).map((note, index) => {
+        let pitch = note.pitch;
+        while (pitch < track.instrumentDefinition.playableRange.min) pitch += 12;
+        while (pitch > track.instrumentDefinition.playableRange.max) pitch -= 12;
+        return {
+          ...note,
+          id: `${track.id}-doubling-${assignment.phraseId}-${index}`,
+          pitch: midi(pitch),
+          voice: "doubling",
+        };
+      }));
+    }
+    const doubled = {
+      ...track,
+      notes: notes.sort((left, right) => left.start - right.start || left.id.localeCompare(right.id)),
+    };
+    return track.performanceEvidence
+      ? {
+          ...doubled,
+          performanceEvidence: {
+            ...track.performanceEvidence,
+            performedMaterialSha256: performedMaterialSha256(doubled),
+          },
+        }
+      : doubled;
+  });
+}
+
+function planSectionOrchestration(input: {
+  tracks: Array<{ id?: string; name: string; role: string }>;
+  sectionFunction: ArrangementBrainSection["function"];
+  energy: number;
+  density: number;
+  orchestraSize: number;
+  sectionIndex: number;
+}): OrchestrationAssignment[] {
+  const desired = Math.max(1, Math.min(input.tracks.length, Math.ceil(
+    input.tracks.length * clamp(.22 + input.orchestraSize * .42 + input.density * .24 + input.energy * .12),
+  )));
+  const ranked = input.tracks.map((track, ordinal) => {
+    const definition = getInstrumentDefinition(track.name, track.role);
+    const candidates = orchestrationCandidates(track, input.sectionFunction, input.energy);
+    const identity = `${track.name} ${track.role}`.toLowerCase();
+    const priority = /\bdoubl(e|ing)\b/.test(track.role.toLowerCase()) ? 99
+      : /bass/.test(identity) ? 0 : /drum|rhythm|percussion/.test(identity) ? 1
+      : candidates.includes("hook") ? 2 : definition.family === "strings" ? 3 : 4;
+    return { track, definition, candidates, ordinal, priority };
+  }).sort((left, right) => left.priority - right.priority ||
+    ((left.ordinal + input.sectionIndex) % Math.max(1, input.tracks.length)) -
+      ((right.ordinal + input.sectionIndex) % Math.max(1, input.tracks.length)));
+  const assignments: OrchestrationAssignment[] = [];
+  const occupied = new Set<string>();
+  for (const item of ranked) {
+    if (assignments.length >= desired) break;
+    const explicitDoubling = /\bdoubl(e|ing)\b/.test(item.track.role.toLowerCase());
+    const role = explicitDoubling ? "doubling" : item.candidates.find((candidate) => {
+      const register = candidate === "foundation" ? "low" : candidate === "hook" || candidate === "countermelody" ||
+        candidate === "response" || candidate === "lift" || candidate === "accent" ? "high" : "middle";
+      const pitchedSupport = !["foundation", "pulse", "groove", "transition", "accent"].includes(candidate);
+      return !occupied.has(`${candidate}:${register}`) &&
+        (!pitchedSupport || !occupied.has(`timbre:${item.definition.family}:${register}`));
+    });
+    if (!role) continue;
+    const register: OrchestrationAssignment["register"] = role === "foundation" ? "low"
+      : role === "hook" || role === "countermelody" || role === "response" ||
+        role === "lift" || role === "accent" ? "high" : "middle";
+    const doubled = explicitDoubling
+      ? assignments.find((assignment) => assignment.register === register) ?? assignments.at(-1)
+      : undefined;
+    if (role === "doubling" && !doubled) continue;
+    if (role !== "doubling") {
+      occupied.add(`${role}:${register}`);
+      if (!["foundation", "pulse", "groove", "transition", "accent"].includes(role)) {
+        occupied.add(`timbre:${item.definition.family}:${register}`);
+      }
+    }
+    assignments.push({
+      trackId: item.track.id ?? item.track.name,
+      role,
+      register: role === "doubling" ? doubled!.register : register,
+      doublingTrackId: doubled?.trackId ?? null,
+    });
+  }
+  return assignments;
 }

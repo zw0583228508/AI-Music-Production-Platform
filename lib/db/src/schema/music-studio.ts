@@ -1402,6 +1402,21 @@ export type CompositionPhraseIntent =
   | "build"
   | "release"
   | "protect_vocal";
+
+export type OrchestrationRole =
+  | "foundation"
+  | "pulse"
+  | "groove"
+  | "harmonic_support"
+  | "texture"
+  | "countermelody"
+  | "hook"
+  | "response"
+  | "lift"
+  | "transition"
+  | "accent"
+  | "doubling"
+  | "pad";
 export type InstrumentFunction =
   | "foundation"
   | "pulse"
@@ -1485,6 +1500,15 @@ export type CompositionIntelligencePlan = {
   }>;
   /** Present on v2 plans; absent historical plans keep their original behavior. */
   groove?: SharedGroovePlan;
+  orchestrationAssignments?: Array<{
+    sectionId: string;
+    phraseId: string;
+    trackId: string;
+    role: OrchestrationRole;
+    register: "low" | "middle" | "high";
+    handoffFromTrackId: string | null;
+    doublingTrackId: string | null;
+  }>;
 };
 
 export type ArrangementHierarchyScope = {
@@ -1549,6 +1573,7 @@ export type OrchestrationCue = {
 
 export type TrackDirective = {
   role?: string;
+  musicalFunction?: OrchestrationRole;
   register?: string;
   rhythmicActivity?: number;
   harmonicActivity?: number;
@@ -1558,6 +1583,8 @@ export type TrackDirective = {
   exit?: OrchestrationCue;
   transition?: string;
   fill?: boolean;
+  handoffFromTrackId?: string;
+  doublingTrackId?: string;
 };
 
 export type TrackMappingMetadata = {

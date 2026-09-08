@@ -41,6 +41,24 @@ type TimedTrackNote = {
   ordinal: number;
 };
 
+function isExplicitDoubling(
+  left: TimedTrackNote,
+  right: TimedTrackNote,
+  tracks: TrackModel[],
+): boolean {
+  const time = Math.max(left.note.start, right.note.start);
+  const leftTrack = tracks.find((track) => track.id === left.trackId);
+  const rightTrack = tracks.find((track) => track.id === right.trackId);
+  const directiveAt = (track: TrackModel | undefined) => track?.appliedDirectives?.find((applied) =>
+    time >= applied.start && time < applied.end)?.directive ?? track?.directive;
+  const leftDirective = directiveAt(leftTrack);
+  const rightDirective = directiveAt(rightTrack);
+  return leftDirective?.musicalFunction === "doubling" &&
+      leftDirective.doublingTrackId === right.trackId ||
+    rightDirective?.musicalFunction === "doubling" &&
+      rightDirective.doublingTrackId === left.trackId;
+}
+
 function forEachCrossTrackOverlap(
   tracks: TrackModel[],
   visit: (left: TimedTrackNote, right: TimedTrackNote) => void,
@@ -246,7 +264,8 @@ function scoreRegisterCollisions(tracks: TrackModel[]): CandidateMusicCriticDime
   }
   let collisions = 0;
   const overlaps = forEachCrossTrackOverlap(tracks, (left, right) => {
-    if (Math.abs(left.note.pitch - right.note.pitch) <= 2) collisions += 1;
+    if (Math.abs(left.note.pitch - right.note.pitch) <= 2 &&
+      !isExplicitDoubling(left, right, tracks)) collisions += 1;
   });
   return available(
     1 - collisions / Math.max(1, overlaps),
@@ -445,6 +464,7 @@ function localizeCriticFindings(input: {
     left.rightTrackId.localeCompare(right.rightTrackId);
   forEachCrossTrackOverlap(tracks, (left, right) => {
     if (Math.abs(left.note.pitch - right.note.pitch) > 2) return;
+    if (isExplicitDoubling(left, right, tracks)) return;
     const time = Math.max(left.note.start, right.note.start);
     const section = sectionAtTime(time);
     if (!section) return;
