@@ -284,6 +284,55 @@ test(
 );
 
 test(
+  "different focused API esbuild failures clean up independently when run together",
+  { timeout: 120_000 },
+  async () => {
+    const before = await listBundleDirectories();
+    const failingEnvironment = {
+      ...process.env,
+      FOCUSED_API_TEST_INJECT_FAILURE: "esbuild",
+    };
+    const results = await Promise.all([
+      runFocusedTest("test:validation", failingEnvironment),
+      runFocusedTest("test:source-ingestion", failingEnvironment),
+    ]);
+
+    assert.equal(
+      new Set(results.map(({ script }) => script)).size,
+      2,
+      "expected two distinct focused API scripts to fail concurrently",
+    );
+    for (const result of results) {
+      assert.notEqual(
+        result.code,
+        0,
+        `${result.script} unexpectedly succeeded with an invalid esbuild input`,
+      );
+      assert.match(
+        result.stderr,
+        /\[ERROR\] Could not resolve ".*intentional-missing-entry\.ts"/,
+        [
+          `${result.script} did not fail inside esbuild while a different focused check overlapped`,
+          result.signal ? `signal: ${result.signal}` : "",
+          result.stdout,
+          result.stderr,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      );
+    }
+
+    const after = await listBundleDirectories();
+    const leaked = [...after].filter((directory) => !before.has(directory));
+    assert.deepEqual(
+      leaked,
+      [],
+      `different esbuild-failed focused API tests left generated bundle directories behind: ${leaked.join(", ")}`,
+    );
+  },
+);
+
+test(
   "focused API assertion failures after bundling remove their generated bundle directory",
   { timeout: 120_000 },
   async () => {
