@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { rmSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -84,6 +84,101 @@ const suites = {
 };
 
 let activeChild;
+const childTerminationGraceMs = 500;
+const childReapingTimeoutMs = 3_000;
+
+function killChild(child, signal) {
+  try {
+    if (child.spawnargs[1] === "--test") {
+      process.kill(-child.pid, signal);
+    } else {
+      child.kill(signal);
+    }
+  } catch (error) {
+    if (error?.code !== "ESRCH") {
+      throw error;
+    }
+  }
+}
+
+function delay(milliseconds) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+}
+
+async function listIsolatedChildPids(rootPid) {
+  const childrenByParent = new Map();
+  const pidsInSession = [];
+  const entries = await readdir("/proc", { withFileTypes: true });
+  await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory() && /^\d+$/u.test(entry.name))
+      .map(async (entry) => {
+        try {
+          const stat = await readFile(`/proc/${entry.name}/stat`, "utf8");
+          const match = stat.match(/^(\d+) \(.*\) \S+ (\d+) \d+ (\d+) /u);
+          if (!match) {
+            return;
+          }
+          const pid = Number(match[1]);
+          const parentPid = Number(match[2]);
+          const sessionId = Number(match[3]);
+          const children = childrenByParent.get(parentPid) ?? [];
+          children.push(pid);
+          childrenByParent.set(parentPid, children);
+          if (sessionId === rootPid) {
+            pidsInSession.push(pid);
+          }
+        } catch (error) {
+          if (error?.code !== "ENOENT" && error?.code !== "ESRCH") {
+            throw error;
+          }
+        }
+      }),
+  );
+
+  const descendants = [];
+  const pending = [...(childrenByParent.get(rootPid) ?? [])];
+  while (pending.length > 0) {
+    const pid = pending.pop();
+    descendants.push(pid);
+    pending.push(...(childrenByParent.get(pid) ?? []));
+  }
+  return [...new Set([rootPid, ...pidsInSession, ...descendants])];
+}
+
+function processExists(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === "ESRCH") {
+      return false;
+    }
+    throw error;
+  }
+}
+
+function killProcess(pid, signal) {
+  try {
+    process.kill(pid, signal);
+  } catch (error) {
+    if (error?.code !== "ESRCH") {
+      throw error;
+    }
+  }
+}
+
+async function waitForProcessesToExit(pids) {
+  const deadline = Date.now() + childReapingTimeoutMs;
+  while (Date.now() < deadline) {
+    if (pids.every((pid) => !processExists(pid))) {
+      return;
+    }
+    await delay(10);
+  }
+}
 
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -120,23 +215,36 @@ async function main() {
     process.argv[3] ??
     (await mkdtemp(join(tmpdir(), "music-studio-api-tests.")));
   const termination = new Promise(() => {});
-  const handleTermination = (signal) => {
-    if (activeChild) {
-      if (activeChild.spawnargs[1] === "--test") {
-        process.kill(-activeChild.pid, "SIGTERM");
-      } else {
-        activeChild.kill("SIGTERM");
+  let terminationStarted = false;
+  const handleTermination = async (signal) => {
+    if (terminationStarted) {
+      return;
+    }
+    terminationStarted = true;
+    const child = activeChild;
+    if (child) {
+      const childPids = await listIsolatedChildPids(child.pid);
+      killChild(child, "SIGTERM");
+      await delay(childTerminationGraceMs);
+      killChild(child, "SIGKILL");
+      for (const pid of childPids.toReversed()) {
+        killProcess(pid, "SIGKILL");
       }
+      await waitForProcessesToExit(childPids);
     }
     rmSync(bundleDirectory, { recursive: true, force: true });
     process.off("SIGINT", handleSigint);
     process.off("SIGTERM", handleSigterm);
     process.kill(process.pid, signal);
   };
-  const handleSigint = () => handleTermination("SIGINT");
-  const handleSigterm = () => handleTermination("SIGTERM");
-  process.once("SIGINT", handleSigint);
-  process.once("SIGTERM", handleSigterm);
+  const handleSigint = () => {
+    void handleTermination("SIGINT");
+  };
+  const handleSigterm = () => {
+    void handleTermination("SIGTERM");
+  };
+  process.on("SIGINT", handleSigint);
+  process.on("SIGTERM", handleSigterm);
   try {
     if (process.env.FOCUSED_API_TEST_INJECT_FAILURE === "after-tempdir") {
       const error = new Error(
@@ -211,7 +319,9 @@ async function main() {
       process.env.FOCUSED_API_TEST_INJECT_FAILURE === "bundled-test" ||
       process.env.FOCUSED_API_TEST_INJECT_FAILURE === "during-node-test" ||
       process.env.FOCUSED_API_TEST_INJECT_FAILURE ===
-        "await-sigterm-during-node-test"
+        "await-sigterm-during-node-test" ||
+      process.env.FOCUSED_API_TEST_INJECT_FAILURE ===
+        "ignore-sigterm-during-node-test"
     ) {
       const failingTest = join(bundleDirectory, "intentional-failure.test.mjs");
       const injection = process.env.FOCUSED_API_TEST_INJECT_FAILURE;
@@ -220,8 +330,9 @@ async function main() {
           ? "injected focused API assertion failure after bundling"
           : "injected bundled-test failure";
       const testBody =
-        injection === "await-sigterm-during-node-test"
-          ? `import { writeFileSync } from "node:fs";\nimport test from "node:test";\ntest("wait for focused API SIGTERM", async () => { writeFileSync(process.env.FOCUSED_API_TEST_HANDSHAKE_FILE, process.env.FOCUSED_API_TEST_RUNNER_PID + "," + process.pid); await new Promise(() => {}); });\n`
+        injection === "await-sigterm-during-node-test" ||
+        injection === "ignore-sigterm-during-node-test"
+          ? `import { writeFileSync } from "node:fs";\nimport test from "node:test";\n${injection === "ignore-sigterm-during-node-test" ? 'process.on("SIGTERM", () => {});\n' : ""}test("wait for focused API SIGTERM", async () => { writeFileSync(process.env.FOCUSED_API_TEST_HANDSHAKE_FILE, process.env.FOCUSED_API_TEST_RUNNER_PID + "," + process.pid); await new Promise(() => {}); });\n`
           : `import test from "node:test";\ntest(${JSON.stringify(failureMessage)}, () => { throw new Error(${JSON.stringify(failureMessage)}); });\n`;
       await writeFile(
         failingTest,
@@ -242,8 +353,10 @@ async function main() {
       termination,
     ]);
   } finally {
-    process.off("SIGINT", handleSigint);
-    process.off("SIGTERM", handleSigterm);
+    if (!terminationStarted) {
+      process.off("SIGINT", handleSigint);
+      process.off("SIGTERM", handleSigterm);
+    }
     await rm(bundleDirectory, { recursive: true, force: true });
   }
 }
