@@ -247,6 +247,35 @@ test("denied access to the host PID limit fails before focused work with a bound
   );
 });
 
+test("EPERM access denial to the host PID limit fails before focused work with a bounded diagnostic", async () => {
+  const deniedOverridePath = join(
+    tmpdir(),
+    `focused-api-eperm-pid-limit-${randomUUID()}`,
+  );
+  const result = await runFocusedTest("test:validation", {
+    ...process.env,
+    FOCUSED_API_TEST_INJECT_REUSED_PID_TARGET: "1",
+    FOCUSED_API_TEST_PID_MAX_OVERRIDE_FILE: deniedOverridePath,
+    FOCUSED_API_TEST_INJECT_PID_MAX_READ_FAILURE: "EPERM",
+  });
+
+  assert.equal(result.code, 1);
+  assert.match(
+    result.stderr,
+    /focused API runner could not read host kernel setting \/proc\/sys\/kernel\/pid_max: EPERM/u,
+  );
+  assert.doesNotMatch(
+    result.stderr,
+    new RegExp(deniedOverridePath.replaceAll("/", "\\/")),
+    "diagnostic exposed the EPERM-denied test input path",
+  );
+  assert.doesNotMatch(
+    result.stdout,
+    /\besbuild\b|TAP version/u,
+    "EPERM-denied host PID limit reached bundling or focused tests",
+  );
+});
+
 test("a missing host PID limit fails before focused work with a bounded diagnostic", async () => {
   const overrideDirectory = await mkdtemp(
     join(tmpdir(), "focused-api-pid-limit."),
