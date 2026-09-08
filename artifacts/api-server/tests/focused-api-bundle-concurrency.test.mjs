@@ -1,10 +1,103 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import test from "node:test";
 
 const bundleDirectoryPrefix = "music-studio-api-tests.";
+const packageJsonUrl = new URL("../package.json", import.meta.url);
+
+function findBundledFocusedScripts(scripts) {
+  return Object.entries(scripts).filter(([, command]) =>
+    /\besbuild\s/u.test(command),
+  );
+}
+
+function auditBundledFocusedScript(name, command) {
+  const errors = [];
+  const tempDirectoryAssignment = command.match(
+    /\b([A-Za-z_][A-Za-z0-9_]*)=\$\(mktemp -d ([^)]*)\)/u,
+  );
+
+  if (!tempDirectoryAssignment) {
+    errors.push("must create its bundle directory with mktemp -d");
+    return errors.map((error) => `${name}: ${error}`);
+  }
+
+  const [, variable, template] = tempDirectoryAssignment;
+  if (!/X{6,}(?:["']?\s*)$/u.test(template)) {
+    errors.push("must use a unique mktemp template ending in at least six Xs");
+  }
+
+  const escapedVariable = variable.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const outputPattern = new RegExp(
+    String.raw`--outfile=(?:"\$\{?${escapedVariable}\}?/|'\$\{?${escapedVariable}\}?/|\$\{?${escapedVariable}\}?/)`,
+    "u",
+  );
+  const bundleCommands = command
+    .split(/\s*&&\s*/u)
+    .filter((part) => /^\s*esbuild(?:\s|$)/u.test(part));
+
+  if (bundleCommands.length === 0) {
+    errors.push("must expose each esbuild invocation as a command segment");
+  }
+  for (const bundleCommand of bundleCommands) {
+    if (!outputPattern.test(bundleCommand)) {
+      errors.push(
+        `must write every bundle below the unique $${variable} directory: ${bundleCommand}`,
+      );
+    }
+  }
+
+  const cleanupTrap = command.match(/\btrap\s+(.+?)\s+EXIT\b/u)?.[1];
+  const cleanupVariablePattern = new RegExp(
+    String.raw`\$\{?${escapedVariable}\}?`,
+    "u",
+  );
+  if (
+    !cleanupTrap ||
+    !/\brm\s+-rf\b/u.test(cleanupTrap) ||
+    !cleanupVariablePattern.test(cleanupTrap)
+  ) {
+    errors.push(`must install an EXIT trap that removes $${variable}`);
+  }
+
+  return errors.map((error) => `${name}: ${error}`);
+}
+
+test("every focused API bundle script uses isolated temporary output", async () => {
+  const packageJson = JSON.parse(await readFile(packageJsonUrl, "utf8"));
+  const bundledScripts = findBundledFocusedScripts(packageJson.scripts);
+
+  assert.ok(
+    bundledScripts.length > 0,
+    "expected to discover focused API scripts that generate bundles",
+  );
+
+  const errors = bundledScripts.flatMap(([name, command]) =>
+    auditBundledFocusedScript(name, command),
+  );
+  assert.deepEqual(errors, [], errors.join("\n"));
+});
+
+test("focused API bundle audit rejects each unsafe path pattern", () => {
+  const unsafeScripts = {
+    "test:fixed-output":
+      "esbuild src/example.test.ts --bundle --outfile=/tmp/example.test.mjs",
+    "test:shared-directory":
+      "sh -c 'tmpdir=$(mktemp -d /tmp/music-studio-api-tests) && trap \"rm -rf \\\"$tmpdir\\\"\" EXIT && esbuild src/example.test.ts --bundle --outfile=\"$tmpdir/example.test.mjs\"'",
+    "test:missing-cleanup":
+      "sh -c 'tmpdir=$(mktemp -d /tmp/music-studio-api-tests.XXXXXX) && esbuild src/example.test.ts --bundle --outfile=\"$tmpdir/example.test.mjs\"'",
+  };
+
+  const errors = findBundledFocusedScripts(unsafeScripts).flatMap(
+    ([name, command]) => auditBundledFocusedScript(name, command),
+  );
+
+  assert.ok(errors.some((error) => error.startsWith("test:fixed-output:")));
+  assert.ok(errors.some((error) => error.startsWith("test:shared-directory:")));
+  assert.ok(errors.some((error) => error.startsWith("test:missing-cleanup:")));
+});
 
 async function listBundleDirectories() {
   return new Set(
