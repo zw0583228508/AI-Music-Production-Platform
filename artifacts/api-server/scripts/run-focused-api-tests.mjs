@@ -84,6 +84,16 @@ const suites = {
 };
 
 const supportedPermissionFailureCodes = new Set(["EPERM", "EACCES"]);
+const supportedPidLimitReadFailureCodes = new Set([
+  "EACCES",
+  "EISDIR",
+  "ENOENT",
+  "EPERM",
+]);
+const injectedPidLimitReadFailureCodes = new Map([
+  ["UNEXPECTED_LONG", `E${"X".repeat(1_024)}`],
+  ["UNEXPECTED_MALFORMED", { unexpected: "host error label" }],
+]);
 const supportedFocusedFailureModes = new Set([
   "after-tempdir",
   "esbuild",
@@ -136,14 +146,19 @@ function parseOptionalPositiveInteger(environmentVariable) {
     if (injectedReadFailure) {
       const error = new Error("injected denied host PID limit read");
       if (injectedReadFailure !== "UNKNOWN") {
-        error.code = injectedReadFailure;
+        error.code =
+          injectedPidLimitReadFailureCodes.get(injectedReadFailure) ??
+          injectedReadFailure;
       }
       throw error;
     }
     pidLimitValue = readFileSync(pidLimitInput, "utf8").trim();
   } catch (error) {
+    const errorCode = supportedPidLimitReadFailureCodes.has(error?.code)
+      ? error.code
+      : "UNKNOWN";
     throw new Error(
-      `focused API runner could not read host kernel setting ${pidLimitSetting}: ${error?.code ?? "UNKNOWN"}`,
+      `focused API runner could not read host kernel setting ${pidLimitSetting}: ${errorCode}`,
     );
   }
   const pidWrapPoint = Number(pidLimitValue);
@@ -177,7 +192,11 @@ for (const environmentVariable of [
 }
 validateFocusedFaultSetting(
   "FOCUSED_API_TEST_INJECT_PID_MAX_READ_FAILURE",
-  new Set([...supportedPermissionFailureCodes, "UNKNOWN"]),
+  new Set([
+    ...supportedPermissionFailureCodes,
+    "UNKNOWN",
+    ...injectedPidLimitReadFailureCodes.keys(),
+  ]),
 );
 
 function parsePermissionFailureCodes(
