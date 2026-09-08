@@ -2416,6 +2416,36 @@ export interface TrackPerformanceEvidence {
 }
 
 export type TrackHarmonyEvidenceVersion = typeof TrackHarmonyEvidenceVersion[keyof typeof TrackHarmonyEvidenceVersion];
+
+
+export const TrackHarmonyEvidenceVersion = {
+  '20': '2.0',
+} as const;
+
+export type TrackHarmonyEvidenceMode = typeof TrackHarmonyEvidenceMode[keyof typeof TrackHarmonyEvidenceMode];
+
+
+export const TrackHarmonyEvidenceMode = {
+  advanced_voicing: 'advanced_voicing',
+  phrase_countermelody: 'phrase_countermelody',
+} as const;
+
+export interface TrackHarmonyEvidence {
+  version: TrackHarmonyEvidenceVersion;
+  mode: TrackHarmonyEvidenceMode;
+  /** @minimum 0 */
+  selectedMotion?: number;
+  /** @minimum 0 */
+  baselineMotion?: number;
+  /** @minimum 0 */
+  maximumLeap?: number;
+  motifRefs?: string[];
+  /** @minimum 0 */
+  resolutionObligations?: number;
+  melodyEvidencePreserved: boolean;
+  bassEvidencePreserved: boolean;
+}
+
 export interface TrackModel {
   id: string;
   instrument: string;
@@ -3522,6 +3552,105 @@ export interface CopilotResult {
   interpreter: CopilotResultInterpreter;
 }
 
+export type StyleGrammarVocabularyGroove = typeof StyleGrammarVocabularyGroove[keyof typeof StyleGrammarVocabularyGroove];
+
+
+export const StyleGrammarVocabularyGroove = {
+  straight: 'straight',
+  swung: 'swung',
+  syncopated: 'syncopated',
+  four_on_floor: 'four_on_floor',
+} as const;
+
+export type StyleGrammarVocabularyVoicing = typeof StyleGrammarVocabularyVoicing[keyof typeof StyleGrammarVocabularyVoicing];
+
+
+export const StyleGrammarVocabularyVoicing = {
+  close: 'close',
+  open: 'open',
+  drop_two: 'drop_two',
+  quartal: 'quartal',
+  wide: 'wide',
+} as const;
+
+export type StyleGrammarVocabularyArticulation = typeof StyleGrammarVocabularyArticulation[keyof typeof StyleGrammarVocabularyArticulation];
+
+
+export const StyleGrammarVocabularyArticulation = {
+  legato: 'legato',
+  tight: 'tight',
+  accented: 'accented',
+  pulsed: 'pulsed',
+} as const;
+
+export type StyleGrammarVocabularyInstrumentation = typeof StyleGrammarVocabularyInstrumentation[keyof typeof StyleGrammarVocabularyInstrumentation];
+
+
+export const StyleGrammarVocabularyInstrumentation = {
+  acoustic: 'acoustic',
+  electronic: 'electronic',
+  hybrid: 'hybrid',
+  orchestral: 'orchestral',
+} as const;
+
+export type StyleGrammarVocabularyPhraseBehavior = typeof StyleGrammarVocabularyPhraseBehavior[keyof typeof StyleGrammarVocabularyPhraseBehavior];
+
+
+export const StyleGrammarVocabularyPhraseBehavior = {
+  call_response: 'call_response',
+  continuous: 'continuous',
+  sparse_answers: 'sparse_answers',
+  motivic: 'motivic',
+} as const;
+
+export type StyleGrammarVocabularyFills = typeof StyleGrammarVocabularyFills[keyof typeof StyleGrammarVocabularyFills];
+
+
+export const StyleGrammarVocabularyFills = {
+  none: 'none',
+  cadential: 'cadential',
+  frequent: 'frequent',
+  sectional: 'sectional',
+} as const;
+
+export type StyleGrammarVocabularyTransitions = typeof StyleGrammarVocabularyTransitions[keyof typeof StyleGrammarVocabularyTransitions];
+
+
+export const StyleGrammarVocabularyTransitions = {
+  hard_cut: 'hard_cut',
+  thin_build: 'thin_build',
+  riser: 'riser',
+  orchestral_swell: 'orchestral_swell',
+} as const;
+
+export type StyleGrammarVocabularyDevelopment = typeof StyleGrammarVocabularyDevelopment[keyof typeof StyleGrammarVocabularyDevelopment];
+
+
+export const StyleGrammarVocabularyDevelopment = {
+  repetition: 'repetition',
+  additive: 'additive',
+  transformative: 'transformative',
+  dynamic_arc: 'dynamic_arc',
+} as const;
+
+export type StyleGrammarVocabulary = {
+  groove: StyleGrammarVocabularyGroove;
+  voicing: StyleGrammarVocabularyVoicing;
+  articulation: StyleGrammarVocabularyArticulation;
+  instrumentation: StyleGrammarVocabularyInstrumentation;
+  phraseBehavior: StyleGrammarVocabularyPhraseBehavior;
+  fills: StyleGrammarVocabularyFills;
+  transitions: StyleGrammarVocabularyTransitions;
+  development: StyleGrammarVocabularyDevelopment;
+};
+
+export interface StyleGrammar {
+  version: '1.0';
+  /** @pattern ^[a-f0-9]{64}$ */
+  evidenceSha256: string;
+  vocabulary: StyleGrammarVocabulary;
+}
+
 export type StyleSpecTempoCharacter = typeof StyleSpecTempoCharacter[keyof typeof StyleSpecTempoCharacter];
 
 
@@ -3555,6 +3684,7 @@ export interface StyleSpec {
   orchestration: StyleSpecOrchestration;
   production: StyleSpecProduction;
   dynamics: StyleSpecDynamics;
+  grammar?: StyleGrammar;
 }
 
 export type ArrangementPlanSectionTracks = {[key: string]: string};
@@ -3808,6 +3938,81 @@ export interface CompositionIntelligencePlan {
   orchestrationAssignments?: OrchestrationAssignment[];
 }
 
+export type GenerationPreferenceEffectsRoleEmphasis = typeof GenerationPreferenceEffectsRoleEmphasis[keyof typeof GenerationPreferenceEffectsRoleEmphasis];
+
+
+export const GenerationPreferenceEffectsRoleEmphasis = {
+  foundation: 'foundation',
+  pulse: 'pulse',
+  harmony: 'harmony',
+  counterline: 'counterline',
+  texture: 'texture',
+} as const;
+
+export type GenerationPreferenceEffectsVoicingCharacter = typeof GenerationPreferenceEffectsVoicingCharacter[keyof typeof GenerationPreferenceEffectsVoicingCharacter];
+
+
+export const GenerationPreferenceEffectsVoicingCharacter = {
+  close: 'close',
+  open: 'open',
+  wide: 'wide',
+} as const;
+
+export type GenerationPreferenceEffectsDevelopment = typeof GenerationPreferenceEffectsDevelopment[keyof typeof GenerationPreferenceEffectsDevelopment];
+
+
+export const GenerationPreferenceEffectsDevelopment = {
+  restrained: 'restrained',
+  balanced: 'balanced',
+  progressive: 'progressive',
+} as const;
+
+export interface GenerationPreferenceEffects {
+  /**
+     * @minimum -0.35
+     * @maximum 0.35
+     */
+  orchestrationDensity: number;
+  /**
+     * @minimum 0.25
+     * @maximum 0.75
+     */
+  responseFrequency: number;
+  roleEmphasis: GenerationPreferenceEffectsRoleEmphasis;
+  voicingCharacter: GenerationPreferenceEffectsVoicingCharacter;
+  development: GenerationPreferenceEffectsDevelopment;
+  /**
+     * @minimum 0.25
+     * @maximum 0.75
+     */
+  transitionIntensity: number;
+}
+
+export interface GenerationPreferenceSnapshot {
+  contractVersion: '1.0';
+  /** @minLength 1 */
+  calibrationId: string;
+  /** @minimum 1 */
+  calibrationVersion: number;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  heldOutAgreement: number;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  baselineAgreement: number;
+  /** @minimum 5 */
+  heldOutExamples: number;
+  /** @pattern ^[a-f0-9]{64}$ */
+  evaluationSha256: string;
+  /** @pattern ^[a-f0-9]{64}$ */
+  evidenceSha256: string;
+  effects: GenerationPreferenceEffects;
+}
+
 export type ArrangementPlanParameters = { [key: string]: unknown };
 
 export interface ArrangementPlan {
@@ -3820,6 +4025,7 @@ export interface ArrangementPlan {
   provenance: ArtifactProvenance;
   hierarchy: ArrangementHierarchy;
   compositionIntelligence?: CompositionIntelligencePlan;
+  generationPreference?: GenerationPreferenceSnapshot | null;
 }
 
 /**
@@ -3870,31 +4076,3 @@ projectId?: string;
  */
 limit?: number;
 };
-
-
-export type TrackHarmonyEvidenceMode = typeof TrackHarmonyEvidenceMode[keyof typeof TrackHarmonyEvidenceMode];
-
-export const TrackHarmonyEvidenceMode = {
-  advanced_voicing: 'advanced_voicing',
-  phrase_countermelody: 'phrase_countermelody',
-} as const;
-
-export const TrackHarmonyEvidenceVersion = {
-  '20': '2.0',
-} as const;
-
-export interface TrackHarmonyEvidence {
-  version: TrackHarmonyEvidenceVersion;
-  mode: TrackHarmonyEvidenceMode;
-  /** @minimum 0 */
-  selectedMotion?: number;
-  /** @minimum 0 */
-  baselineMotion?: number;
-  /** @minimum 0 */
-  maximumLeap?: number;
-  motifRefs?: string[];
-  /** @minimum 0 */
-  resolutionObligations?: number;
-  melodyEvidencePreserved: boolean;
-  bassEvidencePreserved: boolean;
-}

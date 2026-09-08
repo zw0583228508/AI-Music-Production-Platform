@@ -18,6 +18,8 @@ import type {
   MotifTransformation,
   OrchestrationRole,
   PhraseIntention,
+  GenerationPreferenceSnapshot,
+  StyleGrammar,
 } from "@workspace/db";
 import { createHash } from "node:crypto";
 import { CANONICAL_PPQ, createCanonicalTimeline } from "./canonicalTimeline";
@@ -486,20 +488,49 @@ export function getInstrumentDefinition(instrument: string, role = ""): Instrume
 export function createStyleSpec(
   style: string,
   controls: { density: number; harmonyComplexity: number; energy: number; orchestraSize?: number; rhythmIntensity?: number },
+  generationPreference?: GenerationPreferenceSnapshot | null,
 ): StyleSpec {
   const genre = style.split(/\s+/)[0]?.toLowerCase() || "pop";
-  const cinematic = style.toLowerCase().includes("cinematic") || style.toLowerCase().includes("orchestra");
+  const normalizedStyle = style.toLowerCase();
+  const cinematic = normalizedStyle.includes("cinematic") || normalizedStyle.includes("orchestra");
+  const jazz = genre === "jazz";
+  const electronic = /edm|electro|techno|house|synth/.test(normalizedStyle);
+  const sparse = /ambient|minimal|ballad/.test(normalizedStyle);
+  const grammarVocabulary: StyleGrammar["vocabulary"] = {
+    groove: jazz ? "swung" : /house|techno|edm/.test(normalizedStyle)
+      ? "four_on_floor" : (controls.rhythmIntensity ?? .6) > .68 ? "syncopated" : "straight",
+    voicing: generationPreference?.effects.voicingCharacter ??
+      (jazz ? "drop_two" : cinematic ? "wide" : electronic ? "open" : "close"),
+    articulation: jazz ? "accented" : electronic ? "pulsed" : sparse ? "legato" : "tight",
+    instrumentation: cinematic ? "orchestral" : electronic ? "electronic"
+      : jazz ? "acoustic" : "hybrid",
+    phraseBehavior: jazz ? "call_response" : sparse ? "sparse_answers"
+      : cinematic ? "motivic" : "continuous",
+    fills: sparse ? "none" : jazz ? "frequent" : cinematic ? "sectional" : "cadential",
+    transitions: cinematic ? "orchestral_swell" : electronic ? "riser"
+      : sparse ? "thin_build" : "hard_cut",
+    development: cinematic ? "dynamic_arc" : electronic ? "additive"
+      : jazz ? "transformative" : "repetition",
+  };
+  const grammarEvidenceSha256 = createHash("sha256").update(canonicalJson({
+    style: normalizedStyle.replace(/\s+/g, " ").trim(),
+    controls,
+    generationPreferenceEvidenceSha256: generationPreference?.evidenceSha256 ?? null,
+    vocabulary: grammarVocabulary,
+  })).digest("hex");
+  const preferenceDensity = generationPreference?.effects.orchestrationDensity ?? 0;
   return {
     genre,
     subgenre: style.toLowerCase().replace(/\s+/g, "_"),
     era: "modern",
     tempoCharacter: controls.energy > 0.72 ? "driving" : "steady",
-    rhythm: { swing: genre === "jazz" ? 0.18 : 0, syncopation: clamp(controls.density * 0.45 + (controls.rhythmIntensity ?? .6) * .4), subdivision: (controls.rhythmIntensity ?? .6) > .72 || genre === "edm" ? "16th" : "8th" },
-    harmony: { complexity: controls.harmonyComplexity, tension: clamp((controls.harmonyComplexity - 1) / 9), voicing: cinematic ? "wide" : "close" },
-    instrumentation: { preferredFamilies: cinematic ? ["keys", "strings", "brass", "drums"] : ["keys", "strings", "bass", "drums"], avoid: [] },
-    orchestration: { density: clamp(controls.density * .65 + (controls.orchestraSize ?? .5) * .35), registerSpread: clamp((cinematic ? .72 : .48) + (controls.orchestraSize ?? .5) * .35), dynamics: controls.energy > 0.7 ? "arc" : "intimate" },
+    rhythm: { swing: jazz ? 0.18 : 0, syncopation: clamp(controls.density * 0.45 + (controls.rhythmIntensity ?? .6) * .4), subdivision: (controls.rhythmIntensity ?? .6) > .72 || electronic ? "16th" : "8th" },
+    harmony: { complexity: controls.harmonyComplexity, tension: clamp((controls.harmonyComplexity - 1) / 9), voicing: grammarVocabulary.voicing },
+    instrumentation: { preferredFamilies: cinematic ? ["keys", "strings", "brass", "drums"] : electronic ? ["synth", "drums", "bass", "keys"] : ["keys", "strings", "bass", "drums"], avoid: [] },
+    orchestration: { density: clamp(controls.density * .65 + (controls.orchestraSize ?? .5) * .35 + preferenceDensity), registerSpread: clamp((cinematic ? .72 : .48) + (controls.orchestraSize ?? .5) * .35), dynamics: controls.energy > 0.7 ? "arc" : "intimate" },
     production: { stereoWidth: cinematic ? 0.85 : 0.65, room: cinematic ? "scoring_stage" : "studio", mixProfile: "streaming" },
     dynamics: { range: cinematic ? 0.8 : 0.6, accentStrength: clamp(0.35 + controls.energy * 0.5) },
+    grammar: { version: "1.0", evidenceSha256: grammarEvidenceSha256, vocabulary: grammarVocabulary },
   };
 }
 
@@ -999,7 +1030,7 @@ export function buildArrangementBrain(input: {
   };
 }
 
-export function createArrangementPlan(input: {
+function createArrangementPlanWithOrchestration(input: {
   arrangementId: string;
   version: number;
   songModel: SongModelData;
@@ -1319,6 +1350,335 @@ export function createArrangementPlan(input: {
     }, input.parentIds),
     hierarchy,
     compositionIntelligence,
+  };
+}
+function createArrangementPlanWithStyle(input: {
+  arrangementId: string;
+  version: number;
+  songModel: SongModelData;
+  style: StyleSpec;
+  tracks: Array<{ id?: string; name: string; role: string }>;
+  parameters: Record<string, number | string | boolean>;
+  parentIds?: string[];
+  arrangementBrain?: ArrangementBrain;
+  compositionVersion?: CompositionIntelligenceVersion;
+  generationPreference?: GenerationPreferenceSnapshot | null;
+}): ArrangementPlan {
+  const sourceSections = input.songModel.sections.length
+    ? input.songModel.sections
+    : [{ name: "Full Song", startBar: 1, endBar: 16, energy: input.style.dynamics.accentStrength }];
+  const modulationSemitones = Number(input.parameters.modulationSemitones ?? 0);
+  const orchestraSize = clamp(Number(input.parameters.orchestraSize ?? .5));
+  const rhythmIntensity = clamp(Number(input.parameters.rhythmIntensity ?? .6));
+  const arrangementBrain = input.arrangementBrain ?? buildArrangementBrain({
+    songModel: input.songModel,
+    controls: {
+      energy: Number(input.parameters.energy ?? input.style.dynamics.accentStrength),
+      density: Number(input.parameters.density ?? input.style.orchestration.density),
+      orchestraSize,
+    },
+    compositionVersion: input.compositionVersion,
+  });
+  let priorLayerCount: number | undefined;
+  const sections: ArrangementPlanSection[] = sourceSections.map((section, index) => {
+    const brainSection = arrangementBrain.enabled ? arrangementBrain.sections[index] : undefined;
+    const plannedEnergy = brainSection?.targetEnergy ?? section.energy;
+    const plannedDensity = brainSection?.targetDensity ??
+      clamp(input.style.orchestration.density * 0.65 + section.energy * 0.35);
+    const preference = input.generationPreference?.effects;
+    const grammar = input.parameters.styleGrammarVersion === "1.0"
+      ? input.style.grammar?.vocabulary
+      : undefined;
+    const operations = plannedEnergy > 0.75
+      ? ["build_up", "countermelody"]
+      : plannedEnergy < 0.3
+        ? ["break"]
+        : ["phrase"];
+    if (grammar) operations.push(`groove:${grammar.groove}`);
+    if (grammar) operations.push(`instrumentation:${grammar.instrumentation}`);
+    if (grammar) operations.push(`fills:${grammar.fills}`);
+    if (grammar?.phraseBehavior === "call_response" &&
+      (preference?.responseFrequency ?? .5) >= .45) operations.push("call_response");
+    if (grammar?.phraseBehavior === "continuous") operations.push("continuous_phrase");
+    if (grammar?.phraseBehavior === "sparse_answers") operations.push("sparse_answers");
+    if (grammar?.phraseBehavior === "motivic") operations.push("motivic_phrase");
+    if (preference?.development === "progressive") operations.push("develop_motif");
+    else if (preference?.development === "restrained") operations.push("preserve_motif");
+    else if (grammar?.development === "transformative") operations.push("transform_motif");
+    else if (grammar?.development === "additive") operations.push("additive_layers");
+    else if (grammar?.development === "dynamic_arc") operations.push("dynamic_arc");
+    else if (grammar?.development === "repetition") operations.push("repeat_motif");
+    if (index === sourceSections.length - 1 && modulationSemitones !== 0) {
+      operations.push(`modulate:${modulationSemitones}`);
+    }
+    const directives: Record<string, TrackDirective> = {};
+    const unconstrainedLayers = Math.max(1, Math.ceil(input.tracks.length *
+      clamp(.25 + orchestraSize * .55 + plannedEnergy * .2 +
+        (preference?.orchestrationDensity ?? 0))));
+    const layerCount = arrangementBrain.enabled && priorLayerCount !== undefined
+      ? clamp(unconstrainedLayers, Math.max(1, priorLayerCount - 1), Math.min(input.tracks.length, priorLayerCount + 1))
+      : unconstrainedLayers;
+    priorLayerCount = layerCount;
+    const emphasis = preference?.roleEmphasis;
+    const roleScore = (track: typeof input.tracks[number]) => {
+      const identity = `${track.name} ${track.role}`.toLowerCase();
+      const family = getInstrumentDefinition(track.name, track.role).family;
+      const grammarFamilies: Record<NonNullable<typeof grammar>["instrumentation"], string[]> = {
+        acoustic: ["keys", "strings", "guitar", "drums"],
+        electronic: ["synth", "drums"],
+        hybrid: ["keys", "strings", "guitar", "drums", "synth"],
+        orchestral: ["keys", "strings", "brass", "drums"],
+      };
+      const grammarFamilyBoost = grammar &&
+        grammarFamilies[grammar.instrumentation].includes(family) ? 1 : 0;
+      const emphasisBoost = emphasis === "foundation" && /bass/.test(identity) ? 3 :
+        emphasis === "pulse" && /drum|rhythm|percussion/.test(identity) ? 3 :
+        emphasis === "counterline" && /string|brass|counter|melody/.test(identity) ? 3 :
+        emphasis === "texture" && /pad|synth|texture/.test(identity) ? 3 :
+        emphasis === "harmony" && /piano|keys|guitar|harmony/.test(identity) ? 3 : 0;
+      return emphasisBoost + grammarFamilyBoost;
+    };
+    const ordered = [...input.tracks].sort((left, right) =>
+      roleScore(right) - roleScore(left) ||
+      Number(/bass|drum|rhythm/.test(`${right.name} ${right.role}`.toLowerCase())) -
+      Number(/bass|drum|rhythm/.test(`${left.name} ${left.role}`.toLowerCase())));
+    const enabledIds = new Set(ordered.slice(0, layerCount).map((track) => track.id ?? track.name));
+    const tracks = Object.fromEntries(input.tracks.map((track) => {
+      const identity = `${track.name} ${track.role}`.toLowerCase();
+      const trackId = track.id ?? track.name;
+      const operation = enabledIds.has(trackId) ? operationForTrack(track, { energy: plannedEnergy }) : "none";
+      const percussion = /drum|rhythm|percussion/.test(identity);
+      const bass = identity.includes("bass");
+      const melodic = /vocal|voice|melody/.test(identity);
+      const grammarVoicing = grammar?.voicing === "wide" ? "wide" :
+        grammar?.voicing === "close" || grammar?.voicing === "drop_two" ? "close" :
+        "open";
+      const voicingCharacter = preference?.voicingCharacter ?? grammarVoicing;
+      directives[trackId] = {
+        role: track.role,
+        register: bass ? "low" : melodic ? "high" :
+          voicingCharacter === "wide" ? (index % 2 ? "high" : "low") :
+          voicingCharacter === "close" ? "middle" :
+          plannedEnergy > .68 ? "high" : "middle",
+        rhythmicActivity: round(clamp((percussion
+          ? plannedEnergy * .45 + rhythmIntensity * .55
+          : (input.style.rhythm.syncopation * .45 + plannedEnergy * .55) *
+            (.55 + rhythmIntensity * .45)) *
+          (melodic || /counter|string|brass/.test(identity)
+            ? .7 + (preference?.responseFrequency ?? .5) * .6
+            : 1))),
+        harmonicActivity: round(clamp(percussion || melodic ? 0 :
+          input.style.harmony.complexity / 10 * .55 + plannedEnergy * .3 +
+          ((preference?.responseFrequency ?? .5) - .5) * .7)),
+        dynamicTarget: round(clamp(.28 + plannedEnergy * .68 +
+          ((preference?.transitionIntensity ?? .5) - .5) * .15)),
+        articulationFamily: grammar?.articulation === "legato" ? "legato" :
+          grammar?.articulation === "accented" ? "accent" :
+          grammar?.articulation === "tight" || grammar?.articulation === "pulsed" ? "tight" :
+          percussion ? (plannedEnergy > .7 ? "accent" : "tight") :
+          plannedEnergy > .72 ? "accent" : "legato",
+        entry: { bar: section.startBar, mode: index === 0 ? "downbeat" : "phrase_entry" },
+        exit: { bar: section.endBar, mode: index === sourceSections.length - 1 ? "cadence" : "release" },
+        transition: index === 0 ? "none" :
+          grammar?.transitions === "hard_cut" ? "cut" :
+          grammar?.transitions === "orchestral_swell" ? "swell" :
+          grammar?.transitions === "riser" ? "riser" :
+          (preference?.transitionIntensity ?? .5) > .62 ? "build" :
+          plannedEnergy > (arrangementBrain.enabled ? arrangementBrain.sections[index - 1]?.targetEnergy : sourceSections[index - 1].energy) ? "build" : "thin",
+        fill: percussion && index < sourceSections.length - 1 &&
+          (grammar?.fills === "frequent" ||
+            (plannedEnergy >= .55 && rhythmIntensity >= .45)) &&
+          grammar?.fills !== "none" &&
+          (grammar?.fills === "frequent" || index % 2 === 0 ||
+            (preference?.transitionIntensity ?? .5) > .62),
+      };
+      return [track.name, operation];
+    }));
+    return {
+      section: section.name.toLowerCase().replace(/\s+/g, "_"),
+      startBar: section.startBar,
+      endBar: section.endBar,
+       energy: round(clamp(plannedEnergy)),
+       density: round(plannedDensity),
+      tracks,
+      activeTracks: input.tracks
+        .filter((track) => tracks[track.name] !== "none")
+        .map((track) => track.id ?? track.name),
+      trackDirectives: directives,
+      operations,
+    };
+  });
+  const compositionVersion = input.compositionVersion ?? arrangementBrain.compositionVersion;
+  const evidenceSha256 = compositionEvidenceSha256(
+    input.songModel,
+    Number(input.parameters.songModelVersion ?? 0),
+  );
+  const roleForTrack = (track: typeof input.tracks[number]): CompositionIntelligencePlan["instrumentRoles"][number]["function"] => {
+    const identity = `${track.name} ${track.role}`.toLowerCase();
+    if (/bass/.test(identity)) return "foundation";
+    if (/drum|rhythm|percussion/.test(identity)) return "pulse";
+    if (/vocal|voice|melody|lead/.test(identity)) return "lead";
+    if (/string|brass|counter/.test(identity)) return "counterline";
+    if (/pad|texture|ambient/.test(identity)) return "texture";
+    return "harmony";
+  };
+  const hierarchy = buildArrangementHierarchy(input.arrangementId, input.songModel, arrangementBrain, sections);
+  const motifByFunction = new Map<string, string>();
+  const compositionIntelligence: CompositionIntelligencePlan = {
+    version: compositionVersion,
+    mode: compositionVersion === "2.0" ? "reasoning_core" : "legacy",
+    precedence: ["song_intent", "dramatic_arc", "section_function", "phrase_intent", "instrument_role", "motif", "harmony_rhythm_voicing", "event"],
+    seed: Number(input.parameters.seed ?? 0),
+    evidenceSha256,
+    songIntent: compositionVersion === "2.0" && arrangementBrain.enabled
+      ? "develop_observed_form" : "preserve_observed_form",
+    tensionRelease: hierarchy.sections.map((section, index) => ({
+      sectionId: section.id,
+      tension: compositionVersion === "2.0" ? arrangementBrain.sections[index]?.tension ?? 0 : 0,
+      release: compositionVersion === "2.0" ? arrangementBrain.sections[index]?.release ?? 0 : 0,
+    })),
+    phrases: hierarchy.sections.flatMap((section, index) => {
+      const brainSection = arrangementBrain.sections[index];
+      const phraseIds = section.phraseIds.length ? section.phraseIds : [`phrase:${section.id}:whole`];
+      const existingMotif = motifByFunction.get(section.function);
+      const motifRef = existingMotif ?? `motif:${hashSeed(`${evidenceSha256}:${section.function}:${section.id}`)}`;
+      if (!existingMotif) motifByFunction.set(section.function, motifRef);
+      return phraseIds.map((id, phraseIndex) => ({
+        id,
+        sectionId: section.id,
+        startBar: hierarchy.phrases.find((phrase) => phrase.id === id)?.startBar ?? section.startBar,
+        endBar: hierarchy.phrases.find((phrase) => phrase.id === id)?.endBar ?? section.endBar,
+        intent: compositionVersion !== "2.0" ? "state" as const
+          : section.phraseIds.length ? "protect_vocal" as const
+          : brainSection?.development === "development" ? "develop" as const
+          : brainSection?.development === "reprise" ? "answer" as const
+          : (brainSection?.tension ?? 0) > .62 ? "build" as const
+          : (brainSection?.release ?? 0) > .35 ? "release" as const
+          : phraseIndex ? "develop" as const : "state" as const,
+        tension: compositionVersion === "2.0" ? brainSection?.tension ?? 0 : 0,
+        motifRef,
+        sourceMotifRef: existingMotif ?? null,
+        intention: "support",
+        transformation: "repetition",
+        responseToPhraseId: null,
+        ownerTrackId: null,
+      }));
+    }),
+    instrumentRoles: input.tracks.map((track) => ({
+      trackId: track.id ?? track.name,
+      function: roleForTrack(track),
+      authority: "project_track",
+    })),
+    motifs: [],
+  };
+  if (compositionVersion === "2.0") {
+    compositionIntelligence.groove = buildSharedGroovePlan(
+      input.songModel,
+      hierarchy,
+      compositionIntelligence,
+      input.style,
+    );
+  }
+  return {
+    id: input.arrangementId,
+    version: input.version,
+    sections,
+    style: input.style,
+    songModelVersion: Number(input.parameters.songModelVersion ?? 0),
+    parameters: input.parameters,
+    provenance: provenance("ARRANGEMENT_DIRECTOR", compositionVersion === "2.0" ? "2.0.0" : "1.0.0", {
+      ...input.parameters,
+      compositionVersion,
+      compositionEvidenceSha256: evidenceSha256,
+      styleGrammarVersion: input.style.grammar?.version ?? "legacy",
+      styleGrammarEvidenceSha256: input.style.grammar?.evidenceSha256 ?? "legacy",
+      generationPreferenceVersion: input.generationPreference?.calibrationVersion ?? 0,
+      generationPreferenceEvidenceSha256: input.generationPreference?.evidenceSha256 ?? "none",
+    }, input.parentIds),
+    hierarchy,
+    compositionIntelligence,
+    generationPreference: input.generationPreference ?? null,
+  };
+}
+
+export function createArrangementPlan(input: {
+  arrangementId: string;
+  version: number;
+  songModel: SongModelData;
+  style: StyleSpec;
+  tracks: Array<{ id?: string; name: string; role: string }>;
+  parameters: Record<string, number | string | boolean>;
+  parentIds?: string[];
+  arrangementBrain?: ArrangementBrain;
+  compositionVersion?: CompositionIntelligenceVersion;
+  generationPreference?: GenerationPreferenceSnapshot | null;
+}): ArrangementPlan {
+  const orchestrationPlan = createArrangementPlanWithOrchestration(input);
+  const stylePlan = createArrangementPlanWithStyle(input);
+  return {
+    ...orchestrationPlan,
+    sections: orchestrationPlan.sections.map((section, index) => {
+      const styledSection = stylePlan.sections[index];
+      if (!styledSection) return section;
+      const trackIds = new Set([
+        ...Object.keys(section.trackDirectives ?? {}),
+        ...Object.keys(styledSection.trackDirectives ?? {}),
+      ]);
+      return {
+        ...section,
+        activeTracks: input.generationPreference
+          ? styledSection.activeTracks
+          : section.activeTracks,
+        tracks: input.generationPreference
+          ? styledSection.tracks
+          : section.tracks,
+        operations: [...new Set([...section.operations, ...styledSection.operations])],
+        trackDirectives: Object.fromEntries([...trackIds].map((trackId) => [
+          trackId,
+          {
+            ...section.trackDirectives?.[trackId],
+            ...styledSection.trackDirectives?.[trackId],
+            musicalFunction: section.trackDirectives?.[trackId]?.musicalFunction,
+            handoffFromTrackId: section.trackDirectives?.[trackId]?.handoffFromTrackId,
+          },
+        ])),
+      };
+    }),
+    compositionIntelligence: ({
+      ...orchestrationPlan.compositionIntelligence,
+      ...(orchestrationPlan.compositionIntelligence?.groove
+        ? {
+          groove: {
+            ...orchestrationPlan.compositionIntelligence.groove,
+            events: orchestrationPlan.compositionIntelligence.groove.events.map((event) => {
+              const hierarchyIndex = orchestrationPlan.hierarchy.sections.findIndex((section) =>
+                section.id === event.sectionId);
+              const fillMode = stylePlan.sections[hierarchyIndex]?.operations
+                .find((operation) => operation.startsWith("fills:"))
+                ?.slice("fills:".length);
+              return fillMode === "frequent" && event.responsibility === "pulse"
+                ? {
+                  ...event,
+                  gesture: "fill" as const,
+                  velocity: midi((event.velocity ?? 72) + 5),
+                }
+                : event;
+            }),
+          },
+        }
+        : {}),
+    }) as CompositionIntelligencePlan,
+    provenance: {
+      ...orchestrationPlan.provenance,
+      parameters: {
+        ...orchestrationPlan.provenance.parameters,
+        styleGrammarVersion: input.style.grammar?.version ?? "legacy",
+        styleGrammarEvidenceSha256: input.style.grammar?.evidenceSha256 ?? "legacy",
+        generationPreferenceVersion: input.generationPreference?.calibrationVersion ?? 0,
+        generationPreferenceEvidenceSha256: input.generationPreference?.evidenceSha256 ?? "none",
+      },
+    },
+    generationPreference: input.generationPreference ?? null,
   };
 }
 
@@ -1773,7 +2133,7 @@ function hierarchySpaceMapForTrack(
 }
 
 export class CompositionEngine {
-  compose(input: {
+  private composeWithCoordinatedGroove(input: {
     songModel: SongModelData;
     plan: ArrangementPlan;
     tracks: Array<{ id: string; name: string; role: string; instrument?: string }>;
@@ -2093,7 +2453,7 @@ export class CompositionEngine {
         ));
         return [{
           ...note,
-          id: `${track.id}:${Math.round(note.start * 1_000_000)}:${index}`,
+          id: note.id,
           pitch: midi(pitch),
           duration,
           motif: motif ? {
@@ -2359,6 +2719,349 @@ export class CompositionEngine {
       input.plan.compositionIntelligence,
     );
   }
+  private composeWithStyleGrammar(input: {
+    songModel: SongModelData;
+    plan: ArrangementPlan;
+    tracks: Array<{ id: string; name: string; role: string; instrument?: string }>;
+    harmony: ReturnType<HarmonyEngine["generate"]>;
+    spaceMap?: ArrangementSpaceMap;
+  }): Array<TrackModel> {
+    const bpm = Math.max(40, input.songModel.tempoMap[0]?.bpm || 92);
+    const beat = 60 / bpm;
+    const barSeconds = secondsPerBar(
+      bpm,
+      input.songModel.meterMap[0]?.meter,
+    );
+    return input.tracks.map((track) => {
+      const definition = getInstrumentDefinition(track.instrument || track.name, track.role);
+      const notes: MusicalNote[] = [];
+      const appliedDirectives: NonNullable<TrackModel["appliedDirectives"]> = [];
+      const identity = `${track.name} ${track.role}`.toLowerCase();
+      if (identity.includes("vocal") && input.songModel.melody.length) {
+        // Melody evidence is never extrapolated. It is merely split at
+        // explicitly active section boundaries so a vocal arrangement can
+        // enter/leave without leaking notes through inactive sections.
+        input.plan.sections.forEach((section, sectionIndex) => {
+          const bounds = arrangementSectionSeconds(input.songModel, section, barSeconds);
+          const sectionStart = bounds.start;
+          const sectionEnd = bounds.end;
+          const action = section.tracks[track.id] ?? section.tracks[track.name] ?? "main_harmony";
+          const active = section.activeTracks
+            ? section.activeTracks.includes(track.id) || section.activeTracks.includes(track.name)
+            : action !== "none";
+          if (!active || action === "none") return;
+          const directive = section.trackDirectives?.[track.id] ?? section.trackDirectives?.[track.name];
+          if (directive) {
+            appliedDirectives.push({
+              section: section.section,
+              startBar: section.startBar,
+              endBar: section.endBar,
+              start: sectionStart,
+              end: sectionEnd,
+              directive,
+            });
+          }
+          input.songModel.melody.forEach((note, noteIndex) => {
+            const start = Math.max(sectionStart, note.start);
+            const end = Math.min(sectionEnd, note.end);
+            if (end <= start) return;
+            notes.push({
+              id: `${track.id}-melody-${noteIndex}-${sectionIndex}`,
+              start: round(start),
+              duration: round(end - start),
+              pitch: Math.max(definition.playableRange.min, Math.min(definition.playableRange.max, midi(note.pitch))),
+              velocity: midi(note.velocity * 127),
+              voice: "melody",
+            });
+          });
+        });
+      } else if (!identity.includes("vocal")) {
+        input.plan.sections.forEach((section, sectionIndex) => {
+          const bounds = arrangementSectionSeconds(input.songModel, section, barSeconds);
+          const sectionStart = bounds.start;
+          const sectionEnd = bounds.end;
+          const action = section.tracks[track.id] ?? section.tracks[track.name] ?? "main_harmony";
+          const active = section.activeTracks
+            ? section.activeTracks.includes(track.id) || section.activeTracks.includes(track.name)
+            : action !== "none";
+          if (!active || action === "none") return;
+          const directive = section.trackDirectives?.[track.id] ??
+            section.trackDirectives?.[track.name];
+          const reasoning = input.plan.compositionIntelligence?.version === "2.0"
+            ? input.plan.compositionIntelligence : undefined;
+          const hierarchySection = input.plan.hierarchy?.sections[sectionIndex];
+          const roleDecision = reasoning?.instrumentRoles.find((role) => role.trackId === track.id);
+          const sectionArc = hierarchySection
+            ? reasoning?.tensionRelease.find((arc) => arc.sectionId === hierarchySection.id)
+            : undefined;
+          if (directive) {
+            appliedDirectives.push({
+              section: section.section,
+              startBar: section.startBar,
+              endBar: section.endBar,
+              start: sectionStart,
+              end: sectionEnd,
+              directive,
+            });
+          }
+          const rhythmic = clamp((directive?.rhythmicActivity ?? section.density) +
+            (reasoning ? (sectionArc?.tension ?? 0) * .12 : 0));
+          const groove = section.operations.find((operation) =>
+            operation.startsWith("groove:"))?.slice("groove:".length);
+          const instrumentation = section.operations.find((operation) =>
+            operation.startsWith("instrumentation:"))?.slice("instrumentation:".length);
+          const fillMode = section.operations.find((operation) =>
+            operation.startsWith("fills:"))?.slice("fills:".length);
+          const step = identity.includes("drum") || identity.includes("rhythm")
+            ? beat * (groove === "four_on_floor" ? 1 :
+              groove === "syncopated" || rhythmic > .7 ? .5 : 1)
+            : beat * (directive?.harmonicActivity && directive.harmonicActivity > .65 ? 1 : 2);
+          for (let time = sectionStart; time < sectionEnd; time += step) {
+            const phraseDecision = compositionPhraseAtTime(
+              input.plan, input.songModel, sectionIndex, time, barSeconds,
+            );
+            const motifOffset = phraseDecision
+              ? (hashSeed(`${phraseDecision.motifRef}:${roleDecision?.function ?? "harmony"}`) % 3) - 1
+              : 0;
+            const beatIndex = Math.round((time - sectionStart) / beat);
+            const chord = input.harmony.find((candidate) =>
+              candidate.start <= time + .001 && candidate.end > time + .001)
+              ?? input.harmony.find((candidate) => candidate.start < sectionEnd && candidate.end > sectionStart);
+            const chordTone = chord?.tones[(beatIndex + sectionIndex) % (chord?.tones.length || 1)] ?? 60;
+            let pitch = identity.includes("bass")
+              ? chordTone - 24
+              : identity.includes("drum") || identity.includes("rhythm")
+                ? fillMode !== undefined &&
+                  (directive?.fill || fillMode === "frequent") &&
+                  beatIndex % 4 === 3
+                  ? 45
+                  : [36, 42, 38, 42][beatIndex % 4]
+                : chordTone + (directive?.register === "high" || identity.includes("string") || identity.includes("brass") ? 12 : 0);
+            if (instrumentation === "electronic" && identity.includes("synth")) pitch += 12;
+            if (instrumentation === "acoustic" && /piano|guitar|keys/.test(identity)) pitch -= 12;
+            if (instrumentation === "orchestral" && /string|brass/.test(identity)) pitch += 12;
+            if (reasoning && !identity.includes("drum") && !identity.includes("rhythm")) {
+              pitch += motifOffset * (roleDecision?.function === "counterline" ? 2 : 1);
+              if (phraseDecision?.intent === "answer" && beatIndex % 2 === 1) pitch -= 2;
+              if (section.operations.includes("develop_motif")) {
+                pitch += (sectionIndex + beatIndex) % 3;
+              }
+              if (section.operations.includes("transform_motif")) {
+                pitch += beatIndex % 3 - 1;
+              }
+              if (section.operations.includes("motivic_phrase")) {
+                pitch += motifOffset;
+              }
+              if (section.operations.includes("preserve_motif")) {
+                pitch -= motifOffset;
+              }
+              if (section.operations.includes("repeat_motif")) {
+                pitch -= sectionIndex % 2;
+              }
+            }
+            const targetRegister = directive?.register
+              ? definition.registers.find((register) => register.name === directive.register)
+              : undefined;
+            const preferred = targetRegister ?? definition.comfortableRange;
+            while (pitch < preferred.min) pitch += 12;
+            while (pitch > preferred.max) pitch -= 12;
+            pitch = Math.max(preferred.min, Math.min(preferred.max, pitch));
+            pitch = Math.max(definition.playableRange.min, Math.min(definition.playableRange.max, pitch));
+            const isEntry = Math.abs(time - sectionStart) < .001;
+            const isExit = time + step >= sectionEnd;
+            const duration = round(Math.min(
+              step * (identity.includes("pad") ? 1.8 :
+                section.operations.includes("continuous_phrase") ? .98 :
+                isExit ? .65 : .9),
+              sectionEnd - time,
+            ));
+            const hierarchyIntent = hierarchyEventIntent(
+              input.plan, sectionIndex, track.id, track.name, time, input.songModel, barSeconds,
+            );
+            const callResponseRest = section.operations.includes("call_response") &&
+              /counter|string|brass/.test(identity) &&
+              Math.floor(beatIndex / 2) % 2 === 0;
+            const sparseAnswerRest = section.operations.includes("sparse_answers") &&
+              /counter|string|brass/.test(identity) &&
+              beatIndex % 4 !== 3;
+            const grooveOffset = groove === "swung" && beatIndex % 2 === 1
+              ? beat / 6
+              : groove === "syncopated" && beatIndex % 2 === 1
+                ? beat / 8
+                : 0;
+            // Do not replace a measured vocal rest with a guessed one. The
+            // observed silent map is intentionally permissive; only measured
+            // voiced occupancy removes a phrase/fill event.
+            if (!callResponseRest && !sparseAnswerRest &&
+              (hierarchyIntent !== "support_vocal" ||
+              !intersectsObservedVoice(time, time + duration, input.spaceMap))) {
+              notes.push({
+                id: `${track.id}-${sectionIndex}-${beatIndex}`,
+                start: round(Math.min(sectionEnd - definition.constraints.minNoteDuration,
+                  time + grooveOffset)),
+                duration,
+                pitch: midi(pitch),
+                velocity: midi(42 + (directive?.dynamicTarget ?? section.energy) * 66 +
+                  (reasoning ? (sectionArc?.tension ?? 0) * 10 - (sectionArc?.release ?? 0) * 8 +
+                    (phraseDecision?.tension ?? 0) * 4 : 0) +
+                  (isEntry ? 6 : 0) +
+                  (["build", "swell", "riser"].includes(directive?.transition ?? "")
+                    ? beatIndex * .5 : 0) +
+                  (directive?.transition === "cut" && isExit ? -12 : 0) +
+                  (section.operations.includes("dynamic_arc")
+                    ? Math.sin((time - sectionStart) / Math.max(.001, sectionEnd - sectionStart) * Math.PI) * 10
+                    : 0) +
+                  (section.operations.includes("additive_layers") ? sectionIndex * 2 : 0) +
+                  (beatIndex % 4 === 0 ? 8 : 0)),
+                voice: identity.includes("bass") ? "bass" : identity.includes("drum") ? "percussion" : "harmony",
+              });
+            }
+            if (directive?.fill && (identity.includes("drum") || identity.includes("rhythm")) && isExit &&
+              (hierarchyIntent === undefined || hierarchyIntent === "use_vocal_space" || hierarchyIntent === "follow_section") &&
+              !intersectsObservedVoice(Math.max(sectionStart, sectionEnd - beat * .5), sectionEnd - beat * .28, input.spaceMap)) {
+              notes.push({
+                id: `${track.id}-${sectionIndex}-${beatIndex}-fill`,
+                start: round(Math.max(sectionStart, sectionEnd - beat * .5)),
+                duration: round(Math.max(definition.constraints.minNoteDuration, beat * .22)),
+                pitch: 45,
+                velocity: midi(62 + section.energy * 55),
+                voice: "percussion",
+              });
+            }
+          }
+        });
+      }
+      return {
+        id: track.id,
+        instrument: definition.id,
+        instrumentDefinition: definition,
+        role: track.role,
+        notes,
+        cc: [],
+        articulations: [],
+        automation: [],
+        directive: appliedDirectives.length === 1 ? appliedDirectives[0].directive : undefined,
+        appliedDirectives,
+        mapping: {
+          midiChannel: definition.family === "drums" ? 9 : undefined,
+          program: definition.id === "bass" ? 33 : definition.family === "strings" ? 48 : 0,
+          articulationMap: Object.fromEntries(definition.articulations.map((articulation, index) => [articulation, 24 + index])),
+          controlMap: definition.directiveMappings?.controls,
+        },
+        source: "COMPOSITION_ENGINE",
+        version: input.plan.compositionIntelligence?.version === "2.0" ? 2 : 1,
+        provenance: provenance(
+          "COMPOSITION_ENGINE",
+          input.plan.compositionIntelligence?.version === "2.0" ? "2.0.0" : "1.0.0",
+          {
+            bpm,
+            compositionVersion: input.plan.compositionIntelligence?.version ?? "1.0",
+            compositionEvidenceSha256: input.plan.compositionIntelligence?.evidenceSha256 ?? "legacy",
+          },
+        ),
+      };
+    });
+  }
+
+  compose(input: {
+    songModel: SongModelData;
+    plan: ArrangementPlan;
+    tracks: Array<{ id: string; name: string; role: string; instrument?: string }>;
+    harmony: ReturnType<HarmonyEngine["generate"]>;
+    spaceMap?: ArrangementSpaceMap;
+  }): Array<TrackModel> {
+    const styled = this.composeWithStyleGrammar(input);
+    const coordinated = this.composeWithCoordinatedGroove(input);
+    const bpm = Math.max(40, input.songModel.tempoMap[0]?.bpm || 92);
+    const fallbackBarSeconds = secondsPerBar(bpm, input.songModel.meterMap[0]?.meter);
+    const grooveTrackIds = new Set(
+      input.plan.compositionIntelligence?.groove?.roles.map((role) => role.trackId) ?? [],
+    );
+    if (!grooveTrackIds.size) return styled;
+    const hasGrammar = input.plan.sections.some((section) =>
+      section.operations.some((operation) =>
+        operation.startsWith("groove:") ||
+        operation.startsWith("instrumentation:") ||
+        operation.startsWith("fills:")));
+    if (!hasGrammar) return coordinated;
+    return coordinated.map((track) => {
+      const sourceTrack = input.tracks.find((candidate) => candidate.id === track.id);
+      const evidenceBackedVocal = input.songModel.melody.length > 0 &&
+        /vocal|voice|melody/.test(`${sourceTrack?.name ?? ""} ${sourceTrack?.role ?? ""}`.toLowerCase());
+      if (evidenceBackedVocal) return track;
+      return {
+        ...track,
+        notes: track.notes.map((note, index, notes) => {
+          const sectionIndex = input.plan.sections.findIndex((candidate) => {
+            const bounds = arrangementSectionSeconds(input.songModel, candidate, fallbackBarSeconds);
+            return note.start >= bounds.start && note.start < bounds.end;
+          });
+          const section = input.plan.sections[Math.max(0, sectionIndex)];
+          const bounds = arrangementSectionSeconds(input.songModel, section, fallbackBarSeconds);
+          const directive = section.trackDirectives?.[track.id] ??
+            section.trackDirectives?.[input.tracks.find((item) => item.id === track.id)?.name ?? ""];
+          const operationValue = (prefix: string) => section.operations
+            .find((operation) => operation.startsWith(prefix))
+            ?.slice(prefix.length);
+          const grooveMode = operationValue("groove:");
+          const instrumentation = operationValue("instrumentation:");
+          const fillMode = operationValue("fills:");
+          const isPercussion = note.voice === "percussion";
+          const sectionProgress = clamp(
+            (note.start - bounds.start) / Math.max(.001, bounds.end - bounds.start),
+          );
+          const nextStart = notes[index + 1]?.start ?? bounds.end;
+          const phraseScale = section.operations.includes("continuous_phrase") ? 1.35 :
+            section.operations.includes("sparse_answers") ? .65 :
+            section.operations.includes("call_response") ? .8 : 1;
+          const developmentShift = section.operations.includes("transform_motif") ||
+            section.operations.includes("develop_motif")
+            ? index % 2 === 0 ? 0 : 2
+            : section.operations.includes("additive_layers") ? Math.min(4, sectionIndex) :
+            section.operations.includes("repeat_motif") ? 0 : 0;
+          const instrumentationShift = instrumentation === "electronic"
+            ? isPercussion ? 1 : 12
+            : instrumentation === "orchestral" && !isPercussion ? 12 : 0;
+          const fillPitch = fillMode === "frequent" && isPercussion &&
+            (notes[index + 1]?.start ?? bounds.end) >= bounds.end
+            ? 45
+            : note.pitch;
+          const grooveVelocity = grooveMode === "swung" ? (index % 2 ? -7 : 4) :
+            grooveMode === "syncopated" ? (index % 4 === 2 ? 8 : -2) :
+            grooveMode === "laid_back" ? -5 :
+            grooveMode === "driving" ? 6 : 0;
+          const responseVelocity = isPercussion ? 0 :
+            ((directive?.harmonicActivity ?? .5) - .5) * 18;
+          const instrumentationVelocity = instrumentation === "electronic" ? 4 :
+            instrumentation === "acoustic" ? -3 :
+            instrumentation === "orchestral" ? 2 : 0;
+          const fillVelocity = fillMode === "frequent" && isPercussion ? 3 : 0;
+          const transitionVelocity = ["build", "swell", "riser"].includes(directive?.transition ?? "")
+            ? sectionProgress * 10
+            : directive?.transition === "cut" ? -sectionProgress * 8 : 0;
+          const developmentVelocity = section.operations.includes("transform_motif") ||
+            section.operations.includes("develop_motif")
+            ? index % 2 === 0 ? -4 : 6
+            : section.operations.includes("additive_layers") ? sectionIndex * 2 :
+            section.operations.includes("dynamic_arc") ? Math.sin(sectionProgress * Math.PI) * 8 :
+            0;
+          return {
+            ...note,
+            duration: round(Math.max(
+              track.instrumentDefinition.constraints.minNoteDuration,
+              Math.min(note.duration * phraseScale, Math.max(
+                track.instrumentDefinition.constraints.minNoteDuration,
+                nextStart - note.start,
+              )),
+            )),
+            pitch: midi(fillPitch + instrumentationShift + developmentShift),
+            velocity: midi(note.velocity + grooveVelocity + instrumentationVelocity +
+              fillVelocity + responseVelocity + transitionVelocity + developmentVelocity),
+          };
+        }),
+      };
+    });
+  }
 }
 
 type HarmonySpan = ReturnType<HarmonyEngine["generate"]>[number];
@@ -2623,6 +3326,7 @@ export class PerformanceEngine {
         ...note,
         start: Math.max(
           appliedRange?.start ?? 0,
+          note.motif?.intention === "response" ? note.start : 0,
           round(note.start + offset),
         ),
         duration: round(note.duration + (articulation === "legato" ? profile.legatoOverlap : 0)),
@@ -3363,8 +4067,15 @@ export function buildTrackModels(input: {
   // Version is part of the identity: regenerating a saved Song Model produces
   // byte-stable expressive events, while a corrected model intentionally does not.
   const legacySeedIdentity = `${input.plan.id}:song-model:${input.plan.songModelVersion}:${input.seed ?? 0}`;
+  const hasGenerationVocabulary = Boolean(input.style.grammar || input.plan.generationPreference);
+  const grammarIdentity = `${input.style.grammar?.version}:${input.style.grammar?.evidenceSha256}`;
+  const preferenceIdentity = `${input.plan.generationPreference?.calibrationVersion}:${input.plan.generationPreference?.evidenceSha256}`;
   const deterministicSeed = hashSeed(input.plan.compositionIntelligence?.version === "2.0"
-    ? `${legacySeedIdentity}:composition:2.0:${input.plan.compositionIntelligence.evidenceSha256}`
+    ? `${legacySeedIdentity}:composition:2.0:${input.plan.compositionIntelligence.evidenceSha256}${
+        hasGenerationVocabulary
+          ? `:grammar:${grammarIdentity}:preference:${preferenceIdentity}`
+          : ""
+      }`
     : legacySeedIdentity);
   const canonicalTimelineSha256 = canonicalPerformanceTimelineSha256(input.songModel);
   const phraseIds = canonicalPerformancePhraseIds(input.songModel);
@@ -3767,7 +4478,7 @@ function materializeExplicitDoublings(
     }
     const doubled = {
       ...track,
-      notes: notes.sort((left, right) => left.start - right.start || left.id.localeCompare(right.id)),
+      notes,
     };
     return track.performanceEvidence
       ? {

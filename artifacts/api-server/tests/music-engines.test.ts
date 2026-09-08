@@ -33,6 +33,218 @@ test("4x windowed-sinc true peak meter detects an inter-sample over", () => {
   assert.ok(Number.isFinite(truePeak) && truePeak < 2);
 });
 
+test("style grammar and approved producer preferences alter later TrackModels reproducibly", () => {
+  const model = song({
+    contractVersion: "2.0",
+    sections: [
+      { name: "Verse", startBar: 1, endBar: 4, energy: .6 },
+      { name: "Chorus", startBar: 5, endBar: 8, energy: .75 },
+    ],
+  });
+  const tracks = [
+    { id: "drums", name: "Drums", role: "rhythm" },
+    { id: "bass", name: "Bass", role: "foundation" },
+    { id: "piano", name: "Piano", role: "harmony" },
+    { id: "strings", name: "Strings", role: "counterline" },
+  ];
+  const preference = (version: number, direction: "restrained" | "progressive") => ({
+    contractVersion: "1.0" as const,
+    calibrationId: `calibration-${version}`,
+    calibrationVersion: version,
+    heldOutAgreement: .8,
+    baselineAgreement: .7,
+    heldOutExamples: 6,
+    evaluationSha256: direction === "progressive" ? "c".repeat(64) : "d".repeat(64),
+    evidenceSha256: direction === "progressive" ? "a".repeat(64) : "b".repeat(64),
+    effects: direction === "progressive"
+      ? {
+          orchestrationDensity: .18, responseFrequency: .75,
+          roleEmphasis: "counterline" as const, voicingCharacter: "wide" as const,
+          development: "progressive" as const, transitionIntensity: .75,
+        }
+      : {
+          orchestrationDensity: -.18, responseFrequency: .25,
+          roleEmphasis: "foundation" as const, voicingCharacter: "close" as const,
+          development: "restrained" as const, transitionIntensity: .25,
+        },
+  });
+  const materialize = (
+    styleName: string,
+    approvedPreference: ReturnType<typeof preference>,
+  ) => {
+    const style = createStyleSpec(styleName, {
+      density: .35, harmonyComplexity: 6, energy: .6,
+      orchestraSize: .35, rhythmIntensity: .7,
+    }, approvedPreference);
+    const plan = createArrangementPlan({
+      arrangementId: "grammar-preference-regression",
+      version: 2,
+      songModel: model,
+      style,
+      tracks,
+      parameters: {
+        seed: 9182, songModelVersion: 3, density: .35, energy: .6,
+        orchestraSize: .35, rhythmIntensity: .7, styleGrammarVersion: "1.0",
+      },
+      compositionVersion: "2.0",
+      generationPreference: approvedPreference,
+    });
+    return {
+      style,
+      plan,
+      models: buildTrackModels({ songModel: model, plan, tracks, style, seed: 9182 }),
+    };
+  };
+
+  const jazz = materialize("jazz quartet", preference(1, "restrained"));
+  const repeatedJazz = materialize("jazz quartet", preference(1, "restrained"));
+  const electronic = materialize("electronic house", preference(1, "restrained"));
+  const preferred = materialize("jazz quartet", preference(2, "progressive"));
+
+  assert.equal(jazz.style.grammar?.version, "1.0");
+  assert.equal(jazz.style.grammar?.vocabulary.groove, "swung");
+  assert.equal(electronic.style.grammar?.vocabulary.groove, "four_on_floor");
+  assert.notDeepEqual(jazz.style.grammar?.vocabulary, electronic.style.grammar?.vocabulary);
+  assert.deepEqual(jazz.models, repeatedJazz.models);
+  assert.notDeepEqual(
+    jazz.models.map((track) => track.notes),
+    electronic.models.map((track) => track.notes),
+  );
+  assert.notDeepEqual(
+    jazz.models.map((track) => track.notes),
+    preferred.models.map((track) => track.notes),
+  );
+  assert.notDeepEqual(jazz.plan.sections, preferred.plan.sections);
+  assert.equal(preferred.plan.generationPreference?.calibrationVersion, 2);
+  assert.equal(
+    preferred.plan.provenance.parameters.generationPreferenceEvidenceSha256,
+    preference(2, "progressive").evidenceSha256,
+  );
+  assert.equal(
+    preferred.plan.provenance.parameters.styleGrammarEvidenceSha256,
+    preferred.style.grammar?.evidenceSha256,
+  );
+
+  const semanticMaterialize = (
+    vocabulary: NonNullable<typeof jazz.style.grammar>["vocabulary"],
+    approvedPreference: Parameters<typeof createStyleSpec>[2] =
+      preference(1, "restrained"),
+  ) => {
+    const style = structuredClone(jazz.style);
+    style.grammar = {
+      version: "1.0",
+      // Deliberately fixed so each assertion proves semantic consumption
+      // rather than a different performance seed.
+      evidenceSha256: "f".repeat(64),
+      vocabulary,
+    };
+    style.harmony.voicing = vocabulary.voicing;
+    const plan = createArrangementPlan({
+      arrangementId: "isolated-grammar-sensitivity",
+      version: 1,
+      songModel: model,
+      style,
+      tracks,
+      parameters: {
+        seed: 9182, songModelVersion: 3, density: .35, energy: .6,
+        orchestraSize: .35, rhythmIntensity: .7, styleGrammarVersion: "1.0",
+      },
+      compositionVersion: "2.0",
+      generationPreference: approvedPreference,
+    });
+    return buildTrackModels({ songModel: model, plan, tracks, style, seed: 9182 });
+  };
+  const grammarBaseline = {
+    ...jazz.style.grammar!.vocabulary,
+    voicing: "close" as const,
+  };
+  const grammarVariants = [
+    { key: "groove", value: "straight" },
+    { key: "voicing", value: "wide" },
+    { key: "articulation", value: "legato" },
+    { key: "instrumentation", value: "electronic" },
+    { key: "phraseBehavior", value: "continuous" },
+    { key: "fills", value: "none" },
+    { key: "transitions", value: "riser" },
+    { key: "development", value: "repetition" },
+  ] as const;
+  const baselineModels = semanticMaterialize(grammarBaseline, null);
+  for (const variant of grammarVariants) {
+    assert.notDeepEqual(
+      semanticMaterialize(
+        { ...grammarBaseline, [variant.key]: variant.value },
+        null,
+      ),
+      baselineModels,
+      `${variant.key} must alter generated TrackModels`,
+    );
+  }
+
+  const preferenceBaseline = preference(1, "restrained");
+  const preferenceVariants = [
+    { orchestrationDensity: .18 },
+    { responseFrequency: .75 },
+    { roleEmphasis: "counterline" as const },
+    { voicingCharacter: "wide" as const },
+    { development: "progressive" as const },
+    { transitionIntensity: .75 },
+  ];
+  const preferenceBaselineModels = semanticMaterialize(
+    grammarBaseline,
+    preferenceBaseline,
+  );
+  for (const effects of preferenceVariants) {
+    const variant = {
+      ...preferenceBaseline,
+      effects: { ...preferenceBaseline.effects, ...effects },
+    };
+    assert.notDeepEqual(
+      semanticMaterialize(grammarBaseline, variant),
+      preferenceBaselineModels,
+      `${Object.keys(effects)[0]} must alter generated TrackModels`,
+    );
+  }
+});
+
+test("historical v2 fill directives preserve their original drum vocabulary", () => {
+  const model = song({
+    contractVersion: "2.0",
+    sections: [
+      { name: "A", startBar: 1, endBar: 2, energy: .7 },
+      { name: "B", startBar: 3, endBar: 4, energy: .7 },
+    ],
+  });
+  const historicalStyle = createStyleSpec("pop", {
+    density: .7, harmonyComplexity: 5, energy: .7, rhythmIntensity: .7,
+  });
+  delete historicalStyle.grammar;
+  const plan = createArrangementPlan({
+    arrangementId: "historical-fill-replay",
+    version: 1,
+    songModel: model,
+    style: historicalStyle,
+    tracks: [{ id: "drums", name: "Drums", role: "rhythm" }],
+    parameters: {
+      seed: 44, songModelVersion: 2, density: .7, energy: .7,
+      orchestraSize: 1, rhythmIntensity: .7,
+    },
+    compositionVersion: "2.0",
+  });
+  plan.sections[0].activeTracks = ["drums"];
+  plan.sections[0].trackDirectives!.drums.fill = true;
+  const [drums] = buildTrackModels({
+    songModel: model,
+    plan,
+    tracks: [{ id: "drums", name: "Drums", role: "rhythm" }],
+    style: historicalStyle,
+    seed: 44,
+  });
+  assert.deepEqual(
+    drums.notes.slice(0, 4).map((note) => note.pitch),
+    [72, 66, 74, 66],
+  );
+});
+
 const song = (overrides: Partial<SongModelData> = {}): SongModelData => ({
   contractVersion: "1.0",
   validation: { status: "accepted", issues: [] },
@@ -113,7 +325,13 @@ test("verified bass fusion never creates notes without overlapping voiced eviden
   assert.deepEqual(bass, []);
 });
 
-const planFor = (model: SongModelData, version = 7, controls: Record<string, number> = {}) => createArrangementPlan({
+const planFor = (
+  model: SongModelData,
+  version = 7,
+  controls: Record<string, number> = {},
+  styleGrammarVersion?: "1.0",
+  compositionVersion?: "2.0",
+) => createArrangementPlan({
   arrangementId: "arrangement-stable",
   version: 1,
   songModel: model,
@@ -124,7 +342,8 @@ const planFor = (model: SongModelData, version = 7, controls: Record<string, num
     { id: "drums", name: "Drums", role: "rhythm" },
     { id: "voice", name: "Voice", role: "vocal" },
   ],
-  parameters: { songModelVersion: version, ...controls },
+  parameters: { songModelVersion: version, ...controls, styleGrammarVersion },
+  compositionVersion,
 });
 
 test("Composition Intelligence v2 reuses motifs and changes performed events reproducibly", () => {
@@ -323,7 +542,14 @@ test("shared groove coordinates bass and drums across phrase boundaries without 
     songModel: model,
     style: createStyleSpec("pop", { density: .7, harmonyComplexity: 5, energy: .8 }),
     tracks,
-    parameters: { songModelVersion: 3, seed: 991, energy: .8, density: .7, rhythmIntensity: .8 },
+    parameters: {
+      songModelVersion: 3,
+      seed: 991,
+      energy: .8,
+      density: .7,
+      rhythmIntensity: .8,
+      styleGrammarVersion: "1.0",
+    },
     compositionVersion: "2.0",
   });
   const firstPlan = create();
@@ -340,6 +566,24 @@ test("shared groove coordinates bass and drums across phrase boundaries without 
   const outputs = buildTrackModels({
     songModel: model, plan: firstPlan, tracks, style: firstPlan.style, seed: 991,
   });
+  for (const trackId of ["bass", "drums"]) {
+    const output = outputs.find((track) => track.id === trackId)!;
+    const events = groove.events.filter((event) => event.trackId === trackId);
+    const eventById = new Map(events.map((event) => [event.id, event]));
+    assert.ok(output.notes.every((note) =>
+      eventById.has(note.id) || note.motif?.intention === "response"),
+    "grammar must not add fallback events outside the coordinated schedule");
+    assert.ok(output.notes.every((note, index, notes) =>
+      index === 0 || note.start >= notes[index - 1].start),
+    "grammar must preserve canonical event order");
+    assert.ok(output.notes.every((note) => {
+      const event = eventById.get(note.id)!;
+      const section = firstPlan.hierarchy.sections.find((candidate) =>
+        candidate.id === event.sectionId)!;
+      return note.start >= (section.startBar - 1) * 2 &&
+        note.start < section.endBar * 2;
+    }), "grammar must keep each coordinated event inside its source section");
+  }
   const bassStarts = outputs.find((track) => track.id === "bass")!.notes.map((note) => note.start);
   const drumStarts = outputs.find((track) => track.id === "drums")!.notes.map((note) => note.start);
   const shared = drumStarts.filter((start) =>
@@ -1332,7 +1576,8 @@ test("vocal evidence obeys ID and legacy-name section activation and clips at bo
       { name: "Chorus", startBar: 2, endBar: 2, energy: .8 },
     ],
   });
-  const plan = planFor(model);
+  const plan = planFor(model, 7, { seed: 3 }, "1.0", "2.0");
+  assert.ok(plan.compositionIntelligence?.groove);
   plan.sections[0].activeTracks = ["voice"];
   plan.sections[1].activeTracks = [];
   plan.sections[0].tracks.Voice = "main_harmony";
@@ -1340,12 +1585,12 @@ test("vocal evidence obeys ID and legacy-name section activation and clips at bo
   const vocalInput = { songModel: model, plan, style: plan.style, seed: 3,
     tracks: [{ id: "voice", name: "Voice", role: "vocal" }] };
   const [firstOnly] = buildTrackModels(vocalInput);
-  assert.deepEqual(firstOnly.notes.map((note) => [note.start, note.duration]), [[1.5, .5]]);
+  assert.deepEqual(firstOnly.notes.map((note) => [note.start, note.duration, note.pitch]), [[1.5, .5, 69]]);
 
   plan.sections[0].activeTracks = [];
   plan.sections[1].activeTracks = ["Voice"]; // legacy persisted name key
   const [legacyNamed] = buildTrackModels(vocalInput);
-  assert.deepEqual(legacyNamed.notes.map((note) => [note.start, note.duration]), [[2, .5]]);
+  assert.deepEqual(legacyNamed.notes.map((note) => [note.start, note.duration, note.pitch]), [[2, .5, 69]]);
 
   plan.sections[1].activeTracks = [];
   const [fullyInactive] = buildTrackModels(vocalInput);

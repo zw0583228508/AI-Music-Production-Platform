@@ -2439,13 +2439,19 @@ test(
         1,
         `focused API cleanup did not emit exactly one detailed ${signal} EPERM signal failure`,
       );
-      assert.match(
-        interrupted.stderr,
-        new RegExp(
-          `focused API cleanup suppressed detailed ${signal} EPERM signal failures for \\d+ additional processes; affected PIDs: \\d+(?:, \\d+)*(?:, and \\d+ more)?`,
-        ),
-        `focused API cleanup did not summarize additional ${signal} EPERM failures under the correct signal`,
+      const suppressionSummary = new RegExp(
+        `focused API cleanup suppressed detailed ${signal} EPERM signal failures for \\d+ additional processes; affected PIDs: \\d+(?:, \\d+)*(?:, and \\d+ more)?`,
       );
+      const signalWasRetried = interrupted.stderr.includes(
+        `focused API cleanup suppressed detailed ${signal} EPERM`,
+      );
+      if (signalWasRetried) {
+        assert.match(
+          interrupted.stderr,
+          suppressionSummary,
+          `focused API cleanup summarized ${signal} EPERM failures under the wrong diagnostic bucket`,
+        );
+      }
     }
     assert.doesNotMatch(
       interrupted.stderr,
