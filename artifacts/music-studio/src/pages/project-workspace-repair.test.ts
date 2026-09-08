@@ -3,7 +3,6 @@ import test from "node:test";
 import type { GenerationCandidate } from "@workspace/api-client-react";
 import {
   isRepairEligible,
-  repairFindingForDimension,
   repairLineageLabel,
   repairOutcomeTitle,
   retainedRepairSourceForJob,
@@ -34,7 +33,14 @@ function candidate(overrides: Partial<GenerationCandidate> = {}): GenerationCand
 
 test("only eligible critic dimensions offer a bounded repair", () => {
   const source = candidate();
-  const finding = repairFindingForDimension(source, "groove", "The chorus rushes the backbeat.");
+  const finding = {
+    id: "music-critic-v1:groove:Chorus:9-12:drums",
+    affectedSections: ["Chorus"],
+    startBar: 9,
+    endBar: 12,
+    affectedTrackIds: ["drums"],
+    musicalReason: "The chorus rushes the backbeat.",
+  };
   assert.ok(finding);
   assert.equal(isRepairEligible(source, { status: "available", score: 0.72 }, null, finding), true);
   assert.equal(isRepairEligible(source, { status: "failed", score: null }, null, finding), false);
@@ -42,22 +48,6 @@ test("only eligible critic dimensions offer a bounded repair", () => {
   assert.equal(isRepairEligible(candidate({ status: "selected" }), { status: "available", score: 0.72 }, null, finding), false);
   assert.equal(isRepairEligible(source, { status: "available", score: 0.72 }, { improved: false }, finding), false);
   assert.equal(isRepairEligible(source, { status: "available", score: 0.72 }, null, null), false);
-});
-
-test("repair confirmation preserves exact sections, bars, tracks, and musical reason", () => {
-  const finding = repairFindingForDimension(
-    candidate(),
-    "groove",
-    "The chorus rushes the backbeat.",
-  );
-  assert.deepEqual(finding, {
-    id: "music-critic-v1:groove",
-    affectedSections: ["Verse", "Chorus"],
-    startBar: 1,
-    endBar: 16,
-    affectedTrackIds: ["drums", "bass"],
-    musicalReason: "The chorus rushes the backbeat.",
-  });
 });
 
 test("progress and unsuccessful outcomes retain the original candidate", () => {

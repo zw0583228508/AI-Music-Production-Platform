@@ -77,8 +77,8 @@ import {
 import {
   applyBoundedRepair,
   MAX_REPAIR_ATTEMPTS,
-  normalizeRepairFinding,
   repairTimeBounds,
+  validateServerAuthoredRepairFinding,
 } from "./candidateRepair";
 import { evaluateCandidateMusicalFit } from "./candidateQuality";
 
@@ -1792,6 +1792,7 @@ class RepairScopeViolationError extends Error {
 
 export async function queueCandidateRepair(
   candidateId: string,
+  findingId: string,
   finding: CriticRepairFinding,
   ownerId: string,
   idempotencyKey?: string,
@@ -1814,8 +1815,11 @@ export async function queueCandidateRepair(
     .where(eq(musicProjectsTable.id, candidate.projectId))
     .limit(1);
   if (project?.ownerId !== ownerId) return null;
-  const normalizedFinding = normalizeRepairFinding(
+  const normalizedFinding = validateServerAuthoredRepairFinding(
+    findingId,
     finding,
+    Object.values(candidate.evaluation.musicCritic!.dimensions)
+      .flatMap((dimension) => dimension.findings ?? []),
     candidate.evaluatedPlan,
     candidate.trackModels,
   );

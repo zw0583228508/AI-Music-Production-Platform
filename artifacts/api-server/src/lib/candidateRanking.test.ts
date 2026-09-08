@@ -29,14 +29,14 @@ const musicCritic: CandidateEvaluation["musicCritic"] = {
     sparse: true,
   },
   dimensions: {
-    vocalFit: { status: "unavailable", score: null, evidence: [], explanation: "safe-vocal-summary" },
-    harmony: { status: "unavailable", score: null, evidence: [], explanation: "safe-harmony-summary" },
-    development: { status: "unavailable", score: null, evidence: [], explanation: "safe-development-summary" },
-    contrastAndTransitions: { status: "unavailable", score: null, evidence: [], explanation: "safe-transition-summary" },
-    registerCollisions: { status: "unavailable", score: null, evidence: [], explanation: "safe-register-summary" },
-    playability: { status: "unavailable", score: null, evidence: [], explanation: "safe-playability-summary" },
-    repetition: { status: "unavailable", score: null, evidence: [], explanation: "safe-repetition-summary" },
-    styleAndControlAdherence: { status: "unavailable", score: null, evidence: [], explanation: "safe-style-summary" },
+    vocalFit: { status: "unavailable", score: null, evidence: [], explanation: "safe-vocal-summary", findings: [] },
+    harmony: { status: "unavailable", score: null, evidence: [], explanation: "safe-harmony-summary", findings: [] },
+    development: { status: "unavailable", score: null, evidence: [], explanation: "safe-development-summary", findings: [] },
+    contrastAndTransitions: { status: "unavailable", score: null, evidence: [], explanation: "safe-transition-summary", findings: [] },
+    registerCollisions: { status: "unavailable", score: null, evidence: [], explanation: "safe-register-summary", findings: [] },
+    playability: { status: "unavailable", score: null, evidence: [], explanation: "safe-playability-summary", findings: [] },
+    repetition: { status: "unavailable", score: null, evidence: [], explanation: "safe-repetition-summary", findings: [] },
+    styleAndControlAdherence: { status: "unavailable", score: null, evidence: [], explanation: "safe-style-summary", findings: [] },
   },
 };
 

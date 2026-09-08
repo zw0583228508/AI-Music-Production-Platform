@@ -89,6 +89,27 @@ export function normalizeRepairFinding(
   };
 }
 
+export function validateServerAuthoredRepairFinding(
+  findingId: string,
+  submittedFinding: CriticRepairFinding,
+  serverFindings: CriticRepairFinding[],
+  plan: ArrangementPlan,
+  trackModels: TrackModel[],
+): CriticRepairFinding {
+  const normalizedFinding = normalizeRepairFinding(submittedFinding, plan, trackModels);
+  const serverFinding = serverFindings.find((item) => item.id === findingId);
+  if (!serverFinding) {
+    throw new Error("The selected critic finding is not available for this candidate");
+  }
+  const normalizedServerFinding = normalizeRepairFinding(serverFinding, plan, trackModels);
+  if (
+    findingId !== normalizedFinding.id ||
+    !isDeepStrictEqual(normalizedFinding, normalizedServerFinding)
+  ) {
+    throw new Error("Repair scope does not match the server-authored critic finding");
+  }
+  return normalizedServerFinding;
+}
 export function repairTimeBounds(
   finding: CriticRepairFinding,
   tempoMap: Array<{ time: number; bpm: number }>,

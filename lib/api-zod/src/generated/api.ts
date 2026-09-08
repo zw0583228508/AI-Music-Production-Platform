@@ -574,26 +574,98 @@ export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluation
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMin = 0;
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
 
+
+
+
+
+
+
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax = 2000;
+
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+
+
+
+
+
+
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax = 2000;
 
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMin = 0;
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
 
+
+
+
+
+
+
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax = 2000;
+
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+
+
+
+
+
+
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax = 2000;
 
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMin = 0;
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
 
+
+
+
+
+
+
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax = 2000;
+
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+
+
+
+
+
+
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax = 2000;
 
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMin = 0;
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
 
+
+
+
+
+
+
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax = 2000;
+
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
+
+
+
+
+
+
+
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax = 2000;
 
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationStrategyIndexMin = 0;
 
@@ -783,7 +855,15 @@ export const GetProjectResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "harmony": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -793,7 +873,15 @@ export const GetProjectResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "development": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -803,7 +891,15 @@ export const GetProjectResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "contrastAndTransitions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -813,7 +909,15 @@ export const GetProjectResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "registerCollisions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -823,7 +927,15 @@ export const GetProjectResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "playability": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -833,7 +945,15 @@ export const GetProjectResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "repetition": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -843,7 +963,15 @@ export const GetProjectResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "styleAndControlAdherence": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -853,7 +981,15 @@ export const GetProjectResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 })
 })
 }),zod.null()]),
@@ -3543,26 +3679,98 @@ export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriti
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMin = 0;
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
 
+
+
+
+
+
+
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax = 2000;
+
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+
+
+
+
+
+
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax = 2000;
 
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMin = 0;
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
 
+
+
+
+
+
+
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax = 2000;
+
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+
+
+
+
+
+
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax = 2000;
 
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMin = 0;
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
 
+
+
+
+
+
+
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax = 2000;
+
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+
+
+
+
+
+
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax = 2000;
 
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMin = 0;
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
 
+
+
+
+
+
+
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax = 2000;
+
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
+
+
+
+
+
+
+
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax = 2000;
 
 export const listArrangementsResponseGenerationProvenanceOneEvaluationStrategyIndexMin = 0;
 
@@ -3708,7 +3916,15 @@ export const ListArrangementsResponseItem = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "harmony": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -3718,7 +3934,15 @@ export const ListArrangementsResponseItem = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "development": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -3728,7 +3952,15 @@ export const ListArrangementsResponseItem = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "contrastAndTransitions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -3738,7 +3970,15 @@ export const ListArrangementsResponseItem = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "registerCollisions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -3748,7 +3988,15 @@ export const ListArrangementsResponseItem = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "playability": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -3758,7 +4006,15 @@ export const ListArrangementsResponseItem = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "repetition": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -3768,7 +4024,15 @@ export const ListArrangementsResponseItem = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "styleAndControlAdherence": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -3778,7 +4042,15 @@ export const ListArrangementsResponseItem = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 })
 })
 }),zod.null()]),
@@ -3886,26 +4158,98 @@ export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCrit
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMin = 0;
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
 
+
+
+
+
+
+
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax = 2000;
+
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+
+
+
+
+
+
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax = 2000;
 
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMin = 0;
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
 
+
+
+
+
+
+
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax = 2000;
+
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+
+
+
+
+
+
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax = 2000;
 
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMin = 0;
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
 
+
+
+
+
+
+
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax = 2000;
+
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+
+
+
+
+
+
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax = 2000;
 
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMin = 0;
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
 
+
+
+
+
+
+
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax = 2000;
+
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
+
+
+
+
+
+
+
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax = 2000;
 
 export const createArrangementResponseGenerationProvenanceOneEvaluationStrategyIndexMin = 0;
 
@@ -4051,7 +4395,15 @@ export const CreateArrangementResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "harmony": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4061,7 +4413,15 @@ export const CreateArrangementResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "development": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4071,7 +4431,15 @@ export const CreateArrangementResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "contrastAndTransitions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4081,7 +4449,15 @@ export const CreateArrangementResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "registerCollisions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4091,7 +4467,15 @@ export const CreateArrangementResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "playability": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4101,7 +4485,15 @@ export const CreateArrangementResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "repetition": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4111,7 +4503,15 @@ export const CreateArrangementResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "styleAndControlAdherence": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4121,7 +4521,15 @@ export const CreateArrangementResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 })
 })
 }),zod.null()]),
@@ -4325,26 +4733,98 @@ export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCrit
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMin = 0;
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
 
+
+
+
+
+
+
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax = 2000;
+
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+
+
+
+
+
+
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax = 2000;
 
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMin = 0;
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
 
+
+
+
+
+
+
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax = 2000;
+
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+
+
+
+
+
+
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax = 2000;
 
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMin = 0;
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
 
+
+
+
+
+
+
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax = 2000;
+
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+
+
+
+
+
+
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax = 2000;
 
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMin = 0;
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
 
+
+
+
+
+
+
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax = 2000;
+
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
+
+
+
+
+
+
+
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax = 2000;
 
 export const updateArrangementResponseGenerationProvenanceOneEvaluationStrategyIndexMin = 0;
 
@@ -4490,7 +4970,15 @@ export const UpdateArrangementResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "harmony": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4500,7 +4988,15 @@ export const UpdateArrangementResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "development": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4510,7 +5006,15 @@ export const UpdateArrangementResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "contrastAndTransitions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4520,7 +5024,15 @@ export const UpdateArrangementResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "registerCollisions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4530,7 +5042,15 @@ export const UpdateArrangementResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "playability": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4540,7 +5060,15 @@ export const UpdateArrangementResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "repetition": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4550,7 +5078,15 @@ export const UpdateArrangementResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "styleAndControlAdherence": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4560,7 +5096,15 @@ export const UpdateArrangementResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 })
 })
 }),zod.null()]),
@@ -4789,26 +5333,98 @@ export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluation
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMin = 0;
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
 
+
+
+
+
+
+
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax = 2000;
+
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+
+
+
+
+
+
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax = 2000;
 
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMin = 0;
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
 
+
+
+
+
+
+
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax = 2000;
+
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+
+
+
+
+
+
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax = 2000;
 
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMin = 0;
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
 
+
+
+
+
+
+
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax = 2000;
+
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+
+
+
+
+
+
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax = 2000;
 
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMin = 0;
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
 
+
+
+
+
+
+
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax = 2000;
+
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
+
+
+
+
+
+
+
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax = 2000;
 
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationStrategyIndexMin = 0;
 
@@ -4954,7 +5570,15 @@ export const RestoreArrangementRevisionResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "harmony": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4964,7 +5588,15 @@ export const RestoreArrangementRevisionResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "development": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4974,7 +5606,15 @@ export const RestoreArrangementRevisionResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "contrastAndTransitions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4984,7 +5624,15 @@ export const RestoreArrangementRevisionResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "registerCollisions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4994,7 +5642,15 @@ export const RestoreArrangementRevisionResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "playability": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -5004,7 +5660,15 @@ export const RestoreArrangementRevisionResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "repetition": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -5014,7 +5678,15 @@ export const RestoreArrangementRevisionResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "styleAndControlAdherence": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -5024,7 +5696,15 @@ export const RestoreArrangementRevisionResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 })
 })
 }),zod.null()]),
@@ -5511,26 +6191,98 @@ export const listGenerationCandidatesResponseEvaluationMusicCriticOneScoreMax = 
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsVocalFitScoreMin = 0;
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
 
+
+
+
+
+
+
+
+export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax = 2000;
+
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+
+
+
+
+
+
+
+export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax = 2000;
 
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsDevelopmentScoreMin = 0;
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
 
+
+
+
+
+
+
+
+export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax = 2000;
+
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+
+
+
+
+
+
+
+export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax = 2000;
 
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMin = 0;
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
 
+
+
+
+
+
+
+
+export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax = 2000;
+
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+
+
+
+
+
+
+
+export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax = 2000;
 
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsRepetitionScoreMin = 0;
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
 
+
+
+
+
+
+
+
+export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax = 2000;
+
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
+
+
+
+
+
+
+
+
+export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax = 2000;
 
 export const listGenerationCandidatesResponseEvaluationStrategyIndexMin = 0;
 
@@ -5837,7 +6589,15 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "harmony": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -5847,7 +6607,15 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "development": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -5857,7 +6625,15 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "contrastAndTransitions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -5867,7 +6643,15 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "registerCollisions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -5877,7 +6661,15 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "playability": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -5887,7 +6679,15 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "repetition": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -5897,7 +6697,15 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "styleAndControlAdherence": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -5907,7 +6715,15 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 })
 })
 }),zod.null()]),
@@ -6002,26 +6818,98 @@ export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationM
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMin = 0;
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
 
+
+
+
+
+
+
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax = 2000;
+
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+
+
+
+
+
+
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax = 2000;
 
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMin = 0;
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
 
+
+
+
+
+
+
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax = 2000;
+
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+
+
+
+
+
+
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax = 2000;
 
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMin = 0;
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
 
+
+
+
+
+
+
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax = 2000;
+
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+
+
+
+
+
+
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax = 2000;
 
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMin = 0;
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
 
+
+
+
+
+
+
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax = 2000;
+
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
+
+
+
+
+
+
+
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax = 2000;
 
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationStrategyIndexMin = 0;
 
@@ -6167,7 +7055,15 @@ export const SelectGenerationCandidateResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "harmony": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -6177,7 +7073,15 @@ export const SelectGenerationCandidateResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "development": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -6187,7 +7091,15 @@ export const SelectGenerationCandidateResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "contrastAndTransitions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -6197,7 +7109,15 @@ export const SelectGenerationCandidateResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "registerCollisions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -6207,7 +7127,15 @@ export const SelectGenerationCandidateResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "playability": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -6217,7 +7145,15 @@ export const SelectGenerationCandidateResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "repetition": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -6227,7 +7163,15 @@ export const SelectGenerationCandidateResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 }),
   "styleAndControlAdherence": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -6237,7 +7181,15 @@ export const SelectGenerationCandidateResponse = zod.object({
   "summary": zod.string(),
   "observations": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()]))
 })),
-  "explanation": zod.string()
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string().min(1),
+  "affectedSections": zod.array(zod.string().min(1)).min(1),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
+  "musicalReason": zod.string().min(1).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax)
+})).describe('Server-authored scopes eligible for a bounded repair.')
 })
 })
 }),zod.null()]),
@@ -6299,12 +7251,14 @@ export const repairGenerationCandidateBodyIdempotencyKeyMax = 200;
 
 
 
+
 export const repairGenerationCandidateBodyFindingMusicalReasonMax = 2000;
 
 
 
 export const RepairGenerationCandidateBody = zod.object({
   "idempotencyKey": zod.string().max(repairGenerationCandidateBodyIdempotencyKeyMax).optional(),
+  "findingId": zod.string().min(1),
   "finding": zod.object({
   "id": zod.string().min(1),
   "affectedSections": zod.array(zod.string().min(1)).min(1),

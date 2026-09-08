@@ -82,7 +82,6 @@ import { EditorConflictError } from "@/components/studio/editor-save-coordinator
 import type { CopilotEditorResult, EditorSelection } from "@/components/studio/editor-types";
 import {
   isRepairEligible,
-  repairFindingForDimension,
   repairLineageLabel,
   repairOutcomeTitle,
   retainedRepairSourceForJob,
@@ -704,6 +703,7 @@ export default function ProjectWorkspace() {
         candidateId: sourceCandidate.id,
         data: {
           idempotencyKey: crypto.randomUUID(),
+          findingId: repairPreview.finding.id,
           finding: repairPreview.finding,
         },
       },
@@ -1673,11 +1673,7 @@ export default function ProjectWorkspace() {
                                     )}
                                     <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                                       {Object.entries(critic.dimensions).map(([name, dimension]) => {
-                                        const finding = repairFindingForDimension(
-                                          candidate,
-                                          name,
-                                          dimension.explanation,
-                                        );
+                                        const finding = dimension.findings[0];
                                         const eligible = isRepairEligible(
                                           candidate,
                                           dimension,

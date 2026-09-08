@@ -1504,6 +1504,7 @@ export type CandidateMusicCriticDimensionResult = {
   score: number | null;
   evidence: CandidateMusicCriticEvidence[];
   explanation: string;
+  findings: CriticRepairFinding[];
 };
 
 export type CandidateMusicCriticReport = {
