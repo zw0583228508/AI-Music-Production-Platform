@@ -74,6 +74,7 @@ type ArrangerEditorProps = {
   onSeek?: (seconds: number) => void;
   onSelectionChange: (selection: EditorSelection) => void;
   onSectionsChange: (sections: ArrangementSection[]) => Promise<void>;
+  onExplicitDecision?: (decision: { kind: "edit" | "restore"; subjectId: string; reason: string }) => void;
   onRevisionPreviewChange?: (previewing: boolean) => void;
 };
 
@@ -217,6 +218,7 @@ export function ArrangerEditor({
   onSeek,
   onSelectionChange,
   onSectionsChange,
+  onExplicitDecision,
   onRevisionPreviewChange,
 }: ArrangerEditorProps) {
   const { toast } = useToast();
@@ -322,6 +324,11 @@ export function ArrangerEditor({
           title: `Revision v${revision.version} restored`,
           description: `The restored arrangement is now v${restoredArr.version}; newer history was preserved.`,
         });
+        onExplicitDecision?.({
+          kind: "restore",
+          subjectId: restoredArr.id,
+          reason: `Restored arrangement revision v${revision.version}.`,
+        });
       },
       onError: async (restoreError) => {
         if (
@@ -383,6 +390,13 @@ export function ArrangerEditor({
           const acknowledgement = saveCoordinator.current.acknowledge(savingGeneration);
           if (acknowledgement === "synced") {
             setDirty(false);
+            if (arrangement) {
+              onExplicitDecision?.({
+                kind: "edit",
+                subjectId: arrangement.id,
+                reason: "Saved explicit timeline edits.",
+              });
+            }
           } else if (acknowledgement === "resave") {
             setSavePass((pass) => pass + 1);
           }
@@ -394,7 +408,7 @@ export function ArrangerEditor({
         });
     }, 650);
     return () => window.clearTimeout(timeout);
-  }, [dirty, hasConflict, onSectionsChange, previewRevisionId, savePass, sections]);
+  }, [arrangement, dirty, hasConflict, onExplicitDecision, onSectionsChange, previewRevisionId, savePass, sections]);
 
   useEffect(() => {
     if (!copilotResult || appliedCopilotResult.current === copilotResult || previewRevisionId) return;

@@ -5,6 +5,161 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+export type ProducerDecisionDomain = typeof ProducerDecisionDomain[keyof typeof ProducerDecisionDomain];
+
+
+export const ProducerDecisionDomain = {
+  candidate: 'candidate',
+  repair: 'repair',
+  arrangement: 'arrangement',
+  performance: 'performance',
+  mix: 'mix',
+  master: 'master',
+} as const;
+
+export type ProducerDecisionKind = typeof ProducerDecisionKind[keyof typeof ProducerDecisionKind];
+
+
+export const ProducerDecisionKind = {
+  rating: 'rating',
+  comparison: 'comparison',
+  approval: 'approval',
+  rejection: 'rejection',
+  edit: 'edit',
+  restore: 'restore',
+  repair_requested: 'repair_requested',
+  repair_completed: 'repair_completed',
+} as const;
+
+export type ProducerDecisionSource = typeof ProducerDecisionSource[keyof typeof ProducerDecisionSource];
+
+
+export const ProducerDecisionSource = {
+  explicit_feedback: 'explicit_feedback',
+  inferred_behavior: 'inferred_behavior',
+  objective_evidence: 'objective_evidence',
+} as const;
+
+export type ProducerDecisionContext = {
+  /** @nullable */
+  subjectId: string | null;
+  /** @nullable */
+  comparedSubjectId?: string | null;
+  /** @nullable */
+  modelVersion: string | null;
+  evidenceIds: string[];
+  lineageIds: string[];
+  /** @nullable */
+  evidenceSha256?: string | null;
+};
+
+export interface ProducerDecision {
+  id: string;
+  projectId: string;
+  domain: ProducerDecisionDomain;
+  kind: ProducerDecisionKind;
+  source: ProducerDecisionSource;
+  /**
+     * @minimum 1
+     * @maximum 5
+     * @nullable
+     */
+  rating: number | null;
+  /** @maxItems 20 */
+  reasons: string[];
+  context: ProducerDecisionContext;
+  /** @minimum 1 */
+  version: number;
+  createdAt: string;
+}
+
+export type ProducerDecisionInputDomain = typeof ProducerDecisionInputDomain[keyof typeof ProducerDecisionInputDomain];
+
+
+export const ProducerDecisionInputDomain = {
+  candidate: 'candidate',
+  repair: 'repair',
+  arrangement: 'arrangement',
+  performance: 'performance',
+  mix: 'mix',
+  master: 'master',
+} as const;
+
+export type ProducerDecisionInputKind = typeof ProducerDecisionInputKind[keyof typeof ProducerDecisionInputKind];
+
+
+export const ProducerDecisionInputKind = {
+  rating: 'rating',
+  comparison: 'comparison',
+  approval: 'approval',
+  rejection: 'rejection',
+  edit: 'edit',
+  restore: 'restore',
+  repair_requested: 'repair_requested',
+  repair_completed: 'repair_completed',
+} as const;
+
+export interface ProducerDecisionInput {
+  /** @minLength 1 */
+  projectId: string;
+  domain: ProducerDecisionInputDomain;
+  kind: ProducerDecisionInputKind;
+  /** @maxLength 200 */
+  subjectId?: string;
+  /** @maxLength 200 */
+  comparedSubjectId?: string;
+  /**
+     * @minimum 1
+     * @maximum 5
+     */
+  rating?: number;
+  /**
+     * @maxItems 20
+     * @items.maxLength 500
+     */
+  reasons?: string[];
+}
+
+export interface ProducerPreferences {
+  learningEnabled: boolean;
+  inferredBehaviorEnabled: boolean;
+  updatedAt: string;
+}
+
+export interface ProducerPreferencesInput {
+  learningEnabled: boolean;
+  inferredBehaviorEnabled: boolean;
+}
+
+export interface ProducerCalibrationInput {
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  rankingWeight: number;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  criticWeight: number;
+}
+
+export interface ProducerCalibrationEvaluation {
+  examples: number;
+  heldOutAgreement: number;
+}
+
+export interface ProducerCalibration {
+  id: string;
+  version: number;
+  rankingWeight: number;
+  criticWeight: number;
+  heldOutAgreement: number;
+  baselineAgreement: number;
+  active: boolean;
+  createdAt: string;
+}
+
 export interface LicensedInstrumentSmokeEvidence {
   assetId: string;
   sha256: string;
@@ -3597,5 +3752,14 @@ returnTo?: string;
 
 export type LogoutBrowserSessionParams = {
 returnTo?: string;
+};
+
+export type ListProducerDecisionsParams = {
+projectId?: string;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
 };
 

@@ -1,7 +1,48 @@
 import type {
+  ArrangementSection,
   ArrangementRevisionSnapshot,
   ArrangementRevisionSummary,
 } from "@workspace/db";
+
+type PerformanceNote = NonNullable<ArrangementSection["midiNotes"]>[number];
+
+function performanceNote(note: PerformanceNote) {
+  return {
+    id: note.id,
+    pitch: note.pitch,
+    start: note.start,
+    duration: note.duration,
+    velocity: note.velocity,
+    articulation: note.articulation,
+  };
+}
+
+/**
+ * Compares only playable section data. Missing legacy containers are treated
+ * like empty ones, and MIDI-track object insertion order is not musical data.
+ */
+export function sectionsHavePerformanceChanges(
+  before: ArrangementSection[],
+  after: ArrangementSection[],
+): boolean {
+  const performance = (sections: ArrangementSection[]) => sections.map((section) => ({
+    name: section.name,
+    midiNotes: (section.midiNotes ?? []).map(performanceNote),
+    cc: [...(section.cc ?? [])],
+    midiTracks: Object.fromEntries(
+      Object.entries(section.midiTracks ?? {})
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([trackId, track]) => [
+          trackId,
+          {
+            notes: track.notes.map(performanceNote),
+            cc: [...track.cc],
+          },
+        ]),
+    ),
+  }));
+  return JSON.stringify(performance(before)) !== JSON.stringify(performance(after));
+}
 
 function changedEventCount<T>(
   before: Array<[string, T]>,

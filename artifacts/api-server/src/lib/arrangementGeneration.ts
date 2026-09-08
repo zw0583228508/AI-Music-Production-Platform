@@ -63,6 +63,7 @@ import {
   saveExportObject,
 } from "./objectStorage";
 import {
+  deployedCalibrationFeatures,
   hasCompleteQualityEvidence,
   isSelectableCandidate,
   publicCandidateEvaluation,
@@ -83,6 +84,8 @@ import {
 } from "./candidateRepair";
 import { evaluateCandidateMusicalFit } from "./candidateQuality";
 import { evaluateRenderedPcm } from "./perceptualAudioCritic";
+import { activeCalibrationForOwner } from "./producerDecisionLedger";
+import { appendProducerDecisionTx } from "./producerDecisionLedger";
 
 const sha256 = (value: string | Buffer): string =>
   createHash("sha256").update(value).digest("hex");
@@ -733,9 +736,7 @@ export async function queueArrangementGeneration(
       providers: projectRow.providers,
     };
   const jobId = randomUUID();
-  const [job] = await db
-    .insert(musicGenerationJobsTable)
-    .values({
+  const jobValues: typeof musicGenerationJobsTable.$inferInsert = {
       id: jobId,
       projectId: arrangement.projectId,
       arrangementId: arrangement.id,
@@ -787,14 +788,46 @@ export async function queueArrangementGeneration(
         })),
         repair: input.repair ?? null,
       },
-    })
-    .onConflictDoNothing({
-      target: [
-        musicGenerationJobsTable.arrangementId,
-        musicGenerationJobsTable.idempotencyKey,
-      ],
-    })
-    .returning();
+    };
+  const job = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(musicGenerationJobsTable)
+      .values(jobValues)
+      .onConflictDoNothing({
+        target: [
+          musicGenerationJobsTable.arrangementId,
+          musicGenerationJobsTable.idempotencyKey,
+        ],
+      })
+      .returning();
+    if (!created || !input.repair) return created;
+    const [sourceCandidate] = await tx
+      .select()
+      .from(musicGenerationCandidatesTable)
+      .where(and(
+        eq(musicGenerationCandidatesTable.id, input.repair.sourceCandidateId),
+        eq(musicGenerationCandidatesTable.projectId, arrangement.projectId),
+      ))
+      .limit(1);
+    if (!sourceCandidate) {
+      throw new Error("Repair source candidate is not part of this project");
+    }
+    const features = deployedCalibrationFeatures(sourceCandidate.evaluation);
+    await appendProducerDecisionTx(tx, {
+      ownerId,
+      projectId: arrangement.projectId,
+      domain: "repair",
+      kind: "repair_requested",
+      source: "inferred_behavior",
+      context: {
+        subjectId: sourceCandidate.id,
+        modelVersion: sourceCandidate.modelVersion,
+        lineageIds: sourceCandidate.parentArtifactIds,
+        ...features,
+      },
+    });
+    return created;
+  });
   if (!job) {
     const [racedJob] = await db
       .select()
@@ -1673,6 +1706,33 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
       if (!completed) throw new Error("Generation job lease was lost");
       await tx.insert(musicArtifactsTable).values(artifactRows);
       await tx.insert(musicGenerationCandidatesTable).values(ranked);
+      if (snapshot.repair) {
+        const [project] = await tx
+          .select({ ownerId: musicProjectsTable.ownerId })
+          .from(musicProjectsTable)
+          .where(eq(musicProjectsTable.id, job.projectId))
+          .limit(1);
+        if (!project?.ownerId) throw new Error("Repair project owner disappeared");
+        for (const repairedCandidate of ranked) {
+          const improved = repairedCandidate.status === "validated" &&
+            repairedCandidate.evaluation.repair?.improved === true;
+          await appendProducerDecisionTx(tx, {
+            ownerId: project.ownerId,
+            projectId: job.projectId,
+            domain: "repair",
+            kind: "repair_completed",
+            source: "inferred_behavior",
+            reasons: [improved ? "improved" : "rejected"],
+            context: {
+              subjectId: snapshot.repair.sourceCandidateId,
+              comparedSubjectId: repairedCandidate.id,
+              modelVersion: repairedCandidate.modelVersion,
+              lineageIds: repairedCandidate.parentArtifactIds,
+              ...deployedCalibrationFeatures(repairedCandidate.evaluation),
+            },
+          });
+        }
+      }
       await tx
         .update(arrangementsTable)
         .set({
@@ -2136,11 +2196,14 @@ export async function listGenerationCandidatesForOwner(
 ) {
   const job = await getGenerationJobForOwner(jobId, ownerId);
   if (!job) return null;
-  return db
+  const rows = await db
     .select()
     .from(musicGenerationCandidatesTable)
     .where(eq(musicGenerationCandidatesTable.jobId, jobId))
     .orderBy(musicGenerationCandidatesTable.rank);
+  // The calibration is read per owner and applied only to this response; it
+  // never changes persisted ranks or another producer's view.
+  return rankEvaluatedCandidates(rows, (await activeCalibrationForOwner(ownerId)) ?? undefined);
 }
 
 export async function selectGenerationCandidate(
@@ -2370,6 +2433,15 @@ export async function selectGenerationCandidate(
       title: "Generation candidate selected",
       detail: `${candidate.label} · arrangement v${nextVersion}`,
       type: "arrangement",
+    });
+    await appendProducerDecisionTx(tx, {
+      ownerId, projectId: arrangement.projectId, domain: "candidate", kind: "approval",
+      source: "inferred_behavior",
+      context: { subjectId: candidate.id, modelVersion: candidate.modelVersion,
+        evidenceIds: candidate.evaluation.renderArtifactIds, lineageIds: candidate.parentArtifactIds,
+        evidenceSha256: sha256(JSON.stringify(candidate.evaluation.renderArtifactIds)),
+        rankingScore: candidate.evaluation.qualityReport?.score ?? null,
+        criticScore: candidate.evaluation.musicCritic?.score ?? null },
     });
     return arrangement;
   });

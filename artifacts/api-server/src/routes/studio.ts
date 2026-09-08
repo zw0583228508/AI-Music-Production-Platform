@@ -91,6 +91,20 @@ import {
   CreateMixMasterRevisionResponse,
   ApproveMixMasterRevisionParams,
   ApproveMixMasterRevisionResponse,
+  CreateProducerDecisionBody,
+  CreateProducerDecisionResponse,
+  GetProducerPreferencesResponse,
+  ListProducerDecisionsQueryParams,
+  ListProducerDecisionsResponse,
+  UpdateProducerPreferencesBody,
+  UpdateProducerPreferencesResponse,
+  ListProducerCalibrationsResponse,
+  PromoteProducerCalibrationBody,
+  PromoteProducerCalibrationResponse,
+  EvaluateProducerCalibrationBody,
+  EvaluateProducerCalibrationResponse,
+  RollbackProducerCalibrationParams,
+  RollbackProducerCalibrationResponse,
 } from "@workspace/api-zod";
 import {
   analysisJobsTable,
@@ -99,6 +113,7 @@ import {
   analysisAttemptsTable,
   db,
   musicArtifactsTable,
+  musicGenerationCandidatesTable,
   musicExportsTable,
   musicAuditEventsTable,
   musicProjectsTable,
@@ -190,8 +205,23 @@ import {
   retryGenerationJob,
   selectGenerationCandidate,
 } from "../lib/arrangementGeneration";
-import { publicCandidateEvaluation } from "../lib/candidateRanking";
-import { revisionSummary } from "../lib/arrangementRevisions";
+import { deployedCalibrationFeatures, publicCandidateEvaluation } from "../lib/candidateRanking";
+import {
+  revisionSummary,
+  sectionsHavePerformanceChanges,
+} from "../lib/arrangementRevisions";
+import {
+  appendProducerDecision,
+  listProducerDecisions,
+  preferencesForOwner,
+  producerDecisionResponse,
+  updatePreferences,
+  evaluateCalibration,
+  listCalibrations,
+  promoteCalibration,
+  rollbackCalibration,
+  appendProducerDecisionTx,
+} from "../lib/producerDecisionLedger";
 
 const router: IRouter = Router();
 const exportBundles = new Map<string, ExportBundle>();
@@ -2412,6 +2442,22 @@ router.patch("/arrangements/:arrangementId", async (req, res): Promise<void> => 
       snapshot,
       summary: revisionSummary(arrangementRevisionSnapshot(before), snapshot),
     });
+    const performanceEdit = sectionsHavePerformanceChanges(
+      before.sections,
+      arrangement.sections,
+    );
+    await appendProducerDecisionTx(tx, {
+      ownerId: req.user!.id,
+      projectId: arrangement.projectId,
+      domain: performanceEdit ? "performance" : "arrangement",
+      kind: "edit",
+      source: "inferred_behavior",
+      context: {
+        subjectId: arrangement.id,
+        modelVersion: arrangement.modelVersion,
+        evidenceSha256: sha256(`${arrangement.id}:${arrangement.version}`),
+      },
+    });
     return { kind: "updated" as const, arrangement };
   });
   const arrangement = result.kind === "updated" ? result.arrangement : null;
@@ -2500,6 +2546,13 @@ router.post(
         version: restored.version,
         snapshot,
         summary: revisionSummary(arrangementRevisionSnapshot(current), snapshot),
+      });
+      await appendProducerDecisionTx(tx, {
+        ownerId: req.user!.id, projectId: restored.projectId, domain: "arrangement",
+        kind: "restore", source: "inferred_behavior",
+        context: { subjectId: restored.id, modelVersion: restored.modelVersion,
+          lineageIds: [params.data.revisionId] },
+        evidence: { version: restored.version },
       });
       return { kind: "restored" as const, arrangement: restored };
     });
@@ -2752,6 +2805,134 @@ router.post(
     );
   },
 );
+
+router.get("/producer-decisions", async (req, res): Promise<void> => {
+  const query = ListProducerDecisionsQueryParams.safeParse(req.query);
+  if (!query.success) {
+    res.status(400).json({ error: query.error.message });
+    return;
+  }
+  if (query.data.projectId) {
+    const [project] = await db.select({ id: musicProjectsTable.id }).from(musicProjectsTable)
+      .where(and(eq(musicProjectsTable.id, query.data.projectId), eq(musicProjectsTable.ownerId, req.user!.id))).limit(1);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+  }
+  res.setHeader("Cache-Control", "no-store");
+  res.json(ListProducerDecisionsResponse.parse(await listProducerDecisions(req.user!.id, query.data.projectId, query.data.limit)));
+});
+
+router.post("/producer-decisions", async (req, res): Promise<void> => {
+  const body = CreateProducerDecisionBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+  const [project] = await db.select({ id: musicProjectsTable.id }).from(musicProjectsTable)
+    .where(and(eq(musicProjectsTable.id, body.data.projectId), eq(musicProjectsTable.ownerId, req.user!.id))).limit(1);
+  if (!project) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+  let context: Parameters<typeof appendProducerDecision>[0]["context"] = {
+    subjectId: body.data.subjectId ?? null, comparedSubjectId: body.data.comparedSubjectId ?? null,
+  };
+  if (body.data.subjectId) {
+    const subjectId = body.data.subjectId;
+    const [candidate] = await db.select().from(musicGenerationCandidatesTable).where(and(
+      eq(musicGenerationCandidatesTable.id, subjectId), eq(musicGenerationCandidatesTable.projectId, body.data.projectId),
+    )).limit(1);
+    if (candidate) {
+      const features = deployedCalibrationFeatures(candidate.evaluation);
+      context = { ...context, modelVersion: candidate.modelVersion,
+        evidenceIds: candidate.evaluation.renderArtifactIds, lineageIds: candidate.parentArtifactIds,
+        rankingScore: features.rankingScore, criticScore: features.criticScore,
+        evidenceSha256: createHash("sha256").update(JSON.stringify(candidate.evaluation.renderArtifactIds)).digest("hex") };
+    } else {
+      const [arrangement] = await db.select().from(arrangementsTable).where(and(eq(arrangementsTable.id, subjectId), eq(arrangementsTable.projectId, body.data.projectId))).limit(1);
+      const [mix] = arrangement ? [] : await db.select().from(mixMasterRevisionsTable).where(and(eq(mixMasterRevisionsTable.id, subjectId), eq(mixMasterRevisionsTable.projectId, body.data.projectId))).limit(1);
+      if (arrangement) context = { ...context, modelVersion: arrangement.modelVersion, lineageIds: arrangement.sourceCandidateId ? [arrangement.sourceCandidateId] : [], evidenceSha256: sha256(`${arrangement.id}:${arrangement.version}`) };
+      else if (mix) context = { ...context, evidenceIds: mix.evidence.artifactIds, lineageIds: [mix.arrangementId], evidenceSha256: mix.evidence.timelineSha256 };
+      else { res.status(400).json({ error: "subjectId must be a candidate, arrangement, or mix/master revision in this project" }); return; }
+    }
+  }
+  if (body.data.comparedSubjectId) {
+    const [compared] = await db.select({ id: musicGenerationCandidatesTable.id })
+      .from(musicGenerationCandidatesTable).where(and(
+        eq(musicGenerationCandidatesTable.id, body.data.comparedSubjectId),
+        eq(musicGenerationCandidatesTable.projectId, body.data.projectId),
+      )).limit(1);
+    if (!compared) {
+      res.status(400).json({ error: "comparedSubjectId must be a candidate in this project" });
+      return;
+    }
+  }
+  const decision = await appendProducerDecision({
+    ownerId: req.user!.id, projectId: body.data.projectId, domain: body.data.domain,
+    kind: body.data.kind, source: "explicit_feedback", rating: body.data.rating ?? null,
+    reasons: body.data.reasons ?? [], context,
+  });
+  if (!decision) {
+    res.status(409).json({ error: "Producer learning is disabled" });
+    return;
+  }
+  res.status(201).json(CreateProducerDecisionResponse.parse(producerDecisionResponse(decision)));
+});
+
+router.get("/producer-preferences", async (req, res): Promise<void> => {
+  const preferences = await preferencesForOwner(req.user!.id);
+  res.setHeader("Cache-Control", "no-store");
+  res.json(GetProducerPreferencesResponse.parse({
+    learningEnabled: preferences.learningEnabled,
+    inferredBehaviorEnabled: preferences.inferredBehaviorEnabled,
+    updatedAt: preferences.updatedAt.toISOString(),
+  }));
+});
+
+router.put("/producer-preferences", async (req, res): Promise<void> => {
+  const body = UpdateProducerPreferencesBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+  const preferences = await updatePreferences(req.user!.id, body.data);
+  res.json(UpdateProducerPreferencesResponse.parse({
+    learningEnabled: preferences.learningEnabled,
+    inferredBehaviorEnabled: preferences.inferredBehaviorEnabled,
+    updatedAt: preferences.updatedAt.toISOString(),
+  }));
+});
+
+router.get("/producer-calibrations", async (req, res): Promise<void> => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json(ListProducerCalibrationsResponse.parse((await listCalibrations(req.user!.id)).map((row) => ({
+    ...row, createdAt: row.createdAt.toISOString(),
+  }))));
+});
+router.post("/producer-calibrations/evaluate", async (req, res): Promise<void> => {
+  const body = EvaluateProducerCalibrationBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  try {
+    res.json(EvaluateProducerCalibrationResponse.parse(await evaluateCalibration(req.user!.id, body.data.rankingWeight, body.data.criticWeight)));
+  } catch (error) { res.status(400).json({ error: error instanceof Error ? error.message : "Invalid calibration" }); }
+});
+router.post("/producer-calibrations", async (req, res): Promise<void> => {
+  const body = PromoteProducerCalibrationBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  try {
+    const row = await promoteCalibration(req.user!.id, body.data.rankingWeight, body.data.criticWeight);
+    res.status(201).json(PromoteProducerCalibrationResponse.parse({ ...row, active: true, createdAt: row.createdAt.toISOString() }));
+  } catch (error) { res.status(409).json({ error: error instanceof Error ? error.message : "Calibration promotion rejected" }); }
+});
+router.post("/producer-calibrations/:calibrationId/rollback", async (req, res): Promise<void> => {
+  const params = RollbackProducerCalibrationParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const row = await rollbackCalibration(req.user!.id, params.data.calibrationId);
+  if (!row) { res.status(404).json({ error: "Calibration not found" }); return; }
+  res.json(RollbackProducerCalibrationResponse.parse({ ...row, active: true, createdAt: row.createdAt.toISOString() }));
+});
 
 router.get("/music-providers", async (_req, res): Promise<void> => {
   res.setHeader("Cache-Control", "no-store");
@@ -3202,6 +3383,12 @@ router.post("/projects/:projectId/mix-master-revisions", async (req, res): Promi
       id: randomUUID(), projectId: project.id, arrangementId: arrangement.id, version, controls, evidence,
       previewArtifactId: masteredArtifactId, createdBy: req.user!.id,
     }).returning();
+    await appendProducerDecisionTx(tx, {
+      ownerId: req.user!.id, projectId: created.projectId, domain: "mix",
+      kind: "edit", source: "inferred_behavior",
+      context: { subjectId: created.id, modelVersion: null, evidenceIds: created.evidence.artifactIds,
+        lineageIds: [created.arrangementId], evidenceSha256: created.evidence.timelineSha256 },
+    });
     return { created, version };
     });
   } catch (error) {
@@ -3280,6 +3467,12 @@ router.post("/projects/:projectId/mix-master-revisions/:revisionId/approve", asy
       eq(mixMasterRevisionsTable.projectId, existing.projectId),
       eq(mixMasterRevisionsTable.arrangementId, existing.arrangementId),
     )).returning();
+    await appendProducerDecisionTx(tx, {
+      ownerId: req.user!.id, projectId: approved.projectId, domain: "master",
+      kind: "approval", source: "inferred_behavior",
+      context: { subjectId: approved.id, modelVersion: null, evidenceIds: approved.evidence.artifactIds,
+        lineageIds: [approved.arrangementId], evidenceSha256: approved.evidence.timelineSha256 },
+    });
     return approved;
   });
   res.json(ApproveMixMasterRevisionResponse.parse(mixMasterRevisionResponse(revision, artifact.url ?? "")));
