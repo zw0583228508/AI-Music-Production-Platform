@@ -149,7 +149,8 @@ async function main() {
     }
 
     const bundledTests = [];
-    for (const [entry, output, extraArguments = []] of suite.bundles) {
+    for (const [bundleIndex, [entry, output, extraArguments = []]] of
+      suite.bundles.entries()) {
       const outputPath = join(bundleDirectory, output);
       await Promise.race([
         run("esbuild", [
@@ -163,6 +164,26 @@ async function main() {
         termination,
       ]);
       bundledTests.push(outputPath);
+
+      if (
+        suiteName === "validation" &&
+        bundleIndex === 0 &&
+        process.env.FOCUSED_API_TEST_INJECT_FAILURE === "later-esbuild"
+      ) {
+        console.error(
+          "focused API first bundle ready before later esbuild failure",
+        );
+        await Promise.race([
+          run("esbuild", [
+            join(bundleDirectory, "intentional-missing-later-entry.ts"),
+            "--bundle",
+            "--platform=node",
+            "--format=esm",
+            `--outfile=${join(bundleDirectory, "intentional-missing-later-entry.test.mjs")}`,
+          ]),
+          termination,
+        ]);
+      }
     }
 
     if (process.env.FOCUSED_API_TEST_INJECT_FAILURE === "await-sigterm") {
