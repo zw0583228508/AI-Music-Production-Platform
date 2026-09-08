@@ -191,12 +191,15 @@ function listIsolatedChildPids(rootPid) {
 
 function checkProcessState(pid) {
   try {
+    const injectedFailure =
+      process.env.FOCUSED_API_TEST_INJECT_PROCESS_EXISTENCE_CHECK_FAILURE;
     if (
-      process.env.FOCUSED_API_TEST_INJECT_PROCESS_EXISTENCE_CHECK_FAILURE ===
-        "true"
+      injectedFailure === "true" ||
+      injectedFailure === "EPERM" ||
+      injectedFailure === "EACCES"
     ) {
       const error = new Error("injected denied process existence check");
-      error.code = "EPERM";
+      error.code = injectedFailure === "true" ? "EPERM" : injectedFailure;
       throw error;
     }
     process.kill(pid, 0);
@@ -376,7 +379,9 @@ async function main() {
   const suiteName = process.argv[2];
   const suite = suites[suiteName];
   if (!suite) {
-    throw new Error(`unknown focused API test suite: ${suiteName ?? "(missing)"}`);
+    throw new Error(
+      `unknown focused API test suite: ${suiteName ?? "(missing)"}`,
+    );
   }
 
   const bundleDirectory =
@@ -495,7 +500,10 @@ async function main() {
       process.env.FOCUSED_API_TEST_INJECT_FAILURE ===
       "launch-helper-on-sigterm-during-esbuild"
     ) {
-      const resistantHelper = join(bundleDirectory, "late-resistant-helper.mjs");
+      const resistantHelper = join(
+        bundleDirectory,
+        "late-resistant-helper.mjs",
+      );
       const resistantBundler = join(
         bundleDirectory,
         "resistant-bundler-with-late-helper.mjs",
@@ -555,8 +563,10 @@ async function main() {
     }
 
     const bundledTests = [];
-    for (const [bundleIndex, [entry, output, extraArguments = []]] of
-      suite.bundles.entries()) {
+    for (const [
+      bundleIndex,
+      [entry, output, extraArguments = []],
+    ] of suite.bundles.entries()) {
       const outputPath = join(bundleDirectory, output);
       await Promise.race([
         run("esbuild", [
@@ -622,10 +632,7 @@ async function main() {
         injection === "ignore-sigterm-during-node-test"
           ? `import { writeFileSync } from "node:fs";\nimport test from "node:test";\n${injection === "ignore-sigterm-during-node-test" ? 'process.on("SIGTERM", () => {});\n' : ""}test("wait for focused API SIGTERM", async () => { writeFileSync(process.env.FOCUSED_API_TEST_HANDSHAKE_FILE, process.env.FOCUSED_API_TEST_RUNNER_PID + "," + process.pid); await new Promise(() => {}); });\n`
           : `import test from "node:test";\ntest(${JSON.stringify(failureMessage)}, () => { throw new Error(${JSON.stringify(failureMessage)}); });\n`;
-      await writeFile(
-        failingTest,
-        testBody,
-      );
+      await writeFile(failingTest, testBody);
       bundledTests.push(failingTest);
     }
 
