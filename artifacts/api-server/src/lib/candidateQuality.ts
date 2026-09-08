@@ -402,7 +402,18 @@ function localizeCriticFindings(input: {
     );
   }
 
-  const collisions: { leftTrackId: string; rightTrackId: string; time: number }[] = [];
+  type LocalizedCollision = {
+    leftTrackId: string;
+    rightTrackId: string;
+    time: number;
+    section: ArrangementPlan["sections"][number];
+    bar: number;
+  };
+  const collisionsByRange = new Map<string, LocalizedCollision>();
+  const compareCollisions = (left: LocalizedCollision, right: LocalizedCollision) =>
+    left.time - right.time ||
+    left.leftTrackId.localeCompare(right.leftTrackId) ||
+    left.rightTrackId.localeCompare(right.rightTrackId);
   const notes = tracks.flatMap((track) => track.notes.map((note) => ({ trackId: track.id, note })));
   for (let left = 0; left < notes.length; left += 1) {
     for (let right = left + 1; right < notes.length; right += 1) {
@@ -410,21 +421,29 @@ function localizeCriticFindings(input: {
         notes[left].note.start < notes[right].note.start + notes[right].note.duration &&
         notes[right].note.start < notes[left].note.start + notes[left].note.duration &&
         Math.abs(notes[left].note.pitch - notes[right].note.pitch) <= 2) {
-        collisions.push({
+        const time = Math.max(notes[left].note.start, notes[right].note.start);
+        const section = sectionAtTime(time);
+        if (!section) continue;
+        const bar = timeline.coordinateAtSeconds(time).bar;
+        const collision: LocalizedCollision = {
           leftTrackId: notes[left].trackId,
           rightTrackId: notes[right].trackId,
-          time: Math.max(notes[left].note.start, notes[right].note.start),
-        });
+          time,
+          section,
+          bar,
+        };
+        const rangeKey = `${section.section}:${bar}`;
+        const existing = collisionsByRange.get(rangeKey);
+        if (!existing || compareCollisions(collision, existing) < 0) {
+          collisionsByRange.set(rangeKey, collision);
+        }
       }
     }
   }
-  collisions.sort((left, right) => left.time - right.time ||
-    left.leftTrackId.localeCompare(right.leftTrackId) ||
-    left.rightTrackId.localeCompare(right.rightTrackId));
+  const collisions = [...collisionsByRange.values()].sort(compareCollisions);
   for (const collision of collisions) {
-    const section = sectionAtTime(collision.time);
-    const bar = timeline.coordinateAtSeconds(collision.time).bar;
-    add("registerCollisions", section, [collision.leftTrackId, collision.rightTrackId], bar, bar,
+    add("registerCollisions", collision.section,
+      [collision.leftTrackId, collision.rightTrackId], collision.bar, collision.bar,
       "These two parts overlap within two semitones, creating a close-register collision.");
   }
 
