@@ -118,12 +118,13 @@ function interruptFocusedTestDuringAssertions(
   script,
   env = process.env,
   repeatSignal = false,
+  handshakePrefix = "focused-api-assertion",
 ) {
   return new Promise((resolve, reject) => {
     const { NODE_TEST_CONTEXT: _parentTestContext, ...childEnv } = env;
     const handshakePath = join(
       tmpdir(),
-      `focused-api-assertion-${randomUUID()}.txt`,
+      `${handshakePrefix}-${randomUUID()}.txt`,
     );
     childEnv.FOCUSED_API_TEST_HANDSHAKE_FILE = handshakePath;
     const child = spawn("pnpm", ["run", script], {
@@ -195,6 +196,7 @@ function interruptFocusedTestDuringAssertions(
         interrupted,
         runnerPid,
         testChildPid,
+        activeChildPid: testChildPid,
       });
     });
   });
@@ -1031,6 +1033,76 @@ test(
       leaked,
       [],
       `mixed healthy and force-terminated focused API tests left bundle directories behind: ${leaked.join(", ")}`,
+    );
+  },
+);
+
+test(
+  "SIGTERM force-terminates a resistant bundler without disrupting a healthy focused API check",
+  { timeout: 120_000 },
+  async () => {
+    const before = await listBundleDirectories();
+    const [interrupted, healthy] = await Promise.all([
+      interruptFocusedTestDuringAssertions(
+        "test:validation",
+        {
+          ...process.env,
+          FOCUSED_API_TEST_INJECT_FAILURE: "ignore-sigterm-during-esbuild",
+        },
+        false,
+        "focused-api-bundler",
+      ),
+      runFocusedTest("test:source-ingestion"),
+    ]);
+
+    assert.equal(
+      interrupted.interrupted,
+      true,
+      [
+        `${interrupted.script} never reached its signal-resistant bundling phase`,
+        interrupted.stdout,
+        interrupted.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    assert.equal(
+      interrupted.code,
+      143,
+      [
+        `${interrupted.script} did not terminate through the intended SIGTERM path`,
+        interrupted.signal ? `signal: ${interrupted.signal}` : "",
+        interrupted.stdout,
+        interrupted.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    await waitForProcessExit(interrupted.activeChildPid);
+    assert.equal(
+      processExists(interrupted.activeChildPid),
+      false,
+      `signal-resistant bundler child ${interrupted.activeChildPid} remained alive`,
+    );
+    assert.equal(
+      healthy.code,
+      0,
+      [
+        `${healthy.script} failed while a different focused check force-terminated its bundler`,
+        healthy.signal ? `signal: ${healthy.signal}` : "",
+        healthy.stdout,
+        healthy.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+
+    const after = await listBundleDirectories();
+    const leaked = [...after].filter((directory) => !before.has(directory));
+    assert.deepEqual(
+      leaked,
+      [],
+      `mixed healthy and bundler-interrupted focused API tests left bundle directories behind: ${leaked.join(", ")}`,
     );
   },
 );
