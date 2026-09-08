@@ -146,6 +146,46 @@ for (const invalidValue of ["not-a-pid", "1.5", "0", "-7"]) {
   });
 }
 
+test("FOCUSED_API_TEST_INJECT_REUSED_PID_TARGET rejects a PID outside the host range", async () => {
+  const pidWrapPoint = Number(
+    readFileSync("/proc/sys/kernel/pid_max", "utf8").trim(),
+  );
+  const maximumSupportedPid = pidWrapPoint - 1;
+  const invalidValue = String(pidWrapPoint);
+  const result = await runFocusedTest("test:validation", {
+    ...process.env,
+    FOCUSED_API_TEST_INJECT_REUSED_PID_TARGET: invalidValue,
+  });
+
+  assert.equal(
+    result.code,
+    1,
+    [
+      "out-of-range reused-PID target did not fail before focused tests",
+      result.stdout,
+      result.stderr,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  );
+  assert.match(
+    result.stderr,
+    new RegExp(
+      `FOCUSED_API_TEST_INJECT_REUSED_PID_TARGET has unsupported process ID target: ${invalidValue}`,
+    ),
+  );
+  assert.match(
+    result.stderr,
+    new RegExp(`accepted host range is 1-${maximumSupportedPid}`),
+    "diagnostic did not identify the accepted host PID range",
+  );
+  assert.doesNotMatch(
+    result.stdout,
+    /\besbuild\b|TAP version/u,
+    "out-of-range reused-PID target reached bundling or focused tests",
+  );
+});
+
 function interruptFocusedTestAfterBundles(
   script,
   signal = "SIGTERM",
