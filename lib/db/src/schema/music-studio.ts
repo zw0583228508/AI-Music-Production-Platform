@@ -1322,6 +1322,17 @@ export type TrackModel = {
   mapping?: TrackMappingMetadata;
   /** Deterministic performance decisions and canonical timeline binding. */
   performanceEvidence?: TrackPerformanceEvidence;
+  harmonyEvidence?: {
+    version: "2.0";
+    mode: "advanced_voicing" | "phrase_countermelody";
+    selectedMotion?: number;
+    baselineMotion?: number;
+    maximumLeap?: number;
+    motifRefs?: string[];
+    resolutionObligations?: number;
+    melodyEvidencePreserved: boolean;
+    bassEvidencePreserved: boolean;
+  };
 };
 
 export type TrackPerformanceEvidence = {

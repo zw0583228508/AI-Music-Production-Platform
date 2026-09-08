@@ -3617,6 +3617,21 @@ components:
           $ref: "#/components/schemas/TrackMappingMetadata"
         performanceEvidence:
           $ref: "#/components/schemas/TrackPerformanceEvidence"
+        harmonyEvidence:
+          $ref: "#/components/schemas/TrackHarmonyEvidence"
+    TrackHarmonyEvidence:
+      type: object
+      required: [version, mode, melodyEvidencePreserved, bassEvidencePreserved]
+      properties:
+        version: { type: string, enum: ["2.0"] }
+        mode: { type: string, enum: [advanced_voicing, phrase_countermelody] }
+        selectedMotion: { type: number, minimum: 0 }
+        baselineMotion: { type: number, minimum: 0 }
+        maximumLeap: { type: number, minimum: 0 }
+        motifRefs: { type: array, items: { type: string } }
+        resolutionObligations: { type: number, minimum: 0 }
+        melodyEvidencePreserved: { type: boolean }
+        bassEvidencePreserved: { type: boolean }
     TrackPerformanceEvidence:
       type: object
       required:

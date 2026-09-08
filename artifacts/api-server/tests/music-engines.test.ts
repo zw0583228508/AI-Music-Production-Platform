@@ -10,6 +10,7 @@ import {
   ensureArrangementPlanHierarchy,
   getInstrumentPerformanceCapability,
   getInstrumentDefinition,
+  measureVoicingMotion,
   performedMaterialSha256,
   HarmonyEngine,
 } from "../src/lib/musicEngines";
@@ -876,6 +877,134 @@ test("generated harmony scores reliable melody fit and creates functional domina
   assert.ok(Array.isArray(rationale));
   assert.ok(rationale.length >= 2);
   assert.equal(rationale.filter((candidate: { selected: boolean }) => candidate.selected).length, 1);
+});
+
+test("v2 selects lower-motion inversions while v1 keeps its deterministic baseline", () => {
+  const model = song({
+    chords: [
+      { start: 0, end: 2, symbol: "C", roman: "I", confidence: .9 },
+      { start: 2, end: 4, symbol: "G/B", roman: "V6", confidence: .9 },
+      { start: 4, end: 6, symbol: "Am7", roman: "vi7", confidence: .9 },
+      { start: 6, end: 8, symbol: "F", roman: "IV", confidence: .9 },
+    ],
+    sections: [{ name: "Verse", startBar: 1, endBar: 4, energy: .7 }],
+  });
+  const tracks = [{ id: "piano", name: "Piano", role: "harmony" }];
+  const style = createStyleSpec("cinematic pop", {
+    density: .6, harmonyComplexity: 8, energy: .7,
+  });
+  const create = (compositionVersion: "1.0" | "2.0") => createArrangementPlan({
+    arrangementId: "voicing-ab",
+    version: 1,
+    songModel: model,
+    style,
+    tracks,
+    parameters: { songModelVersion: 2, seed: 812, harmonyComplexity: 8 },
+    compositionVersion,
+  });
+  const v1 = buildTrackModels({ songModel: model, plan: create("1.0"), tracks, style, seed: 812 })[0];
+  const v2 = buildTrackModels({ songModel: model, plan: create("2.0"), tracks, style, seed: 812 })[0];
+  assert.equal(v1.notes.some((note) => note.id.includes(":voicing:")), false);
+  assert.ok(v2.notes.filter((note) => note.id.includes(":voicing:")).length >= 9);
+  assert.ok(
+    Number(v2.harmonyEvidence?.selectedMotion) <=
+      Number(v2.harmonyEvidence?.baselineMotion),
+  );
+  assert.equal(measureVoicingMotion([[48, 52, 55], [47, 50, 55], [48, 52, 57]]).transitions, 2);
+  assert.equal(v2.harmonyEvidence?.melodyEvidencePreserved, true);
+  assert.equal(v2.harmonyEvidence?.bassEvidencePreserved, true);
+});
+
+test("v2 countermelody records motif lineage, phrase shape, harmony, and resolution", () => {
+  const model = song({
+    contractVersion: "2.0",
+    chords: [
+      { start: 0, end: 4, symbol: "Cmaj7", roman: "Imaj7", confidence: .9 },
+      { start: 4, end: 8, symbol: "G7", roman: "V7", confidence: .9 },
+    ],
+    bars: Array.from({ length: 4 }, (_, index) => ({
+      bar: index + 1,
+      start: index * 2,
+      end: index * 2 + 2,
+      beats: 4,
+      confidence: 1,
+    })),
+    sections: [{ name: "Chorus", startBar: 1, endBar: 4, energy: .9 }],
+  });
+  const tracks = [{ id: "strings", name: "Strings", role: "countermelody" }];
+  const style = createStyleSpec("cinematic pop", {
+    density: .7, harmonyComplexity: 8, energy: .9,
+  });
+  const plan = createArrangementPlan({
+    arrangementId: "counterline-fixture",
+    version: 1,
+    songModel: model,
+    style,
+    tracks,
+    parameters: { songModelVersion: 3, seed: 455, harmonyComplexity: 8 },
+    compositionVersion: "2.0",
+  });
+  const first = buildTrackModels({ songModel: model, plan, tracks, style, seed: 455 })[0];
+  const second = buildTrackModels({ songModel: model, plan, tracks, style, seed: 455 })[0];
+  assert.deepEqual(first.notes, second.notes);
+  assert.ok(first.notes.length >= 3);
+  assert.ok(first.notes.every((note) => note.voice === "countermelody"));
+  assert.ok(first.notes.every((note) => note.id.includes("motif:")));
+  assert.ok(first.notes.some((note) => note.id.includes(":approach:resolve-next")));
+  assert.ok(first.notes.some((note) => note.id.includes(":resolution-of-")));
+  assert.ok(new Set(first.notes.map((note) => note.pitch)).size >= 3);
+  const chordPcs = new Set([0, 4, 7, 11, 2, 5]);
+  assert.ok(first.notes.filter((note) => note.id.includes(":chord:") || note.id.includes(":pedal:"))
+    .every((note) => chordPcs.has(note.pitch % 12)));
+  assert.ok((first.harmonyEvidence?.motifRefs?.length ?? 0) >= 1);
+  assert.ok((first.harmonyEvidence?.resolutionObligations ?? 0) >= 1);
+  assert.equal(first.performanceEvidence?.performedMaterialSha256, performedMaterialSha256(first));
+});
+
+test("v2 preserves observed bass pitches and rejects voicings that collide with verified melody", () => {
+  const model = song({
+    melody: [{ start: 0, end: 2, pitch: 60, velocity: .8, confidence: .95, source: "verified" }],
+    bass: [{ start: 0, end: 2, pitch: 43, confidence: .95 }],
+    chords: [{ start: 0, end: 4, symbol: "Cmaj7", roman: "Imaj7", confidence: .95 }],
+    sections: [{ name: "Verse", startBar: 1, endBar: 2, energy: .7 }],
+  });
+  const tracks = [
+    { id: "piano", name: "Piano", role: "harmony" },
+    { id: "bass", name: "Bass", role: "bass" },
+  ];
+  const style = createStyleSpec("cinematic pop", {
+    density: .6, harmonyComplexity: 8, energy: .7,
+  });
+  const plan = createArrangementPlan({
+    arrangementId: "observed-parts-hard-constraints",
+    version: 1,
+    songModel: model,
+    style,
+    tracks,
+    parameters: { songModelVersion: 5, seed: 923, harmonyComplexity: 8 },
+    compositionVersion: "2.0",
+  });
+  const [piano, bass] = buildTrackModels({ songModel: model, plan, tracks, style, seed: 923 });
+  assert.ok(bass.notes.some((note) =>
+    note.id.includes(":observed-bass:") && note.pitch === 43));
+  assert.ok(piano.notes.filter((note) => note.start < 2)
+    .every((note) => Math.abs(note.pitch - 60) > 1 && note.pitch > 47));
+  assert.equal(piano.harmonyEvidence?.melodyEvidencePreserved, true);
+  assert.equal(piano.harmonyEvidence?.bassEvidencePreserved, true);
+  assert.equal(piano.performanceEvidence?.performedMaterialSha256, performedMaterialSha256(piano));
+  assert.equal(bass.performanceEvidence?.performedMaterialSha256, performedMaterialSha256(bass));
+
+  const modulatedPlan = structuredClone(plan);
+  modulatedPlan.sections[0].operations.push("modulate:2");
+  const [modulatedPiano] = buildTrackModels({
+    songModel: model, plan: modulatedPlan, tracks, style, seed: 923,
+  });
+  assert.equal(modulatedPiano.harmonyEvidence?.selectedMotion, undefined);
+  assert.equal(modulatedPiano.harmonyEvidence?.baselineMotion, undefined);
+  assert.equal(
+    modulatedPiano.performanceEvidence?.performedMaterialSha256,
+    performedMaterialSha256(modulatedPiano),
+  );
 });
 
 test("generated harmony uses absolute non-C evidence and correct major/minor diatonic triads", () => {

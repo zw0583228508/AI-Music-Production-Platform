@@ -1485,6 +1485,25 @@ function arrangementSectionSeconds(
   };
 }
 
+function arrangementBarRangeSeconds(
+  songModel: SongModelData,
+  startBar: number,
+  endBar: number,
+  fallbackBarSeconds: number,
+): { start: number; end: number } {
+  const bars = songModel.bars
+    .filter((bar) => bar.bar >= startBar && bar.bar <= endBar)
+    .sort((left, right) => left.bar - right.bar);
+  if (bars.length) {
+    const start = bars[0].coordinates?.start.seconds ?? bars[0].start;
+    const end = bars.at(-1)!.coordinates?.end.seconds ?? bars.at(-1)!.end;
+    if (Number.isFinite(start) && Number.isFinite(end) && end > start) return { start, end };
+  }
+  return {
+    start: (startBar - 1) * fallbackBarSeconds,
+    end: endBar * fallbackBarSeconds,
+  };
+}
 function createArrangementSpaceMap(
   songModel: SongModelData,
   plan: ArrangementPlan,
@@ -1709,6 +1728,41 @@ export class CompositionEngine {
               pitch: Math.max(definition.playableRange.min, Math.min(definition.playableRange.max, midi(note.pitch))),
               velocity: midi(note.velocity * 127),
               voice: "melody",
+            });
+          });
+        });
+      } else if (input.plan.compositionIntelligence?.version === "2.0" &&
+        identity.includes("bass") && readBassEvidence(input.songModel).length) {
+        input.plan.sections.forEach((section, sectionIndex) => {
+          const bounds = arrangementSectionSeconds(input.songModel, section, barSeconds);
+          const action = section.tracks[track.id] ?? section.tracks[track.name] ?? "root_motion";
+          const active = section.activeTracks
+            ? section.activeTracks.includes(track.id) || section.activeTracks.includes(track.name)
+            : action !== "none";
+          if (!active || action === "none") return;
+          const directive = section.trackDirectives?.[track.id] ?? section.trackDirectives?.[track.name];
+          if (directive) {
+            appliedDirectives.push({
+              section: section.section,
+              startBar: section.startBar,
+              endBar: section.endBar,
+              start: bounds.start,
+              end: bounds.end,
+              directive,
+            });
+          }
+          readBassEvidence(input.songModel).forEach((note, noteIndex) => {
+            const start = Math.max(bounds.start, note.start);
+            const end = Math.min(bounds.end, note.end);
+            if (end <= start) return;
+            notes.push({
+              id: `${track.id}:observed-bass:${noteIndex}:${sectionIndex}`,
+              start: round(start),
+              duration: round(end - start),
+              pitch: Math.max(definition.playableRange.min,
+                Math.min(definition.playableRange.max, midi(note.pitch))),
+              velocity: 82,
+              voice: "bass-evidence",
             });
           });
         });
@@ -2112,6 +2166,7 @@ export class CompositionEngine {
   }
 }
 
+type HarmonySpan = ReturnType<HarmonyEngine["generate"]>[number];
 export class ModulationEngine {
   transpose(
     trackModels: TrackModel[],
@@ -2274,6 +2329,9 @@ export function applyCompositionIntelligence(
 export class VoiceLeadingEngine {
   apply(trackModels: TrackModel[]): TrackModel[] {
     return trackModels.map((track) => {
+      if (track.harmonyEvidence?.mode === "advanced_voicing") return track;
+      if (track.harmonyEvidence?.mode === "phrase_countermelody") return track;
+      if (track.notes.some((note) => note.id.includes(":observed-bass:"))) return track;
       let previous = Math.round((track.instrumentDefinition.comfortableRange.min + track.instrumentDefinition.comfortableRange.max) / 2);
       const notes = track.notes.map((note) => {
         const range = track.instrumentDefinition.playableRange;
@@ -3000,8 +3058,15 @@ export function buildTrackModels(input: {
   const composed = new CompositionEngine().compose({
     songModel: input.songModel, plan: input.plan, tracks: input.tracks, harmony, spaceMap,
   });
+  const harmonized = applyAdvancedHarmony({
+    tracks: composed,
+    songModel: input.songModel,
+    plan: input.plan,
+    harmony,
+    spaceMap,
+  });
   const modulated = applyPlanModulations(
-    composed,
+    harmonized,
     input.plan,
     bpm,
     input.songModel.meterMap[0]?.meter,
@@ -3034,12 +3099,14 @@ export function buildTrackModels(input: {
         compositionSeed: input.plan.compositionIntelligence?.seed ?? (input.seed ?? 0),
       },
     ));
-  return materializeExplicitDoublings(
+  const orchestrated = materializeExplicitDoublings(
     performed,
     input.plan,
     input.songModel,
     secondsPerBar(bpm, input.songModel.meterMap[0]?.meter),
   );
+  return orchestrated.map((track) =>
+    refreshFinalHarmonyEvidence(track, input.songModel, input.plan));
 }
 
 function chordPitchClasses(symbol: string): number[] {
@@ -3318,6 +3385,13 @@ export function renderMusicPipeline(input: {
   };
 }
 
+export type VoicingMetrics = {
+  transitions: number;
+  totalSemitoneMotion: number;
+  averageSemitoneMotion: number;
+  maximumVoiceLeap: number;
+};
+
 function orchestrationCandidates(
   track: { id?: string; name: string; role: string },
   sectionFunction: ArrangementBrainSection["function"],
@@ -3459,4 +3533,550 @@ function planSectionOrchestration(input: {
     });
   }
   return assignments;
+}
+
+function scoreVoicing(
+  candidate: number[],
+  previous: number[],
+  melody: SongModelData["melody"],
+  chord: HarmonySpan,
+  wide: boolean,
+): number {
+  const motion = previous.length === candidate.length
+    ? candidate.reduce((sum, pitch, voice) =>
+        sum + Math.abs(previous[voice] - pitch), 0)
+    : 0;
+  const spacing = candidate.slice(1).reduce(
+    (sum, pitch, index) => sum + Math.abs(pitch - candidate[index] - (wide ? 7 : 4)),
+    0,
+  );
+  const melodyCollisions = melody.filter((note) =>
+    note.confidence >= .6 && note.start < chord.end && note.end > chord.start &&
+    candidate.some((pitch) => Math.abs(pitch - note.pitch) <= 1)).length;
+  return motion * 100 + spacing * .3 + melodyCollisions * 12;
+}
+
+function naiveRootVoicing(
+  chord: HarmonySpan,
+  range: { min: number; max: number },
+  voiceCount: number,
+): number[] {
+  const pitchClasses = chord.tones.map((tone) => ((tone % 12) + 12) % 12);
+  const rootPc = ((chord.root % 12) + 12) % 12;
+  let root = range.min;
+  while (root % 12 !== rootPc && root <= range.max) root += 1;
+  const ordered = [rootPc, ...pitchClasses.filter((pc) => pc !== rootPc)];
+  return ordered.slice(0, voiceCount).map((pc, index) => {
+    let pitch = root + (pc - rootPc + 12) % 12;
+    if (index && pitch <= root) pitch += 12;
+    while (pitch > range.max) pitch -= 12;
+    return pitch;
+  }).sort((left, right) => left - right);
+}
+
+function refreshFinalHarmonyEvidence(
+  track: TrackModel,
+  songModel: SongModelData,
+  plan: ArrangementPlan,
+): TrackModel {
+  if (!track.harmonyEvidence) return track;
+  const conflictsObservedPart = (note: MusicalNote) =>
+    songModel.melody.some((melody) =>
+      melody.confidence >= .6 &&
+      melody.start < note.start + note.duration &&
+      melody.end > note.start &&
+      Math.abs(melody.pitch - note.pitch) <= 1) ||
+    readBassEvidence(songModel).some((bass) =>
+      bass.start < note.start + note.duration &&
+      bass.end > note.start &&
+      note.pitch <= bass.pitch + 4);
+  const finalize = (value: TrackModel): TrackModel => {
+    const noteAt = (time: number) => value.notes.some((note) =>
+      Math.abs(note.start - time) <= .03);
+    const synchronized: TrackModel = {
+      ...value,
+      articulations: value.articulations.filter((event) => noteAt(event.time)),
+      automation: value.automation.filter((event) =>
+        !["pitch_bend", "aftertouch"].includes(event.parameter) || noteAt(event.time)),
+    };
+    return synchronized.performanceEvidence
+      ? {
+          ...synchronized,
+          performanceEvidence: {
+            ...synchronized.performanceEvidence,
+            playability: {
+              valid: synchronized.notes.every((note) =>
+                note.pitch >= synchronized.instrumentDefinition.playableRange.min &&
+                note.pitch <= synchronized.instrumentDefinition.playableRange.max &&
+                note.duration >= synchronized.instrumentDefinition.constraints.minNoteDuration),
+              checkedNotes: synchronized.notes.length,
+              violations: synchronized.notes.flatMap((note) => {
+                const violations: string[] = [];
+                if (note.pitch < synchronized.instrumentDefinition.playableRange.min ||
+                  note.pitch > synchronized.instrumentDefinition.playableRange.max) {
+                  violations.push(`${note.id}:pitch`);
+                }
+                if (note.duration < synchronized.instrumentDefinition.constraints.minNoteDuration) {
+                  violations.push(`${note.id}:duration`);
+                }
+                return violations;
+              }),
+            },
+            performedMaterialSha256: performedMaterialSha256(synchronized),
+          },
+        }
+      : synchronized;
+  };
+  if (track.harmonyEvidence.mode === "advanced_voicing") {
+    const constrainedNotes = track.notes.filter((note) => !conflictsObservedPart(note));
+    const groups = new Map<string, number[]>();
+    for (const note of constrainedNotes.filter((candidate) => candidate.id.includes(":voicing:"))) {
+      const key = note.id.replace(/:\d+$/, "");
+      groups.set(key, [...(groups.get(key) ?? []), note.pitch]);
+    }
+    const allVoicings = [...groups.values()].map((pitches) =>
+      pitches.sort((left, right) => left - right));
+    const expectedVoices = Math.max(0, ...allVoicings.map((voicing) => voicing.length));
+    const complete = expectedVoices > 0 &&
+      allVoicings.every((voicing) => voicing.length === expectedVoices);
+    const comparable = complete && !plan.sections.some((section) =>
+      section.operations.some((operation) => operation.startsWith("modulate:")));
+    const voicings = comparable ? allVoicings : [];
+    const metrics = measureVoicingMotion(voicings);
+    const melodyEvidencePreserved = constrainedNotes.every((note) =>
+      !songModel.melody.some((melody) =>
+        melody.confidence >= .6 &&
+        melody.start < note.start + note.duration &&
+        melody.end > note.start &&
+        Math.abs(melody.pitch - note.pitch) <= 1));
+    const bassEvidencePreserved = constrainedNotes.every((note) =>
+      !readBassEvidence(songModel).some((bass) =>
+        bass.start < note.start + note.duration &&
+        bass.end > note.start &&
+        note.pitch <= bass.pitch + 4));
+    return finalize({
+      ...track,
+      notes: constrainedNotes,
+      harmonyEvidence: {
+        ...track.harmonyEvidence,
+        ...(comparable ? {
+          selectedMotion: metrics.averageSemitoneMotion,
+          maximumLeap: metrics.maximumVoiceLeap,
+        } : {
+          selectedMotion: undefined,
+          baselineMotion: undefined,
+          maximumLeap: undefined,
+        }),
+        melodyEvidencePreserved,
+        bassEvidencePreserved,
+      },
+    });
+  }
+  let ordered = [...track.notes].sort((left, right) => left.start - right.start);
+  ordered = ordered.filter((note) => !conflictsObservedPart(note));
+  ordered = ordered.map((note, index) => {
+    if (!note.id.endsWith(":resolve-next")) return note;
+    const next = ordered[index + 1];
+    if (next?.id.includes(":resolution-of-") && Math.abs(next.pitch - note.pitch) <= 2) return note;
+    return {
+      ...note,
+      id: note.id.replace(/:(?:suspension|passing|approach|anticipation):resolve-next$/, ":chord:stable"),
+    };
+  });
+  const obligations = ordered.filter((note) => note.id.endsWith(":resolve-next"));
+  const realized = obligations.filter((note) => {
+    const index = ordered.indexOf(note);
+    return ordered[index + 1]?.id.includes(":resolution-of-");
+  });
+  const melodyEvidencePreserved = ordered.every((note) =>
+    !songModel.melody.some((melody) =>
+      melody.confidence >= .6 &&
+      melody.start < note.start + note.duration &&
+      melody.end > note.start &&
+      Math.abs(melody.pitch - note.pitch) <= 1));
+  const bassEvidencePreserved = ordered.every((note) =>
+    !readBassEvidence(songModel).some((bass) =>
+      bass.start < note.start + note.duration &&
+      bass.end > note.start &&
+      note.pitch <= bass.pitch + 4));
+  return finalize({
+    ...track,
+    notes: ordered,
+    harmonyEvidence: {
+      ...track.harmonyEvidence,
+      resolutionObligations: realized.length,
+      melodyEvidencePreserved,
+      bassEvidencePreserved,
+    },
+  });
+}
+
+function advancedVoicingCandidates(
+  chord: HarmonySpan,
+  voiceCount: number,
+  range: { min: number; max: number },
+): number[][] {
+  const pitchClasses = [...new Set(chord.tones.map((tone) => ((tone % 12) + 12) % 12))];
+  const available = pitchesInRange(pitchClasses, range.min, range.max);
+  if (!available.length) return [];
+  const candidates: number[][] = [];
+  const choose = (start: number, selected: number[]) => {
+    if (candidates.length >= 512) return;
+    if (selected.length === voiceCount) {
+      const distinct = new Set(selected.map((pitch) => pitch % 12));
+      if (distinct.size >= Math.min(voiceCount, 3, pitchClasses.length)) candidates.push(selected);
+      return;
+    }
+    for (let index = start; index < available.length; index += 1) {
+      if (selected.length && available[index] - selected.at(-1)! < 3) continue;
+      choose(index + 1, [...selected, available[index]]);
+      if (candidates.length >= 512) return;
+    }
+  };
+  choose(0, []);
+  return candidates;
+}
+
+export function measureVoicingMotion(voicings: number[][]): VoicingMetrics {
+  let transitions = 0;
+  let totalSemitoneMotion = 0;
+  let maximumVoiceLeap = 0;
+  for (let index = 1; index < voicings.length; index += 1) {
+    const previous = voicings[index - 1];
+    const current = voicings[index];
+    if (!previous.length || !current.length) continue;
+    if (previous.length !== current.length) continue;
+    transitions += 1;
+    for (let voice = 0; voice < current.length; voice += 1) {
+      const motion = Math.abs(current[voice] - previous[voice]);
+      totalSemitoneMotion += motion;
+      maximumVoiceLeap = Math.max(maximumVoiceLeap, motion);
+    }
+  }
+  return {
+    transitions,
+    totalSemitoneMotion,
+    averageSemitoneMotion: transitions
+      ? round(totalSemitoneMotion / transitions, 3)
+      : 0,
+    maximumVoiceLeap,
+  };
+}
+
+function voicingRespectsObservedParts(
+  candidate: number[],
+  songModel: SongModelData,
+  chord: HarmonySpan,
+): boolean {
+  const melodyConflict = songModel.melody.some((note) =>
+    note.confidence >= .6 &&
+    note.start < chord.end &&
+    note.end > chord.start &&
+    candidate.some((pitch) => Math.abs(pitch - note.pitch) <= 1));
+  const bass = readBassEvidence(songModel).filter((note) =>
+    note.start < chord.end && note.end > chord.start);
+  const bassConflict = bass.some((note) =>
+    candidate.some((pitch) => pitch <= note.pitch + 4));
+  return !melodyConflict && !bassConflict;
+}
+
+function counterlineNotes(input: {
+  track: TrackModel;
+  songModel: SongModelData;
+  plan: ArrangementPlan;
+  harmony: HarmonySpan[];
+  spaceMap?: ArrangementSpaceMap;
+}): MusicalNote[] {
+  const notes: MusicalNote[] = [];
+  const role = input.plan.compositionIntelligence?.instrumentRoles
+    .find((candidate) => candidate.trackId === input.track.id);
+  if (role?.function !== "counterline" &&
+    !/counter|melody|string|brass/i.test(`${input.track.role} ${input.track.instrument}`)) {
+    return input.track.notes;
+  }
+  const range = input.track.instrumentDefinition.registers.find((item) => item.name === "high") ??
+    input.track.instrumentDefinition.comfortableRange;
+  const phrases = input.plan.compositionIntelligence?.phrases.length
+    ? input.plan.compositionIntelligence.phrases
+    : input.plan.sections.map((section, index) => ({
+        id: `phrase:section:${index + 1}:whole`,
+        sectionId: input.plan.hierarchy?.sections[index]?.id ?? `section:${section.section}:${index + 1}`,
+        startBar: section.startBar,
+        endBar: section.endBar,
+        intent: "develop" as const,
+        tension: .6,
+        motifRef: `motif:${hashSeed(`${section.section}:${index}`)}`,
+        sourceMotifRef: null,
+      }));
+  for (const phrase of phrases) {
+    const section = input.plan.hierarchy?.sections.find((item) => item.id === phrase.sectionId);
+    const sectionIndex = section
+      ? input.plan.hierarchy?.sections.findIndex((item) => item.id === section.id) ?? -1
+      : -1;
+    const planSection = sectionIndex >= 0
+      ? input.plan.sections[sectionIndex]
+      : input.plan.sections.find((item) =>
+          item.startBar <= phrase.startBar && item.endBar >= phrase.endBar);
+    if (!planSection) continue;
+    const explicitlyRouted = (planSection.activeTracks?.includes(input.track.id) ?? true) &&
+      planSection.trackDirectives?.[input.track.id]?.role === "countermelody";
+    if (!explicitlyRouted) continue;
+    const action = planSection.tracks[input.track.id] ??
+      planSection.tracks[input.track.instrument] ?? "";
+    if (action !== "countermelody" && role?.function !== "counterline" &&
+      !/countermelody/i.test(input.track.role)) continue;
+    const barSeconds = secondsPerBar(
+      input.songModel.tempoMap[0]?.bpm ?? 92,
+      input.songModel.meterMap[0]?.meter,
+    );
+    const bounds = arrangementBarRangeSeconds(
+      input.songModel, phrase.startBar, phrase.endBar, barSeconds,
+    );
+    const motif = [0, 2, 4, 2].map((step, index) =>
+      phrase.intent === "answer" ? -step + (index === 3 ? 2 : 0) : step);
+    const slots = 4;
+    const slot = (bounds.end - bounds.start) / slots;
+    let previousPitch: number | undefined;
+    motif.forEach((offset, index) => {
+      const start = bounds.start + slot * index;
+      const duration = Math.max(input.track.instrumentDefinition.constraints.minNoteDuration, slot * .58);
+      if (intersectsObservedVoice(start, start + duration, input.spaceMap)) return;
+      const chord = input.harmony.find((candidate) => candidate.start <= start && candidate.end > start);
+      if (!chord) return;
+      const chordPcs = chord.tones.map((tone) => ((tone % 12) + 12) % 12);
+      const targetPc = chordPcs[(hashSeed(phrase.motifRef) + index) % chordPcs.length];
+      const available = pitchesInRange(chordPcs, range.min, range.max);
+      let pitch = available.sort((left, right) =>
+        Math.abs(left - ((previousPitch ?? (range.min + range.max) / 2) + offset)) -
+        Math.abs(right - ((previousPitch ?? (range.min + range.max) / 2) + offset)) ||
+        left - right)[0];
+      if (pitch === undefined) return;
+      const grammar = phrase.intent === "answer" && index === 0 && phrase.tension >= .5
+        ? "suspension"
+        : phrase.intent === "release" && index === 0
+          ? "pedal"
+          : phrase.intent === "build" && index === slots - 2
+            ? "anticipation"
+          : index === slots - 2 && phrase.tension >= .45
+              ? "approach"
+            : index === 1 && phrase.tension >= .3
+              ? "passing"
+              : "chord";
+      const resolutionRequired = ["suspension", "passing", "approach", "anticipation"].includes(grammar);
+      if (grammar === "approach" || grammar === "suspension") {
+        const resolution = available.find((candidate) => candidate % 12 === targetPc) ?? pitch;
+        pitch = Math.max(range.min, Math.min(range.max, resolution - 1));
+      } else if (grammar === "passing" && previousPitch !== undefined) {
+        pitch = Math.max(range.min, Math.min(range.max, previousPitch + (offset >= 0 ? 2 : -2)));
+      }
+      const conflictsObservedPart = input.songModel.melody.some((melody) =>
+        melody.confidence >= .6 &&
+        melody.start < start + duration &&
+        melody.end > start &&
+        Math.abs(melody.pitch - pitch) <= 1) ||
+        readBassEvidence(input.songModel).some((bass) =>
+          bass.start < start + duration &&
+          bass.end > start &&
+          pitch <= bass.pitch + 4);
+      if (conflictsObservedPart) return;
+      notes.push({
+        id: `${input.track.id}:counter:${phrase.motifRef}:${index}:${grammar}:${resolutionRequired ? "resolve-next" : "stable"}`,
+        start: round(start),
+        duration: round(Math.min(duration, bounds.end - start)),
+        pitch: midi(pitch),
+        velocity: midi(58 + phrase.tension * 32 + (index === 2 ? 8 : 0)),
+        voice: "countermelody",
+      });
+      previousPitch = pitch;
+    });
+    for (let index = 0; index < notes.length; index += 1) {
+      if (!notes[index].id.endsWith(":resolve-next")) continue;
+      const next = notes[index + 1];
+      const chord = next
+        ? input.harmony.find((candidate) =>
+            candidate.start <= next.start && candidate.end > next.start)
+        : undefined;
+      const step = next ? Math.abs(next.pitch - notes[index].pitch) : Infinity;
+      if (!next || !chord ||
+        !chord.tones.some((tone) => tone % 12 === next.pitch % 12) ||
+        step > 2) {
+        const ownChord = input.harmony.find((candidate) =>
+          candidate.start <= notes[index].start && candidate.end > notes[index].start);
+        const available = ownChord
+          ? pitchesInRange(
+              ownChord.tones.map((tone) => ((tone % 12) + 12) % 12),
+              range.min,
+              range.max,
+            )
+          : [];
+        const replacement = available.sort((left, right) =>
+          Math.abs(left - notes[index].pitch) - Math.abs(right - notes[index].pitch))[0];
+        if (replacement !== undefined) {
+          notes[index] = {
+            ...notes[index],
+            pitch: replacement,
+            id: notes[index].id.replace(/:(?:suspension|passing|approach|anticipation):resolve-next$/, ":chord:stable"),
+          };
+        }
+      } else {
+        next.id = `${next.id}:resolution-of-${index}`;
+      }
+    }
+  }
+  return notes;
+}
+
+function pitchesInRange(pitchClasses: number[], min: number, max: number): number[] {
+  const result: number[] = [];
+  for (let pitch = min; pitch <= max; pitch += 1) {
+    if (pitchClasses.includes(pitch % 12)) result.push(pitch);
+  }
+  return result;
+}
+
+function applyAdvancedHarmony(input: {
+  tracks: TrackModel[];
+  songModel: SongModelData;
+  plan: ArrangementPlan;
+  harmony: HarmonySpan[];
+  spaceMap?: ArrangementSpaceMap;
+}): TrackModel[] {
+  if (input.plan.compositionIntelligence?.version !== "2.0") return input.tracks;
+  return input.tracks.map((track) => {
+    const role = input.plan.compositionIntelligence!.instrumentRoles
+      .find((candidate) => candidate.trackId === track.id)?.function;
+    const hasExplicitCounterline = input.plan.sections.some((section) =>
+      (section.activeTracks?.includes(track.id) ?? true) &&
+      section.trackDirectives?.[track.id]?.role === "countermelody");
+    if ((role === "counterline" || /countermelody/i.test(track.role)) && hasExplicitCounterline) {
+      const generated = counterlineNotes({ ...input, track });
+      const barSeconds = secondsPerBar(
+        input.songModel.tempoMap[0]?.bpm ?? 92,
+        input.songModel.meterMap[0]?.meter,
+      );
+      const routedRanges = input.plan.sections.flatMap((section) =>
+        (section.activeTracks?.includes(track.id) ?? true) &&
+        section.trackDirectives?.[track.id]?.role === "countermelody"
+          ? [arrangementBarRangeSeconds(
+              input.songModel, section.startBar, section.endBar, barSeconds,
+            )]
+          : []);
+      const preserved = track.notes.filter((note) => !routedRanges.some((range) =>
+        note.start >= range.start && note.start < range.end));
+      return {
+        ...track,
+        notes: [...preserved, ...generated].sort((left, right) => left.start - right.start),
+        harmonyEvidence: {
+          version: "2.0",
+          mode: "phrase_countermelody",
+          motifRefs: [...new Set(generated.map((note) =>
+            note.id.split(":counter:")[1]?.split(":").slice(0, 2).join(":") ?? "")
+            .filter(Boolean))],
+          resolutionObligations: generated.filter((note) =>
+            note.id.endsWith(":resolve-next")).length,
+          melodyEvidencePreserved: true,
+          bassEvidencePreserved: true,
+        },
+        provenance: provenance("ADVANCED_HARMONY_ENGINE", "2.0.0", {
+          mode: "phrase_countermelody",
+          motifLineage: true,
+          resolutionObligations: true,
+        }, [track.provenance.model]),
+      };
+    }
+    if (role !== "harmony" || !track.instrumentDefinition.polyphonic) return track;
+    const voiceCount = Math.min(3, track.instrumentDefinition.maxVoices);
+    const range = track.instrumentDefinition.comfortableRange;
+    let previous: number[] = [];
+    const selectedVoicings: number[][] = [];
+    const baselineVoicings: number[][] = [];
+    const notes: MusicalNote[] = [];
+    const bpm = input.songModel.tempoMap[0]?.bpm ?? 92;
+    const barSeconds = secondsPerBar(bpm, input.songModel.meterMap[0]?.meter);
+    const spans = input.harmony.flatMap((chord) => input.plan.sections.flatMap((section, sectionIndex) => {
+      const active = section.activeTracks
+        ? section.activeTracks.includes(track.id)
+        : (section.tracks[track.id] ?? "") !== "none";
+      if (!active) return [];
+      const bounds = arrangementSectionSeconds(input.songModel, section, barSeconds);
+      const sectionId = input.plan.hierarchy?.sections[sectionIndex]?.id;
+      const phrases = input.plan.compositionIntelligence!.phrases.filter((phrase) =>
+        phrase.sectionId === sectionId);
+      const ranges = phrases.length
+        ? phrases.map((phrase) => ({
+            start: arrangementBarRangeSeconds(
+              input.songModel, phrase.startBar, phrase.endBar, barSeconds,
+            ).start,
+            end: arrangementBarRangeSeconds(
+              input.songModel, phrase.startBar, phrase.endBar, barSeconds,
+            ).end,
+            phrase,
+          }))
+        : [{ start: bounds.start, end: bounds.end, phrase: undefined }];
+      return ranges.flatMap((range) => {
+        const start = Math.max(chord.start, range.start);
+        const end = Math.min(chord.end, range.end);
+        return end > start ? [{
+          ...chord,
+          start,
+          end,
+          section,
+          sectionIndex,
+          phrase: range.phrase,
+        }] : [];
+      });
+    })).sort((left, right) => left.start - right.start || left.end - right.end);
+    for (const chord of spans) {
+      const candidates = advancedVoicingCandidates(chord, voiceCount, range)
+        .filter((candidate) => voicingRespectsObservedParts(candidate, input.songModel, chord));
+      const selected = [...candidates].sort((left, right) =>
+        scoreVoicing(left, previous, input.songModel.melody, chord, input.plan.style.harmony.voicing === "wide") -
+        scoreVoicing(right, previous, input.songModel.melody, chord, input.plan.style.harmony.voicing === "wide") ||
+        left.join(",").localeCompare(right.join(",")))[0];
+      if (!selected) continue;
+      const duration = Math.max(track.instrumentDefinition.constraints.minNoteDuration, chord.end - chord.start);
+      selected.forEach((pitch, voice) => notes.push({
+        id: `${track.id}:voicing:${chord.start}:${voice}`,
+        start: round(chord.start + Math.min(.08, duration * .02)),
+        duration: round(Math.max(
+          track.instrumentDefinition.constraints.minNoteDuration,
+          duration - Math.min(.08, duration * .02),
+        )),
+        pitch,
+        velocity: midi(62 + input.plan.style.harmony.tension * 24 +
+          (input.plan.hierarchy?.sections[chord.sectionIndex]
+            ? input.plan.compositionIntelligence!.tensionRelease.find((arc) =>
+                arc.sectionId === input.plan.hierarchy!.sections[chord.sectionIndex].id)?.tension ?? 0
+            : 0) * 12 + (chord.phrase?.tension ?? 0) * 8),
+        voice: `harmony-${voice}`,
+      }));
+      selectedVoicings.push(selected);
+      baselineVoicings.push(naiveRootVoicing(chord, range, voiceCount));
+      previous = selected;
+    }
+    const selectedMetrics = measureVoicingMotion(selectedVoicings);
+    const baselineMetrics = measureVoicingMotion(baselineVoicings);
+    return {
+      ...track,
+      notes,
+      harmonyEvidence: {
+        version: "2.0",
+        mode: "advanced_voicing",
+        selectedMotion: selectedMetrics.averageSemitoneMotion,
+        baselineMotion: baselineMetrics.averageSemitoneMotion,
+        maximumLeap: selectedMetrics.maximumVoiceLeap,
+        melodyEvidencePreserved: true,
+        bassEvidencePreserved: true,
+      },
+      provenance: provenance("ADVANCED_HARMONY_ENGINE", "2.0.0", {
+        mode: "inversion_spacing_voice_leading",
+        selectedAverageMotion: selectedMetrics.averageSemitoneMotion,
+        baselineAverageMotion: baselineMetrics.averageSemitoneMotion,
+        selectedMaximumLeap: selectedMetrics.maximumVoiceLeap,
+        baselineMaximumLeap: baselineMetrics.maximumVoiceLeap,
+        melodyEvidencePreserved: true,
+        bassEvidencePreserved: true,
+      }, [track.provenance.model]),
+    };
+  });
 }

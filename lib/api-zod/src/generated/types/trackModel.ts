@@ -13,6 +13,7 @@ import type { InstrumentDefinition } from './instrumentDefinition';
 import type { MusicalNote } from './musicalNote';
 import type { TrackAutomationPoint } from './trackAutomationPoint';
 import type { TrackDirective } from './trackDirective';
+import type { TrackHarmonyEvidence } from './trackHarmonyEvidence';
 import type { TrackMappingMetadata } from './trackMappingMetadata';
 import type { TrackPerformanceEvidence } from './trackPerformanceEvidence';
 
@@ -32,4 +33,5 @@ export interface TrackModel {
   appliedDirectives?: AppliedTrackDirective[];
   mapping?: TrackMappingMetadata;
   performanceEvidence?: TrackPerformanceEvidence;
+  harmonyEvidence?: TrackHarmonyEvidence;
 }
