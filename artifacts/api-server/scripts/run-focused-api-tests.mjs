@@ -116,6 +116,15 @@ function normalizeCleanupErrorCode(error) {
   }
 }
 
+function normalizePidLimitReadErrorCode(error) {
+  try {
+    const code = error?.code;
+    return supportedPidLimitReadFailureCodes.has(code) ? code : "UNKNOWN";
+  } catch {
+    return "UNKNOWN";
+  }
+}
+
 function formatCleanupErrorMessage(error) {
   try {
     const message = error?.message ?? error;
@@ -226,7 +235,13 @@ function parseOptionalPositiveInteger(environmentVariable) {
       process.env.FOCUSED_API_TEST_INJECT_PID_MAX_READ_FAILURE;
     if (injectedReadFailure) {
       const error = new Error("injected denied host PID limit read");
-      if (injectedReadFailure !== "UNKNOWN") {
+      if (injectedReadFailure === "THROWING_GETTER") {
+        Object.defineProperty(error, "code", {
+          get() {
+            throw new Error("injected throwing host PID limit code getter");
+          },
+        });
+      } else if (injectedReadFailure !== "UNKNOWN") {
         error.code =
           injectedPidLimitReadFailureCodes.get(injectedReadFailure) ??
           injectedReadFailure;
@@ -235,9 +250,7 @@ function parseOptionalPositiveInteger(environmentVariable) {
     }
     pidLimitValue = readFileSync(pidLimitInput, "utf8").trim();
   } catch (error) {
-    const errorCode = supportedPidLimitReadFailureCodes.has(error?.code)
-      ? error.code
-      : "UNKNOWN";
+    const errorCode = normalizePidLimitReadErrorCode(error);
     throw new Error(
       `focused API runner could not read host kernel setting ${pidLimitSetting}: ${errorCode}`,
     );
@@ -276,6 +289,7 @@ validateFocusedFaultSetting(
   new Set([
     ...supportedPermissionFailureCodes,
     "UNKNOWN",
+    "THROWING_GETTER",
     ...injectedPidLimitReadFailureCodes.keys(),
   ]),
 );

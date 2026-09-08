@@ -306,6 +306,40 @@ test("an unclassified host PID limit failure fails before focused work with a bo
   );
 });
 
+test("a throwing host PID limit code getter normalizes to UNKNOWN before focused work", async () => {
+  const deniedOverridePath = join(
+    tmpdir(),
+    `focused-api-throwing-pid-limit-code-${randomUUID()}`,
+  );
+  const result = await runFocusedTest("test:validation", {
+    ...process.env,
+    FOCUSED_API_TEST_INJECT_REUSED_PID_TARGET: "1",
+    FOCUSED_API_TEST_PID_MAX_OVERRIDE_FILE: deniedOverridePath,
+    FOCUSED_API_TEST_INJECT_PID_MAX_READ_FAILURE: "THROWING_GETTER",
+  });
+
+  assert.equal(result.code, 1);
+  assert.match(
+    result.stderr,
+    /focused API runner could not read host kernel setting \/proc\/sys\/kernel\/pid_max: UNKNOWN/u,
+  );
+  assert.doesNotMatch(
+    result.stderr,
+    /injected throwing host PID limit code getter/u,
+    "diagnostic exposed the throwing getter exception",
+  );
+  assert.doesNotMatch(
+    result.stderr,
+    new RegExp(deniedOverridePath.replaceAll("/", "\\/")),
+    "diagnostic exposed the hostile getter override path",
+  );
+  assert.doesNotMatch(
+    result.stdout,
+    /\besbuild\b|TAP version/u,
+    "hostile host PID limit failure reached bundling or focused tests",
+  );
+});
+
 for (const [injectedFailure, hiddenErrorLabel] of [
   ["UNEXPECTED_LONG", `E${"X".repeat(1_024)}`],
   ["UNEXPECTED_MALFORMED", "host error label"],
