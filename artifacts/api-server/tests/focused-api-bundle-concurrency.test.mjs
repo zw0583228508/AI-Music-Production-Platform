@@ -83,6 +83,7 @@ for (const [environmentVariable, invalidValue] of [
   ["FOCUSED_API_TEST_INJECT_PID_MAX_READ_FAILURE", "ENOENT"],
   ["FOCUSED_API_TEST_INJECT_FAILURE", "await-sigtrek"],
   ["FOCUSED_API_TEST_INJECT_PROCESS_DIRECTORY_READ_FAILURE", "ture"],
+  ["FOCUSED_API_TEST_INJECT_MALFORMED_CLEANUP_MESSAGE", "throwing-value-of"],
 ]) {
   test(`${environmentVariable} rejects unsupported cleanup fault values`, async () => {
     const result = await runFocusedTest("test:validation", {
@@ -1576,6 +1577,59 @@ test(
     assert.equal(processExists(interrupted.activeChildPid), false);
   },
 );
+
+for (const malformedMessage of [
+  "throwing-getter",
+  "throwing-string-conversion",
+]) {
+  test(
+    `${malformedMessage} cleanup messages cannot interrupt cancellation diagnostics`,
+    { timeout: 15_000 },
+    async () => {
+      const before = await listBundleDirectories();
+      const interrupted = await interruptFocusedTestDuringAssertions(
+        "test:validation",
+        {
+          ...process.env,
+          FOCUSED_API_TEST_INJECT_FAILURE: "ignore-sigterm-during-esbuild",
+          FOCUSED_API_TEST_INJECT_PROCESS_STAT_READ_FAILURE: "EPERM",
+          FOCUSED_API_TEST_INJECT_MALFORMED_CLEANUP_MESSAGE: malformedMessage,
+        },
+        false,
+        `focused-api-${malformedMessage}-cleanup-message`,
+      );
+
+      assert.equal(interrupted.interrupted, true);
+      assert.equal(
+        interrupted.code,
+        143,
+        [
+          "malformed cleanup message prevented bounded cancellation",
+          interrupted.stdout,
+          interrupted.stderr,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      );
+      assert.match(
+        interrupted.stderr,
+        /focused API cleanup could not read \/proc\/\d+\/stat: EPERM unavailable error message/u,
+      );
+      assert.doesNotMatch(
+        interrupted.stderr,
+        /injected throwing cleanup message/u,
+      );
+      await waitForProcessExit(interrupted.activeChildPid);
+      assert.equal(processExists(interrupted.activeChildPid), false);
+
+      const after = await listBundleDirectories();
+      assert.deepEqual(
+        [...after].filter((directory) => !before.has(directory)),
+        [],
+      );
+    },
+  );
+}
 
 test(
   "mixed unreadable process records retain bounded per-code diagnostics and cannot strand cancellation cleanup",
