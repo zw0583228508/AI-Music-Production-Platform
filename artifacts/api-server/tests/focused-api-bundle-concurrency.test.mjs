@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { readFileSync, rmSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
 
 const bundleDirectoryPrefix = "music-studio-api-tests.";
@@ -109,6 +112,87 @@ function interruptFocusedTestAfterBundles(
       resolve({ script, code, signal, stdout, stderr, interrupted });
     });
   });
+}
+
+function interruptFocusedTestDuringAssertions(script, env = process.env) {
+  return new Promise((resolve, reject) => {
+    const { NODE_TEST_CONTEXT: _parentTestContext, ...childEnv } = env;
+    const handshakePath = join(
+      tmpdir(),
+      `focused-api-assertion-${randomUUID()}.txt`,
+    );
+    childEnv.FOCUSED_API_TEST_HANDSHAKE_FILE = handshakePath;
+    const child = spawn("pnpm", ["run", script], {
+      cwd: new URL("..", import.meta.url),
+      detached: true,
+      env: childEnv,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    let interrupted = false;
+    let runnerPid;
+    let testChildPid;
+
+    const interruptWhenAssertionIsActive = () => {
+      if (interrupted) {
+        return;
+      }
+      try {
+        const marker = readFileSync(handshakePath, "utf8").match(
+          /^(\d+),(\d+)$/u,
+        );
+        if (!marker) {
+          return;
+        }
+        interrupted = true;
+        runnerPid = Number(marker[1]);
+        testChildPid = Number(marker[2]);
+        process.kill(runnerPid, "SIGTERM");
+      } catch (error) {
+        if (error?.code !== "ENOENT") {
+          clearInterval(handshakePoll);
+          reject(error);
+        }
+      }
+    };
+    const handshakePoll = setInterval(interruptWhenAssertionIsActive, 10);
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (code, signal) => {
+      clearInterval(handshakePoll);
+      rmSync(handshakePath, { force: true });
+      resolve({
+        script,
+        code,
+        signal,
+        stdout,
+        stderr,
+        interrupted,
+        runnerPid,
+        testChildPid,
+      });
+    });
+  });
+}
+
+function processExists(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === "ESRCH") {
+      return false;
+    }
+    throw error;
+  }
 }
 
 test(
@@ -723,7 +807,7 @@ test(
   async () => {
     const before = await listBundleDirectories();
     const [interrupted, healthy] = await Promise.all([
-      interruptFocusedTestAfterBundles("test:validation", {
+      interruptFocusedTestAfterBundles("test:validation", "SIGTERM", {
         ...process.env,
         FOCUSED_API_TEST_INJECT_FAILURE: "await-sigterm",
       }),
@@ -782,6 +866,75 @@ test(
       leaked,
       [],
       `mixed healthy and SIGTERM-interrupted focused API tests left bundle directories behind: ${leaked.join(", ")}`,
+    );
+  },
+);
+
+test(
+  "SIGTERM during assertions terminates its test child without disrupting a different healthy focused API check",
+  { timeout: 120_000 },
+  async () => {
+    const before = await listBundleDirectories();
+    const [interrupted, healthy] = await Promise.all([
+      interruptFocusedTestDuringAssertions("test:validation", {
+        ...process.env,
+        FOCUSED_API_TEST_INJECT_FAILURE: "await-sigterm-during-node-test",
+      }),
+      runFocusedTest("test:source-ingestion"),
+    ]);
+
+    assert.notEqual(
+      interrupted.script,
+      healthy.script,
+      "expected two distinct focused API scripts to run concurrently",
+    );
+    assert.equal(
+      interrupted.interrupted,
+      true,
+      [
+        `${interrupted.script} never reached its node --test phase`,
+        interrupted.stdout,
+        interrupted.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    assert.equal(
+      interrupted.code,
+      143,
+      [
+        `${interrupted.script} did not terminate through the intended SIGTERM path`,
+        interrupted.signal ? `signal: ${interrupted.signal}` : "",
+        interrupted.stdout,
+        interrupted.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    assert.equal(
+      processExists(interrupted.testChildPid),
+      false,
+      `interrupted node --test child ${interrupted.testChildPid} remained alive`,
+    );
+    assert.equal(
+      healthy.code,
+      0,
+      [
+        `${healthy.script} failed while a different focused check handled SIGTERM during assertions`,
+        healthy.signal ? `signal: ${healthy.signal}` : "",
+        healthy.stdout,
+        healthy.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+
+    const after = await listBundleDirectories();
+    const leaked = [...after].filter((directory) => !before.has(directory));
+    assert.deepEqual(
+      leaked,
+      [],
+      `mixed healthy and assertion-interrupted focused API tests left bundle directories behind: ${leaked.join(", ")}`,
     );
   },
 );

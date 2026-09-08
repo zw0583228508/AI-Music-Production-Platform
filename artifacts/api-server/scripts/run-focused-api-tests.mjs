@@ -121,7 +121,13 @@ async function main() {
     (await mkdtemp(join(tmpdir(), "music-studio-api-tests.")));
   const termination = new Promise(() => {});
   const handleTermination = (signal) => {
-    activeChild?.kill("SIGTERM");
+    if (activeChild) {
+      if (activeChild.spawnargs[1] === "--test") {
+        process.kill(-activeChild.pid, "SIGTERM");
+      } else {
+        activeChild.kill("SIGTERM");
+      }
+    }
     rmSync(bundleDirectory, { recursive: true, force: true });
     process.off("SIGINT", handleSigint);
     process.off("SIGTERM", handleSigterm);
@@ -203,27 +209,35 @@ async function main() {
 
     if (
       process.env.FOCUSED_API_TEST_INJECT_FAILURE === "bundled-test" ||
-      process.env.FOCUSED_API_TEST_INJECT_FAILURE === "during-node-test"
+      process.env.FOCUSED_API_TEST_INJECT_FAILURE === "during-node-test" ||
+      process.env.FOCUSED_API_TEST_INJECT_FAILURE ===
+        "await-sigterm-during-node-test"
     ) {
       const failingTest = join(bundleDirectory, "intentional-failure.test.mjs");
+      const injection = process.env.FOCUSED_API_TEST_INJECT_FAILURE;
       const failureMessage =
-        process.env.FOCUSED_API_TEST_INJECT_FAILURE === "during-node-test"
+        injection === "during-node-test"
           ? "injected focused API assertion failure after bundling"
           : "injected bundled-test failure";
+      const testBody =
+        injection === "await-sigterm-during-node-test"
+          ? `import { writeFileSync } from "node:fs";\nimport test from "node:test";\ntest("wait for focused API SIGTERM", async () => { writeFileSync(process.env.FOCUSED_API_TEST_HANDSHAKE_FILE, process.env.FOCUSED_API_TEST_RUNNER_PID + "," + process.pid); await new Promise(() => {}); });\n`
+          : `import test from "node:test";\ntest(${JSON.stringify(failureMessage)}, () => { throw new Error(${JSON.stringify(failureMessage)}); });\n`;
       await writeFile(
         failingTest,
-        `import test from "node:test";\ntest(${JSON.stringify(failureMessage)}, () => { throw new Error(${JSON.stringify(failureMessage)}); });\n`,
+        testBody,
       );
       bundledTests.push(failingTest);
     }
 
     const testEnvironment = { ...process.env };
     delete testEnvironment.NODE_TEST_CONTEXT;
+    testEnvironment.FOCUSED_API_TEST_RUNNER_PID = String(process.pid);
     await Promise.race([
       run(
         process.execPath,
         ["--test", ...bundledTests, ...(suite.tests ?? [])],
-        { env: testEnvironment },
+        { detached: true, env: testEnvironment },
       ),
       termination,
     ]);
