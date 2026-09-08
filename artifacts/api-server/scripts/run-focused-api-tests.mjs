@@ -86,6 +86,7 @@ const suites = {
 let activeChild;
 const childTerminationGraceMs = 500;
 const childReapingTimeoutMs = 3_000;
+let injectedProcessStatReadFailure = false;
 
 function killChild(child, signal) {
   try {
@@ -116,6 +117,17 @@ function listIsolatedChildPids(rootPid) {
       continue;
     }
     try {
+      if (
+        !injectedProcessStatReadFailure &&
+        process.env.FOCUSED_API_TEST_INJECT_PROCESS_STAT_READ_FAILURE ===
+          "true" &&
+        entry.name === String(rootPid)
+      ) {
+        injectedProcessStatReadFailure = true;
+        const error = new Error("injected unreadable process record");
+        error.code = "EACCES";
+        throw error;
+      }
       const stat = readFileSync(`/proc/${entry.name}/stat`, "utf8");
       const match = stat.match(/^(\d+) \(.*\) \S+ (\d+) \d+ (\d+) /u);
       if (!match) {
@@ -131,9 +143,12 @@ function listIsolatedChildPids(rootPid) {
         pidsInSession.push(pid);
       }
     } catch (error) {
-      if (error?.code !== "ENOENT" && error?.code !== "ESRCH") {
-        throw error;
+      if (error?.code === "ENOENT" || error?.code === "ESRCH") {
+        continue;
       }
+      console.error(
+        `focused API cleanup could not read /proc/${entry.name}/stat: ${error?.code ?? "UNKNOWN"} ${error?.message ?? String(error)}`,
+      );
     }
   }
 
