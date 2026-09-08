@@ -83,6 +83,66 @@ const suites = {
   },
 };
 
+const supportedPermissionFailureCodes = new Set(["EPERM", "EACCES"]);
+
+function parsePermissionFailureCodes(
+  environmentVariable,
+  passthroughValues = [],
+  allowMultiple = true,
+) {
+  const configuredValue = process.env[environmentVariable] ?? "";
+  if (configuredValue === "" || passthroughValues.includes(configuredValue)) {
+    return [];
+  }
+  const errorCodes = configuredValue.split(",");
+  const unsupportedCodes = errorCodes.filter(
+    (errorCode) => !supportedPermissionFailureCodes.has(errorCode),
+  );
+  if (unsupportedCodes.length > 0 || (!allowMultiple && errorCodes.length > 1)) {
+    throw new Error(
+      `${environmentVariable} has unsupported cleanup fault value: ${configuredValue}; supported values are ${passthroughValues.length > 0 ? `${passthroughValues.join(", ")}, ` : ""}EPERM and EACCES${allowMultiple ? " (including comma-separated combinations)" : ""}`,
+    );
+  }
+  return errorCodes;
+}
+
+function parseDirectSignalFailureConfiguration() {
+  const environmentVariable =
+    "FOCUSED_API_TEST_INJECT_DIRECT_PROCESS_SIGNAL_FAILURE";
+  const configuredValue = process.env[environmentVariable] ?? "";
+  if (
+    configuredValue === "" ||
+    configuredValue === "true" ||
+    supportedPermissionFailureCodes.has(configuredValue)
+  ) {
+    return new Map();
+  }
+  const configuration = new Map();
+  const unsupportedEntries = [];
+  for (const entry of configuredValue.split(",")) {
+    const [signal, errorCode, ...extraParts] = entry.split(":");
+    if (
+      extraParts.length > 0 ||
+      (signal !== "SIGTERM" && signal !== "SIGKILL") ||
+      !supportedPermissionFailureCodes.has(errorCode)
+    ) {
+      unsupportedEntries.push(entry);
+      continue;
+    }
+    const errorCodes = configuration.get(signal) ?? [];
+    if (!errorCodes.includes(errorCode)) {
+      errorCodes.push(errorCode);
+    }
+    configuration.set(signal, errorCodes);
+  }
+  if (unsupportedEntries.length > 0) {
+    throw new Error(
+      `${environmentVariable} has unsupported cleanup fault entr${unsupportedEntries.length === 1 ? "y" : "ies"}: ${unsupportedEntries.join(", ")}; supported entries use SIGTERM or SIGKILL with EPERM or EACCES`,
+    );
+  }
+  return configuration;
+}
+
 let activeChild;
 const childTerminationGraceMs = 500;
 const childReapingTimeoutMs = 3_000;
@@ -92,44 +152,32 @@ const reportedProcessExistenceFailures = new Set();
 const processExistenceFailureDetailLimit = 1;
 const processExistenceFailureSummaryPidLimit = 10;
 const processExistenceFailureGroups = new Map();
-const processExistenceFailureConfiguration = (
-  process.env.FOCUSED_API_TEST_INJECT_PROCESS_EXISTENCE_CHECK_FAILURE ?? ""
-)
-  .split(",")
-  .filter((errorCode) => errorCode === "EPERM" || errorCode === "EACCES");
+const processExistenceFailureConfiguration = parsePermissionFailureCodes(
+  "FOCUSED_API_TEST_INJECT_PROCESS_EXISTENCE_CHECK_FAILURE",
+  ["true"],
+);
 const processExistenceFailureAssignments = new Map();
 const reportedProcessStatReadFailures = new Set();
 const processStatReadFailureDetailLimit = 1;
 const processStatReadFailureSummaryPidLimit = 10;
 const processStatReadFailureGroups = new Map();
-const processStatReadFailureConfiguration = (
-  process.env.FOCUSED_API_TEST_INJECT_PROCESS_STAT_READ_FAILURE ?? ""
-)
-  .split(",")
-  .filter((errorCode) => errorCode === "EPERM" || errorCode === "EACCES");
+const processStatReadFailureConfiguration = parsePermissionFailureCodes(
+  "FOCUSED_API_TEST_INJECT_PROCESS_STAT_READ_FAILURE",
+  ["true", "all"],
+);
 const processStatReadFailureAssignments = new Map();
 const reportedDirectSignalFailures = new Set();
 const directSignalFailureDetailLimit = 1;
 const directSignalFailureSummaryPidLimit = 10;
 const directSignalFailureGroups = new Map();
 const reportedReusedPids = new Set();
-const directSignalFailureConfiguration = new Map();
-for (const [signal, errorCode] of (
-  process.env.FOCUSED_API_TEST_INJECT_DIRECT_PROCESS_SIGNAL_FAILURE ?? ""
-)
-  .split(",")
-  .map((entry) => entry.split(":"))
-  .filter(
-    ([signal, errorCode]) =>
-      (signal === "SIGTERM" || signal === "SIGKILL") &&
-      (errorCode === "EPERM" || errorCode === "EACCES"),
-  )) {
-  const errorCodes = directSignalFailureConfiguration.get(signal) ?? [];
-  if (!errorCodes.includes(errorCode)) {
-    errorCodes.push(errorCode);
-  }
-  directSignalFailureConfiguration.set(signal, errorCodes);
-}
+const directSignalFailureConfiguration =
+  parseDirectSignalFailureConfiguration();
+parsePermissionFailureCodes(
+  "FOCUSED_API_TEST_INJECT_PROCESS_GROUP_SIGNAL_FAILURE",
+  ["true"],
+  false,
+);
 const directSignalFailureAssignments = new Map();
 const reportedProcessGroupSignalFailures = new Set();
 
@@ -218,7 +266,7 @@ function listIsolatedChildProcesses(rootPid) {
       let assignedFailure = processStatReadFailureAssignments.get(entry.name);
       if (
         !assignedFailure &&
-        processStatReadFailureConfiguration.length > 1
+        processStatReadFailureConfiguration.length > 0
       ) {
         assignedFailure =
           processStatReadFailureConfiguration[
