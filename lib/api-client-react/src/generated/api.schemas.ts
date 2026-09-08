@@ -1718,6 +1718,8 @@ export type CandidateRepairEvidenceScope = {
 
 export interface CandidateRepairEvidence {
   sourceCandidateId: string;
+  /** Display-safe parent label persisted independently of the historical source job. */
+  sourceCandidateLabel?: string;
   findingId: string;
   /**
      * @minimum 0
@@ -3243,4 +3245,3 @@ returnTo?: string;
 export type LogoutBrowserSessionParams = {
 returnTo?: string;
 };
-

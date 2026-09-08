@@ -10,6 +10,8 @@ import type { CandidateRepairEvidenceScope } from './candidateRepairEvidenceScop
 
 export interface CandidateRepairEvidence {
   sourceCandidateId: string;
+  /** Display-safe parent label persisted independently of the historical source job. */
+  sourceCandidateLabel?: string;
   findingId: string;
   /**
      * @minimum 0

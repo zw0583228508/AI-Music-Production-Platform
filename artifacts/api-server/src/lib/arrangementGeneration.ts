@@ -1359,6 +1359,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
             ? {
                 repair: {
                   sourceCandidateId: snapshot.repair.sourceCandidateId,
+                  sourceCandidateLabel: snapshot.repair.sourceCandidateLabel,
                   findingId: snapshot.repair.finding.id,
                   seed: snapshot.repair.seed,
                   attempt: job.attempt,
@@ -1519,6 +1520,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
             ? {
                 repair: {
                   sourceCandidateId: snapshot.repair.sourceCandidateId,
+                  sourceCandidateLabel: snapshot.repair.sourceCandidateLabel,
                   findingId: snapshot.repair.finding.id,
                   seed: snapshot.repair.seed,
                   attempt: job.attempt,
@@ -1837,6 +1839,7 @@ export async function queueCandidateRepair(
     parameters: { repairSourceCandidateId: candidate.id },
     repair: {
       sourceCandidateId: candidate.id,
+      sourceCandidateLabel: candidate.label,
       sourceScore: candidate.evaluation.musicCritic!.score,
       seed,
       maxAttempts: MAX_REPAIR_ATTEMPTS,

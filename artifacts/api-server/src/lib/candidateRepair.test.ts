@@ -101,6 +101,7 @@ test("bounded repairs preserve every unscoped event and track", () => {
   const result = applyBoundedRepair({
     snapshot: {
       sourceCandidateId: "candidate",
+      sourceCandidateLabel: "Original Candidate",
       sourceScore: 0.5,
       seed: 123,
       maxAttempts: 2,
@@ -191,6 +192,7 @@ test("notes crossing either repair boundary remain byte-for-byte original", () =
   const result = applyBoundedRepair({
     snapshot: {
       sourceCandidateId: "candidate",
+      sourceCandidateLabel: "Original Candidate",
       sourceScore: 0.5,
       seed: 123,
       maxAttempts: 2,
@@ -258,6 +260,7 @@ test("repairing a legacy plan materializes a valid hierarchy and reports every a
   const result = applyBoundedRepair({
     snapshot: {
       sourceCandidateId: "legacy",
+      sourceCandidateLabel: "Legacy Candidate",
       sourceScore: .4,
       seed: 3,
       maxAttempts: 2,

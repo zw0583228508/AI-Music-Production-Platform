@@ -1426,6 +1426,8 @@ export type CandidateEvaluation = {
 
 export type CandidateRepairEvidence = {
   sourceCandidateId: string;
+  /** Display-safe lineage persisted for repairs created after this field was introduced. */
+  sourceCandidateLabel?: string;
   findingId: string;
   seed: number;
   attempt: number;
@@ -1530,6 +1532,7 @@ export type CandidateEvaluationArtifact = {
 
 export type CandidateRepairSnapshot = {
   sourceCandidateId: string;
+  sourceCandidateLabel: string;
   sourceScore: number;
   seed: number;
   maxAttempts: number;
