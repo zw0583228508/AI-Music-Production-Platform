@@ -1401,95 +1401,102 @@ for (const errorCode of ["EPERM", "EACCES"]) {
   );
 }
 
-test(
-  "a denied direct process signal cannot interrupt bounded cancellation cleanup",
-  { timeout: 15_000 },
-  async () => {
-    const before = await listBundleDirectories();
-    const startedAt = Date.now();
-    const interrupted = await interruptFocusedTestDuringAssertions(
-      "test:validation",
-      {
-        ...process.env,
-        FOCUSED_API_TEST_INJECT_FAILURE:
-          "continuously-launch-helpers-during-esbuild",
-        FOCUSED_API_TEST_INJECT_DIRECT_PROCESS_SIGNAL_FAILURE: "true",
-      },
-      false,
-      "focused-api-denied-direct-process-signal",
-    );
-    const cleanupDurationMs = Date.now() - startedAt;
-
-    assert.equal(
-      interrupted.interrupted,
-      true,
-      [
-        "focused API test never reached its signal-resistant bundling phase",
-        interrupted.stdout,
-        interrupted.stderr,
-      ]
-        .filter(Boolean)
-        .join("\n"),
-    );
-    assert.equal(
-      interrupted.code,
-      143,
-      [
-        "focused API test did not complete the intended SIGTERM cleanup path",
-        interrupted.signal ? `signal: ${interrupted.signal}` : "",
-        interrupted.stdout,
-        interrupted.stderr,
-      ]
-        .filter(Boolean)
-        .join("\n"),
-    );
-    assert.match(
-      interrupted.stderr,
-      /focused API cleanup could not signal process \d+ with SIGKILL: EPERM injected denied direct process signal/,
-      "focused API cleanup did not report the denied direct signal with its PID and signal",
-    );
-    const detailedFailures =
-      interrupted.stderr.match(
-        /focused API cleanup could not signal process \d+ with SIGKILL: EPERM injected denied direct process signal/g,
-      ) ?? [];
-    assert.ok(
-      detailedFailures.length === 1,
-      `focused API cleanup emitted an unbounded number of detailed signal failures: ${detailedFailures.length}`,
-    );
-    assert.match(
-      interrupted.stderr,
-      /focused API cleanup suppressed detailed SIGKILL EPERM signal failures for \d+ additional processes; affected PIDs: \d+(?:, \d+)*(?:, and \d+ more)?/,
-      "focused API cleanup did not summarize additional denied signals with their signal, error code, and affected PIDs",
-    );
-    assert.ok(
-      cleanupDurationMs < 10_000,
-      `focused API cleanup exceeded its bounded window: ${cleanupDurationMs}ms`,
-    );
-    assert.ok(
-      interrupted.helperPid,
-      "helper-backed bundler did not report its helper process",
-    );
-    await Promise.all([
-      waitForProcessExit(interrupted.activeChildPid),
-      waitForProcessExit(interrupted.helperPid),
-    ]);
-    for (const pid of [interrupted.activeChildPid, interrupted.helperPid]) {
-      assert.equal(
-        processExists(pid),
+for (const errorCode of ["EPERM", "EACCES"]) {
+  test(
+    `a denied ${errorCode} direct process signal cannot interrupt bounded cancellation cleanup`,
+    { timeout: 15_000 },
+    async () => {
+      const before = await listBundleDirectories();
+      const startedAt = Date.now();
+      const interrupted = await interruptFocusedTestDuringAssertions(
+        "test:validation",
+        {
+          ...process.env,
+          FOCUSED_API_TEST_INJECT_FAILURE:
+            "continuously-launch-helpers-during-esbuild",
+          FOCUSED_API_TEST_INJECT_DIRECT_PROCESS_SIGNAL_FAILURE: errorCode,
+        },
         false,
-        `signal-resistant fixture process ${pid} remained alive`,
+        "focused-api-denied-direct-process-signal",
       );
-    }
+      const cleanupDurationMs = Date.now() - startedAt;
 
-    const after = await listBundleDirectories();
-    const leaked = [...after].filter((directory) => !before.has(directory));
-    assert.deepEqual(
-      leaked,
-      [],
-      `denied direct process signal left focused API bundle directories behind: ${leaked.join(", ")}`,
-    );
-  },
-);
+      assert.equal(
+        interrupted.interrupted,
+        true,
+        [
+          "focused API test never reached its signal-resistant bundling phase",
+          interrupted.stdout,
+          interrupted.stderr,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      );
+      assert.equal(
+        interrupted.code,
+        143,
+        [
+          "focused API test did not complete the intended SIGTERM cleanup path",
+          interrupted.signal ? `signal: ${interrupted.signal}` : "",
+          interrupted.stdout,
+          interrupted.stderr,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      );
+      const detailedFailurePattern = new RegExp(
+        `focused API cleanup could not signal process \\d+ with SIGKILL: ${errorCode} injected denied direct process signal`,
+        "g",
+      );
+      assert.match(
+        interrupted.stderr,
+        detailedFailurePattern,
+        "focused API cleanup did not report the denied direct signal with its PID and signal",
+      );
+      const detailedFailures =
+        interrupted.stderr.match(detailedFailurePattern) ?? [];
+      assert.equal(
+        detailedFailures.length,
+        1,
+        `focused API cleanup did not emit exactly one detailed ${errorCode} signal failure`,
+      );
+      assert.match(
+        interrupted.stderr,
+        new RegExp(
+          `focused API cleanup suppressed detailed SIGKILL ${errorCode} signal failures for \\d+ additional processes; affected PIDs: \\d+(?:, \\d+)*(?:, and \\d+ more)?`,
+        ),
+        "focused API cleanup did not summarize additional denied signals with their signal, error code, and affected PIDs",
+      );
+      assert.ok(
+        cleanupDurationMs < 10_000,
+        `focused API cleanup exceeded its bounded window: ${cleanupDurationMs}ms`,
+      );
+      assert.ok(
+        interrupted.helperPid,
+        "helper-backed bundler did not report its helper process",
+      );
+      await Promise.all([
+        waitForProcessExit(interrupted.activeChildPid),
+        waitForProcessExit(interrupted.helperPid),
+      ]);
+      for (const pid of [interrupted.activeChildPid, interrupted.helperPid]) {
+        assert.equal(
+          processExists(pid),
+          false,
+          `signal-resistant fixture process ${pid} remained alive`,
+        );
+      }
+
+      const after = await listBundleDirectories();
+      const leaked = [...after].filter((directory) => !before.has(directory));
+      assert.deepEqual(
+        leaked,
+        [],
+        `denied direct process signal left focused API bundle directories behind: ${leaked.join(", ")}`,
+      );
+    },
+  );
+}
 
 test(
   "SIGTERM reaps a resistant bundler helper without disrupting a healthy focused API check",
