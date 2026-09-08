@@ -80,6 +80,8 @@ for (const [environmentVariable, invalidValue] of [
   ["FOCUSED_API_TEST_INJECT_PROCESS_STAT_READ_FAILURE", "EACCESS"],
   ["FOCUSED_API_TEST_INJECT_DIRECT_PROCESS_SIGNAL_FAILURE", "SIGTREK:EPERM"],
   ["FOCUSED_API_TEST_INJECT_PROCESS_GROUP_SIGNAL_FAILURE", "EPERM,EACCES"],
+  ["FOCUSED_API_TEST_INJECT_FAILURE", "await-sigtrek"],
+  ["FOCUSED_API_TEST_INJECT_PROCESS_DIRECTORY_READ_FAILURE", "ture"],
 ]) {
   test(`${environmentVariable} rejects unsupported cleanup fault values`, async () => {
     const result = await runFocusedTest("test:validation", {
@@ -100,6 +102,11 @@ for (const [environmentVariable, invalidValue] of [
     );
     assert.match(result.stderr, new RegExp(`${environmentVariable} has unsupported cleanup fault`));
     assert.match(result.stderr, new RegExp(invalidValue.replaceAll(",", "\\,")));
+    assert.match(
+      result.stderr,
+      /supported values are /,
+      "diagnostic did not list supported cleanup fault values",
+    );
   });
 }
 
