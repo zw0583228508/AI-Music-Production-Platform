@@ -140,6 +140,8 @@ export type TrackPerformance = {
     type: string;
     keyswitch: number;
   }>;
+  /** Identity of the exact performed material represented by this MIDI data. */
+  performedMaterialSha256?: string;
 };
 
 export type ArrangementCandidateData = {
@@ -1185,8 +1187,33 @@ export type TrackModel = {
   directive?: TrackDirective;
   appliedDirectives?: AppliedTrackDirective[];
   mapping?: TrackMappingMetadata;
+  /** Deterministic performance decisions and canonical timeline binding. */
+  performanceEvidence?: TrackPerformanceEvidence;
 };
 
+export type TrackPerformanceEvidence = {
+  version: "1.0";
+  seed: number;
+  instrumentFamily: InstrumentDefinition["family"];
+  articulationProfile: string;
+  timingProfile: string;
+  dynamicsProfile: string;
+  canonicalTimelineSha256: string;
+  phraseIds: string[];
+  sectionRanges: Array<{
+    section: string;
+    startBar: number;
+    endBar: number;
+    start: number;
+    end: number;
+  }>;
+  playability: {
+    valid: boolean;
+    checkedNotes: number;
+    violations: string[];
+  };
+  performedMaterialSha256: string;
+};
 export type AppliedTrackDirective = {
   section: string;
   startBar: number;

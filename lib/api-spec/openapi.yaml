@@ -2996,6 +2996,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ArticulationEvent"
+        performedMaterialSha256:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
     Track:
       type: object
       required: [id, projectId, name, role, kind, color, volume, muted, solo, status, performance]
@@ -3016,6 +3019,12 @@ components:
           enum: [source, generated, rendered]
         performance:
           $ref: "#/components/schemas/TrackPerformance"
+        instrumentDefinition:
+          $ref: "#/components/schemas/InstrumentDefinition"
+        trackModel:
+          $ref: "#/components/schemas/TrackModel"
+        provenance:
+          $ref: "#/components/schemas/ArtifactProvenance"
     Artifact:
       type: object
       required: [id, projectId, type, label, version, size, format, state, parentIds, technicalMetadata, retentionPolicy, immutable, createdAt]
@@ -3177,6 +3186,52 @@ components:
             $ref: "#/components/schemas/AppliedTrackDirective"
         mapping:
           $ref: "#/components/schemas/TrackMappingMetadata"
+        performanceEvidence:
+          $ref: "#/components/schemas/TrackPerformanceEvidence"
+    TrackPerformanceEvidence:
+      type: object
+      required:
+        - version
+        - seed
+        - instrumentFamily
+        - articulationProfile
+        - timingProfile
+        - dynamicsProfile
+        - canonicalTimelineSha256
+        - phraseIds
+        - sectionRanges
+        - playability
+        - performedMaterialSha256
+      properties:
+        version: { type: string, enum: ["1.0"] }
+        seed: { type: number }
+        instrumentFamily:
+          type: string
+          enum: [keys, strings, brass, drums, guitar, voice, synth]
+        articulationProfile: { type: string }
+        timingProfile: { type: string }
+        dynamicsProfile: { type: string }
+        canonicalTimelineSha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        phraseIds: { type: array, items: { type: string } }
+        sectionRanges:
+          type: array
+          items:
+            type: object
+            required: [section, startBar, endBar, start, end]
+            properties:
+              section: { type: string }
+              startBar: { type: number }
+              endBar: { type: number }
+              start: { type: number }
+              end: { type: number }
+        playability:
+          type: object
+          required: [valid, checkedNotes, violations]
+          properties:
+            valid: { type: boolean }
+            checkedNotes: { type: number }
+            violations: { type: array, items: { type: string } }
+        performedMaterialSha256: { type: string, pattern: "^[a-f0-9]{64}$" }
     StyleSpec:
       type: object
       required: [genre, subgenre, era, tempoCharacter, rhythm, harmony, instrumentation, orchestration, production, dynamics]

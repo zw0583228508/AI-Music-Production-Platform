@@ -5,7 +5,10 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { ArtifactProvenance } from './artifactProvenance';
+import type { InstrumentDefinition } from './instrumentDefinition';
 import type { TrackKind } from './trackKind';
+import type { TrackModel } from './trackModel';
 import type { TrackPerformance } from './trackPerformance';
 import type { TrackStatus } from './trackStatus';
 
@@ -21,4 +24,7 @@ export interface Track {
   solo: boolean;
   status: TrackStatus;
   performance: TrackPerformance;
+  instrumentDefinition?: InstrumentDefinition;
+  trackModel?: TrackModel;
+  provenance?: ArtifactProvenance;
 }

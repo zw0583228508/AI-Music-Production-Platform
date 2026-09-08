@@ -1893,8 +1893,9 @@ export interface TrackPerformance {
   notes: MidiNote[];
   expression: ExpressionEvent[];
   articulations: ArticulationEvent[];
+  /** @pattern ^[a-f0-9]{64}$ */
+  performedMaterialSha256?: string;
 }
-
 export interface Track {
   id: string;
   projectId: string;
@@ -1907,6 +1908,9 @@ export interface Track {
   solo: boolean;
   status: TrackStatus;
   performance: TrackPerformance;
+  instrumentDefinition?: InstrumentDefinition;
+  trackModel?: TrackModel;
+  provenance?: ArtifactProvenance;
 }
 
 export type ArtifactType = typeof ArtifactType[keyof typeof ArtifactType];
@@ -2457,7 +2461,6 @@ export type GenerationCandidatePlan = {
   sections: ArrangementSection[];
   tracks?: GenerationCandidatePlanTracksItem[];
 };
-
 export type InstrumentDefinitionFamily = typeof InstrumentDefinitionFamily[keyof typeof InstrumentDefinitionFamily];
 
 
@@ -2639,6 +2642,7 @@ export interface TrackMappingMetadata {
   controlMap?: TrackMappingMetadataControlMap;
 }
 
+export type TrackPerformanceEvidenceVersion = typeof TrackPerformanceEvidenceVersion[keyof typeof TrackPerformanceEvidenceVersion];
 export interface TrackModel {
   id: string;
   instrument: string;
@@ -2654,8 +2658,8 @@ export interface TrackModel {
   directive?: TrackDirective;
   appliedDirectives?: AppliedTrackDirective[];
   mapping?: TrackMappingMetadata;
+  performanceEvidence?: TrackPerformanceEvidence;
 }
-
 export type HarmonyDecisionEvidenceSource = typeof HarmonyDecisionEvidenceSource[keyof typeof HarmonyDecisionEvidenceSource];
 
 
@@ -3244,4 +3248,50 @@ returnTo?: string;
 
 export type LogoutBrowserSessionParams = {
 returnTo?: string;
+};
+
+export type TrackPerformanceEvidencePlayability = {
+  valid: boolean;
+  checkedNotes: number;
+  violations: string[];
+};
+
+export type TrackPerformanceEvidenceInstrumentFamily = typeof TrackPerformanceEvidenceInstrumentFamily[keyof typeof TrackPerformanceEvidenceInstrumentFamily];
+
+export interface TrackPerformanceEvidence {
+  version: TrackPerformanceEvidenceVersion;
+  seed: number;
+  instrumentFamily: TrackPerformanceEvidenceInstrumentFamily;
+  articulationProfile: string;
+  timingProfile: string;
+  dynamicsProfile: string;
+  /** @pattern ^[a-f0-9]{64}$ */
+  canonicalTimelineSha256: string;
+  phraseIds: string[];
+  sectionRanges: TrackPerformanceEvidenceSectionRangesItem[];
+  playability: TrackPerformanceEvidencePlayability;
+  /** @pattern ^[a-f0-9]{64}$ */
+  performedMaterialSha256: string;
+}
+
+export const TrackPerformanceEvidenceVersion = {
+  '10': '1.0',
+} as const;
+
+export const TrackPerformanceEvidenceInstrumentFamily = {
+  keys: 'keys',
+  strings: 'strings',
+  brass: 'brass',
+  drums: 'drums',
+  guitar: 'guitar',
+  voice: 'voice',
+  synth: 'synth',
+} as const;
+
+export type TrackPerformanceEvidenceSectionRangesItem = {
+  section: string;
+  startBar: number;
+  endBar: number;
+  start: number;
+  end: number;
 };

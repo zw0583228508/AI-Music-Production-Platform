@@ -14,6 +14,7 @@ import type { MusicalNote } from './musicalNote';
 import type { TrackAutomationPoint } from './trackAutomationPoint';
 import type { TrackDirective } from './trackDirective';
 import type { TrackMappingMetadata } from './trackMappingMetadata';
+import type { TrackPerformanceEvidence } from './trackPerformanceEvidence';
 
 export interface TrackModel {
   id: string;
@@ -30,4 +31,5 @@ export interface TrackModel {
   directive?: TrackDirective;
   appliedDirectives?: AppliedTrackDirective[];
   mapping?: TrackMappingMetadata;
+  performanceEvidence?: TrackPerformanceEvidence;
 }
