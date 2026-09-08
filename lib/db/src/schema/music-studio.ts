@@ -2,6 +2,7 @@ import {
   boolean,
   doublePrecision,
   integer,
+  index,
   jsonb,
   pgTable,
   text,
@@ -930,6 +931,84 @@ export const studioActivitiesTable = pgTable("studio_activities", {
   title: text("title").notNull(),
   detail: text("detail").notNull(),
   type: text("type").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Private, append-only producer learning record. `context` deliberately holds
+ * stable IDs and server-derived hashes only; it must never contain object paths,
+ * signed URLs, or acoustic fingerprints.
+ */
+export type ProducerDecisionContext = {
+  subjectId: string | null;
+  comparedSubjectId: string | null;
+  modelVersion: string | null;
+  evidenceIds: string[];
+  lineageIds: string[];
+  evidenceSha256: string | null;
+  rankingScore?: number | null;
+  criticScore?: number | null;
+};
+export type ProducerDecisionSource =
+  | "explicit_feedback"
+  | "inferred_behavior"
+  | "objective_evidence";
+export const producerDecisionsTable = pgTable("music_producer_decisions", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").notNull(),
+  projectId: text("project_id").notNull().references(() => musicProjectsTable.id, { onDelete: "cascade" }),
+  domain: text("domain").notNull(),
+  kind: text("kind").notNull(),
+  source: text("source").$type<ProducerDecisionSource>().notNull(),
+  rating: integer("rating"),
+  reasons: jsonb("reasons").$type<string[]>().notNull().default([]),
+  context: jsonb("context").$type<ProducerDecisionContext>().notNull(),
+  version: integer("version").notNull().default(1),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("music_producer_decisions_owner_created_at_idx").on(table.ownerId, table.createdAt),
+]);
+
+export const producerPreferencesTable = pgTable("music_producer_preferences", {
+  ownerId: text("owner_id").primaryKey(),
+  learningEnabled: boolean("learning_enabled").notNull().default(true),
+  inferredBehaviorEnabled: boolean("inferred_behavior_enabled").notNull().default(true),
+  version: integer("version").notNull().default(1),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Immutable snapshots preserve owner preference-control history. */
+export const producerPreferenceVersionsTable = pgTable("music_producer_preference_versions", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").notNull(),
+  version: integer("version").notNull(),
+  learningEnabled: boolean("learning_enabled").notNull(),
+  inferredBehaviorEnabled: boolean("inferred_behavior_enabled").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [uniqueIndex("music_producer_preference_versions_unique").on(table.ownerId, table.version)]);
+
+export const calibrationVersionsTable = pgTable("music_calibration_versions", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").notNull(),
+  version: integer("version").notNull(),
+  rankingWeight: doublePrecision("ranking_weight").notNull(),
+  criticWeight: doublePrecision("critic_weight").notNull(),
+  heldOutAgreement: doublePrecision("held_out_agreement").notNull(),
+  baselineAgreement: doublePrecision("baseline_agreement").notNull(),
+  status: text("status").notNull().default("candidate"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  promotedAt: timestamp("promoted_at", { withTimezone: true }),
+}, (table) => [uniqueIndex("music_calibration_versions_owner_version_unique").on(table.ownerId, table.version)]);
+export const calibrationActivePointersTable = pgTable("music_calibration_active_pointers", {
+  ownerId: text("owner_id").primaryKey(),
+  calibrationVersionId: text("calibration_version_id").notNull().references(() => calibrationVersionsTable.id, { onDelete: "restrict" }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export const calibrationActivationHistoryTable = pgTable("music_calibration_activation_history", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").notNull(),
+  calibrationVersionId: text("calibration_version_id").notNull().references(() => calibrationVersionsTable.id, { onDelete: "restrict" }),
+  action: text("action").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

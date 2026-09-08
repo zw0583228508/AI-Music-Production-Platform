@@ -45,6 +45,7 @@ import type {
   HealthStatus,
   LicensedInstrumentPack,
   LicensedInstrumentPackCatalog,
+  ListProducerDecisionsParams,
   LogoutBrowserSessionParams,
   LogoutSuccess,
   MixMasterRevision,
@@ -53,6 +54,13 @@ import type {
   MobileTokenExchangeSuccess,
   MusicProvider,
   NotFoundResponse,
+  ProducerCalibration,
+  ProducerCalibrationEvaluation,
+  ProducerCalibrationInput,
+  ProducerDecision,
+  ProducerDecisionInput,
+  ProducerPreferences,
+  ProducerPreferencesInput,
   ProductionJob,
   Project,
   ProjectDeletion,
@@ -3613,6 +3621,599 @@ export const useApproveMixMasterRevision = <TError = ErrorType<NotFoundResponse>
         TContext
       > => {
       return useMutation(getApproveMixMasterRevisionMutationOptions(options));
+    }
+
+export const getListProducerDecisionsUrl = (params?: ListProducerDecisionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/producer-decisions?${stringifiedParams}` : `/api/producer-decisions`
+}
+
+/**
+ * @summary List the authenticated producer's private immutable decisions
+ */
+export const listProducerDecisions = async (params?: ListProducerDecisionsParams, options?: Parameters<typeof customFetch>[1]): Promise<ProducerDecision[]> => {
+
+  return customFetch<ProducerDecision[]>(getListProducerDecisionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListProducerDecisionsQueryKey = (params?: ListProducerDecisionsParams,) => {
+    return [
+    `/api/producer-decisions`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListProducerDecisionsQueryOptions = <TData = Awaited<ReturnType<typeof listProducerDecisions>>, TError = ErrorType<unknown>>(params?: ListProducerDecisionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listProducerDecisions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListProducerDecisionsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listProducerDecisions>>> = ({ signal }) => listProducerDecisions(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listProducerDecisions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListProducerDecisionsQueryResult = NonNullable<Awaited<ReturnType<typeof listProducerDecisions>>>
+export type ListProducerDecisionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List the authenticated producer's private immutable decisions
+ */
+
+export function useListProducerDecisions<TData = Awaited<ReturnType<typeof listProducerDecisions>>, TError = ErrorType<unknown>>(
+ params?: ListProducerDecisionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listProducerDecisions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListProducerDecisionsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateProducerDecisionUrl = () => {
+
+
+
+
+  return `/api/producer-decisions`
+}
+
+/**
+ * @summary Append explicit producer feedback to the private ledger
+ */
+export const createProducerDecision = async (producerDecisionInput: ProducerDecisionInput, options?: Parameters<typeof customFetch>[1]): Promise<ProducerDecision> => {
+
+  return customFetch<ProducerDecision>(getCreateProducerDecisionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(producerDecisionInput)
+  }
+);}
+
+
+
+
+
+export const getCreateProducerDecisionMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProducerDecision>>, TError,{data: BodyType<ProducerDecisionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createProducerDecision>>, TError,{data: BodyType<ProducerDecisionInput>}, TContext> => {
+
+const mutationKey = ['createProducerDecision'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createProducerDecision>>, {data: BodyType<ProducerDecisionInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createProducerDecision(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateProducerDecisionMutationResult = NonNullable<Awaited<ReturnType<typeof createProducerDecision>>>
+    export type CreateProducerDecisionMutationBody = BodyType<ProducerDecisionInput>
+    export type CreateProducerDecisionMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Append explicit producer feedback to the private ledger
+ */
+export const useCreateProducerDecision = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProducerDecision>>, TError,{data: BodyType<ProducerDecisionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createProducerDecision>>,
+        TError,
+        {data: BodyType<ProducerDecisionInput>},
+        TContext
+      > => {
+      return useMutation(getCreateProducerDecisionMutationOptions(options));
+    }
+
+export const getGetProducerPreferencesUrl = () => {
+
+
+
+
+  return `/api/producer-preferences`
+}
+
+/**
+ * @summary Get private producer preference and learning controls
+ */
+export const getProducerPreferences = async ( options?: Parameters<typeof customFetch>[1]): Promise<ProducerPreferences> => {
+
+  return customFetch<ProducerPreferences>(getGetProducerPreferencesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetProducerPreferencesQueryKey = () => {
+    return [
+    `/api/producer-preferences`
+    ] as const;
+    }
+
+
+export const getGetProducerPreferencesQueryOptions = <TData = Awaited<ReturnType<typeof getProducerPreferences>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProducerPreferences>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetProducerPreferencesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getProducerPreferences>>> = ({ signal }) => getProducerPreferences({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getProducerPreferences>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetProducerPreferencesQueryResult = NonNullable<Awaited<ReturnType<typeof getProducerPreferences>>>
+export type GetProducerPreferencesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get private producer preference and learning controls
+ */
+
+export function useGetProducerPreferences<TData = Awaited<ReturnType<typeof getProducerPreferences>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProducerPreferences>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetProducerPreferencesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateProducerPreferencesUrl = () => {
+
+
+
+
+  return `/api/producer-preferences`
+}
+
+/**
+ * @summary Replace private producer preference and learning controls
+ */
+export const updateProducerPreferences = async (producerPreferencesInput: ProducerPreferencesInput, options?: Parameters<typeof customFetch>[1]): Promise<ProducerPreferences> => {
+
+  return customFetch<ProducerPreferences>(getUpdateProducerPreferencesUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(producerPreferencesInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateProducerPreferencesMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProducerPreferences>>, TError,{data: BodyType<ProducerPreferencesInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateProducerPreferences>>, TError,{data: BodyType<ProducerPreferencesInput>}, TContext> => {
+
+const mutationKey = ['updateProducerPreferences'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateProducerPreferences>>, {data: BodyType<ProducerPreferencesInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateProducerPreferences(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateProducerPreferencesMutationResult = NonNullable<Awaited<ReturnType<typeof updateProducerPreferences>>>
+    export type UpdateProducerPreferencesMutationBody = BodyType<ProducerPreferencesInput>
+    export type UpdateProducerPreferencesMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Replace private producer preference and learning controls
+ */
+export const useUpdateProducerPreferences = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProducerPreferences>>, TError,{data: BodyType<ProducerPreferencesInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateProducerPreferences>>,
+        TError,
+        {data: BodyType<ProducerPreferencesInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateProducerPreferencesMutationOptions(options));
+    }
+
+export const getListProducerCalibrationsUrl = () => {
+
+
+
+
+  return `/api/producer-calibrations`
+}
+
+/**
+ * @summary List private immutable calibration versions
+ */
+export const listProducerCalibrations = async ( options?: Parameters<typeof customFetch>[1]): Promise<ProducerCalibration[]> => {
+
+  return customFetch<ProducerCalibration[]>(getListProducerCalibrationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListProducerCalibrationsQueryKey = () => {
+    return [
+    `/api/producer-calibrations`
+    ] as const;
+    }
+
+
+export const getListProducerCalibrationsQueryOptions = <TData = Awaited<ReturnType<typeof listProducerCalibrations>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listProducerCalibrations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListProducerCalibrationsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listProducerCalibrations>>> = ({ signal }) => listProducerCalibrations({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listProducerCalibrations>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListProducerCalibrationsQueryResult = NonNullable<Awaited<ReturnType<typeof listProducerCalibrations>>>
+export type ListProducerCalibrationsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List private immutable calibration versions
+ */
+
+export function useListProducerCalibrations<TData = Awaited<ReturnType<typeof listProducerCalibrations>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listProducerCalibrations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListProducerCalibrationsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getPromoteProducerCalibrationUrl = () => {
+
+
+
+
+  return `/api/producer-calibrations`
+}
+
+/**
+ * @summary Promote a measurably better held-out calibration
+ */
+export const promoteProducerCalibration = async (producerCalibrationInput: ProducerCalibrationInput, options?: Parameters<typeof customFetch>[1]): Promise<ProducerCalibration> => {
+
+  return customFetch<ProducerCalibration>(getPromoteProducerCalibrationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(producerCalibrationInput)
+  }
+);}
+
+
+
+
+
+export const getPromoteProducerCalibrationMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof promoteProducerCalibration>>, TError,{data: BodyType<ProducerCalibrationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof promoteProducerCalibration>>, TError,{data: BodyType<ProducerCalibrationInput>}, TContext> => {
+
+const mutationKey = ['promoteProducerCalibration'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof promoteProducerCalibration>>, {data: BodyType<ProducerCalibrationInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  promoteProducerCalibration(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PromoteProducerCalibrationMutationResult = NonNullable<Awaited<ReturnType<typeof promoteProducerCalibration>>>
+    export type PromoteProducerCalibrationMutationBody = BodyType<ProducerCalibrationInput>
+    export type PromoteProducerCalibrationMutationError = ErrorType<void>
+
+    /**
+ * @summary Promote a measurably better held-out calibration
+ */
+export const usePromoteProducerCalibration = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof promoteProducerCalibration>>, TError,{data: BodyType<ProducerCalibrationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof promoteProducerCalibration>>,
+        TError,
+        {data: BodyType<ProducerCalibrationInput>},
+        TContext
+      > => {
+      return useMutation(getPromoteProducerCalibrationMutationOptions(options));
+    }
+
+export const getEvaluateProducerCalibrationUrl = () => {
+
+
+
+
+  return `/api/producer-calibrations/evaluate`
+}
+
+/**
+ * @summary Deterministically evaluate proposed calibration on held-out feedback
+ */
+export const evaluateProducerCalibration = async (producerCalibrationInput: ProducerCalibrationInput, options?: Parameters<typeof customFetch>[1]): Promise<ProducerCalibrationEvaluation> => {
+
+  return customFetch<ProducerCalibrationEvaluation>(getEvaluateProducerCalibrationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(producerCalibrationInput)
+  }
+);}
+
+
+
+
+
+export const getEvaluateProducerCalibrationMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof evaluateProducerCalibration>>, TError,{data: BodyType<ProducerCalibrationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof evaluateProducerCalibration>>, TError,{data: BodyType<ProducerCalibrationInput>}, TContext> => {
+
+const mutationKey = ['evaluateProducerCalibration'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof evaluateProducerCalibration>>, {data: BodyType<ProducerCalibrationInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  evaluateProducerCalibration(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EvaluateProducerCalibrationMutationResult = NonNullable<Awaited<ReturnType<typeof evaluateProducerCalibration>>>
+    export type EvaluateProducerCalibrationMutationBody = BodyType<ProducerCalibrationInput>
+    export type EvaluateProducerCalibrationMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Deterministically evaluate proposed calibration on held-out feedback
+ */
+export const useEvaluateProducerCalibration = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof evaluateProducerCalibration>>, TError,{data: BodyType<ProducerCalibrationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof evaluateProducerCalibration>>,
+        TError,
+        {data: BodyType<ProducerCalibrationInput>},
+        TContext
+      > => {
+      return useMutation(getEvaluateProducerCalibrationMutationOptions(options));
+    }
+
+export const getRollbackProducerCalibrationUrl = (calibrationId: string,) => {
+
+
+
+
+  return `/api/producer-calibrations/${calibrationId}/rollback`
+}
+
+/**
+ * @summary Activate a historical calibration without modifying history
+ */
+export const rollbackProducerCalibration = async (calibrationId: string, options?: Parameters<typeof customFetch>[1]): Promise<ProducerCalibration> => {
+
+  return customFetch<ProducerCalibration>(getRollbackProducerCalibrationUrl(calibrationId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRollbackProducerCalibrationMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rollbackProducerCalibration>>, TError,{calibrationId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof rollbackProducerCalibration>>, TError,{calibrationId: string}, TContext> => {
+
+const mutationKey = ['rollbackProducerCalibration'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof rollbackProducerCalibration>>, {calibrationId: string}> = (props) => {
+          const {calibrationId} = props ?? {};
+
+          return  rollbackProducerCalibration(calibrationId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RollbackProducerCalibrationMutationResult = NonNullable<Awaited<ReturnType<typeof rollbackProducerCalibration>>>
+
+    export type RollbackProducerCalibrationMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Activate a historical calibration without modifying history
+ */
+export const useRollbackProducerCalibration = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rollbackProducerCalibration>>, TError,{calibrationId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof rollbackProducerCalibration>>,
+        TError,
+        {calibrationId: string},
+        TContext
+      > => {
+      return useMutation(getRollbackProducerCalibrationMutationOptions(options));
     }
 
 export const getGetProductionJobUrl = (jobId: string,) => {

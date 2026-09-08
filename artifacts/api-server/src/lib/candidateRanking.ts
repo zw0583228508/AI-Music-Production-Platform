@@ -259,8 +259,30 @@ export function isSelectableCandidate(candidate: {
 
 /** Neither critic replaces the other. New complete evidence is reconciled evenly. */
 export function reconciledEvidenceScore(evaluation: CandidateEvaluation): number {
+  return reconciledEvidenceScoreWithCalibration(evaluation);
+}
+
+export type CandidateRankingCalibration = {
+  rankingWeight: number;
+  criticWeight: number;
+};
+
+/** Calibration only reweights two independent, already-safe critic scores. */
+export function reconciledEvidenceScoreWithCalibration(
+  evaluation: CandidateEvaluation,
+  calibration?: CandidateRankingCalibration,
+): number {
   const symbolic = evaluation.musicCritic?.score;
   const audio = evaluation.audioCritic?.score;
+  if (
+    calibration &&
+    Number.isFinite(symbolic) &&
+    Number.isFinite(audio) &&
+    Number.isFinite(calibration.rankingWeight) &&
+    Number.isFinite(calibration.criticWeight)
+  ) {
+    return symbolic! * calibration.rankingWeight + audio! * calibration.criticWeight;
+  }
   return Number.isFinite(symbolic) && Number.isFinite(audio)
     ? (symbolic! + audio!) / 2
     : symbolic ?? audio ?? -1;
@@ -268,14 +290,14 @@ export function reconciledEvidenceScore(evaluation: CandidateEvaluation): number
 
 export function rankEvaluatedCandidates<
   T extends { id?: string; score: number; evaluation: CandidateEvaluation },
->(candidates: T[]): Array<T & { rank: number | null }> {
+>(candidates: T[], calibration?: CandidateRankingCalibration): Array<T & { rank: number | null }> {
   let nextRank = 1;
   return [...candidates]
     .sort((left, right) => {
       const leftEvaluated = hasCompleteQualityEvidence(left.evaluation) ? 1 : 0;
       const rightEvaluated = hasCompleteQualityEvidence(right.evaluation) ? 1 : 0;
       return rightEvaluated - leftEvaluated ||
-        reconciledEvidenceScore(right.evaluation) - reconciledEvidenceScore(left.evaluation) ||
+        candidateEvidenceScore(right, calibration) - candidateEvidenceScore(left, calibration) ||
         right.evaluation.providerScore - left.evaluation.providerScore ||
         (left.id ?? "").localeCompare(right.id ?? "");
     })
@@ -285,4 +307,27 @@ export function rankEvaluatedCandidates<
         : null;
       return { ...candidate, rank };
     });
+}
+
+function candidateEvidenceScore(
+  candidate: { evaluation: CandidateEvaluation },
+  calibration?: CandidateRankingCalibration,
+): number {
+  const critic = reconciledEvidenceScore(candidate.evaluation);
+  const ranking = candidate.evaluation.qualityReport?.score;
+  return calibration && Number.isFinite(ranking) && Number.isFinite(critic)
+    ? ranking! * calibration.rankingWeight + critic * calibration.criticWeight
+    : critic;
+}
+
+/** The only score features calibration is permitted to freeze and reuse. */
+export function deployedCalibrationFeatures(evaluation: CandidateEvaluation): {
+  rankingScore: number | null; criticScore: number | null;
+} {
+  const rankingScore = evaluation.qualityReport?.score;
+  const criticScore = reconciledEvidenceScore(evaluation);
+  return {
+    rankingScore: Number.isFinite(rankingScore) ? rankingScore! : null,
+    criticScore: Number.isFinite(criticScore) && criticScore >= 0 ? criticScore : null,
+  };
 }

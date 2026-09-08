@@ -17,6 +17,9 @@ import {
   useListProjectSources,
   useRunCopilot,
   useCreateProjectExport,
+  useCreateProducerDecision,
+  useGetProducerPreferences,
+  useUpdateProducerPreferences,
   useListMixMasterRevisions,
   useCreateMixMasterRevision,
   useApproveMixMasterRevision,
@@ -29,12 +32,15 @@ import {
   getListTracksQueryKey,
   getGetGenerationJobQueryKey,
   getListGenerationCandidatesQueryKey,
+  getGetProducerPreferencesQueryKey,
+  getListProducerDecisionsQueryKey,
   ExportResult,
   GenerationCandidate,
   HarmonyDecisionEvidence,
   ArrangementMode,
   Arrangement,
-  ArrangementSection
+  ArrangementSection,
+  ProducerDecisionInput
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getGetProjectQueryKey, getListArrangementsQueryKey } from "@workspace/api-client-react";
@@ -158,6 +164,11 @@ export default function ProjectWorkspace() {
   const selectGenerationCandidate = useSelectGenerationCandidate();
   const repairGenerationCandidate = useRepairGenerationCandidate();
   const createExport = useCreateProjectExport();
+  const createProducerDecision = useCreateProducerDecision();
+  const producerPreferencesQuery = useGetProducerPreferences({
+    query: { queryKey: getGetProducerPreferencesQueryKey(), staleTime: 5_000 },
+  });
+  const updateProducerPreferences = useUpdateProducerPreferences();
   const { data: mixMasterRevisions } = useListMixMasterRevisions(projectId, {
     query: { queryKey: getListMixMasterRevisionsQueryKey(projectId), staleTime: 5_000 },
   });
@@ -211,6 +222,10 @@ export default function ProjectWorkspace() {
   const [auditionVariant, setAuditionVariant] = useState<"original" | "repaired" | "mixed" | "mastered">("mastered");
   const [exportResult, setExportResult] = useState<ExportResult | null>(null);
   const [exportJobId, setExportJobId] = useState<string | null>(null);
+  const [candidateRatings, setCandidateRatings] = useState<Record<string, number>>({});
+  const [candidateReasons, setCandidateReasons] = useState<Record<string, string>>({});
+  const [comparisonCandidateId, setComparisonCandidateId] = useState("");
+  const [preferenceSaveError, setPreferenceSaveError] = useState<string | null>(null);
   const { data: exportJob } = useGetProductionJob(exportJobId ?? "", {
     query: {
       enabled: Boolean(exportJobId),
@@ -662,6 +677,71 @@ export default function ProjectWorkspace() {
             description: "Only validated provider candidates can become arrangements.",
             variant: "destructive",
           });
+        },
+      },
+    );
+  };
+
+  const boundedReasons = (value: string) => {
+    const reason = value.trim().slice(0, 500);
+    return reason ? [reason] : undefined;
+  };
+
+  const submitProducerDecision = useCallback((
+    decision: Omit<ProducerDecisionInput, "projectId">,
+    successMessage: string,
+  ) => {
+    createProducerDecision.mutate(
+      { data: { projectId, ...decision } },
+      {
+        onSuccess: () => {
+          void queryClient.invalidateQueries({ queryKey: getListProducerDecisionsQueryKey() });
+          toast({ title: "Producer preference saved", description: successMessage });
+        },
+        onError: (decisionError) => {
+          toast({
+            title: "Producer preference could not be saved",
+            description: decisionError instanceof Error ? decisionError.message : "Try again.",
+            variant: "destructive",
+          });
+        },
+      },
+    );
+  }, [createProducerDecision.mutate, projectId, queryClient, toast]);
+
+  const handleEditorDecision = useCallback((
+    decision: { kind: "edit" | "restore"; subjectId: string; reason: string },
+  ) => {
+    submitProducerDecision(
+      {
+        domain: "arrangement",
+        kind: decision.kind,
+        subjectId: decision.subjectId,
+        reasons: [decision.reason.slice(0, 500)],
+      },
+      decision.kind === "restore" ? "Arrangement restoration recorded privately." : "Arrangement edit recorded privately.",
+    );
+  }, [submitProducerDecision]);
+
+  const saveProducerPreferences = (updates: Partial<{
+    learningEnabled: boolean;
+    inferredBehaviorEnabled: boolean;
+  }>) => {
+    const current = producerPreferencesQuery.data;
+    if (!current) return;
+    setPreferenceSaveError(null);
+    updateProducerPreferences.mutate(
+      { data: { ...current, ...updates } },
+      {
+        onSuccess: (preferences) => {
+          queryClient.setQueryData(getGetProducerPreferencesQueryKey(), preferences);
+          void queryClient.invalidateQueries({ queryKey: getGetProducerPreferencesQueryKey() });
+          toast({ title: "Private preferences saved", description: "Your controls will be restored when you return." });
+        },
+        onError: (preferencesError) => {
+          setPreferenceSaveError(
+            preferencesError instanceof Error ? preferencesError.message : "Could not save private preferences.",
+          );
         },
       },
     );
@@ -1217,6 +1297,7 @@ export default function ProjectWorkspace() {
                   copilotResult={copilotEditorResult}
                   onSelectionChange={setEditorSelection}
                   onSectionsChange={handleEditorSectionsChange}
+                  onExplicitDecision={handleEditorDecision}
                   onRevisionPreviewChange={setRevisionPreviewing}
                   playheadSeconds={transport.currentTime}
                   timelineDurationSeconds={transport.duration || durationHint}
@@ -1344,6 +1425,68 @@ export default function ProjectWorkspace() {
                           />
                           <p className="text-xs text-muted-foreground">Complexity and drive of the underlying rhythmic foundation.</p>
                         </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="shadow-sm">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-sm flex items-center gap-2">
+                          <ShieldCheck className="h-4 w-4 text-primary" />
+                          Private producer preferences
+                        </CardTitle>
+                        <p className="text-xs text-muted-foreground">
+                          These controls are private to your producer profile. Arrangement complexity and dynamics remain explicit project controls above.
+                        </p>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        {producerPreferencesQuery.isLoading ? (
+                          <div data-testid="status-producer-preferences-loading" className="text-sm text-muted-foreground">Loading private preferences…</div>
+                        ) : producerPreferencesQuery.error ? (
+                          <Alert variant="destructive">
+                            <AlertTitle>Private preferences unavailable</AlertTitle>
+                            <AlertDescription>Reload to try retrieving your producer controls again.</AlertDescription>
+                          </Alert>
+                        ) : producerPreferencesQuery.data ? (
+                          <>
+                            <div className="flex items-center justify-between gap-4 rounded-md border bg-muted/20 p-3">
+                              <div>
+                                <Label htmlFor="learning-enabled" className="font-medium">Enable preference learning</Label>
+                                <p className="text-xs text-muted-foreground">Allow your explicit feedback to inform future assistance.</p>
+                              </div>
+                              <Checkbox
+                                id="learning-enabled"
+                                data-testid="checkbox-learning-enabled"
+                                checked={producerPreferencesQuery.data.learningEnabled}
+                                disabled={updateProducerPreferences.isPending}
+                                onCheckedChange={(checked) => saveProducerPreferences({ learningEnabled: checked === true })}
+                              />
+                            </div>
+                            <div className="flex items-center justify-between gap-4 rounded-md border bg-muted/20 p-3">
+                              <div>
+                                <Label htmlFor="inferred-behavior-enabled" className="font-medium">Include inferred behavior</Label>
+                                <p className="text-xs text-muted-foreground">Permit behavior-derived signals alongside your explicit feedback.</p>
+                              </div>
+                              <Checkbox
+                                id="inferred-behavior-enabled"
+                                data-testid="checkbox-inferred-behavior-enabled"
+                                checked={producerPreferencesQuery.data.inferredBehaviorEnabled}
+                                disabled={updateProducerPreferences.isPending}
+                                onCheckedChange={(checked) => saveProducerPreferences({ inferredBehaviorEnabled: checked === true })}
+                              />
+                            </div>
+                            <div data-testid="status-producer-preferences" className="text-xs text-muted-foreground">
+                              {updateProducerPreferences.isPending
+                                ? "Saving private preferences…"
+                                : `Saved ${new Date(producerPreferencesQuery.data.updatedAt).toLocaleString()}`}
+                            </div>
+                            {preferenceSaveError && (
+                              <Alert variant="destructive">
+                                <AlertTitle>Private preferences could not be saved</AlertTitle>
+                                <AlertDescription>{preferenceSaveError}</AlertDescription>
+                              </Alert>
+                            )}
+                          </>
+                        ) : null}
                       </CardContent>
                     </Card>
 
@@ -1754,6 +1897,109 @@ export default function ProjectWorkspace() {
                                     )}
                                   </div>
                                 </div>
+                              </div>
+                              <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div>
+                                    <div className="text-xs font-semibold text-foreground">Producer preference <span className="font-normal text-muted-foreground">· private explicit feedback</span></div>
+                                    <p className="text-[10px] text-muted-foreground">Your judgment is recorded separately from the Music Critic evidence below.</p>
+                                  </div>
+                                  <Badge variant="outline">Not critic evidence</Badge>
+                                </div>
+                                <div className="mt-3 grid gap-2 sm:grid-cols-[150px_1fr]">
+                                  <Select
+                                    value={String(candidateRatings[candidate.id] ?? 3)}
+                                    onValueChange={(value) => setCandidateRatings((current) => ({ ...current, [candidate.id]: Number(value) }))}
+                                  >
+                                    <SelectTrigger data-testid={`select-producer-rating-${candidate.id}`}>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {[1, 2, 3, 4, 5].map((rating) => <SelectItem key={rating} value={String(rating)}>{rating} / 5</SelectItem>)}
+                                    </SelectContent>
+                                  </Select>
+                                  <Input
+                                    data-testid={`input-producer-reason-${candidate.id}`}
+                                    value={candidateReasons[candidate.id] ?? ""}
+                                    maxLength={500}
+                                    placeholder="Optional reason (up to 500 characters)"
+                                    onChange={(event) => setCandidateReasons((current) => ({ ...current, [candidate.id]: event.target.value }))}
+                                  />
+                                </div>
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    data-testid={`button-rate-candidate-${candidate.id}`}
+                                    disabled={createProducerDecision.isPending}
+                                    onClick={() => submitProducerDecision({
+                                      domain: "candidate",
+                                      kind: "rating",
+                                      subjectId: candidate.id,
+                                      rating: candidateRatings[candidate.id] ?? 3,
+                                      reasons: boundedReasons(candidateReasons[candidate.id] ?? ""),
+                                    }, `${candidate.label} rated privately.`)}
+                                  >
+                                    Save rating
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    data-testid={`button-approve-candidate-${candidate.id}`}
+                                    disabled={createProducerDecision.isPending}
+                                    onClick={() => submitProducerDecision({
+                                      domain: "candidate",
+                                      kind: "approval",
+                                      subjectId: candidate.id,
+                                      reasons: boundedReasons(candidateReasons[candidate.id] ?? ""),
+                                    }, `${candidate.label} approved privately.`)}
+                                  >
+                                    Approve
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    data-testid={`button-reject-candidate-${candidate.id}`}
+                                    disabled={createProducerDecision.isPending}
+                                    onClick={() => submitProducerDecision({
+                                      domain: "candidate",
+                                      kind: "rejection",
+                                      subjectId: candidate.id,
+                                      reasons: boundedReasons(candidateReasons[candidate.id] ?? ""),
+                                    }, `${candidate.label} rejected privately.`)}
+                                  >
+                                    Reject
+                                  </Button>
+                                </div>
+                                <div className="mt-3 flex flex-wrap gap-2 border-t pt-3">
+                                  <Select value={comparisonCandidateId || undefined} onValueChange={setComparisonCandidateId}>
+                                    <SelectTrigger data-testid={`select-comparison-candidate-${candidate.id}`} className="w-full sm:w-[220px]">
+                                      <SelectValue placeholder="Compare against candidate…" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {visibleGenerationCandidates.filter((other) => other.id !== candidate.id).map((other) => (
+                                        <SelectItem key={other.id} value={other.id}>{other.label}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    data-testid={`button-compare-candidate-${candidate.id}`}
+                                    disabled={!comparisonCandidateId || createProducerDecision.isPending}
+                                    onClick={() => submitProducerDecision({
+                                      domain: "candidate",
+                                      kind: "comparison",
+                                      subjectId: candidate.id,
+                                      comparedSubjectId: comparisonCandidateId,
+                                      reasons: boundedReasons(candidateReasons[candidate.id] ?? ""),
+                                    }, `${candidate.label} marked as preferred in this private comparison.`)}
+                                  >
+                                    Prefer this candidate
+                                  </Button>
+                                </div>
+                                {createProducerDecision.isPending && (
+                                  <p data-testid={`status-producer-decision-${candidate.id}`} className="mt-2 text-xs text-muted-foreground">Saving producer preference…</p>
+                                )}
                               </div>
                               {evaluated ? (
                                 <div className="grid gap-3 border-t pt-3 text-xs sm:grid-cols-2">

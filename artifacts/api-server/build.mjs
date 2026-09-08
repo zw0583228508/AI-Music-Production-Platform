@@ -18,6 +18,7 @@ async function buildAll() {
     entryPoints: [
       path.resolve(artifactDir, "src/index.ts"),
       path.resolve(artifactDir, "src/export-reconciliation.ts"),
+      path.resolve(artifactDir, "src/lib/producerDecisionLedger.test.ts"),
     ],
     platform: "node",
     bundle: true,

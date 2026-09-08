@@ -957,6 +957,118 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/MixMasterRevision" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /producer-decisions:
+    get:
+      operationId: listProducerDecisions
+      tags: [studio]
+      summary: List the authenticated producer's private immutable decisions
+      parameters:
+        - name: projectId
+          in: query
+          required: false
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: number, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: Private append-only decision history
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ProducerDecision" }
+    post:
+      operationId: createProducerDecision
+      tags: [studio]
+      summary: Append explicit producer feedback to the private ledger
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProducerDecisionInput" }
+      responses:
+        "201":
+          description: Appended private decision
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProducerDecision" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /producer-preferences:
+    get:
+      operationId: getProducerPreferences
+      tags: [studio]
+      summary: Get private producer preference and learning controls
+      responses:
+        "200":
+          description: Private preference controls
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProducerPreferences" }
+    put:
+      operationId: updateProducerPreferences
+      tags: [studio]
+      summary: Replace private producer preference and learning controls
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProducerPreferencesInput" }
+      responses:
+        "200":
+          description: Updated private preference controls
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProducerPreferences" }
+  /producer-calibrations:
+    get:
+      operationId: listProducerCalibrations
+      tags: [studio]
+      summary: List private immutable calibration versions
+      responses:
+        "200":
+          description: Calibration version history
+          content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ProducerCalibration" } } } }
+    post:
+      operationId: promoteProducerCalibration
+      tags: [studio]
+      summary: Promote a measurably better held-out calibration
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ProducerCalibrationInput" } } }
+      responses:
+        "201":
+          description: Promoted immutable calibration
+          content: { application/json: { schema: { $ref: "#/components/schemas/ProducerCalibration" } } }
+        "409": { description: Held-out evaluation did not measurably improve }
+  /producer-calibrations/evaluate:
+    post:
+      operationId: evaluateProducerCalibration
+      tags: [studio]
+      summary: Deterministically evaluate proposed calibration on held-out feedback
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ProducerCalibrationInput" } } }
+      responses:
+        "200":
+          description: Held-out agreement
+          content: { application/json: { schema: { $ref: "#/components/schemas/ProducerCalibrationEvaluation" } } }
+  /producer-calibrations/{calibrationId}/rollback:
+    post:
+      operationId: rollbackProducerCalibration
+      tags: [studio]
+      summary: Activate a historical calibration without modifying history
+      parameters:
+        - name: calibrationId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Historical calibration activated
+          content: { application/json: { schema: { $ref: "#/components/schemas/ProducerCalibration" } } }
+        "404": { $ref: "#/components/responses/NotFound" }
   /production-jobs/{jobId}:
     get:
       operationId: getProductionJob
@@ -1096,6 +1208,77 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
   schemas:
+    ProducerDecision:
+      type: object
+      required: [id, projectId, domain, kind, source, rating, reasons, context, version, createdAt]
+      properties:
+        id: { type: string }
+        projectId: { type: string }
+        domain: { type: string, enum: [candidate, repair, arrangement, performance, mix, master] }
+        kind: { type: string, enum: [rating, comparison, approval, rejection, edit, restore, repair_requested, repair_completed] }
+        source: { type: string, enum: [explicit_feedback, inferred_behavior, objective_evidence] }
+        rating: { type: [number, "null"], minimum: 1, maximum: 5 }
+        reasons: { type: array, items: { type: string }, maxItems: 20 }
+        context:
+          type: object
+          required: [subjectId, modelVersion, evidenceIds, lineageIds]
+          properties:
+            subjectId: { type: [string, "null"] }
+            comparedSubjectId: { type: [string, "null"] }
+            modelVersion: { type: [string, "null"] }
+            evidenceIds: { type: array, items: { type: string } }
+            lineageIds: { type: array, items: { type: string } }
+            evidenceSha256: { type: [string, "null"] }
+        version: { type: number, minimum: 1 }
+        createdAt: { type: string, format: date-time }
+    ProducerDecisionInput:
+      type: object
+      required: [projectId, domain, kind]
+      properties:
+        projectId: { type: string, minLength: 1 }
+        domain: { type: string, enum: [candidate, repair, arrangement, performance, mix, master] }
+        kind: { type: string, enum: [rating, comparison, approval, rejection, edit, restore, repair_requested, repair_completed] }
+        subjectId: { type: string, maxLength: 200 }
+        comparedSubjectId: { type: string, maxLength: 200 }
+        rating: { type: number, minimum: 1, maximum: 5 }
+        reasons: { type: array, items: { type: string, maxLength: 500 }, maxItems: 20 }
+    ProducerPreferences:
+      type: object
+      required: [learningEnabled, inferredBehaviorEnabled, updatedAt]
+      properties:
+        learningEnabled: { type: boolean }
+        inferredBehaviorEnabled: { type: boolean }
+        updatedAt: { type: string, format: date-time }
+    ProducerPreferencesInput:
+      type: object
+      required: [learningEnabled, inferredBehaviorEnabled]
+      properties:
+        learningEnabled: { type: boolean }
+        inferredBehaviorEnabled: { type: boolean }
+    ProducerCalibrationInput:
+      type: object
+      required: [rankingWeight, criticWeight]
+      properties:
+        rankingWeight: { type: number, minimum: 0, maximum: 1 }
+        criticWeight: { type: number, minimum: 0, maximum: 1 }
+    ProducerCalibrationEvaluation:
+      type: object
+      required: [examples, heldOutAgreement]
+      properties:
+        examples: { type: number }
+        heldOutAgreement: { type: number }
+    ProducerCalibration:
+      type: object
+      required: [id, version, rankingWeight, criticWeight, heldOutAgreement, baselineAgreement, active, createdAt]
+      properties:
+        id: { type: string }
+        version: { type: number }
+        rankingWeight: { type: number }
+        criticWeight: { type: number }
+        heldOutAgreement: { type: number }
+        baselineAgreement: { type: number }
+        active: { type: boolean }
+        createdAt: { type: string, format: date-time }
     LicensedInstrumentSmokeEvidence:
       type: object
       required: [assetId, sha256, rendererIdentity, rendererSha256, trackModelRendered, audible, canonicalSensitivity, nativeHostAttested, outputSha256, pitchVariantSha256, expressionVariantSha256, peak, sampleRate, durationSeconds, format]

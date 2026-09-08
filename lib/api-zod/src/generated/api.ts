@@ -10161,6 +10161,212 @@ export const ApproveMixMasterRevisionResponse = zod.object({
 
 
 /**
+ * @summary List the authenticated producer's private immutable decisions
+ */
+export const listProducerDecisionsQueryLimitDefault = 50;
+export const listProducerDecisionsQueryLimitMax = 100;
+
+
+
+export const ListProducerDecisionsQueryParams = zod.object({
+  "projectId": zod.coerce.string().optional(),
+  "limit": zod.coerce.number().min(1).max(listProducerDecisionsQueryLimitMax).default(listProducerDecisionsQueryLimitDefault)
+})
+
+export const listProducerDecisionsResponseRatingMax = 5;
+
+export const listProducerDecisionsResponseReasonsMax = 20;
+
+
+
+
+export const ListProducerDecisionsResponseItem = zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "domain": zod.enum(['candidate', 'repair', 'arrangement', 'performance', 'mix', 'master']),
+  "kind": zod.enum(['rating', 'comparison', 'approval', 'rejection', 'edit', 'restore', 'repair_requested', 'repair_completed']),
+  "source": zod.enum(['explicit_feedback', 'inferred_behavior', 'objective_evidence']),
+  "rating": zod.number().min(1).max(listProducerDecisionsResponseRatingMax).nullable(),
+  "reasons": zod.array(zod.string()).max(listProducerDecisionsResponseReasonsMax),
+  "context": zod.object({
+  "subjectId": zod.string().nullable(),
+  "comparedSubjectId": zod.string().nullish(),
+  "modelVersion": zod.string().nullable(),
+  "evidenceIds": zod.array(zod.string()),
+  "lineageIds": zod.array(zod.string()),
+  "evidenceSha256": zod.string().nullish()
+}),
+  "version": zod.number().min(1),
+  "createdAt": zod.coerce.date()
+})
+export const ListProducerDecisionsResponse = zod.array(ListProducerDecisionsResponseItem)
+
+
+/**
+ * @summary Append explicit producer feedback to the private ledger
+ */
+
+export const createProducerDecisionBodySubjectIdMax = 200;
+
+export const createProducerDecisionBodyComparedSubjectIdMax = 200;
+
+export const createProducerDecisionBodyRatingMax = 5;
+
+export const createProducerDecisionBodyReasonsItemMax = 500;
+
+export const createProducerDecisionBodyReasonsMax = 20;
+
+
+
+export const CreateProducerDecisionBody = zod.object({
+  "projectId": zod.string().min(1),
+  "domain": zod.enum(['candidate', 'repair', 'arrangement', 'performance', 'mix', 'master']),
+  "kind": zod.enum(['rating', 'comparison', 'approval', 'rejection', 'edit', 'restore', 'repair_requested', 'repair_completed']),
+  "subjectId": zod.string().max(createProducerDecisionBodySubjectIdMax).optional(),
+  "comparedSubjectId": zod.string().max(createProducerDecisionBodyComparedSubjectIdMax).optional(),
+  "rating": zod.number().min(1).max(createProducerDecisionBodyRatingMax).optional(),
+  "reasons": zod.array(zod.string().max(createProducerDecisionBodyReasonsItemMax)).max(createProducerDecisionBodyReasonsMax).optional()
+})
+
+export const createProducerDecisionResponseRatingMax = 5;
+
+export const createProducerDecisionResponseReasonsMax = 20;
+
+
+
+
+export const CreateProducerDecisionResponse = zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "domain": zod.enum(['candidate', 'repair', 'arrangement', 'performance', 'mix', 'master']),
+  "kind": zod.enum(['rating', 'comparison', 'approval', 'rejection', 'edit', 'restore', 'repair_requested', 'repair_completed']),
+  "source": zod.enum(['explicit_feedback', 'inferred_behavior', 'objective_evidence']),
+  "rating": zod.number().min(1).max(createProducerDecisionResponseRatingMax).nullable(),
+  "reasons": zod.array(zod.string()).max(createProducerDecisionResponseReasonsMax),
+  "context": zod.object({
+  "subjectId": zod.string().nullable(),
+  "comparedSubjectId": zod.string().nullish(),
+  "modelVersion": zod.string().nullable(),
+  "evidenceIds": zod.array(zod.string()),
+  "lineageIds": zod.array(zod.string()),
+  "evidenceSha256": zod.string().nullish()
+}),
+  "version": zod.number().min(1),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Get private producer preference and learning controls
+ */
+export const GetProducerPreferencesResponse = zod.object({
+  "learningEnabled": zod.boolean(),
+  "inferredBehaviorEnabled": zod.boolean(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Replace private producer preference and learning controls
+ */
+export const UpdateProducerPreferencesBody = zod.object({
+  "learningEnabled": zod.boolean(),
+  "inferredBehaviorEnabled": zod.boolean()
+})
+
+export const UpdateProducerPreferencesResponse = zod.object({
+  "learningEnabled": zod.boolean(),
+  "inferredBehaviorEnabled": zod.boolean(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary List private immutable calibration versions
+ */
+export const ListProducerCalibrationsResponseItem = zod.object({
+  "id": zod.string(),
+  "version": zod.number(),
+  "rankingWeight": zod.number(),
+  "criticWeight": zod.number(),
+  "heldOutAgreement": zod.number(),
+  "baselineAgreement": zod.number(),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date()
+})
+export const ListProducerCalibrationsResponse = zod.array(ListProducerCalibrationsResponseItem)
+
+
+/**
+ * @summary Promote a measurably better held-out calibration
+ */
+export const promoteProducerCalibrationBodyRankingWeightMin = 0;
+export const promoteProducerCalibrationBodyRankingWeightMax = 1;
+
+export const promoteProducerCalibrationBodyCriticWeightMin = 0;
+export const promoteProducerCalibrationBodyCriticWeightMax = 1;
+
+
+
+export const PromoteProducerCalibrationBody = zod.object({
+  "rankingWeight": zod.number().min(promoteProducerCalibrationBodyRankingWeightMin).max(promoteProducerCalibrationBodyRankingWeightMax),
+  "criticWeight": zod.number().min(promoteProducerCalibrationBodyCriticWeightMin).max(promoteProducerCalibrationBodyCriticWeightMax)
+})
+
+export const PromoteProducerCalibrationResponse = zod.object({
+  "id": zod.string(),
+  "version": zod.number(),
+  "rankingWeight": zod.number(),
+  "criticWeight": zod.number(),
+  "heldOutAgreement": zod.number(),
+  "baselineAgreement": zod.number(),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Deterministically evaluate proposed calibration on held-out feedback
+ */
+export const evaluateProducerCalibrationBodyRankingWeightMin = 0;
+export const evaluateProducerCalibrationBodyRankingWeightMax = 1;
+
+export const evaluateProducerCalibrationBodyCriticWeightMin = 0;
+export const evaluateProducerCalibrationBodyCriticWeightMax = 1;
+
+
+
+export const EvaluateProducerCalibrationBody = zod.object({
+  "rankingWeight": zod.number().min(evaluateProducerCalibrationBodyRankingWeightMin).max(evaluateProducerCalibrationBodyRankingWeightMax),
+  "criticWeight": zod.number().min(evaluateProducerCalibrationBodyCriticWeightMin).max(evaluateProducerCalibrationBodyCriticWeightMax)
+})
+
+export const EvaluateProducerCalibrationResponse = zod.object({
+  "examples": zod.number(),
+  "heldOutAgreement": zod.number()
+})
+
+
+/**
+ * @summary Activate a historical calibration without modifying history
+ */
+export const RollbackProducerCalibrationParams = zod.object({
+  "calibrationId": zod.coerce.string()
+})
+
+export const RollbackProducerCalibrationResponse = zod.object({
+  "id": zod.string(),
+  "version": zod.number(),
+  "rankingWeight": zod.number(),
+  "criticWeight": zod.number(),
+  "heldOutAgreement": zod.number(),
+  "baselineAgreement": zod.number(),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
  * @summary Get an authenticated production job
  */
 export const GetProductionJobParams = zod.object({
