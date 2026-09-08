@@ -87,6 +87,7 @@ let activeChild;
 const childTerminationGraceMs = 500;
 const childReapingTimeoutMs = 3_000;
 let injectedProcessStatReadFailure = false;
+let injectedProcessDirectoryReadFailure = false;
 
 function killChild(child, signal) {
   try {
@@ -111,7 +112,25 @@ function delay(milliseconds) {
 function listIsolatedChildPids(rootPid) {
   const childrenByParent = new Map();
   const pidsInSession = [];
-  const entries = readdirSync("/proc", { withFileTypes: true });
+  let entries;
+  try {
+    if (
+      !injectedProcessDirectoryReadFailure &&
+      process.env.FOCUSED_API_TEST_INJECT_PROCESS_DIRECTORY_READ_FAILURE ===
+        "true"
+    ) {
+      injectedProcessDirectoryReadFailure = true;
+      const error = new Error("injected unreadable process table");
+      error.code = "EACCES";
+      throw error;
+    }
+    entries = readdirSync("/proc", { withFileTypes: true });
+  } catch (error) {
+    console.error(
+      `focused API cleanup could not enumerate /proc: ${error?.code ?? "UNKNOWN"} ${error?.message ?? String(error)}`,
+    );
+    return [rootPid];
+  }
   for (const entry of entries) {
     if (!entry.isDirectory() || !/^\d+$/u.test(entry.name)) {
       continue;
