@@ -709,6 +709,75 @@ test(
 );
 
 test(
+  "SIGTERM after bundling does not disrupt a different healthy focused API check",
+  { timeout: 120_000 },
+  async () => {
+    const before = await listBundleDirectories();
+    const [interrupted, healthy] = await Promise.all([
+      interruptFocusedTestAfterBundles("test:validation", {
+        ...process.env,
+        FOCUSED_API_TEST_INJECT_FAILURE: "await-sigterm",
+      }),
+      runFocusedTest("test:source-ingestion"),
+    ]);
+
+    assert.notEqual(
+      interrupted.script,
+      healthy.script,
+      "expected two distinct focused API scripts to run concurrently",
+    );
+    assert.equal(
+      interrupted.interrupted,
+      true,
+      [
+        `${interrupted.script} never reached the post-bundle interruption point`,
+        interrupted.stdout,
+        interrupted.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    assert.equal(
+      interrupted.signal,
+      "SIGTERM",
+      [
+        `${interrupted.script} did not terminate through the intended SIGTERM path`,
+        `exit code: ${interrupted.code}`,
+        interrupted.stdout,
+        interrupted.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    assert.match(
+      interrupted.stderr,
+      /focused API bundles ready for SIGTERM/,
+      `${interrupted.script} was interrupted before its bundles existed`,
+    );
+    assert.equal(
+      healthy.code,
+      0,
+      [
+        `${healthy.script} failed while a different focused check handled SIGTERM`,
+        healthy.signal ? `signal: ${healthy.signal}` : "",
+        healthy.stdout,
+        healthy.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+
+    const after = await listBundleDirectories();
+    const leaked = [...after].filter((directory) => !before.has(directory));
+    assert.deepEqual(
+      leaked,
+      [],
+      `mixed healthy and SIGTERM-interrupted focused API tests left bundle directories behind: ${leaked.join(", ")}`,
+    );
+  },
+);
+
+test(
   "overlapping SIGTERM and later esbuild failure leave no focused API bundles behind",
   { timeout: 120_000 },
   async () => {
