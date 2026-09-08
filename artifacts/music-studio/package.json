@@ -9,7 +9,7 @@
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "pretypecheck": "tsc --build ../../lib/api-client-react/tsconfig.json ../../lib/replit-auth-web/tsconfig.json --force",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test:repair-view": "pnpm exec esbuild src/pages/project-workspace-repair.test.ts --bundle --platform=node --format=esm --outfile=/tmp/music-studio-repair-view.test.mjs && node --test /tmp/music-studio-repair-view.test.mjs",
+    "test:repair-view": "sh -c 'bundle=$(mktemp /tmp/music-studio-repair-view.XXXXXX.mjs) || exit; trap \"rm -f $bundle\" EXIT; pnpm exec esbuild src/pages/project-workspace-repair.test.ts --bundle --platform=node --format=esm --outfile=\"$bundle\" && node --test \"$bundle\"'",
     "test:transport": "pnpm exec esbuild src/components/studio/audio-transport.test.ts --bundle --platform=node --format=esm --outfile=/tmp/music-studio-audio-transport.test.mjs && node --test /tmp/music-studio-audio-transport.test.mjs"
   },
   "devDependencies": {
