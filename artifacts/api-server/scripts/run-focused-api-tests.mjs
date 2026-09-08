@@ -101,16 +101,24 @@ const directSignalFailureDetailLimit = 1;
 const directSignalFailureSummaryPidLimit = 10;
 const directSignalFailureGroups = new Map();
 const reportedReusedPids = new Set();
-const directSignalFailureConfiguration = new Map(
-  (process.env.FOCUSED_API_TEST_INJECT_DIRECT_PROCESS_SIGNAL_FAILURE ?? "")
-    .split(",")
-    .map((entry) => entry.split(":"))
-    .filter(
-      ([signal, errorCode]) =>
-        (signal === "SIGTERM" || signal === "SIGKILL") &&
-        (errorCode === "EPERM" || errorCode === "EACCES"),
-    ),
-);
+const directSignalFailureConfiguration = new Map();
+for (const [signal, errorCode] of (
+  process.env.FOCUSED_API_TEST_INJECT_DIRECT_PROCESS_SIGNAL_FAILURE ?? ""
+)
+  .split(",")
+  .map((entry) => entry.split(":"))
+  .filter(
+    ([signal, errorCode]) =>
+      (signal === "SIGTERM" || signal === "SIGKILL") &&
+      (errorCode === "EPERM" || errorCode === "EACCES"),
+  )) {
+  const errorCodes = directSignalFailureConfiguration.get(signal) ?? [];
+  if (!errorCodes.includes(errorCode)) {
+    errorCodes.push(errorCode);
+  }
+  directSignalFailureConfiguration.set(signal, errorCodes);
+}
+const directSignalFailureAssignments = new Map();
 
 function delay(milliseconds) {
   return new Promise((resolve) => {
@@ -358,7 +366,18 @@ function signalProcess(
   try {
     const injectedFailure =
       process.env.FOCUSED_API_TEST_INJECT_DIRECT_PROCESS_SIGNAL_FAILURE;
-    const signalFailure = directSignalFailureConfiguration.get(signal);
+    const configuredSignalFailures =
+      directSignalFailureConfiguration.get(signal) ?? [];
+    const assignmentKey = `${signal}:${pid}`;
+    let signalFailure = directSignalFailureAssignments.get(assignmentKey);
+    if (!signalFailure && configuredSignalFailures.length > 0) {
+      signalFailure =
+        configuredSignalFailures[
+          directSignalFailureAssignments.size %
+            configuredSignalFailures.length
+        ];
+      directSignalFailureAssignments.set(assignmentKey, signalFailure);
+    }
     const processRecord = readProcessRecord(pid);
     if (!processRecord) {
       throw new Error(`unparseable /proc/${pid}/stat`);
