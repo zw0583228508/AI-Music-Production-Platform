@@ -4,6 +4,7 @@ import type { SongModelData } from "@workspace/db";
 import {
   buildArrangementBrain,
   buildTrackModels,
+  canonicalMotifFingerprint,
   applyCompositionIntelligence,
   createArrangementPlan,
   createStyleSpec,
@@ -163,7 +164,7 @@ test("Composition Intelligence v2 reuses motifs and changes performed events rep
   assert.equal(v2.compositionIntelligence?.mode, "reasoning_core");
   assert.equal(v2.provenance.version, "2.0.0");
   assert.equal(repeatedChorus.sourceMotifRef, firstChorus.motifRef);
-  assert.equal(repeatedChorus.motifRef, firstChorus.motifRef);
+  assert.notEqual(repeatedChorus.motifRef, firstChorus.motifRef);
   assert.equal(v2.compositionIntelligence?.instrumentRoles.find((role) =>
     role.trackId === "drums")?.function, "pulse");
 
@@ -281,6 +282,20 @@ test("Composition Intelligence v2 reuses motifs and changes performed events rep
     () => applyCompositionIntelligence(old, v2, changedEvidence),
     /evidence does not match/,
   );
+});
+
+test("canonical motif fingerprints retain rhythmic and interval identity across transposition", () => {
+  const source = [
+    { start: 1, duration: .25, pitch: 60 },
+    { start: 1.5, duration: .5, pitch: 64 },
+    { start: 2.25, duration: .25, pitch: 67 },
+  ];
+  assert.equal(canonicalMotifFingerprint(source), canonicalMotifFingerprint(
+    source.map((note) => ({ ...note, start: note.start + 12, pitch: note.pitch + 7 })),
+  ));
+  assert.notEqual(canonicalMotifFingerprint(source), canonicalMotifFingerprint(
+    source.map((note, index) => ({ ...note, duration: index === 1 ? .25 : note.duration })),
+  ));
 });
 
 test("shared groove coordinates bass and drums across phrase boundaries without mechanical unison", () => {
@@ -1501,6 +1516,16 @@ test("detected canonical vocal occupancy leaves accompaniment space without chan
   const baseline = buildTrackModels(input(base, baselinePlan));
   const first = buildTrackModels(input(detected, detectedPlan));
   const second = buildTrackModels(input(detected, detectedPlan));
+  const responsePlan = createArrangementPlan({
+    arrangementId: "vocal-response-v2",
+    version: 1,
+    songModel: detected,
+    style: detectedPlan.style,
+    tracks,
+    parameters: { songModelVersion: detectedPlan.songModelVersion, seed: 81 },
+    compositionVersion: "2.0",
+  });
+  const responseModels = buildTrackModels(input(detected, responsePlan));
   const localOverridePlan = structuredClone(detectedPlan);
   localOverridePlan.hierarchy.events = localOverridePlan.hierarchy.events.map((event) => ({
     ...event,
@@ -1514,6 +1539,19 @@ test("detected canonical vocal occupancy leaves accompaniment space without chan
     .filter((note) => note.start < 1.75 && note.start + note.duration > .25).length;
   assert.ok(overlaps(first) < overlaps(baseline));
   assert.equal(overlaps(first), 0);
+  const responsePhrase = responsePlan.compositionIntelligence?.phrases.find((phrase) =>
+    phrase.intention === "response");
+  assert.ok(responsePhrase);
+  assert.equal(responsePhrase?.transformation, "answering_gesture");
+  const responseNotes = responseModels.flatMap((track) => track.notes)
+    .filter((note) => note.motif?.phraseId === responsePhrase?.id);
+  assert.ok(responseNotes.length > 0);
+  assert.equal(new Set(responseModels.flatMap((track) => track.notes.map((note) => note.id))).size,
+    responseModels.flatMap((track) => track.notes).length);
+  assert.ok(responseNotes.every((note) =>
+    note.start + note.duration <= (responsePhrase?.endSeconds ?? 0) + .0001));
+  assert.equal(responseNotes[0].motif?.fingerprint,
+    canonicalMotifFingerprint(responseNotes));
   assert.ok(overlaps(locallyAllowed) > overlaps(first));
   assert.deepEqual(first.find((track) => track.id === "voice")?.notes,
     baseline.find((track) => track.id === "voice")?.notes);

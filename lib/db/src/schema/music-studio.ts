@@ -1414,6 +1414,12 @@ export type CompositionPhraseIntent =
   | "release"
   | "protect_vocal";
 
+export type PhraseIntention =
+  | "support"
+  | "silence"
+  | "response"
+  | "transition"
+  | "foreground";
 export type OrchestrationRole =
   | "foundation"
   | "pulse"
@@ -1489,6 +1495,16 @@ export type CompositionIntelligencePlan = {
   seed: number;
   evidenceSha256: string;
   songIntent: "preserve_observed_form" | "develop_observed_form";
+  motifs: Array<{
+    id: string;
+    fingerprint: string;
+    sourceSectionId: string;
+    sourcePhraseId: string;
+    parentMotifId: string | null;
+    transformation: MotifTransformation;
+    ownerTrackId: string | null;
+    evidenceSha256: string;
+  }>;
   tensionRelease: Array<{
     sectionId: string;
     tension: number;
@@ -1499,10 +1515,16 @@ export type CompositionIntelligencePlan = {
     sectionId: string;
     startBar: number;
     endBar: number;
+    startSeconds?: number;
+    endSeconds?: number;
     intent: CompositionPhraseIntent;
     tension: number;
     motifRef: string;
     sourceMotifRef: string | null;
+    intention: PhraseIntention;
+    transformation: MotifTransformation;
+    responseToPhraseId: string | null;
+    ownerTrackId: string | null;
   }>;
   instrumentRoles: Array<{
     trackId: string;
@@ -1625,6 +1647,17 @@ export type ArrangementPlan = {
 export type MusicalNote = {
   id: string; start: number; duration: number; pitch: number; velocity: number;
   channel?: number; voice?: string;
+  /** Canonical motif decision that authored this event. */
+  motif?: {
+    id: string;
+    fingerprint: string;
+    parentMotifId: string | null;
+    transformation: MotifTransformation;
+    phraseId: string;
+    intention: PhraseIntention;
+    evidenceSha256: string;
+    windowEndSeconds?: number;
+  };
 };
 
 export type ArticulationEvent = {
@@ -1884,3 +1917,12 @@ export type CandidateRepairSnapshot = {
   plan: ArrangementPlan;
   trackModels: TrackModel[];
 };
+
+export type MotifTransformation =
+  | "repetition"
+  | "rhythmic_variation"
+  | "augmentation"
+  | "diminution"
+  | "register_displacement"
+  | "answering_gesture"
+  | "orchestral_handoff";

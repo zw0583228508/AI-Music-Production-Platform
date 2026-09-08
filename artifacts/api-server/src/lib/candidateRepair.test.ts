@@ -7,6 +7,7 @@ import {
   repairTimeBounds,
   validateServerAuthoredRepairFinding,
 } from "./candidateRepair";
+import { canonicalMotifFingerprint } from "./musicEngines";
 
 const plan = {
   id: "plan",
@@ -276,4 +277,191 @@ test("repairing a legacy plan materializes a valid hierarchy and reports every a
   assert.equal(result.changedScopes[0].level, "song");
   assert.ok(result.changedScopes.some((scope) =>
     scope.level === "event" && scope.id === "event:section:chorus:2:5:piano"));
+});
+
+test("bounded repairs replace only in-scope motif decisions and symbolic lineage", () => {
+  const piano = track("piano");
+  const motifTag = (
+    id: string,
+    phraseId: string,
+    intention: "support" | "foreground" | "silence",
+  ) => ({
+    id,
+    fingerprint: "",
+    parentMotifId: id === "chorus-motif" ? "verse-motif" : null,
+    transformation: id === "chorus-motif" ? "rhythmic_variation" as const : "repetition" as const,
+    phraseId,
+    intention,
+    evidenceSha256: "evidence",
+  });
+  piano.notes = [
+    { id: "verse-note", start: 2, duration: 1, pitch: 60, velocity: 80, motif: motifTag("verse-motif", "verse-phrase", "support") },
+    { id: "crosses-repair-start", start: 15, duration: 2, pitch: 62, velocity: 80, motif: motifTag("chorus-motif", "chorus-phrase", "foreground") },
+    { id: "chorus-note", start: 18, duration: 1, pitch: 64, velocity: 80, motif: motifTag("chorus-motif", "chorus-phrase", "foreground") },
+    { id: "silence-note", start: 20, duration: 1, pitch: 67, velocity: 70, motif: motifTag("silence-motif", "vocal-silence", "silence") },
+  ];
+  const setFingerprint = (id: string, phraseId: string) => {
+    const material = piano.notes.filter((note) =>
+      note.motif?.id === id && note.motif.phraseId === phraseId);
+    const fingerprint = canonicalMotifFingerprint(material);
+    for (const note of material) note.motif!.fingerprint = fingerprint;
+    return fingerprint;
+  };
+  const verseFingerprint = setFingerprint("verse-motif", "verse-phrase");
+  const chorusFingerprint = setFingerprint("chorus-motif", "chorus-phrase");
+  const silenceFingerprint = setFingerprint("silence-motif", "vocal-silence");
+  const emptyFingerprint = canonicalMotifFingerprint([]);
+  const reasoning = {
+    version: "2.0",
+    mode: "reasoning_core",
+    precedence: ["song_intent", "dramatic_arc", "section_function", "phrase_intent", "instrument_role", "motif", "harmony_rhythm_voicing", "event"],
+    seed: 3,
+    evidenceSha256: "evidence",
+    songIntent: "develop_observed_form",
+    tensionRelease: [],
+    instrumentRoles: [{ trackId: "piano", function: "harmony", authority: "project_track" }],
+    phrases: [
+      { id: "verse-phrase", sectionId: "section:verse:1", startBar: 1, endBar: 4, intent: "state", tension: .2, motifRef: "verse-motif", sourceMotifRef: null, intention: "support", transformation: "repetition", responseToPhraseId: null, ownerTrackId: "piano" },
+      { id: "chorus-phrase", sectionId: "section:chorus:2", startBar: 5, endBar: 6, intent: "develop", tension: .8, motifRef: "chorus-motif", sourceMotifRef: "verse-motif", intention: "foreground", transformation: "rhythmic_variation", responseToPhraseId: null, ownerTrackId: "piano" },
+      { id: "chorus-repetition", sectionId: "section:chorus:2", startBar: 5, endBar: 6, intent: "state", tension: .6, motifRef: "verse-motif", sourceMotifRef: "verse-motif", intention: "foreground", transformation: "repetition", responseToPhraseId: null, ownerTrackId: "piano" },
+      { id: "bass-chorus-phrase", sectionId: "section:chorus:2", startBar: 5, endBar: 6, intent: "state", tension: .5, motifRef: "bass-motif", sourceMotifRef: null, intention: "support", transformation: "repetition", responseToPhraseId: null, ownerTrackId: "bass" },
+      { id: "vocal-silence", sectionId: "section:chorus:2", startBar: 5, endBar: 6, intent: "protect_vocal", tension: .2, motifRef: "silence-motif", sourceMotifRef: null, intention: "silence", transformation: "repetition", responseToPhraseId: null, ownerTrackId: null },
+    ],
+    motifs: [
+      { id: "verse-motif", fingerprint: verseFingerprint, sourceSectionId: "section:verse:1", sourcePhraseId: "verse-phrase", parentMotifId: null, transformation: "repetition", ownerTrackId: "piano", evidenceSha256: "evidence" },
+      { id: "chorus-motif", fingerprint: chorusFingerprint, sourceSectionId: "section:chorus:2", sourcePhraseId: "chorus-phrase", parentMotifId: "verse-motif", transformation: "rhythmic_variation", ownerTrackId: "piano", evidenceSha256: "evidence" },
+      { id: "bass-motif", fingerprint: emptyFingerprint, sourceSectionId: "section:chorus:2", sourcePhraseId: "bass-chorus-phrase", parentMotifId: null, transformation: "repetition", ownerTrackId: "bass", evidenceSha256: "evidence" },
+      { id: "silence-motif", fingerprint: silenceFingerprint, sourceSectionId: "section:chorus:2", sourcePhraseId: "vocal-silence", parentMotifId: null, transformation: "repetition", ownerTrackId: null, evidenceSha256: "evidence" },
+    ],
+  } as ArrangementPlan["compositionIntelligence"];
+  const originalPlan = { ...plan, compositionIntelligence: reasoning };
+  const proposedReasoning = structuredClone(reasoning)!;
+  proposedReasoning.motifs.find((motif) => motif.id === "chorus-motif")!.fingerprint = "repaired-chorus";
+  proposedReasoning.motifs.find((motif) => motif.id === "bass-motif")!.fingerprint = "wrong-bass";
+  proposedReasoning.phrases.find((phrase) => phrase.id === "chorus-phrase")!.transformation = "register_displacement";
+  proposedReasoning.phrases.find((phrase) => phrase.id === "chorus-repetition")!.tension = .7;
+  proposedReasoning.phrases.find((phrase) => phrase.id === "vocal-silence")!.tension = .35;
+  proposedReasoning.motifs.find((motif) => motif.id === "silence-motif")!.fingerprint = "wrong-silence";
+  const proposedPiano = structuredClone(piano);
+  proposedPiano.notes = proposedPiano.notes.map((note) =>
+    note.id === "crosses-repair-start"
+      ? { ...note, pitch: 20 }
+      : note.id === "chorus-note"
+        ? { ...note, pitch: 69, motif: { ...note.motif!, fingerprint: "proposed" } }
+        : note.id === "silence-note"
+          ? { ...note, pitch: 65, motif: { ...note.motif!, fingerprint: "proposed" } }
+          : note);
+  const finding = normalizeRepairFinding({
+    id: "motif-repair",
+    affectedSections: ["chorus"],
+    startBar: 5,
+    endBar: 6,
+    affectedTrackIds: ["piano"],
+    musicalReason: "Repair the developed chorus gesture.",
+  }, originalPlan, [piano]);
+  const result = applyBoundedRepair({
+    snapshot: {
+      sourceCandidateId: "candidate",
+      sourceCandidateLabel: "Original",
+      sourceScore: .5,
+      seed: 3,
+      maxAttempts: 2,
+      finding,
+      plan: originalPlan,
+      trackModels: [piano],
+    },
+    proposedPlan: { ...plan, compositionIntelligence: proposedReasoning },
+    proposedTrackModels: [proposedPiano],
+    timeBounds: { start: 16, end: 24 },
+  });
+  assert.deepEqual(
+    result.plan.compositionIntelligence?.motifs.find((motif) => motif.id === "verse-motif"),
+    reasoning?.motifs[0],
+  );
+  const finalChorusMaterial = result.trackModels[0].notes.filter((note) =>
+    note.motif?.id === "chorus-motif" && note.motif.phraseId === "chorus-phrase");
+  const finalChorusFingerprint = canonicalMotifFingerprint(finalChorusMaterial);
+  assert.equal(result.plan.compositionIntelligence?.motifs.find((motif) =>
+    motif.id === "chorus-motif")?.fingerprint, finalChorusFingerprint);
+  assert.ok(finalChorusMaterial.every((note) =>
+    note.motif?.fingerprint === finalChorusFingerprint));
+  assert.equal(finalChorusMaterial.find((note) =>
+    note.id === "crosses-repair-start")?.pitch, 62);
+  assert.equal(finalChorusMaterial.find((note) => note.id === "chorus-note")?.pitch, 69);
+  assert.equal(
+    result.plan.compositionIntelligence?.phrases.find((phrase) => phrase.id === "chorus-phrase")?.transformation,
+    "register_displacement",
+  );
+  assert.equal(
+    result.plan.compositionIntelligence?.motifs.find((motif) => motif.id === "bass-motif")?.fingerprint,
+    emptyFingerprint,
+  );
+  assert.equal(
+    result.plan.compositionIntelligence?.motifs.filter((motif) => motif.id === "verse-motif").length,
+    1,
+  );
+  assert.equal(
+    result.plan.compositionIntelligence?.phrases.find((phrase) =>
+      phrase.id === "chorus-repetition")?.tension,
+    .7,
+  );
+  const finalSilenceMaterial = result.trackModels[0].notes.filter((note) =>
+    note.motif?.id === "silence-motif");
+  const finalSilenceFingerprint = canonicalMotifFingerprint(finalSilenceMaterial);
+  assert.equal(result.plan.compositionIntelligence?.motifs.find((motif) =>
+    motif.id === "silence-motif")?.fingerprint, finalSilenceFingerprint);
+  assert.equal(result.plan.compositionIntelligence?.phrases.find((phrase) =>
+    phrase.id === "vocal-silence")?.tension, .35);
+  const invalidIdentity = structuredClone(proposedReasoning);
+  invalidIdentity.phrases.find((phrase) => phrase.id === "chorus-phrase")!.motifRef = "replacement-id";
+  assert.throws(() => applyBoundedRepair({
+    snapshot: {
+      sourceCandidateId: "candidate",
+      sourceCandidateLabel: "Original",
+      sourceScore: .5,
+      seed: 3,
+      maxAttempts: 2,
+      finding,
+      plan: originalPlan,
+      trackModels: [piano],
+    },
+    proposedPlan: { ...plan, compositionIntelligence: invalidIdentity },
+    proposedTrackModels: [piano],
+    timeBounds: { start: 16, end: 24 },
+  }), /preserve motif and phrase ownership identity/);
+  const invalidSource = structuredClone(proposedReasoning);
+  invalidSource.motifs.find((motif) => motif.id === "chorus-motif")!.sourcePhraseId =
+    "chorus-repetition";
+  assert.throws(() => applyBoundedRepair({
+    snapshot: {
+      sourceCandidateId: "candidate",
+      sourceCandidateLabel: "Original",
+      sourceScore: .5,
+      seed: 3,
+      maxAttempts: 2,
+      finding,
+      plan: originalPlan,
+      trackModels: [piano],
+    },
+    proposedPlan: { ...plan, compositionIntelligence: invalidSource },
+    proposedTrackModels: [proposedPiano],
+    timeBounds: { start: 16, end: 24 },
+  }), /preserve canonical motif source lineage/);
+  const duplicateIdentity = structuredClone(proposedReasoning);
+  duplicateIdentity.motifs.push(structuredClone(duplicateIdentity.motifs[0]));
+  assert.throws(() => applyBoundedRepair({
+    snapshot: {
+      sourceCandidateId: "candidate",
+      sourceCandidateLabel: "Original",
+      sourceScore: .5,
+      seed: 3,
+      maxAttempts: 2,
+      finding,
+      plan: originalPlan,
+      trackModels: [piano],
+    },
+    proposedPlan: { ...plan, compositionIntelligence: duplicateIdentity },
+    proposedTrackModels: [proposedPiano],
+    timeBounds: { start: 16, end: 24 },
+  }), /unique motif identities/);
 });

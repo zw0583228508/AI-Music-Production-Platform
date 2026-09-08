@@ -15,7 +15,9 @@ import type {
   ArrangementHierarchy,
   CompositionIntelligencePlan,
   CompositionIntelligenceVersion,
+  MotifTransformation,
   OrchestrationRole,
+  PhraseIntention,
 } from "@workspace/db";
 import { createHash } from "node:crypto";
 import { CANONICAL_PPQ, createCanonicalTimeline } from "./canonicalTimeline";
@@ -324,6 +326,20 @@ const hashSeed = (value: string): number => {
   return hash >>> 0;
 };
 
+export function canonicalMotifFingerprint(
+  notes: Array<Pick<MusicalNote, "start" | "duration" | "pitch">>,
+): string {
+  if (!notes.length) return createHash("sha256").update("motif:empty").digest("hex");
+  const ordered = [...notes].sort((left, right) =>
+    left.start - right.start || left.pitch - right.pitch || left.duration - right.duration);
+  const originTime = ordered[0].start;
+  const originPitch = ordered[0].pitch;
+  return createHash("sha256").update(canonicalJson(ordered.map((note) => ({
+    onset: round(note.start - originTime),
+    duration: round(note.duration),
+    interval: note.pitch - originPitch,
+  })))).digest("hex");
+}
 function provenance(
   model: string,
   version: string,
@@ -1102,39 +1118,124 @@ export function createArrangementPlan(input: {
   const hierarchy = buildArrangementHierarchy(input.arrangementId, input.songModel, arrangementBrain, sections);
   const previousCarrier = new Map<string, string>();
   const motifByFunction = new Map<string, string>();
+  const motifRecords: CompositionIntelligencePlan["motifs"] = [];
+  const roleOwners = input.tracks.map((track) => ({
+    trackId: track.id ?? track.name,
+    role: roleForTrack(track),
+    sourceVocal: /vocal|voice/.test(`${track.name} ${track.role}`.toLowerCase()),
+  }));
+  const foregroundOwners = roleOwners.filter((role) =>
+    !role.sourceVocal &&
+    (role.role === "lead" || role.role === "counterline" || role.role === "harmony"));
+  const transformationFor = (
+    development: ArrangementBrainSection["development"] | undefined,
+    phraseIndex: number,
+    hasVocal: boolean,
+    hasSpace: boolean,
+  ): MotifTransformation => hasSpace ? "answering_gesture"
+    : hasVocal ? "repetition"
+    : development === "development"
+      ? (["rhythmic_variation", "register_displacement", "orchestral_handoff"] as const)[phraseIndex % 3]
+      : development === "reprise" ? "augmentation"
+      : phraseIndex % 2 ? "diminution" : "repetition";
   const compositionPhrases: CompositionIntelligencePlan["phrases"] = hierarchy.sections.flatMap((section, index) => {
     const brainSection = arrangementBrain.sections[index];
     const observedPhrases = section.phraseIds.map((id) => {
       const phrase = hierarchy.phrases.find((candidate) => candidate.id === id)!;
-      return { id, startBar: phrase.startBar, endBar: phrase.endBar, protectsVocal: true };
+      const sourceId = id.split(":").at(-1);
+      const source = input.songModel.vocalIntelligence?.phrases.events.find((event) =>
+        event.id === sourceId);
+      const range = source ? canonicalRange(source) : undefined;
+      return {
+        id, startBar: phrase.startBar, endBar: phrase.endBar, protectsVocal: true,
+        startSeconds: range?.start.seconds, endSeconds: range?.end.seconds,
+        response: undefined,
+      };
     });
     const midpoint = Math.floor((section.startBar + section.endBar) / 2);
     const phraseRanges = observedPhrases.length ? observedPhrases
       : compositionVersion === "2.0" && section.endBar - section.startBar >= 3
         ? [
-            { id: `phrase:${section.id}:a`, startBar: section.startBar, endBar: midpoint, protectsVocal: false },
-            { id: `phrase:${section.id}:b`, startBar: midpoint + 1, endBar: section.endBar, protectsVocal: false },
+            { id: `phrase:${section.id}:a`, startBar: section.startBar, endBar: midpoint, protectsVocal: false, response: undefined },
+            { id: `phrase:${section.id}:b`, startBar: midpoint + 1, endBar: section.endBar, protectsVocal: false, response: undefined },
           ]
-        : [{ id: `phrase:${section.id}:whole`, startBar: section.startBar, endBar: section.endBar, protectsVocal: false }];
+        : [{ id: `phrase:${section.id}:whole`, startBar: section.startBar, endBar: section.endBar, protectsVocal: false, response: undefined }];
+    const availableResponses = input.songModel.contractVersion === "2.0" &&
+      input.songModel.vocalIntelligence?.arrangementSpace.status === "detected"
+      ? input.songModel.vocalIntelligence.arrangementSpace.windows.flatMap((response) => {
+          const range = canonicalRange(response);
+          return range && range.start.bar <= section.endBar && range.end.bar >= section.startBar &&
+            (!response.sections.length || response.sections.some((name) =>
+              name.toLowerCase().replace(/\s+/g, "_") === section.sourceSection))
+            ? [{
+                id: `phrase:${section.id}:response:${response.id}`,
+                startBar: range.start.bar,
+                endBar: range.end.bar,
+                startSeconds: range.start.seconds,
+                endSeconds: range.end.seconds,
+                protectsVocal: false,
+                response,
+              }]
+            : [];
+        }) : [];
     const existingMotif = motifByFunction.get(section.function);
     const motifRef = existingMotif ?? `motif:${hashSeed(`${evidenceSha256}:${section.function}:${section.id}`)}`;
     if (!existingMotif) motifByFunction.set(section.function, motifRef);
-    return phraseRanges.map((phrase, phraseIndex) => ({
-      id: phrase.id,
-      sectionId: section.id,
-      startBar: phrase.startBar,
-      endBar: phrase.endBar,
-      intent: compositionVersion !== "2.0" ? "state" as const
-        : phrase.protectsVocal ? "protect_vocal" as const
-        : brainSection?.development === "development" ? "develop" as const
-        : brainSection?.development === "reprise" ? "answer" as const
-        : (brainSection?.tension ?? 0) > .62 ? "build" as const
-        : (brainSection?.release ?? 0) > .35 ? "release" as const
-        : phraseIndex ? "develop" as const : "state" as const,
-      tension: compositionVersion === "2.0" ? brainSection?.tension ?? 0 : 0,
-      motifRef,
-      sourceMotifRef: existingMotif ?? null,
-    }));
+    return [...phraseRanges, ...availableResponses].map((phrase, phraseIndex) => {
+      const hasVocal = phrase.protectsVocal;
+      const hasSpace = Boolean(phrase.response);
+      const intention: PhraseIntention = compositionVersion !== "2.0" ? "support"
+        : hasVocal ? (foregroundOwners.length ? "silence" : "support")
+        : hasSpace ? "response"
+        : brainSection?.development === "development" ? "foreground"
+        : (brainSection?.tension ?? 0) > .62 ? "transition" : "support";
+      const transformation = transformationFor(
+        brainSection?.development, phraseIndex, hasVocal, hasSpace,
+      );
+      const ownerTrackId = intention === "silence" ? null
+        : foregroundOwners[(index + phraseIndex) % Math.max(1, foregroundOwners.length)]?.trackId ?? null;
+      const phraseMotifRef = transformation === "repetition"
+        ? motifRef : `${motifRef}:${transformation}:${hashSeed(phrase.id)}`;
+      const parentMotifId = phraseMotifRef === motifRef ? null : motifRef;
+      if (!motifRecords.some((motif) => motif.id === phraseMotifRef)) {
+        motifRecords.push({
+          id: phraseMotifRef,
+          fingerprint: canonicalMotifFingerprint([]),
+          sourceSectionId: section.id,
+          sourcePhraseId: phrase.id,
+          parentMotifId,
+          transformation,
+          ownerTrackId,
+          evidenceSha256,
+        });
+      }
+      return {
+        id: phrase.id,
+        sectionId: section.id,
+        startBar: phrase.startBar,
+        endBar: phrase.endBar,
+        startSeconds: "startSeconds" in phrase ? phrase.startSeconds : undefined,
+        endSeconds: "endSeconds" in phrase ? phrase.endSeconds : undefined,
+        intent: compositionVersion !== "2.0" ? "state" as const
+          : hasVocal ? "protect_vocal" as const
+          : hasSpace ? "answer" as const
+          : brainSection?.development === "development" ? "develop" as const
+          : brainSection?.development === "reprise" ? "answer" as const
+          : (brainSection?.tension ?? 0) > .62 ? "build" as const
+          : (brainSection?.release ?? 0) > .35 ? "release" as const
+          : phraseIndex ? "develop" as const : "state" as const,
+        tension: compositionVersion === "2.0" ? brainSection?.tension ?? 0 : 0,
+        motifRef: phraseMotifRef,
+        sourceMotifRef: parentMotifId ?? (existingMotif ? motifRef : null),
+        intention,
+        transformation,
+        responseToPhraseId: hasSpace && phrase.response?.phraseBeforeId
+          ? hierarchy.phrases.find((candidate) =>
+              candidate.id.endsWith(`:${phrase.response!.phraseBeforeId}`))?.id ?? null
+          : null,
+        ownerTrackId,
+      };
+    });
   });
   const compositionIntelligence: CompositionIntelligencePlan = {
     version: compositionVersion,
@@ -1150,6 +1251,7 @@ export function createArrangementPlan(input: {
       release: compositionVersion === "2.0" ? arrangementBrain.sections[index]?.release ?? 0 : 0,
     })),
     phrases: compositionPhrases,
+    motifs: motifRecords,
     instrumentRoles: input.tracks.map((track) => ({
       trackId: track.id ?? track.name,
       function: roleForTrack(track),
@@ -1608,6 +1710,8 @@ function compositionPhraseAtTime(
   return reasoning.phrases
     .filter((phrase) =>
       phrase.sectionId === section.id &&
+      (phrase.startSeconds === undefined || time >= phrase.startSeconds) &&
+      (phrase.endSeconds === undefined || time < phrase.endSeconds) &&
       phrase.startBar <= bar &&
       phrase.endBar >= bar)
     .sort((left, right) =>
@@ -1950,7 +2054,95 @@ export class CompositionEngine {
         ),
       };
     });
-    return materializeExplicitDoublings(composed, input.plan, input.songModel, barSeconds);
+    const doubled = materializeExplicitDoublings(composed, input.plan, input.songModel, barSeconds);
+    const reasoning = input.plan.compositionIntelligence;
+    if (reasoning?.version !== "2.0") return doubled;
+    const shaped = doubled.map((track) => {
+      const role = reasoning.instrumentRoles.find((candidate) => candidate.trackId === track.id);
+      const notes = track.notes.flatMap((note, index) => {
+        const sectionIndex = input.plan.sections.findIndex((section) => {
+          const bounds = arrangementSectionSeconds(input.songModel, section, barSeconds);
+          return note.start >= bounds.start && note.start < bounds.end;
+        });
+        const phrase = compositionPhraseAtTime(
+          input.plan, input.songModel, sectionIndex, note.start, barSeconds,
+        );
+        if (!phrase) return [note];
+        const motif = reasoning.motifs?.find((candidate) => candidate.id === phrase.motifRef);
+        const foreground = role?.function === "lead" || role?.function === "counterline";
+        if (phrase.intention === "silence" && foreground) return [];
+        if (phrase.intention === "response" && phrase.ownerTrackId !== track.id) return [];
+        if (phrase.intention === "foreground" && foreground &&
+          phrase.ownerTrackId && phrase.ownerTrackId !== track.id) return [];
+        if (phrase.transformation === "augmentation" && index % 2 === 1) return [];
+        let pitch = note.pitch;
+        if (track.instrumentDefinition.family !== "drums") {
+          if (phrase.transformation === "register_displacement") pitch += 12;
+          if (phrase.transformation === "answering_gesture" && index % 2 === 1) pitch -= 3;
+          while (pitch > track.instrumentDefinition.playableRange.max) pitch -= 12;
+          while (pitch < track.instrumentDefinition.playableRange.min) pitch += 12;
+        }
+        const durationScale = phrase.transformation === "augmentation" ? 1.5
+          : phrase.transformation === "diminution" ? .5 : 1;
+        const duration = round(Math.max(
+          track.instrumentDefinition.constraints.minNoteDuration,
+          Math.min(
+            note.duration * durationScale,
+            phrase.endSeconds === undefined ? Number.POSITIVE_INFINITY : phrase.endSeconds - note.start,
+          ),
+        ));
+        return [{
+          ...note,
+          id: `${track.id}:${Math.round(note.start * 1_000_000)}:${index}`,
+          pitch: midi(pitch),
+          duration,
+          motif: motif ? {
+            id: motif.id,
+            fingerprint: motif.fingerprint,
+            parentMotifId: motif.parentMotifId,
+            transformation: phrase.transformation,
+            phraseId: phrase.id,
+            intention: phrase.intention,
+            evidenceSha256: motif.evidenceSha256,
+            windowEndSeconds: phrase.intention === "response" ? phrase.endSeconds : undefined,
+          } : note.motif,
+        }];
+      });
+      for (const phrase of reasoning.phrases.filter((candidate) =>
+        candidate.intention === "response" &&
+        candidate.ownerTrackId === track.id &&
+        candidate.startSeconds !== undefined &&
+        candidate.endSeconds !== undefined)) {
+        if (notes.some((note) => note.motif?.phraseId === phrase.id)) continue;
+        const motif = reasoning.motifs?.find((candidate) => candidate.id === phrase.motifRef);
+        const responseStart = phrase.startSeconds!;
+        const responseEnd = phrase.endSeconds!;
+        const minimum = track.instrumentDefinition.constraints.minNoteDuration;
+        const duration = round(Math.min(.35, responseEnd - responseStart));
+        if (!motif || duration < minimum) continue;
+        notes.push({
+          id: `${track.id}:${Math.round(responseStart * 1_000_000)}:response`,
+          start: responseStart,
+          duration,
+          pitch: Math.round((track.instrumentDefinition.comfortableRange.min +
+            track.instrumentDefinition.comfortableRange.max) / 2),
+          velocity: 76,
+          voice: "response",
+          motif: {
+            id: motif.id,
+            fingerprint: motif.fingerprint,
+            parentMotifId: motif.parentMotifId,
+            transformation: phrase.transformation,
+            phraseId: phrase.id,
+            intention: phrase.intention,
+            evidenceSha256: motif.evidenceSha256,
+            windowEndSeconds: responseEnd,
+          },
+        });
+      }
+      return { ...track, notes: notes.sort((left, right) => left.start - right.start || left.id.localeCompare(right.id)) };
+    });
+    return synchronizeMotifLineage(shaped, reasoning);
   }
   private composeWithoutSharedGroove(input: {
     songModel: SongModelData;
@@ -2162,7 +2354,10 @@ export class CompositionEngine {
         ),
       };
     });
-    return materializeExplicitDoublings(composed, input.plan, input.songModel, barSeconds);
+    return synchronizeMotifLineage(
+      materializeExplicitDoublings(composed, input.plan, input.songModel, barSeconds),
+      input.plan.compositionIntelligence,
+    );
   }
 }
 
@@ -2250,6 +2445,12 @@ export function applyCompositionIntelligence(
       );
       if (reasoning.orchestrationAssignments?.length && !assignment) return [];
       const eventFunction = assignment?.role ?? role?.function ?? "harmony";
+      const motif = reasoning.motifs?.find((candidate) => candidate.id === phrase.motifRef);
+      const foreground = role?.function === "lead" || role?.function === "counterline";
+      if (phrase.intention === "silence" && foreground) return [];
+      if (phrase.intention === "response" && phrase.ownerTrackId !== track.id) return [];
+      if (phrase.intention === "foreground" && foreground &&
+        phrase.ownerTrackId && phrase.ownerTrackId !== track.id) return [];
       if (track.instrumentDefinition.family === "drums" &&
         (eventFunction === "pulse" && noteIndex % 2 === 1 ||
           eventFunction === "groove" && noteIndex % 2 === 0)) return [];
@@ -2276,6 +2477,16 @@ export function applyCompositionIntelligence(
         velocity: midi(note.velocity + (arc?.tension ?? 0) * 10 -
           (arc?.release ?? 0) * 8 + phrase.tension * 4),
         voice: assignment?.role ?? note.voice,
+        motif: motif ? {
+          id: motif.id,
+          fingerprint: motif.fingerprint,
+          parentMotifId: motif.parentMotifId,
+          transformation: phrase.transformation,
+          phraseId: phrase.id,
+          intention: phrase.intention,
+          evidenceSha256: motif.evidenceSha256,
+          windowEndSeconds: phrase.intention === "response" ? phrase.endSeconds : undefined,
+        } : note.motif,
       }];
     });
     const transformed: TrackModel = {
@@ -2323,7 +2534,10 @@ export function applyCompositionIntelligence(
     };
     return transformed;
   });
-  return materializeExplicitDoublings(transformedTracks, plan, songModel, fallbackBarSeconds);
+  return synchronizeMotifLineage(
+    materializeExplicitDoublings(transformedTracks, plan, songModel, fallbackBarSeconds),
+    reasoning,
+  );
 }
 
 export class VoiceLeadingEngine {
@@ -2419,6 +2633,13 @@ export class PerformanceEngine {
           track.instrumentDefinition.constraints.minNoteDuration,
           Math.min(performed.duration, appliedRange.end - performed.start),
         ));
+      }
+      if (note.motif?.windowEndSeconds !== undefined) {
+        performed.duration = round(Math.min(
+          performed.duration,
+          note.motif.windowEndSeconds - performed.start,
+        ));
+        if (performed.duration < track.instrumentDefinition.constraints.minNoteDuration) return;
       }
       // Timing variation/legato must not reintroduce an intersection that
       // composition deliberately removed. Vocal events are never filtered.
@@ -3027,6 +3248,66 @@ export class MasterEngine {
   }
 }
 
+function preserveMotifsAfterAdvancedHarmony(
+  harmonized: TrackModel[],
+  composed: TrackModel[],
+  plan: ArrangementPlan,
+  songModel: SongModelData,
+  fallbackBarSeconds: number,
+): TrackModel[] {
+  const reasoning = plan.compositionIntelligence;
+  if (reasoning?.version !== "2.0") return harmonized;
+  return harmonized.map((track) => {
+    const role = reasoning.instrumentRoles.find((candidate) => candidate.trackId === track.id);
+    const notes = track.notes.flatMap((note, index) => {
+      if (note.motif) return [note];
+      const sectionIndex = plan.sections.findIndex((section) => {
+        const bounds = arrangementSectionSeconds(songModel, section, fallbackBarSeconds);
+        return note.start >= bounds.start && note.start < bounds.end;
+      });
+      const phrase = compositionPhraseAtTime(
+        plan, songModel, sectionIndex, note.start, fallbackBarSeconds,
+      );
+      const motif = phrase
+        ? reasoning.motifs?.find((candidate) => candidate.id === phrase.motifRef)
+        : undefined;
+      if (!phrase || !motif) return [note];
+      const foreground = role?.function === "lead" || role?.function === "counterline";
+      if (phrase.intention === "silence" && foreground) return [];
+      if (phrase.intention === "response" && phrase.ownerTrackId !== track.id) return [];
+      let pitch = note.pitch;
+      if (track.instrumentDefinition.family !== "drums") {
+        if (phrase.transformation === "register_displacement") pitch += 12;
+        if (phrase.transformation === "answering_gesture" && index % 2 === 1) pitch -= 3;
+        while (pitch > track.instrumentDefinition.playableRange.max) pitch -= 12;
+        while (pitch < track.instrumentDefinition.playableRange.min) pitch += 12;
+      }
+      return [{
+        ...note,
+        pitch: midi(pitch),
+        motif: {
+          id: motif.id,
+          fingerprint: motif.fingerprint,
+          parentMotifId: motif.parentMotifId,
+          transformation: phrase.transformation,
+          phraseId: phrase.id,
+          intention: phrase.intention,
+          evidenceSha256: motif.evidenceSha256,
+          windowEndSeconds: phrase.intention === "response" ? phrase.endSeconds : undefined,
+        },
+      }];
+    });
+    const composedResponses = composed.find((candidate) => candidate.id === track.id)?.notes
+      .filter((note) => note.motif?.intention === "response") ?? [];
+    for (const response of composedResponses) {
+      if (!notes.some((note) => note.motif?.phraseId === response.motif?.phraseId)) {
+        notes.push(response);
+      }
+    }
+    return { ...track, notes };
+  });
+}
+
 export function buildTrackModels(input: {
   songModel: SongModelData;
   plan: ArrangementPlan;
@@ -3065,8 +3346,15 @@ export function buildTrackModels(input: {
     harmony,
     spaceMap,
   });
-  const modulated = applyPlanModulations(
+  const motifPreserved = preserveMotifsAfterAdvancedHarmony(
     harmonized,
+    composed,
+    input.plan,
+    input.songModel,
+    secondsPerBar(bpm, input.songModel.meterMap[0]?.meter),
+  );
+  const modulated = applyPlanModulations(
+    motifPreserved,
     input.plan,
     bpm,
     input.songModel.meterMap[0]?.meter,
@@ -3105,8 +3393,24 @@ export function buildTrackModels(input: {
     input.songModel,
     secondsPerBar(bpm, input.songModel.meterMap[0]?.meter),
   );
-  return orchestrated.map((track) =>
-    refreshFinalHarmonyEvidence(track, input.songModel, input.plan));
+  const finalized = orchestrated.map((track) => {
+    const refreshed = refreshFinalHarmonyEvidence(track, input.songModel, input.plan);
+    return {
+      ...refreshed,
+      notes: [...refreshed.notes].sort((left, right) =>
+        left.start - right.start || left.pitch - right.pitch || left.id.localeCompare(right.id)),
+    };
+  });
+  return synchronizeMotifLineage(finalized, input.plan.compositionIntelligence).map((track) =>
+    track.performanceEvidence
+      ? {
+          ...track,
+          performanceEvidence: {
+            ...track.performanceEvidence,
+            performedMaterialSha256: performedMaterialSha256(track),
+          },
+        }
+      : track);
 }
 
 function chordPitchClasses(symbol: string): number[] {
@@ -4078,5 +4382,37 @@ function applyAdvancedHarmony(input: {
         bassEvidencePreserved: true,
       }, [track.provenance.model]),
     };
+  });
+}
+
+export function synchronizeMotifLineage(
+  tracks: TrackModel[],
+  reasoning: ArrangementPlan["compositionIntelligence"],
+): TrackModel[] {
+  if (!reasoning?.motifs?.length) return tracks;
+  const fingerprints = new Map<string, string>();
+  for (const motif of reasoning.motifs) {
+    const material = tracks
+      .filter((track) => !motif.ownerTrackId || track.id === motif.ownerTrackId)
+      .flatMap((track) => track.notes.filter((note) =>
+        note.motif?.id === motif.id && note.motif.phraseId === motif.sourcePhraseId));
+    const fingerprint = canonicalMotifFingerprint(material);
+    motif.fingerprint = fingerprint;
+    fingerprints.set(motif.id, fingerprint);
+  }
+  return tracks.map((track) => {
+    const updated = {
+      ...track,
+      notes: track.notes.map((note) => note.motif && fingerprints.has(note.motif.id)
+        ? { ...note, motif: { ...note.motif, fingerprint: fingerprints.get(note.motif.id)! } }
+        : note),
+    };
+    if (updated.performanceEvidence) {
+      updated.performanceEvidence = {
+        ...updated.performanceEvidence,
+        performedMaterialSha256: performedMaterialSha256(updated),
+      };
+    }
+    return updated;
   });
 }
