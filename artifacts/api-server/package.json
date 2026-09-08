@@ -10,6 +10,7 @@
     "start": "node --enable-source-maps ./dist/index.mjs",
     "exports:reconcile": "pnpm run build && node --enable-source-maps ./dist/export-reconciliation.mjs",
     "test": "pnpm run build && node --test tests/*.test.mjs && pnpm run test:music-engines && pnpm run test:validation && pnpm run test:analysis-providers && pnpm run test:source-ingestion && pnpm run test:revisions && pnpm run test:export-lineage && pnpm run test:copilot",
+    "test:focused-bundle-concurrency": "node --test tests/focused-api-bundle-concurrency.test.mjs",
     "pretest:auth": "pnpm --filter @workspace/db run push",
     "test:auth": "pnpm run build && node --test tests/authorization.test.mjs",
     "test:export": "sh -c 'tmpdir=$(mktemp -d /tmp/music-studio-api-tests.XXXXXX) && trap \"rm -rf \\\"$tmpdir\\\"\" EXIT && esbuild src/lib/exportAudioRoles.test.ts --bundle --platform=node --format=esm --outfile=\"$tmpdir/export-audio-roles.test.mjs\" && esbuild src/lib/exportCleanupRate.test.ts --bundle --platform=node --format=esm --outfile=\"$tmpdir/export-cleanup-rate.test.mjs\" && node --test \"$tmpdir/export-audio-roles.test.mjs\" \"$tmpdir/export-cleanup-rate.test.mjs\" tests/export-pipeline.test.mjs tests/export-jobs-pedalboard.test.mjs tests/export-object-recovery.test.mjs'",
