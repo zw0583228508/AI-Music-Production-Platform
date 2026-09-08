@@ -1,0 +1,20 @@
+{
+  "record": {
+    "endpointOrigin": "https://windot100--musicgen-worker-endpoint.modal.run",
+    "evidence": {
+      "api-catalog.json": "9c016534ee9b590e35769b6c6ab5d347a1f8630a723d7ef8df4e6bf406529d37",
+      "live-health.json": "f2ab8c029049f7c99352153d22e7f0ea195c37575fb0959b28ed2ac733ea2c8a",
+      "melody-smoke.wav": "4746ecc8c4b0311effe675527ed6a6e4998e4f488352e7783a979a4a79532ccb",
+      "melody-source.wav": "95dde87ab8c3082605ec5e2ca72847058d4de33d0cf1a415edce9b517e1614f8",
+      "model_manifest.json": "841c6cf0edef31ab81c757eddf4542a0d1cdce2d411463e881d56aada1c297c7",
+      "smoke-proof.json": "e243a89c22715f9bd45b252bf1b9659c4fb00aa3b92188b91837023f058ad739",
+      "text-smoke.wav": "370ed8947612d643301b70d06aaf3b3285ac68f15659a4e5df2efeaf0839ef7b"
+    },
+    "melodyModelRevision": "6fdf8d3d815995108c9bdb5183414ff464b171ac",
+    "provider": "MUSICGEN",
+    "schemaVersion": 1,
+    "sourceRevision": "896ec7c47f5e5d1e5aa1e4b260c4405328bf009d",
+    "textModelRevision": "15ccdc92099879e47b6da12c350cdb71d4eab3ca"
+  },
+  "signature": "cg9cri4BqZgPADheHuM1r2j0tl7S2OlHu6tM6Xc0aK5HVXFe4ux78CXJKSeNTxNAZEv+NfMkPf2LaV9yBe4UCA=="
+}

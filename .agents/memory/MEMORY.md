@@ -53,3 +53,4 @@
 - [Composition reasoning authority](composition-reasoning-authority.md) — v2 decisions follow fixed musical precedence and bind seed plus evidence identity through performed output.
 - [Versioned musical vocabulary](versioned-musical-vocabulary.md) — every declared style/preference dimension must alter consumed musical decisions without changing legacy replay.
 - [Groove vocal-space evidence](groove-vocal-space-evidence.md) — arrangement space and measured voice are independent evidence; enforce both after performance timing.
+- [Modal web-server launch](modal-web-server-launch.md) — web-server functions must return after spawning the server or Modal treats healthy Uvicorn as stuck initialization.

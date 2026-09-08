@@ -46,14 +46,25 @@ def main(fixture: Path) -> dict:
     ffmpeg = subprocess.check_output(["ffmpeg", "-version"], text=True).splitlines()[0]
     if not (text_ok and melody_ok and not_copy):
         raise RuntimeError("MusicGen smoke rejected silent or copied-source output")
+    evidence_root = ASSET_ROOT / "release-evidence"
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    text_path = evidence_root / "text-smoke.wav"
+    melody_path = evidence_root / "melody-smoke.wav"
+    source_path = evidence_root / "melody-source.wav"
+    text_path.write_bytes(text)
+    melody_path.write_bytes(melody)
+    source_path.write_bytes(source)
     proof = {
         "provider": "MUSICGEN", "realInference": True,
         "assetManifestSha256": _sha256(ASSET_ROOT / SPEC["asset_manifest"]),
         "runtimeEvidence": {"audiocraft": getattr(audiocraft, "__version__", "source-checkout"),
                             "torch": torch.__version__, "ffmpeg": ffmpeg},
-        "text": {"sampleRate": text_rate, "artifactSha256": hashlib.sha256(text).hexdigest(),
+        "text": {"sampleRate": text_rate, "artifactPath": "release-evidence/text-smoke.wav",
+                  "artifactSha256": hashlib.sha256(text).hexdigest(),
                  "nonSilent": text_ok, "rms": text_rms},
-        "melody": {"sampleRate": melody_rate, "artifactSha256": hashlib.sha256(melody).hexdigest(),
+        "melody": {"sampleRate": melody_rate, "artifactPath": "release-evidence/melody-smoke.wav",
+                    "sourcePath": "release-evidence/melody-source.wav",
+                    "artifactSha256": hashlib.sha256(melody).hexdigest(),
                    "nonSilent": melody_ok, "rms": melody_rms, "notSourceCopy": not_copy,
                    "sourceSha256": hashlib.sha256(source).hexdigest(), "correlation": correlation},
     }

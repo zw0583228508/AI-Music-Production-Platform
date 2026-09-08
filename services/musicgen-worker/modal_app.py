@@ -31,16 +31,8 @@ license_secret = modal.Secret.from_name(LICENSE_SECRET_NAME)
 def endpoint() -> None:
     """Keep Modal control Python separate from the Python 3.9 ASGI workload."""
     environment = {**os.environ, **workload_environment()}
-    process = subprocess.Popen(
+    subprocess.Popen(
         ["/opt/musicgen-venv/bin/python", "-m", "uvicorn", "app:app",
          "--host", "0.0.0.0", "--port", "8015"],
-        cwd="/app", env=environment,
+        cwd="/app", env=environment, start_new_session=True,
     )
-    try:
-        code = process.wait()
-        if code:
-            raise RuntimeError("MusicGen Python 3.9 web workload exited unexpectedly")
-    finally:
-        if process.poll() is None:
-            process.terminate()
-            process.wait(timeout=30)

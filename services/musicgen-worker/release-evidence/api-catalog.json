@@ -1,0 +1,32 @@
+{
+  "id": "MUSICGEN",
+  "name": "MusicGen",
+  "provider": "Meta AudioCraft",
+  "version": "musicgen-large",
+  "capabilities": [
+    "arrangement"
+  ],
+  "inputTypes": [
+    "FULL_SONG",
+    "VOCAL_ONLY",
+    "INSTRUMENTAL",
+    "MIDI"
+  ],
+  "execution": "remote",
+  "status": "ready",
+  "configured": true,
+  "checkpointReady": true,
+  "runtimeReady": true,
+  "packageReady": true,
+  "smokeTested": true,
+  "reportedVersion": "musicgen-large",
+  "lastHealth": {
+    "status": "healthy",
+    "checkedAt": "2026-09-08T13:39:52.756Z",
+    "latencyMs": 1248,
+    "message": "Checkpoint and provider runtime are ready."
+  },
+  "license": "Model-specific",
+  "priority": 35,
+  "notes": "Requires MUSICGEN_API_URL and a verified GPU worker checkpoint."
+}

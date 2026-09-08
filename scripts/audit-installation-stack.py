@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Validate the authoritative installation matrix without treating code as proof."""
 import hashlib
+import array
 import base64
 import gzip
 import json
@@ -9,6 +10,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import wave
 from pathlib import Path
 
 STATUSES = {"READY", "RESEARCH_READY", "BLOCKED_LICENSE", "BLOCKED_NO_WEIGHTS",
@@ -34,10 +36,53 @@ EXPECTED = {"ACE_STEP","BS_ROFORMER","DEMUCS","ALL_IN_ONE","BEAT_THIS","SONGFORM
  "SYMPHONYGEN","MUQ","MUQ_MULAN","MUQ_EVAL","SONG_AESTHETICS","SONG_EVAL","CLAMP3",
  "PEDALBOARD","SFIZZ_VSCO2_CE","VST3_HOST","VST3_INSTRUMENT"}
 MUTABLE = {"", "main", "master", "latest", "null"}
+MUSICGEN_EVIDENCE_PUBLIC_KEY_SHA256 = "a848d9c83a09436f54de2cb4f1a2d8be3a3093d3d7923d88e78c7fb600325b97"
 
 def canonical_sha256(value):
     encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+def file_sha256(path):
+    digest = hashlib.sha256()
+    try:
+        with Path(path).open("rb") as handle:
+            for block in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(block)
+    except OSError:
+        return None
+    return digest.hexdigest()
+
+def pcm16_mono(path):
+    try:
+        with wave.open(str(path), "rb") as handle:
+            channels = handle.getnchannels()
+            if handle.getsampwidth() != 2 or channels < 1 or handle.getnframes() < 1:
+                return []
+            raw = array.array("h", handle.readframes(handle.getnframes()))
+    except (OSError, EOFError, wave.Error):
+        return []
+    if channels == 1:
+        return list(raw)
+    return [sum(raw[index:index + channels]) / channels
+            for index in range(0, len(raw), channels)]
+
+def non_silent_pcm16(path):
+    samples = pcm16_mono(path)
+    return bool(samples) and math.sqrt(sum(value * value for value in samples) / len(samples)) > 1.0
+
+def pcm_correlation(left_path, right_path):
+    left, right = pcm16_mono(left_path), pcm16_mono(right_path)
+    count = min(len(left), len(right))
+    if count < 33:
+        return 1.0
+    left, right = left[:count], right[:count]
+    left_mean, right_mean = sum(left) / count, sum(right) / count
+    numerator = sum((a - left_mean) * (b - right_mean) for a, b in zip(left, right))
+    left_norm = math.sqrt(sum((a - left_mean) ** 2 for a in left))
+    right_norm = math.sqrt(sum((b - right_mean) ** 2 for b in right))
+    if left_norm <= 0 or right_norm <= 0:
+        return 1.0
+    return numerator / (left_norm * right_norm)
 
 def mt3_note_evidence_valid(output):
     if not isinstance(output, dict):
@@ -123,6 +168,8 @@ ENDPOINT_KEYS = {
     "CLAMP3": "CLAMP3_API_URL",
     "STABLE_AUDIO_3_SMALL_MUSIC": "STABLE_AUDIO_3_SMALL_MUSIC_API_URL",
     "STABLE_AUDIO_3_MEDIUM": "STABLE_AUDIO_3_MEDIUM_API_URL",
+    "MUSICGEN_LARGE": "MUSICGEN_API_URL",
+    "MUSICGEN_MELODY_LARGE": "MUSICGEN_API_URL",
 }
 
 def report_errors(rows, report_text):
@@ -2046,12 +2093,120 @@ def evidence_errors(rows, root):
                 "HAFM: BLOCKED_UPSTREAM lacks exact licensed-fixture/model/"
                 "source-gap/remote-probe/no-downstream evidence"
             )
-    for name in ("MUSICGEN_LARGE", "MUSICGEN_MELODY_LARGE"):
+    musicgen_attestation = None
+    for name, mode in (("MUSICGEN_LARGE", "text"), ("MUSICGEN_MELODY_LARGE", "melody")):
         row = by_name.get(name, {})
-        if row.get("sourcePinned") and row.get("finalStatus") != "BLOCKED_NO_WEIGHTS":
-            errors.append(f"{name}: pinned but unprovisioned model must be BLOCKED_NO_WEIGHTS")
-        if row.get("sourcePinned") and any(row.get(k) for k in ("assetsDownloaded", "assetManifestCreated", "realSmokePassed", "endpointDeployed", "healthReady", "promotionSigned", "apiConnected")):
+        if row.get("finalStatus") == "BLOCKED_NO_WEIGHTS" and row.get("sourcePinned") and any(
+            row.get(k) for k in ("assetsDownloaded", "assetManifestCreated", "realSmokePassed",
+                                 "endpointDeployed", "healthReady", "promotionSigned", "apiConnected")
+        ):
             errors.append(f"{name}: pinned-but-unprovisioned contradiction")
+        if row.get("finalStatus") == "RESEARCH_READY":
+            if musicgen_attestation is None:
+                musicgen_attestation = read_json("services/musicgen-worker/release-attestation.json")
+            att = musicgen_attestation
+            evidence_root = root / "services/musicgen-worker/release-evidence"
+            retained_inventory = read_json("services/musicgen-worker/release-evidence/model_manifest.json")
+            retained_smoke = read_json("services/musicgen-worker/release-evidence/smoke-proof.json")
+            retained_health = read_json("services/musicgen-worker/release-evidence/live-health.json")
+            retained_api = read_json("services/musicgen-worker/release-evidence/api-catalog.json")
+            release_bundle = read_json("services/musicgen-worker/release-evidence/release-bundle.json")
+            local_status = read_json("services/musicgen-worker/installation-status.json")
+            worker_spec = read_json("services/musicgen-worker/model_manifest.json")
+            model = att.get("models", {}).get(mode, {})
+            smoke = att.get("realGpuSmoke", {})
+            health = att.get("liveHealth", {})
+            api = att.get("canonicalApiPath", {})
+            inventory_model = retained_inventory.get("models", {}).get(mode, {})
+            proof_mode = retained_smoke.get(mode, {})
+            status_evidence = local_status.get("providers", {}).get(name, {}).get("evidence", {})
+            text_output = evidence_root / "text-smoke.wav"
+            melody_output = evidence_root / "melody-smoke.wav"
+            melody_source = evidence_root / "melody-source.wav"
+            public_key_path = evidence_root / "release-public-key.pem"
+            try:
+                public_key = public_key_path.read_text()
+            except OSError:
+                public_key = ""
+            signed_record = release_bundle.get("record", {})
+            signed_hashes = signed_record.get("evidence", {})
+            inventory_entries = inventory_model.get("files", [])
+            required = [
+                att.get("license", {}).get("classification") == "RESEARCH_ONLY",
+                att.get("license", {}).get("explicitAcceptanceConfigured") is True,
+                worker_spec.get("source", {}).get("revision") == row.get("codeRevision"),
+                att.get("source", {}).get("revision") == row.get("codeRevision"),
+                model.get("revision") == row.get("modelRevision"),
+                inventory_model.get("resolvedRevision") == row.get("modelRevision"),
+                inventory_model.get("repository") == row.get("modelRepository", "").removeprefix("https://huggingface.co/"),
+                model.get("fileCount", 0) > 0,
+                model.get("fileCount") == len(inventory_entries),
+                model.get("bytes") == sum(entry.get("bytes", -1) for entry in inventory_entries),
+                model.get("bytes", 0) > 0,
+                bool(model.get("inventorySha256")),
+                all(isinstance(entry.get("path"), str)
+                    and isinstance(entry.get("bytes"), int) and entry["bytes"] >= 0
+                    and isinstance(entry.get("sha256"), str) and len(entry["sha256"]) == 64
+                    for entry in inventory_entries),
+                file_sha256(evidence_root / "model_manifest.json") == model.get("inventorySha256"),
+                file_sha256(evidence_root / "model_manifest.json") == att.get("persistentInventory", {}).get("sha256"),
+                smoke.get("realInference") is True,
+                retained_smoke.get("realInference") is True,
+                retained_smoke.get("assetManifestSha256") == file_sha256(evidence_root / "model_manifest.json"),
+                file_sha256(evidence_root / "smoke-proof.json") == smoke.get("proofSha256"),
+                smoke.get(mode, {}).get("nonSilent") is True,
+                proof_mode.get("nonSilent") is True,
+                mode != "melody" or smoke.get(mode, {}).get("notSourceCopy") is True,
+                mode != "melody" or proof_mode.get("notSourceCopy") is True,
+                file_sha256(text_output) == retained_smoke.get("text", {}).get("artifactSha256"),
+                file_sha256(melody_output) == retained_smoke.get("melody", {}).get("artifactSha256"),
+                file_sha256(melody_source) == retained_smoke.get("melody", {}).get("sourceSha256"),
+                non_silent_pcm16(text_output),
+                non_silent_pcm16(melody_output),
+                file_sha256(melody_output) != file_sha256(melody_source),
+                abs(pcm_correlation(melody_source, melody_output)) < 0.995,
+                file_sha256(public_key_path) == MUSICGEN_EVIDENCE_PUBLIC_KEY_SHA256,
+                ed25519_signature_valid(signed_record, release_bundle.get("signature"), public_key),
+                signed_record.get("provider") == "MUSICGEN",
+                signed_record.get("sourceRevision") == row.get("codeRevision"),
+                signed_record.get("textModelRevision") == att.get("models", {}).get("text", {}).get("revision"),
+                signed_record.get("melodyModelRevision") == att.get("models", {}).get("melody", {}).get("revision"),
+                signed_record.get("endpointOrigin") == att.get("deployment", {}).get("endpointOrigin"),
+                all(signed_hashes.get(filename) == file_sha256(evidence_root / filename)
+                    for filename in ("model_manifest.json", "smoke-proof.json", "text-smoke.wav",
+                                     "melody-smoke.wav", "melody-source.wav", "live-health.json",
+                                     "api-catalog.json")),
+                att.get("retainedEvidence", {}).get("modelInventorySha256") == file_sha256(evidence_root / "model_manifest.json"),
+                att.get("retainedEvidence", {}).get("smokeProofSha256") == file_sha256(evidence_root / "smoke-proof.json"),
+                att.get("retainedEvidence", {}).get("textOutputSha256") == file_sha256(text_output),
+                att.get("retainedEvidence", {}).get("melodyOutputSha256") == file_sha256(melody_output),
+                att.get("retainedEvidence", {}).get("melodySourceSha256") == file_sha256(melody_source),
+                att.get("retainedEvidence", {}).get("liveHealthSha256") == file_sha256(evidence_root / "live-health.json"),
+                att.get("retainedEvidence", {}).get("apiCatalogSha256") == file_sha256(evidence_root / "api-catalog.json"),
+                health.get("healthy") is True,
+                health.get("status") == "ready",
+                health.get("checkpointReady") is True,
+                health.get("runtimeReady") is True,
+                health.get("gpuReady") is True,
+                health.get("smokeTested") is True,
+                retained_health.get("healthy") is True,
+                retained_health.get("checkpointSha256") == file_sha256(evidence_root / "model_manifest.json"),
+                retained_health.get("source", {}).get("revision") == row.get("codeRevision"),
+                retained_health.get("imageEvidence") == att.get("deployment", {}).get("sourceImageDigest"),
+                api.get("providerId") == "MUSICGEN",
+                api.get("status") == "ready",
+                api.get("lastHealthStatus") == "healthy",
+                retained_api.get("id") == "MUSICGEN",
+                retained_api.get("status") == "ready",
+                retained_api.get("lastHealth", {}).get("status") == "healthy",
+                status_evidence.get("assetManifestSha256") == file_sha256(evidence_root / "model_manifest.json"),
+                status_evidence.get("realSmokeArtifactSha256") == proof_mode.get("artifactSha256"),
+                status_evidence.get("liveHealthStatus") == retained_health.get("status"),
+                status_evidence.get("apiProviderStatus") == retained_api.get("status"),
+                att.get("promotion", {}).get("required") is False,
+            ]
+            if not all(required):
+                errors.append(f"{name}: RESEARCH_READY lacks retained assets/real GPU smoke/live health/API evidence")
     diffrhythm = by_name.get("DIFFRHYTHM_2", {})
     if diffrhythm.get("finalStatus") == "RESEARCH_READY":
         base = Path("services/diffrhythm2-worker")

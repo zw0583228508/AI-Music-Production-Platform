@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "providers": {
     "MUSICGEN_LARGE": {
-      "classification": "BLOCKED_NO_WEIGHTS",
+      "classification": "RESEARCH_READY",
       "evidence": {
         "modelManifest": "model_manifest.json",
         "audioCraftSourceRevisionPinned": true,
@@ -10,22 +10,27 @@
         "resolvedModelRevision": "15ccdc92099879e47b6da12c350cdb71d4eab3ca",
         "immutableRevisionPinned": true,
         "license": "CC-BY-NC-4.0",
-        "assetInventoryPresent": false,
-        "assetsRetainedOrProvisioned": false,
-        "realSmokeProofPresent": false,
-        "deploymentCompleted": false,
-        "healthCompleted": false,
+        "assetInventoryPresent": true,
+        "assetManifestSha256": "841c6cf0edef31ab81c757eddf4542a0d1cdce2d411463e881d56aada1c297c7",
+        "assetFileCount": 43,
+        "assetBytes": 20472887069,
+        "assetsRetainedOrProvisioned": true,
+        "realSmokeProofPresent": true,
+        "realSmokeArtifactSha256": "370ed8947612d643301b70d06aaf3b3285ac68f15659a4e5df2efeaf0839ef7b",
+        "nonSilentOutputVerified": true,
+        "deploymentCompleted": true,
+        "healthCompleted": true,
+        "liveHealthStatus": "ready",
+        "promotionRequired": false,
         "promotionCompleted": false,
-        "endpointOrApiCompleted": false
+        "endpointOrApiCompleted": true,
+        "apiProviderStatus": "ready",
+        "releaseAttestation": "release-attestation.json"
       },
-      "blockers": [
-        "A reviewed immutable model revision is pinned in model_manifest.json, but its assets were not retained or provisioned and no asset inventory exists.",
-        "No real inference smoke, deployment, health verification, promotion, endpoint, or API completion exists.",
-        "The non-commercial model license limits any eventual successful installation to RESEARCH_READY."
-      ]
+      "blockers": []
     },
     "MUSICGEN_MELODY_LARGE": {
-      "classification": "BLOCKED_NO_WEIGHTS",
+      "classification": "RESEARCH_READY",
       "evidence": {
         "modelManifest": "model_manifest.json",
         "audioCraftSourceRevisionPinned": true,
@@ -33,19 +38,25 @@
         "resolvedModelRevision": "6fdf8d3d815995108c9bdb5183414ff464b171ac",
         "immutableRevisionPinned": true,
         "license": "CC-BY-NC-4.0",
-        "assetInventoryPresent": false,
-        "assetsRetainedOrProvisioned": false,
-        "realSmokeProofPresent": false,
-        "deploymentCompleted": false,
-        "healthCompleted": false,
+        "assetInventoryPresent": true,
+        "assetManifestSha256": "841c6cf0edef31ab81c757eddf4542a0d1cdce2d411463e881d56aada1c297c7",
+        "assetFileCount": 46,
+        "assetBytes": 15403720212,
+        "assetsRetainedOrProvisioned": true,
+        "realSmokeProofPresent": true,
+        "realSmokeArtifactSha256": "4746ecc8c4b0311effe675527ed6a6e4998e4f488352e7783a979a4a79532ccb",
+        "nonSilentOutputVerified": true,
+        "notSourceCopyVerified": true,
+        "deploymentCompleted": true,
+        "healthCompleted": true,
+        "liveHealthStatus": "ready",
+        "promotionRequired": false,
         "promotionCompleted": false,
-        "endpointOrApiCompleted": false
+        "endpointOrApiCompleted": true,
+        "apiProviderStatus": "ready",
+        "releaseAttestation": "release-attestation.json"
       },
-      "blockers": [
-        "A reviewed immutable model revision is pinned in model_manifest.json, but its assets were not retained or provisioned and no asset inventory exists.",
-        "No real inference smoke, deployment, health verification, promotion, endpoint, or API completion exists.",
-        "The non-commercial model license limits any eventual successful installation to RESEARCH_READY."
-      ]
+      "blockers": []
     },
     "JASCO_CHORDS_DRUMS_MELODY": {
       "classification": "BLOCKED_NO_WEIGHTS",

@@ -39,6 +39,10 @@
     }
   },
   "dependencies": {
+    "encodec-32khz": {
+      "repository": "facebook/encodec_32khz",
+      "resolved_revision": "d0c45384f6c44db055f78200cfdcb9c1c8706727"
+    },
     "t5-base": {
       "repository": "t5-base",
       "resolved_revision": "a9723ea7f1b39c1eae772870f3b547bf6ef7e6c1"

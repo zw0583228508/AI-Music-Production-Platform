@@ -2,9 +2,13 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import json
+import os
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -19,6 +23,8 @@ class MusicGenConfigTest(unittest.TestCase):
         self.assertEqual(manifest["models"]["melody"]["requested_revision"], "6fdf8d3")
         self.assertEqual(manifest["models"]["text"]["resolved_revision"], "15ccdc92099879e47b6da12c350cdb71d4eab3ca")
         self.assertEqual(manifest["models"]["melody"]["resolved_revision"], "6fdf8d3d815995108c9bdb5183414ff464b171ac")
+        self.assertEqual(manifest["dependencies"]["encodec-32khz"]["resolved_revision"],
+                         "d0c45384f6c44db055f78200cfdcb9c1c8706727")
         self.assertNotIn("main", [item["requested_revision"] for item in manifest["models"].values()
                                   if isinstance(item["requested_revision"], str)])
         jasco = manifest["models"]["jasco"]
@@ -48,6 +54,8 @@ class MusicGenConfigTest(unittest.TestCase):
         self.assertIn("@modal.web_server(port=8015)", modal_app)
         self.assertNotIn("from app import", modal_app)
         self.assertIn('"/opt/musicgen-venv/bin/python", "-m", "uvicorn"', modal_app)
+        self.assertNotIn("process.wait()", modal_app)
+        self.assertIn("start_new_session=True", modal_app)
         self.assertNotIn("from app import", provision)
         self.assertNotIn("from smoke import", provision)
         self.assertIn('"/opt/musicgen-venv/bin/python", "/app/workload_entrypoint.py"', provision)
@@ -76,15 +84,65 @@ class MusicGenConfigTest(unittest.TestCase):
         self.assertNotIn("asset_state()", jasco_handler)
         self.assertNotIn("smoke_state()", jasco_handler)
 
-    def test_installation_status_acknowledges_pins_without_claiming_provisioning(self) -> None:
+    def test_installation_status_requires_retained_research_readiness_evidence(self) -> None:
         status = json.loads((ROOT / "installation-status.json").read_text(encoding="utf-8"))
         manifest = json.loads((ROOT / "model_manifest.json").read_text(encoding="utf-8"))
         for provider, model_key in (("MUSICGEN_LARGE", "text"), ("MUSICGEN_MELODY_LARGE", "melody")):
             record = status["providers"][provider]
-            self.assertEqual(record["classification"], "BLOCKED_NO_WEIGHTS")
+            self.assertEqual(record["classification"], "RESEARCH_READY")
             self.assertEqual(record["evidence"]["resolvedModelRevision"],
                              manifest["models"][model_key]["resolved_revision"])
-            self.assertFalse(record["evidence"]["assetInventoryPresent"])
-            self.assertFalse(record["evidence"]["realSmokeProofPresent"])
-            self.assertFalse(record["evidence"]["deploymentCompleted"])
-            self.assertFalse(record["evidence"]["endpointOrApiCompleted"])
+            self.assertTrue(record["evidence"]["assetInventoryPresent"])
+            self.assertTrue(record["evidence"]["realSmokeProofPresent"])
+            self.assertTrue(record["evidence"]["nonSilentOutputVerified"])
+            self.assertTrue(record["evidence"]["deploymentCompleted"])
+            self.assertTrue(record["evidence"]["healthCompleted"])
+            self.assertTrue(record["evidence"]["endpointOrApiCompleted"])
+            self.assertFalse(record["evidence"]["promotionRequired"])
+            self.assertEqual(record["blockers"], [])
+
+    def test_health_reports_the_api_readiness_contract(self) -> None:
+        source = (ROOT / "app.py").read_text(encoding="utf-8")
+        for field in ("checkpointReady", "runtimeReady", "gpuReady", "modelVersion",
+                      "checkpointSha256", "modelRevisions"):
+            self.assertIn(f'"{field}"', source)
+        self.assertIn('@app.on_event("startup")', source)
+        self.assertIn("with _ASSET_STATE_LOCK", source)
+        self.assertIn('threading.Thread(target=asset_state', source)
+        self.assertIn("stat.st_ctime_ns", source)
+        self.assertIn("_sha256(path) != entry.get(\"sha256\")", source)
+        provision = (ROOT / "workload_entrypoint.py").read_text(encoding="utf-8")
+        self.assertIn("asset_state()", provision)
+        self.assertIn('os.getenv("MUSIC_AI_WORKER_TOKEN")', source)
+
+    def test_same_size_checkpoint_tampering_invalidates_verified_cache(self) -> None:
+        spec = importlib.util.spec_from_file_location("musicgen_app_tamper", ROOT / "app.py")
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            checkpoint = root / "text" / "checkpoint.bin"
+            checkpoint.parent.mkdir()
+            checkpoint.write_bytes(b"verified")
+            digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+            module.SPEC = {
+                "asset_manifest": "model_manifest.json",
+                "smoke_proof": "smoke-proof.json",
+                "license": {"acceptance_environment": "TEST_MUSICGEN_LICENSE", "required_value": "true"},
+                "models": {"text": {"repository": "example/model", "requested_revision": "abc1234",
+                                    "resolved_revision": "a" * 40}},
+                "dependencies": {},
+            }
+            module.ASSET_ROOT = root
+            module._ASSET_STATE_CACHE = None
+            (root / "model_manifest.json").write_text(json.dumps({"models": {"text": {
+                "repository": "example/model", "requestedRevision": "abc1234",
+                "resolvedRevision": "a" * 40, "path": "text",
+                "files": [{"path": "checkpoint.bin", "bytes": 8, "sha256": digest}],
+            }}, "dependencies": {}}))
+            with mock.patch.dict(os.environ, {"TEST_MUSICGEN_LICENSE": "true"}), \
+                    mock.patch.object(module, "runtime_state", return_value=(True, "ok")):
+                self.assertTrue(module.asset_state()[0])
+                checkpoint.write_bytes(b"tampered")
+                self.assertFalse(module.asset_state()[0])

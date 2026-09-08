@@ -1962,7 +1962,7 @@ function providerHealthTimeoutMs(providerId: string): number {
     10,
   );
   return Number.isFinite(configured)
-    ? Math.max(100, Math.min(300_000, configured))
+    ? Math.max(100, Math.min(900_000, configured))
     : 5_000;
 }
 
