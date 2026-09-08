@@ -84,6 +84,7 @@ for (const [environmentVariable, invalidValue] of [
   ["FOCUSED_API_TEST_INJECT_FAILURE", "await-sigtrek"],
   ["FOCUSED_API_TEST_INJECT_PROCESS_DIRECTORY_READ_FAILURE", "ture"],
   ["FOCUSED_API_TEST_INJECT_MALFORMED_CLEANUP_MESSAGE", "throwing-value-of"],
+  ["FOCUSED_API_TEST_INJECT_MALFORMED_STARTUP_ERROR", "throwing-value-of"],
 ]) {
   test(`${environmentVariable} rejects unsupported cleanup fault values`, async () => {
     const result = await runFocusedTest("test:validation", {
@@ -338,6 +339,41 @@ test("a throwing host PID limit code getter normalizes to UNKNOWN before focused
     /\besbuild\b|TAP version/u,
     "hostile host PID limit failure reached bundling or focused tests",
   );
+});
+
+test("a throwing process-record error code getter cannot replace its root identity diagnostic", async () => {
+  const overrideDirectory = await mkdtemp(
+    join(tmpdir(), "focused-api-hostile-process-record."),
+  );
+  const overridePath = join(overrideDirectory, "malformed.json");
+  try {
+    await writeFile(overridePath, "{");
+    const result = await runFocusedTest("test:validation", {
+      ...process.env,
+      FOCUSED_API_TEST_INJECT_REUSED_PID_TARGET: "1",
+      FOCUSED_API_TEST_PROCESS_STAT_OVERRIDE_FILE: overridePath,
+      FOCUSED_API_TEST_INJECT_MALFORMED_STARTUP_ERROR:
+        "throwing-code-getter",
+    });
+
+    assert.equal(result.code, 0);
+    assert.match(
+      result.stderr,
+      /focused API cleanup could not capture root process \d+ identity: UNKNOWN /u,
+    );
+    assert.doesNotMatch(
+      result.stderr,
+      /injected throwing startup code getter/u,
+      "hostile code getter replaced the bounded root identity diagnostic",
+    );
+    assert.match(
+      result.stdout,
+      /converts constant tempo between seconds, ticks, beats, and bars/u,
+      "non-fatal root identity diagnostic prevented focused work",
+    );
+  } finally {
+    await rm(overrideDirectory, { recursive: true, force: true });
+  }
 });
 
 for (const [injectedFailure, hiddenErrorLabel] of [
@@ -688,6 +724,48 @@ test(
     );
   },
 );
+
+for (const [malformedStartupError, expectedCode, expectedDiagnostic] of [
+  [
+    "throwing-message-getter",
+    73,
+    /focused API runner failed with unavailable error message/u,
+  ],
+  [
+    "throwing-message-conversion",
+    73,
+    /focused API runner failed with unavailable error message/u,
+  ],
+  [
+    "throwing-exit-code-getter",
+    1,
+    /injected focused API failure after tempdir creation/u,
+  ],
+]) {
+  test(
+    `${malformedStartupError} cannot replace the bounded startup diagnostic`,
+    async () => {
+      const before = await listBundleDirectories();
+      const result = await runFocusedTest("test:validation", {
+        ...process.env,
+        FOCUSED_API_TEST_INJECT_FAILURE: "after-tempdir",
+        FOCUSED_API_TEST_INJECT_MALFORMED_STARTUP_ERROR: malformedStartupError,
+      });
+
+      assert.equal(result.code, expectedCode);
+      assert.match(result.stderr, expectedDiagnostic);
+      assert.doesNotMatch(
+        result.stderr,
+        /injected throwing startup (?:message|exit code)/u,
+      );
+      const after = await listBundleDirectories();
+      assert.deepEqual(
+        [...after].filter((directory) => !before.has(directory)),
+        [],
+      );
+    },
+  );
+}
 
 test(
   "esbuild failures remove their generated focused API bundle directory",

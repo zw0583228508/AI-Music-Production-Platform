@@ -98,6 +98,7 @@ const supportedCleanupDiagnosticCodes = new Set([
   "ESRCH",
 ]);
 const cleanupErrorMessageLimit = 240;
+const startupErrorMessageLimit = 240;
 const injectedPidLimitReadFailureCodes = new Map([
   ["UNEXPECTED_LONG", `E${"X".repeat(1_024)}`],
   ["UNEXPECTED_MALFORMED", { unexpected: "host error label" }],
@@ -122,6 +123,33 @@ function normalizePidLimitReadErrorCode(error) {
     return supportedPidLimitReadFailureCodes.has(code) ? code : "UNKNOWN";
   } catch {
     return "UNKNOWN";
+  }
+}
+
+function formatStartupErrorMessage(error) {
+  try {
+    const message = error?.message ?? error;
+    const sanitized = String(message)
+      .replace(/[\u0000-\u001f\u007f-\u009f]+/gu, " ")
+      .replace(/\s+/gu, " ")
+      .trim();
+    if (sanitized.length <= startupErrorMessageLimit) {
+      return sanitized || "focused API runner failed";
+    }
+    return `${sanitized.slice(0, startupErrorMessageLimit - 3)}...`;
+  } catch {
+    return "focused API runner failed with unavailable error message";
+  }
+}
+
+function normalizeStartupExitCode(error) {
+  try {
+    const exitCode = error?.exitCode;
+    return Number.isSafeInteger(exitCode) && exitCode > 0 && exitCode <= 255
+      ? exitCode
+      : 1;
+  } catch {
+    return 1;
   }
 }
 
@@ -305,6 +333,15 @@ validateFocusedFaultSetting(
     "throwing-string-conversion",
   ]),
 );
+validateFocusedFaultSetting(
+  "FOCUSED_API_TEST_INJECT_MALFORMED_STARTUP_ERROR",
+  new Set([
+    "throwing-code-getter",
+    "throwing-exit-code-getter",
+    "throwing-message-getter",
+    "throwing-message-conversion",
+  ]),
+);
 
 function parsePermissionFailureCodes(
   environmentVariable,
@@ -442,7 +479,17 @@ function readProcessRecord(pid) {
       ? { ...processRecord, startTime: override.startTime }
       : processRecord;
   } catch (error) {
-    if (error?.code === "ENOENT") {
+    if (
+      process.env.FOCUSED_API_TEST_INJECT_MALFORMED_STARTUP_ERROR ===
+      "throwing-code-getter"
+    ) {
+      Object.defineProperty(error, "code", {
+        get() {
+          throw new Error("injected throwing startup code getter");
+        },
+      });
+    }
+    if (normalizeCleanupErrorCode(error) === "ENOENT") {
       return processRecord;
     }
     throw error;
@@ -1050,7 +1097,30 @@ async function main() {
       const error = new Error(
         "injected focused API failure after tempdir creation",
       );
-      error.exitCode = 73;
+      const malformedStartupError =
+        process.env.FOCUSED_API_TEST_INJECT_MALFORMED_STARTUP_ERROR;
+      if (malformedStartupError === "throwing-exit-code-getter") {
+        Object.defineProperty(error, "exitCode", {
+          get() {
+            throw new Error("injected throwing startup exit code getter");
+          },
+        });
+      } else {
+        error.exitCode = 73;
+      }
+      if (malformedStartupError === "throwing-message-getter") {
+        Object.defineProperty(error, "message", {
+          get() {
+            throw new Error("injected throwing startup message getter");
+          },
+        });
+      } else if (malformedStartupError === "throwing-message-conversion") {
+        error.message = {
+          toString() {
+            throw new Error("injected throwing startup message conversion");
+          },
+        };
+      }
       throw error;
     }
     if (process.env.FOCUSED_API_TEST_INJECT_FAILURE === "esbuild") {
@@ -1337,6 +1407,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(error.message);
-  process.exitCode = error.exitCode ?? 1;
+  console.error(formatStartupErrorMessage(error));
+  process.exitCode = normalizeStartupExitCode(error);
 });
