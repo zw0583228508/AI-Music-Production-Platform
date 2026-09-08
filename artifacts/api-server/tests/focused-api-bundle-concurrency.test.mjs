@@ -642,3 +642,86 @@ test(
     );
   },
 );
+
+test(
+  "overlapping SIGTERM and later esbuild failure leave no focused API bundles behind",
+  { timeout: 120_000 },
+  async () => {
+    const before = await listBundleDirectories();
+    const [interruptedResult, laterEsbuildResult] = await Promise.all([
+      interruptFocusedTestAfterBundles("test:validation", {
+        ...process.env,
+        FOCUSED_API_TEST_INJECT_FAILURE: "await-sigterm",
+      }),
+      runFocusedTest("test:source-ingestion", {
+        ...process.env,
+        FOCUSED_API_TEST_INJECT_FAILURE: "later-esbuild",
+      }),
+    ]);
+
+    assert.notEqual(
+      interruptedResult.script,
+      laterEsbuildResult.script,
+      "expected two distinct focused API scripts to exercise the overlapping failure paths",
+    );
+    assert.equal(
+      interruptedResult.interrupted,
+      true,
+      [
+        `${interruptedResult.script} never reached the post-bundle interruption point`,
+        interruptedResult.stdout,
+        interruptedResult.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    assert.equal(
+      interruptedResult.signal,
+      "SIGTERM",
+      [
+        `${interruptedResult.script} did not terminate through the intended SIGTERM path`,
+        `exit code: ${interruptedResult.code}`,
+        interruptedResult.stdout,
+        interruptedResult.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    assert.match(
+      interruptedResult.stderr,
+      /focused API bundles ready for SIGTERM/,
+      `${interruptedResult.script} was interrupted before its bundles existed`,
+    );
+
+    assert.notEqual(
+      laterEsbuildResult.code,
+      0,
+      `${laterEsbuildResult.script} unexpectedly succeeded after its injected later esbuild failure`,
+    );
+    assert.match(
+      laterEsbuildResult.stderr,
+      /focused API first bundle ready before later esbuild failure/,
+      `${laterEsbuildResult.script} did not confirm its initial bundle was written`,
+    );
+    assert.match(
+      laterEsbuildResult.stderr,
+      /\[ERROR\] Could not resolve ".*intentional-missing-later-entry\.ts"/,
+      [
+        `${laterEsbuildResult.script} did not fail in the intended later esbuild stage`,
+        laterEsbuildResult.signal ? `signal: ${laterEsbuildResult.signal}` : "",
+        laterEsbuildResult.stdout,
+        laterEsbuildResult.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+
+    const after = await listBundleDirectories();
+    const leaked = [...after].filter((directory) => !before.has(directory));
+    assert.deepEqual(
+      leaked,
+      [],
+      `overlapping interrupted and later-esbuild-failed focused API tests left bundle directories behind: ${leaked.join(", ")}`,
+    );
+  },
+);
