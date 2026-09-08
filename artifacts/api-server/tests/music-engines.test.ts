@@ -282,6 +282,300 @@ test("Composition Intelligence v2 reuses motifs and changes performed events rep
   );
 });
 
+test("shared groove coordinates bass and drums across phrase boundaries without mechanical unison", () => {
+  const model = song({
+    contractVersion: "2.0",
+    timebase: { ppq: 960, originSeconds: 0, coordinateSystem: "seconds+ticks" },
+    bars: Array.from({ length: 8 }, (_, index) => ({
+      bar: index + 1, start: index * 2, end: (index + 1) * 2, beats: 4, confidence: 1,
+    })),
+    sections: [
+      { name: "Verse", startBar: 1, endBar: 4, energy: .5 },
+      { name: "Chorus", startBar: 5, endBar: 8, energy: .9 },
+    ],
+    energy: [.5, .9],
+    chords: [{ start: 0, end: 16, symbol: "C", roman: "I", confidence: .9 }],
+  });
+  const tracks = [
+    { id: "bass", name: "Bass", role: "bass" },
+    { id: "drums", name: "Drums", role: "rhythm" },
+    { id: "piano", name: "Piano", role: "harmony" },
+  ];
+  const create = () => createArrangementPlan({
+    arrangementId: "groove-plan",
+    version: 1,
+    songModel: model,
+    style: createStyleSpec("pop", { density: .7, harmonyComplexity: 5, energy: .8 }),
+    tracks,
+    parameters: { songModelVersion: 3, seed: 991, energy: .8, density: .7, rhythmIntensity: .8 },
+    compositionVersion: "2.0",
+  });
+  const firstPlan = create();
+  const secondPlan = create();
+  const groove = firstPlan.compositionIntelligence!.groove!;
+  assert.deepEqual(groove, secondPlan.compositionIntelligence!.groove);
+  assert.equal(groove.version, "1.0");
+  assert.ok(groove.roles.some((role) => role.trackId === "bass" && role.responsibility === "foundation"));
+  assert.ok(groove.roles.some((role) => role.trackId === "drums" && role.responsibility === "pulse"));
+  assert.ok(groove.events.some((event) => event.gesture === "push" || event.gesture === "anticipation" || event.gesture === "fill"));
+  assert.ok(groove.events.every((event) =>
+    event.coordinate.tick >= 0 && event.coordinate.bar >= 1 && event.durationTicks > 0));
+
+  const outputs = buildTrackModels({
+    songModel: model, plan: firstPlan, tracks, style: firstPlan.style, seed: 991,
+  });
+  const bassStarts = outputs.find((track) => track.id === "bass")!.notes.map((note) => note.start);
+  const drumStarts = outputs.find((track) => track.id === "drums")!.notes.map((note) => note.start);
+  const shared = drumStarts.filter((start) =>
+    bassStarts.some((bassStart) => Math.abs(bassStart - start) <= .025)).length;
+  const independentBass = bassStarts.filter((start) =>
+    !drumStarts.some((drumStart) => Math.abs(drumStart - start) <= .025)).length;
+  assert.ok(shared > 0, "shared accents should coordinate bass and drums");
+  assert.ok(shared < drumStarts.length, "coordination must not collapse into mechanical unison");
+  assert.ok(independentBass > 0, "bass must retain complementary motion outside the drum pulse");
+  assert.deepEqual(outputs, buildTrackModels({
+    songModel: model, plan: secondPlan, tracks, style: secondPlan.style, seed: 991,
+  }));
+});
+
+test("shared groove selects fills from observed vocal space and breaks for release sections", () => {
+  const base = song();
+  const model = song({
+    contractVersion: "2.0",
+    timebase: { ppq: 960, originSeconds: 0, coordinateSystem: "seconds+ticks" },
+    audio: { ...base.audio, durationSeconds: 12, analysisDurationSeconds: 12 },
+    bars: Array.from({ length: 6 }, (_, index) => ({
+      bar: index + 1, start: index * 2, end: (index + 1) * 2, beats: 4, confidence: 1,
+    })),
+    sections: [
+      { name: "Chorus", startBar: 1, endBar: 4, energy: .9 },
+      { name: "Outro", startBar: 5, endBar: 6, energy: .3 },
+    ],
+    energy: [.9, .3],
+    vocalEvidence: {
+      status: "detected",
+      reason: null,
+      provenance: null,
+      sampleRate: 44_100,
+      channels: 1,
+      frameSizeSamples: 1024,
+      thresholds: { rms: .1, peak: .1, activitySample: .1, activityRatio: .1 },
+      observedVoicedWindows: [{
+        start: 6,
+        end: 7,
+        coordinates: {
+          start: { seconds: 6, tick: 11_520, beat: 13, bar: 4, beatInBar: 1, beatFraction: 0 },
+          end: { seconds: 7, tick: 13_440, beat: 15, bar: 4, beatInBar: 3, beatFraction: 0 },
+        },
+      }],
+      observedSilentWindows: [{
+        start: 7.1,
+        end: 7.4,
+        coordinates: {
+          start: { seconds: 7.1, tick: 13_632, beat: 15, bar: 4, beatInBar: 3, beatFraction: .2 },
+          end: { seconds: 7.4, tick: 14_208, beat: 15, bar: 4, beatInBar: 3, beatFraction: .8 },
+        },
+      }],
+    },
+    vocalIntelligence: {
+      version: "1.0",
+      provenance: null,
+      phrases: { status: "not_available", reason: "fixture", events: [] },
+      breaths: { status: "not_available", reason: "fixture", events: [] },
+      lyricAlignment: { status: "not_available", reason: "fixture", alignments: [] },
+      melodyAlignment: { status: "not_available", reason: "fixture", alignments: [] },
+      arrangementSpace: {
+        status: "detected",
+        reason: null,
+        windows: [{
+          id: "chorus-end-space",
+          start: 7.1,
+          end: 7.4,
+          confidence: .95,
+          phraseBeforeId: null,
+          phraseAfterId: null,
+          bars: [4],
+          sections: ["Chorus"],
+          coordinates: {
+            start: { seconds: 7.1, tick: 13_632, beat: 15, bar: 4, beatInBar: 3, beatFraction: .2 },
+            end: { seconds: 7.4, tick: 14_208, beat: 15, bar: 4, beatInBar: 3, beatFraction: .8 },
+          },
+        }],
+      },
+    },
+  });
+  const tracks = [
+    { id: "bass", name: "Bass", role: "bass" },
+    { id: "drums", name: "Drums", role: "rhythm" },
+  ];
+  const plan = createArrangementPlan({
+    arrangementId: "groove-boundaries",
+    version: 1,
+    songModel: model,
+    style: createStyleSpec("pop", { density: .7, harmonyComplexity: 5, energy: .75 }),
+    tracks,
+    parameters: { songModelVersion: 4, seed: 122, energy: .75, density: .7, rhythmIntensity: .8 },
+    compositionVersion: "2.0",
+  });
+  const events = plan.compositionIntelligence!.groove!.events;
+  const fills = events.filter((event) => event.trackId === "drums" && event.gesture === "fill");
+  assert.ok(fills.length);
+  assert.ok(fills.every((event) => event.coordinate.seconds >= 7.1 &&
+    event.coordinate.seconds + event.durationTicks * 60 / (120 * 960) <= 7.4));
+  assert.ok(events.some((event) => event.gesture === "break"));
+  assert.equal(new Set(events.map((event) =>
+    `${event.trackId}:${event.coordinate.tick}`)).size, events.length);
+  const output = buildTrackModels({
+    songModel: model, plan, tracks, style: plan.style, seed: 122,
+  });
+  assert.ok(output.flatMap((track) => track.notes).every((note) =>
+    !(note.start < 7 && note.start + note.duration > 6)));
+});
+
+test("shared groove follows canonical tempo and meter changes with explicit overlap precedence", () => {
+  const model = song({
+    contractVersion: "2.0",
+    timebase: { ppq: 960, originSeconds: 0, coordinateSystem: "seconds+ticks" },
+    tempoMap: [
+      { time: 0, bpm: 120, confidence: 1 },
+      { time: 4, bpm: 60, confidence: 1 },
+    ],
+    meterMap: [
+      { bar: 1, meter: "4/4", confidence: 1 },
+      { bar: 3, meter: "6/8", confidence: 1 },
+    ],
+    bars: [
+      { bar: 1, start: 0, end: 2, beats: 4, confidence: 1 },
+      { bar: 2, start: 2, end: 4, beats: 4, confidence: 1 },
+      { bar: 3, start: 4, end: 7, beats: 6, confidence: 1 },
+      { bar: 4, start: 7, end: 10, beats: 6, confidence: 1 },
+    ],
+    sections: [
+      { name: "Verse", startBar: 1, endBar: 2, energy: .5 },
+      { name: "Chorus", startBar: 3, endBar: 4, energy: .85 },
+    ],
+    energy: [.5, .85],
+    vocalIntelligence: {
+      version: "1.0",
+      provenance: null,
+      phrases: {
+        status: "detected",
+        reason: null,
+        events: [
+          {
+            id: "wide", start: 4, end: 10, confidence: .9,
+            coordinates: {
+              start: { seconds: 4, tick: 7680, beat: 9, bar: 3, beatInBar: 1, beatFraction: 0 },
+              end: { seconds: 10, tick: 19200, beat: 21, bar: 5, beatInBar: 1, beatFraction: 0 },
+            },
+          },
+          {
+            id: "narrow", start: 4, end: 6.5, confidence: .9,
+            coordinates: {
+              start: { seconds: 4, tick: 7680, beat: 9, bar: 3, beatInBar: 1, beatFraction: 0 },
+              end: { seconds: 6.5, tick: 12480, beat: 14, bar: 3, beatInBar: 6, beatFraction: 0 },
+            },
+          },
+        ],
+      },
+      breaths: { status: "not_available", reason: "fixture", events: [] },
+      lyricAlignment: { status: "not_available", reason: "fixture", alignments: [] },
+      melodyAlignment: { status: "not_available", reason: "fixture", alignments: [] },
+      arrangementSpace: { status: "not_available", reason: "fixture", windows: [] },
+    },
+  });
+  const tracks = [
+    { id: "bass", name: "Bass", role: "bass" },
+    { id: "drums", name: "Drums", role: "rhythm" },
+  ];
+  const plan = createArrangementPlan({
+    arrangementId: "mixed-meter-groove",
+    version: 1,
+    songModel: model,
+    style: createStyleSpec("pop", { density: .7, harmonyComplexity: 5, energy: .75 }),
+    tracks,
+    parameters: { songModelVersion: 5, seed: 811, energy: .75, density: .7 },
+    compositionVersion: "2.0",
+  });
+  const events = plan.compositionIntelligence!.groove!.events;
+  assert.ok(events.some((event) => event.coordinate.bar === 3 &&
+    event.coordinate.beatInBar === 6));
+  assert.equal(events.find((event) => event.coordinate.tick === 7680)?.coordinate.seconds, 4);
+  assert.ok(events.filter((event) => event.coordinate.bar === 3)
+    .every((event) => event.phraseId.endsWith(":narrow")));
+  assert.deepEqual(buildTrackModels({
+    songModel: model, plan, tracks, style: plan.style, seed: 811,
+  }), buildTrackModels({
+    songModel: model, plan, tracks, style: plan.style, seed: 811,
+  }));
+});
+
+test("multi-bar answer phrases place a deterministic pickup before phrase entry", () => {
+  const model = song({
+    sections: [
+      { name: "Verse", startBar: 1, endBar: 2, energy: .5 },
+      { name: "Chorus", startBar: 3, endBar: 4, energy: .8 },
+      { name: "Verse", startBar: 5, endBar: 6, energy: .55 },
+      { name: "Chorus", startBar: 7, endBar: 8, energy: .86 },
+      { name: "Verse", startBar: 9, endBar: 10, energy: .5 },
+      { name: "Chorus", startBar: 11, endBar: 14, energy: .9 },
+    ],
+    energy: [.5, .8, .55, .86, .5, .9],
+  });
+  const tracks = [
+    { id: "bass", name: "Bass", role: "bass" },
+    { id: "drums", name: "Drums", role: "rhythm" },
+  ];
+  const plan = createArrangementPlan({
+    arrangementId: "answer-pickup",
+    version: 1,
+    songModel: model,
+    style: createStyleSpec("pop", { density: .7, harmonyComplexity: 5, energy: .8 }),
+    tracks,
+    parameters: { songModelVersion: 8, seed: 411, energy: .8, density: .7 },
+    compositionVersion: "2.0",
+  });
+  const finalSection = plan.hierarchy.sections[5];
+  const answer = plan.compositionIntelligence!.phrases.find((phrase) =>
+    phrase.sectionId === finalSection.id)!;
+  assert.equal(answer.intent, "answer");
+  assert.ok(answer.endBar > answer.startBar);
+  const phraseStartTick = (answer.startBar - 1) * 4 * 960;
+  const pickups = plan.compositionIntelligence!.groove!.events.filter((event) =>
+    event.phraseId === answer.id && event.gesture === "pickup");
+  assert.equal(pickups.length, tracks.length);
+  assert.ok(pickups.every((event) => event.coordinate.tick === phraseStartTick - 480));
+});
+
+test("historical v2 plans without groove remain readable and nested groove identity is fenced", () => {
+  const model = song({
+    sections: [
+      { name: "Verse", startBar: 1, endBar: 2, energy: .5 },
+      { name: "Chorus", startBar: 3, endBar: 4, energy: .8 },
+    ],
+  });
+  const tracks = [{ id: "drums", name: "Drums", role: "rhythm" }];
+  const plan = createArrangementPlan({
+    arrangementId: "groove-compatibility",
+    version: 1,
+    songModel: model,
+    style: createStyleSpec("pop", { density: .6, harmonyComplexity: 4, energy: .7 }),
+    tracks,
+    parameters: { songModelVersion: 6, seed: 44, energy: .7, density: .6 },
+    compositionVersion: "2.0",
+  });
+  const historical = structuredClone(plan);
+  delete historical.compositionIntelligence!.groove;
+  assert.doesNotThrow(() => buildTrackModels({
+    songModel: model, plan: historical, tracks, style: historical.style, seed: 44,
+  }));
+  const tampered = structuredClone(plan);
+  tampered.compositionIntelligence!.groove!.seed += 1;
+  assert.throws(() => buildTrackModels({
+    songModel: model, plan: tampered, tracks, style: tampered.style, seed: 44,
+  }), /Shared groove identity/);
+});
+
 test("harmony is deterministic by Song Model version and retains supplied chord evidence", () => {
   const model = song({
     chords: [{

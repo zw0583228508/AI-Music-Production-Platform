@@ -51,3 +51,4 @@
 - [Perceptual audio evidence gates](perceptual-audio-evidence-gates.md) — release confidence requires artifact-bound PCM evidence; unsupported perceptual dimensions must abstain.
 - [Closed-world release verification](closed-world-release-verification.md) — production completion gates must require every named stage and fail closed on missing evidence or provenance.
 - [Composition reasoning authority](composition-reasoning-authority.md) — v2 decisions follow fixed musical precedence and bind seed plus evidence identity through performed output.
+- [Groove vocal-space evidence](groove-vocal-space-evidence.md) — arrangement space and measured voice are independent evidence; enforce both after performance timing.

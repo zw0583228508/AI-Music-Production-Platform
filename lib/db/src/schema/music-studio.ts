@@ -1410,6 +1410,51 @@ export type InstrumentFunction =
   | "counterline"
   | "texture";
 
+export type GrooveResponsibility =
+  | "foundation"
+  | "pulse"
+  | "syncopation"
+  | "accent"
+  | "fill";
+export type GrooveGesture =
+  | "state"
+  | "pickup"
+  | "push"
+  | "anticipation"
+  | "break"
+  | "fill";
+
+/** Shared, deterministic rhythm-section decisions on the canonical timeline. */
+export type SharedGroovePlan = {
+  version: "1.0";
+  seed: number;
+  evidenceSha256: string;
+  subdivision: "8th" | "16th";
+  roles: Array<{
+    trackId: string;
+    responsibility: GrooveResponsibility;
+  }>;
+  motifs: Array<{
+    id: string;
+    sourceMotifId: string | null;
+    phraseId: string;
+    variation: "state" | "develop" | "answer";
+  }>;
+  events: Array<{
+    id: string;
+    motifId: string;
+    sectionId: string;
+    phraseId: string;
+    trackId: string;
+    responsibility: GrooveResponsibility;
+    gesture: GrooveGesture;
+    sharedAccentId: string | null;
+    coordinate: CanonicalTimeCoordinate;
+    durationTicks: number;
+    velocity: number;
+  }>;
+};
+
 /** Immutable reasoning identity and decisions used to materialize performance events. */
 export type CompositionIntelligencePlan = {
   version: CompositionIntelligenceVersion;
@@ -1438,6 +1483,8 @@ export type CompositionIntelligencePlan = {
     function: InstrumentFunction;
     authority: "project_track";
   }>;
+  /** Present on v2 plans; absent historical plans keep their original behavior. */
+  groove?: SharedGroovePlan;
 };
 
 export type ArrangementHierarchyScope = {
