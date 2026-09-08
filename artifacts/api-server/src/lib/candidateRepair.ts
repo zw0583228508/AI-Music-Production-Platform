@@ -4,10 +4,46 @@ import type {
   CandidateRepairSnapshot,
   CriticRepairFinding,
   TrackModel,
+  ArrangementHierarchyScope,
 } from "@workspace/db";
 import { createCanonicalTimeline } from "./canonicalTimeline";
 
 export const MAX_REPAIR_ATTEMPTS = 2;
+
+function changedHierarchyScopes(
+  before: ArrangementPlan["hierarchy"] | undefined,
+  after: ArrangementPlan["hierarchy"] | undefined,
+): ArrangementHierarchyScope[] {
+  if (!after) return [];
+  if (!before) {
+    return [
+      { level: "song", id: after.song.id },
+      ...after.sections.map(({ id }) => ({ level: "section" as const, id })),
+      ...after.phrases.map(({ id }) => ({ level: "phrase" as const, id })),
+      ...after.bars.map(({ id }) => ({ level: "bar" as const, id })),
+      ...after.events.map(({ id }) => ({ level: "event" as const, id })),
+    ];
+  }
+  const scopes: ArrangementHierarchyScope[] = [];
+  const compare = <T extends { id: string }>(
+    level: ArrangementHierarchyScope["level"],
+    left: T[],
+    right: T[],
+  ) => {
+    const rightById = new Map(right.map((value) => [value.id, value]));
+    for (const value of left) {
+      if (!isDeepStrictEqual(value, rightById.get(value.id))) scopes.push({ level, id: value.id });
+    }
+    const leftIds = new Set(left.map((value) => value.id));
+    for (const value of right) if (!leftIds.has(value.id)) scopes.push({ level, id: value.id });
+  };
+  if (!isDeepStrictEqual(before.song, after.song)) scopes.push({ level: "song", id: before.song.id });
+  compare("section", before.sections, after.sections);
+  compare("phrase", before.phrases, after.phrases);
+  compare("bar", before.bars, after.bars);
+  compare("event", before.events, after.events);
+  return scopes;
+}
 
 export function normalizeRepairFinding(
   finding: CriticRepairFinding,
@@ -88,12 +124,59 @@ export function applyBoundedRepair(input: {
   proposedPlan: ArrangementPlan;
   proposedTrackModels: TrackModel[];
   timeBounds: { start: number; end: number };
-}): { plan: ArrangementPlan; trackModels: TrackModel[]; outsideScopePreserved: boolean } {
+}): { plan: ArrangementPlan; trackModels: TrackModel[]; outsideScopePreserved: boolean; changedScopes: ArrangementHierarchyScope[] } {
   const { snapshot, proposedPlan, proposedTrackModels, timeBounds } = input;
   const finding = snapshot.finding;
   const proposedSections = new Map(proposedPlan.sections.map((section) => [section.section, section]));
+  const hierarchySectionInScope = (section: NonNullable<typeof baseHierarchy>["sections"][number]) =>
+    finding.affectedSections.includes(section.sourceSection) &&
+    section.startBar >= finding.startBar && section.endBar <= finding.endBar;
+  const affectedSectionId = (sectionId: string) => {
+    const section = baseHierarchy?.sections.find((candidate) => candidate.id === sectionId);
+    return Boolean(section && finding.affectedSections.includes(section.sourceSection));
+  };
+  const affectedBar = (bar: number) => bar >= finding.startBar && bar <= finding.endBar;
+  const proposedHierarchy = proposedPlan.hierarchy;
+  const originalHierarchy = (snapshot.plan as ArrangementPlan & {
+    hierarchy?: ArrangementPlan["hierarchy"];
+  }).hierarchy;
+  const baseHierarchy = originalHierarchy ?? proposedHierarchy;
+  const hierarchy = originalHierarchy && proposedHierarchy ? {
+    ...baseHierarchy,
+    sections: baseHierarchy.sections.map((section) =>
+      hierarchySectionInScope(section)
+        ? proposedHierarchy.sections.find((candidate) => candidate.id === section.id) ?? section
+        : section),
+    phrases: [
+      ...baseHierarchy.phrases.filter((phrase) =>
+        !affectedSectionId(phrase.sectionId) ||
+        phrase.endBar < finding.startBar ||
+        phrase.startBar > finding.endBar ||
+        phrase.startBar < finding.startBar ||
+        phrase.endBar > finding.endBar),
+      ...proposedHierarchy.phrases.filter((phrase) =>
+        affectedSectionId(phrase.sectionId) && phrase.startBar >= finding.startBar && phrase.endBar <= finding.endBar),
+    ],
+    bars: baseHierarchy.bars.map((bar) =>
+      affectedSectionId(bar.sectionId) && affectedBar(bar.bar)
+        ? proposedHierarchy.bars.find((candidate) => candidate.id === bar.id) ?? bar
+        : bar),
+    events: [
+      ...baseHierarchy.events.filter((event) => {
+        const bar = baseHierarchy.bars.find((candidate) => candidate.id === event.barId);
+        return !affectedSectionId(event.sectionId) || !bar || !affectedBar(bar.bar) ||
+          !finding.affectedTrackIds.includes(event.trackId);
+      }),
+      ...proposedHierarchy.events.filter((event) => {
+        const bar = proposedHierarchy.bars.find((candidate) => candidate.id === event.barId);
+        return affectedSectionId(event.sectionId) && Boolean(bar && affectedBar(bar.bar)) &&
+          finding.affectedTrackIds.includes(event.trackId);
+      }),
+    ],
+  } : proposedHierarchy;
   const plan: ArrangementPlan = {
     ...snapshot.plan,
+    hierarchy,
     sections: snapshot.plan.sections.map((section) =>
       finding.affectedSections.includes(section.section) &&
       section.startBar >= finding.startBar &&
@@ -163,5 +246,6 @@ export function applyBoundedRepair(input: {
     ) return true;
     return isDeepStrictEqual(base, plan.sections.find((section) => section.section === base.section));
   });
-  return { plan, trackModels, outsideScopePreserved };
+  const changedScopes = changedHierarchyScopes(originalHierarchy, plan.hierarchy);
+  return { plan, trackModels, outsideScopePreserved, changedScopes };
 }

@@ -151,6 +151,7 @@ import {
   buildTrackModels,
   createArrangementPlan,
   createStyleSpec,
+  ensureArrangementPlanHierarchy,
   LicensedInstrumentWorkerError,
   licensedInstrumentWorkerConfig,
   listLicensedInstrumentPacks,
@@ -520,6 +521,9 @@ const arrangementResponse = (
   arrangement: typeof arrangementsTable.$inferSelect,
 ) => ({
   ...arrangement,
+  plan: arrangement.plan
+    ? ensureArrangementPlanHierarchy(arrangement.plan)
+    : arrangement.plan,
   generationProvenance: arrangement.generationProvenance
     ? {
         ...arrangement.generationProvenance,

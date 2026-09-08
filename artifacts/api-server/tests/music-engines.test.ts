@@ -6,6 +6,7 @@ import {
   buildTrackModels,
   createArrangementPlan,
   createStyleSpec,
+  ensureArrangementPlanHierarchy,
   getInstrumentDefinition,
   HarmonyEngine,
 } from "../src/lib/musicEngines";
@@ -355,6 +356,67 @@ test("arrangement brain establishes a bounded whole-song arc before local planni
   assert.deepEqual(plan, planFor(model, 9, { energy: .7, density: .65, seed: 44 }));
   assert.ok(plan.sections.every((section, index) => index === 0 ||
     Math.abs((section.activeTracks?.length ?? 0) - (plan.sections[index - 1].activeTracks?.length ?? 0)) <= 1));
+  assert.equal(plan.hierarchy.status, "applied");
+  assert.deepEqual(plan.hierarchy.precedence, ["song", "section", "phrase", "bar", "event"]);
+  assert.equal(plan.hierarchy.song.climaxSectionId, "section:chorus:6");
+  assert.equal(plan.hierarchy.sections[5].development, "development");
+  assert.ok(plan.hierarchy.sections[4].targetEnergy < plan.hierarchy.sections[5].targetEnergy);
+  assert.equal(plan.hierarchy.events.every((event) =>
+    plan.hierarchy.sections.some((section) => section.id === event.sectionId) &&
+    plan.hierarchy.bars.some((bar) => bar.id === event.barId)), true);
+  const allIds = [
+    ...plan.hierarchy.sections.map((value) => value.id),
+    ...plan.hierarchy.phrases.map((value) => value.id),
+    ...plan.hierarchy.bars.map((value) => value.id),
+    ...plan.hierarchy.events.map((value) => value.id),
+  ];
+  assert.equal(new Set(allIds).size, allIds.length);
+});
+
+test("hierarchy records reprise, canonical meter, phrases, and vocal-space event precedence", () => {
+  const coordinate = (seconds: number, bar: number) => ({
+    seconds, tick: seconds * 1920, beat: seconds * 2 + 1, bar, beatInBar: 1, beatFraction: 0,
+  });
+  const model = song({
+    contractVersion: "2.0",
+    meterMap: [{ bar: 1, meter: "4/4", confidence: 1 }, { bar: 3, meter: "3/4", confidence: 1 }],
+    sections: [
+      { name: "Verse", startBar: 1, endBar: 2, energy: .4 },
+      { name: "Chorus", startBar: 3, endBar: 4, energy: .8 },
+      { name: "Chorus", startBar: 5, endBar: 6, energy: .85 },
+      { name: "Chorus", startBar: 7, endBar: 8, energy: .82 },
+    ],
+    vocalIntelligence: {
+      version: "1.0", provenance: null,
+      phrases: {
+        status: "detected", reason: null,
+        events: [{
+          id: "lead-1", start: 8, end: 10, confidence: .9,
+          coordinates: { start: coordinate(8, 3), end: coordinate(10, 4) },
+        }],
+      },
+      breaths: { status: "not_available", reason: null, events: [] },
+      lyricAlignment: { status: "not_available", reason: null, alignments: [] },
+      melodyAlignment: { status: "not_available", reason: null, alignments: [] },
+      arrangementSpace: {
+        status: "detected", reason: null,
+        windows: [{
+          id: "space-1", start: 10, end: 12, confidence: .9,
+          phraseBeforeId: "lead-1", phraseAfterId: null, bars: [4], sections: ["Chorus"],
+          coordinates: { start: coordinate(10, 4), end: coordinate(12, 4) },
+        }],
+      },
+    },
+  });
+  const plan = planFor(model);
+  assert.deepEqual(plan.hierarchy.sections.slice(1).map((section) => section.development),
+    ["initial", "development", "reprise"]);
+  assert.equal(plan.hierarchy.bars.find((bar) => bar.bar === 3)?.meter, "3/4");
+  assert.equal(plan.hierarchy.phrases[0].intent, "protect_vocal_phrase");
+  assert.equal(plan.hierarchy.bars.find((bar) => bar.bar === 3)?.vocalSpace, "occupied");
+  assert.equal(plan.hierarchy.bars.find((bar) => bar.bar === 4)?.vocalSpace, "occupied");
+  assert.ok(plan.hierarchy.events.some((event) =>
+    event.barId === "bar:section:chorus:2:3" && event.intent === "support_vocal" && event.source === "vocal_phrase"));
 });
 
 test("arrangement brain is a neutral no-op for weak observed structure and keeps unusual meters compatible", () => {
@@ -365,6 +427,9 @@ test("arrangement brain is a neutral no-op for weak observed structure and keeps
   const brain = buildArrangementBrain({ songModel: weak, controls: { energy: .7, density: .6 } });
   assert.equal(brain.enabled, false);
   const plan = planFor(weak);
+  assert.equal(plan.hierarchy.status, "no_op");
+  assert.equal(plan.hierarchy.reason, "insufficient_structural_evidence");
+  assert.deepEqual(plan.hierarchy.sections, []);
   assert.deepEqual(plan.sections.map((section) => section.energy), [.5, .5]);
   const vocal = { ...weak, contractVersion: "2.0" as const, vocalEvidence: {
     status: "detected" as const, reason: null, provenance: null, sampleRate: 44_100,
@@ -375,6 +440,15 @@ test("arrangement brain is a neutral no-op for weak observed structure and keeps
     songModel: vocal, plan, style: plan.style, seed: 44,
     tracks: [{ id: "piano", name: "Piano", role: "harmony" }],
   }));
+});
+
+test("legacy persisted plans are upgraded to an explicit readable no-op hierarchy", () => {
+  const current = planFor(song());
+  const { hierarchy: _removed, ...legacy } = current;
+  const upgraded = ensureArrangementPlanHierarchy(legacy as typeof current);
+  assert.equal(upgraded.hierarchy.status, "no_op");
+  assert.equal(upgraded.hierarchy.reason, "legacy_plan_without_hierarchy");
+  assert.equal(upgraded.hierarchy.song.id, current.id);
 });
 
 test("director membership/directives drive composition without fabricating an absent melody", () => {
@@ -511,6 +585,10 @@ test("detected canonical vocal occupancy leaves accompaniment space without chan
   const base = song({
     contractVersion: "2.0",
     melody: [{ start: .25, end: 1.75, pitch: 69, velocity: .8, confidence: .9, source: "provider" }],
+    sections: [
+      { name: "Verse", startBar: 1, endBar: 1, energy: .55 },
+      { name: "Chorus", startBar: 2, endBar: 2, energy: .8 },
+    ],
   });
   const detected = {
     ...base,
@@ -524,6 +602,30 @@ test("detected canonical vocal occupancy leaves accompaniment space without chan
       thresholds: { rms: .1, peak: .1, activitySample: .1, activityRatio: .1 },
       observedVoicedWindows: [{ start: .25, end: 1.75, coordinates: coordinates(.25, 1.75) }],
       observedSilentWindows: [{ start: 1.75, end: 4, coordinates: coordinates(1.75, 4) }],
+    },
+    vocalIntelligence: {
+      version: "1.0" as const,
+      provenance: null,
+      phrases: {
+        status: "detected" as const,
+        reason: null,
+        events: [{
+          id: "phrase-1", start: .25, end: 1.75, confidence: .95,
+          coordinates: coordinates(.25, 1.75),
+        }],
+      },
+      breaths: { status: "not_available" as const, reason: null, events: [] },
+      lyricAlignment: { status: "not_available" as const, reason: null, alignments: [] },
+      melodyAlignment: { status: "not_available" as const, reason: null, alignments: [] },
+      arrangementSpace: {
+        status: "detected" as const,
+        reason: null,
+        windows: [{
+          id: "space-1", start: 1.75, end: 4, confidence: .9,
+          phraseBeforeId: "phrase-1", phraseAfterId: null,
+          bars: [1], sections: ["Verse"], coordinates: coordinates(1.75, 4),
+        }],
+      },
     },
   };
   const tracks = [
@@ -541,14 +643,24 @@ test("detected canonical vocal occupancy leaves accompaniment space without chan
   const baseline = buildTrackModels(input(base, baselinePlan));
   const first = buildTrackModels(input(detected, detectedPlan));
   const second = buildTrackModels(input(detected, detectedPlan));
+  const localOverridePlan = structuredClone(detectedPlan);
+  localOverridePlan.hierarchy.events = localOverridePlan.hierarchy.events.map((event) => ({
+    ...event,
+    intent: event.intent === "support_vocal" ? "follow_section" : event.intent,
+    source: event.source === "vocal_phrase" ? "section" : event.source,
+  }));
+  const locallyAllowed = buildTrackModels(input(detected, localOverridePlan));
   const overlaps = (models: typeof first) => models
     .filter((track) => track.id !== "voice")
     .flatMap((track) => track.notes)
     .filter((note) => note.start < 1.75 && note.start + note.duration > .25).length;
   assert.ok(overlaps(first) < overlaps(baseline));
   assert.equal(overlaps(first), 0);
+  assert.ok(overlaps(locallyAllowed) > overlaps(first));
   assert.deepEqual(first.find((track) => track.id === "voice")?.notes,
     baseline.find((track) => track.id === "voice")?.notes);
+  assert.deepEqual(locallyAllowed.find((track) => track.id === "voice")?.notes,
+    first.find((track) => track.id === "voice")?.notes);
   assert.deepEqual(first, second);
 });
 

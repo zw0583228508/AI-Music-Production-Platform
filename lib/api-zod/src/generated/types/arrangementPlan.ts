@@ -5,6 +5,7 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { ArrangementHierarchy } from './arrangementHierarchy';
 import type { ArrangementPlanParameters } from './arrangementPlanParameters';
 import type { ArrangementPlanSection } from './arrangementPlanSection';
 import type { ArtifactProvenance } from './artifactProvenance';
@@ -18,4 +19,5 @@ export interface ArrangementPlan {
   songModelVersion: number;
   parameters: ArrangementPlanParameters;
   provenance: ArtifactProvenance;
+  hierarchy: ArrangementHierarchy;
 }

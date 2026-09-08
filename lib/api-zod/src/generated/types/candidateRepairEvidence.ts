@@ -5,6 +5,7 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { ArrangementHierarchyScope } from './arrangementHierarchyScope';
 import type { CandidateRepairEvidenceScope } from './candidateRepairEvidenceScope';
 
 export interface CandidateRepairEvidence {
@@ -22,6 +23,7 @@ export interface CandidateRepairEvidence {
   scope: CandidateRepairEvidenceScope;
   musicalReason: string;
   outsideScopePreserved: boolean;
+  changedScopes: ArrangementHierarchyScope[];
   /**
      * @minimum 0
      * @maximum 1

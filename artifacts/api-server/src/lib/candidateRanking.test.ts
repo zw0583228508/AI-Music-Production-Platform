@@ -4,6 +4,7 @@ import type {
   CandidateEvaluation,
   CandidateEvaluationStatus,
 } from "@workspace/db";
+import { ListGenerationCandidatesResponse } from "@workspace/api-zod";
 import { publicCandidateEvaluation } from "./candidateRanking";
 
 const supportedStatuses = {
@@ -99,3 +100,84 @@ for (const status of Object.keys(supportedStatuses) as CandidateEvaluationStatus
     }
   });
 }
+
+const repairEvidence = {
+  sourceCandidateId: "source",
+  findingId: "finding",
+  seed: 10,
+  attempt: 1,
+  maxAttempts: 2,
+  scope: {
+    affectedSections: ["chorus"],
+    startBar: 5,
+    endBar: 6,
+    affectedTrackIds: ["piano"],
+  },
+  musicalReason: "Repair the chorus accompaniment.",
+  outsideScopePreserved: true,
+  changedScopes: [
+    { level: "bar" as const, id: "bar:section:chorus:2:5" },
+    { level: "event" as const, id: "event:section:chorus:2:5:piano" },
+  ],
+  sourceQualityScore: .5,
+  repairedQualityScore: .7,
+  improved: true,
+};
+
+const repairedCandidateResponse = (evaluation: ReturnType<typeof publicCandidateEvaluation>) => ({
+  id: "candidate",
+  jobId: "job",
+  provider: "ACE_STEP",
+  modelVersion: "1",
+  reportedModelVersion: null,
+  providerRequestId: null,
+  seed: 10,
+  rank: 1,
+  label: "Repaired",
+  score: .7,
+  confidence: .8,
+  summary: "Repaired candidate",
+  status: "validated",
+  parameters: {},
+  harmonyDecisions: [],
+  parentArtifactIds: [],
+  plan: { sections: [] },
+  trackModels: [],
+  evaluation,
+  createdAt: "2026-09-08T00:00:00.000Z",
+});
+
+test("candidate response parser retains new repair changed scopes", () => {
+  const evaluation: CandidateEvaluation = {
+    status: "evaluated",
+    providerScore: .7,
+    renderArtifactIds: [],
+    artifacts: [],
+    qualityReport: null,
+    musicCritic: null,
+    error: null,
+    repair: repairEvidence,
+  };
+  const parsed = ListGenerationCandidatesResponse.parse([
+    repairedCandidateResponse(publicCandidateEvaluation(evaluation)),
+  ]);
+  assert.deepEqual(parsed[0].evaluation.repair?.changedScopes, repairEvidence.changedScopes);
+});
+
+test("candidate response parser upgrades historical repair evidence with empty changed scopes", () => {
+  const { changedScopes: _removed, ...legacyRepair } = repairEvidence;
+  const evaluation = {
+    status: "evaluated",
+    providerScore: .7,
+    renderArtifactIds: [],
+    artifacts: [],
+    qualityReport: null,
+    musicCritic: null,
+    error: null,
+    repair: legacyRepair,
+  } as unknown as CandidateEvaluation;
+  const parsed = ListGenerationCandidatesResponse.parse([
+    repairedCandidateResponse(publicCandidateEvaluation(evaluation)),
+  ]);
+  assert.deepEqual(parsed[0].evaluation.repair?.changedScopes, []);
+});
