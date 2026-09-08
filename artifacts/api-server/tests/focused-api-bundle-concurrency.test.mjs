@@ -1497,11 +1497,17 @@ for (const errorCode of ["EPERM", "EACCES"]) {
       );
 
       assert.equal(interrupted.interrupted, true);
-      assert.equal(interrupted.code, 143, [
-        `single ${errorCode} process record fault did not complete cleanup`,
-        interrupted.stdout,
-        interrupted.stderr,
-      ].filter(Boolean).join("\n"));
+      assert.equal(
+        interrupted.code,
+        143,
+        [
+          `single ${errorCode} process record fault did not complete cleanup`,
+          interrupted.stdout,
+          interrupted.stderr,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      );
       assert.match(
         interrupted.stderr,
         new RegExp(
@@ -1517,6 +1523,59 @@ for (const errorCode of ["EPERM", "EACCES"]) {
     },
   );
 }
+
+test(
+  "cleanup error messages stay single-line and bounded without hiding useful context",
+  { timeout: 15_000 },
+  async () => {
+    const hostileTail = "X".repeat(1_024);
+    const interrupted = await interruptFocusedTestDuringAssertions(
+      "test:validation",
+      {
+        ...process.env,
+        FOCUSED_API_TEST_INJECT_FAILURE: "ignore-sigterm-during-esbuild",
+        FOCUSED_API_TEST_INJECT_PROCESS_STAT_READ_FAILURE: "EPERM",
+        FOCUSED_API_TEST_INJECT_CLEANUP_ERROR_MESSAGE: `useful cleanup context\nforged log entry\u0007\u001b[31m${hostileTail}`,
+      },
+      false,
+      "focused-api-bounded-cleanup-message",
+    );
+
+    assert.equal(interrupted.interrupted, true);
+    assert.equal(
+      interrupted.code,
+      143,
+      [
+        "hostile cleanup message prevented bounded cancellation",
+        interrupted.stdout,
+        interrupted.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    const diagnostic = interrupted.stderr.match(
+      /focused API cleanup could not read \/proc\/\d+\/stat: EPERM ([^\n]+)/u,
+    );
+    assert.ok(diagnostic, "cleanup did not retain its detailed diagnostic");
+    assert.match(
+      diagnostic[1],
+      /^useful cleanup context forged log entry \[31m/u,
+      "cleanup removed useful context instead of flattening controls",
+    );
+    assert.ok(
+      diagnostic[1].length <= 240,
+      `cleanup message exceeded its 240-character limit: ${diagnostic[1].length}`,
+    );
+    assert.match(diagnostic[1], /\.\.\.$/u);
+    assert.doesNotMatch(
+      interrupted.stderr,
+      /\u0007|\u001b|\nforged log entry/u,
+    );
+    assert.doesNotMatch(interrupted.stderr, /X{256}/u);
+    await waitForProcessExit(interrupted.activeChildPid);
+    assert.equal(processExists(interrupted.activeChildPid), false);
+  },
+);
 
 test(
   "mixed unreadable process records retain bounded per-code diagnostics and cannot strand cancellation cleanup",
