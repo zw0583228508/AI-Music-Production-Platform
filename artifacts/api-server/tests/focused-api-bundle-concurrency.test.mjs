@@ -136,6 +136,41 @@ function runFocusedTest(script, env = process.env) {
   });
 }
 
+function interruptFocusedTestAfterBundles(script, env = process.env) {
+  return new Promise((resolve, reject) => {
+    const { NODE_TEST_CONTEXT: _parentTestContext, ...childEnv } = env;
+    const child = spawn("pnpm", ["run", script], {
+      cwd: new URL("..", import.meta.url),
+      detached: true,
+      env: childEnv,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    let interrupted = false;
+
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+      if (
+        !interrupted &&
+        stderr.includes("focused API bundles ready for SIGTERM")
+      ) {
+        interrupted = true;
+        process.kill(-child.pid, "SIGTERM");
+      }
+    });
+    child.on("error", reject);
+    child.on("close", (code, signal) => {
+      resolve({ script, code, signal, stdout, stderr, interrupted });
+    });
+  });
+}
+
 test(
   "focused API test bundles remain isolated and clean under concurrency",
   { timeout: 120_000 },
@@ -334,6 +369,55 @@ test(
       leaked,
       [],
       `simultaneous assertion-failed focused API tests left generated bundle directories behind: ${leaked.join(", ")}`,
+    );
+  },
+);
+
+test(
+  "SIGTERM after bundling removes the interrupted focused API bundle directory",
+  { timeout: 120_000 },
+  async () => {
+    const before = await listBundleDirectories();
+    const result = await interruptFocusedTestAfterBundles("test:validation", {
+      ...process.env,
+      FOCUSED_API_TEST_INJECT_FAILURE: "await-sigterm",
+    });
+
+    assert.equal(
+      result.interrupted,
+      true,
+      [
+        "focused API test never reached the post-bundle interruption point",
+        result.stdout,
+        result.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    assert.equal(
+      result.signal,
+      "SIGTERM",
+      [
+        "focused API test did not terminate through the intended SIGTERM path",
+        `exit code: ${result.code}`,
+        result.stdout,
+        result.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    assert.match(
+      result.stderr,
+      /focused API bundles ready for SIGTERM/,
+      "focused API test was interrupted before its bundles existed",
+    );
+
+    const after = await listBundleDirectories();
+    const leaked = [...after].filter((directory) => !before.has(directory));
+    assert.deepEqual(
+      leaked,
+      [],
+      `SIGTERM-interrupted focused API test left generated bundle directories behind: ${leaked.join(", ")}`,
     );
   },
 );
