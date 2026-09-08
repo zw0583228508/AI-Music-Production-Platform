@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { readFileSync, readdirSync } from "node:fs";
+import { appendFileSync, readFileSync, readdirSync } from "node:fs";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -100,20 +100,7 @@ const reportedDirectSignalFailures = new Set();
 const directSignalFailureDetailLimit = 1;
 const directSignalFailureSummaryPidLimit = 10;
 const directSignalFailureGroups = new Map();
-
-function killChild(child, signal) {
-  try {
-    if (child.focusedIsolatedProcessGroup) {
-      process.kill(-child.pid, signal);
-    } else {
-      child.kill(signal);
-    }
-  } catch (error) {
-    if (error?.code !== "ESRCH") {
-      throw error;
-    }
-  }
-}
+const reportedReusedPids = new Set();
 
 function delay(milliseconds) {
   return new Promise((resolve) => {
@@ -121,8 +108,57 @@ function delay(milliseconds) {
   });
 }
 
-function listIsolatedChildPids(rootPid) {
+function parseProcessStat(stat) {
+  const match = stat.trim().match(/^(\d+) \(.*\) (.+)$/u);
+  if (!match) {
+    return undefined;
+  }
+  const fields = match[2].split(" ");
+  if (fields.length < 20) {
+    return undefined;
+  }
+  return {
+    pid: Number(match[1]),
+    parentPid: Number(fields[1]),
+    sessionId: Number(fields[3]),
+    startTime: fields[19],
+  };
+}
+
+function readProcessRecord(pid) {
+  const processRecord = parseProcessStat(
+    readFileSync(`/proc/${pid}/stat`, "utf8"),
+  );
+  const overridePath = process.env.FOCUSED_API_TEST_PROCESS_STAT_OVERRIDE_FILE;
+  if (!processRecord || !overridePath) {
+    return processRecord;
+  }
+  try {
+    const override = JSON.parse(readFileSync(overridePath, "utf8"));
+    return override.pid === pid
+      ? { ...processRecord, startTime: override.startTime }
+      : processRecord;
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      return processRecord;
+    }
+    throw error;
+  }
+}
+
+function reportReusedPid(pid) {
+  if (reportedReusedPids.has(pid)) {
+    return;
+  }
+  reportedReusedPids.add(pid);
+  console.error(
+    `focused API cleanup skipped reused process ID ${pid}; process identity changed`,
+  );
+}
+
+function listIsolatedChildProcesses(rootPid) {
   const childrenByParent = new Map();
+  const processesByPid = new Map();
   const pidsInSession = [];
   let entries;
   try {
@@ -141,7 +177,7 @@ function listIsolatedChildPids(rootPid) {
     console.error(
       `focused API cleanup could not enumerate /proc: ${error?.code ?? "UNKNOWN"} ${error?.message ?? String(error)}`,
     );
-    return [rootPid];
+    return [];
   }
   for (const entry of entries) {
     if (!entry.isDirectory() || !/^\d+$/u.test(entry.name)) {
@@ -161,14 +197,14 @@ function listIsolatedChildPids(rootPid) {
         error.code = "EACCES";
         throw error;
       }
-      const stat = readFileSync(`/proc/${entry.name}/stat`, "utf8");
-      const match = stat.match(/^(\d+) \(.*\) \S+ (\d+) \d+ (\d+) /u);
-      if (!match) {
+      const processRecord = parseProcessStat(
+        readFileSync(`/proc/${entry.name}/stat`, "utf8"),
+      );
+      if (!processRecord) {
         continue;
       }
-      const pid = Number(match[1]);
-      const parentPid = Number(match[2]);
-      const sessionId = Number(match[3]);
+      const { pid, parentPid, sessionId } = processRecord;
+      processesByPid.set(pid, processRecord);
       const children = childrenByParent.get(parentPid) ?? [];
       children.push(pid);
       childrenByParent.set(parentPid, children);
@@ -208,7 +244,9 @@ function listIsolatedChildPids(rootPid) {
     descendants.push(pid);
     pending.push(...(childrenByParent.get(pid) ?? []));
   }
-  return [...new Set([rootPid, ...pidsInSession, ...descendants])];
+  return [...new Set([rootPid, ...pidsInSession, ...descendants])]
+    .map((pid) => processesByPid.get(pid))
+    .filter(Boolean);
 }
 
 function reportProcessStatReadFailureSummaries() {
@@ -227,23 +265,38 @@ function reportProcessStatReadFailureSummaries() {
   }
 }
 
-function checkProcessState(pid) {
+function checkProcessState(
+  pid,
+  expectedStartTime,
+  rootPid,
+  ignoreInjectedFailure = false,
+) {
   try {
     const injectedFailure =
       process.env.FOCUSED_API_TEST_INJECT_PROCESS_EXISTENCE_CHECK_FAILURE;
     if (
+      !ignoreInjectedFailure &&
+      (
       injectedFailure === "true" ||
       injectedFailure === "EPERM" ||
       injectedFailure === "EACCES"
+      )
     ) {
       const error = new Error("injected denied process existence check");
       error.code = injectedFailure === "true" ? "EPERM" : injectedFailure;
       throw error;
     }
-    process.kill(pid, 0);
+    const processRecord = readProcessRecord(pid);
+    if (!processRecord) {
+      throw new Error(`unparseable /proc/${pid}/stat`);
+    }
+    if (processRecord.startTime !== expectedStartTime) {
+      reportReusedPid(pid);
+      return "reused";
+    }
     return "alive";
   } catch (error) {
-    if (error?.code === "ESRCH") {
+    if (error?.code === "ENOENT" || error?.code === "ESRCH") {
       return "absent";
     }
     const failureKey = `${pid}:${error?.code ?? "UNKNOWN"}`;
@@ -285,23 +338,52 @@ function reportProcessExistenceFailureSummaries() {
   }
 }
 
-function killProcess(pid, signal) {
+function signalProcess(
+  pid,
+  expectedStartTime,
+  signal,
+  processGroup = false,
+  isRoot = false,
+) {
   try {
     const injectedFailure =
       process.env.FOCUSED_API_TEST_INJECT_DIRECT_PROCESS_SIGNAL_FAILURE;
+    const processRecord = readProcessRecord(pid);
+    if (!processRecord) {
+      throw new Error(`unparseable /proc/${pid}/stat`);
+    }
+    const injectSignalRace =
+      process.env.FOCUSED_API_TEST_INJECT_REUSED_PID_TARGET === String(pid);
     if (
-      injectedFailure === "true" ||
-      injectedFailure === "EPERM" ||
-      injectedFailure === "EACCES"
+      injectSignalRace ||
+      processRecord.startTime !== expectedStartTime
+    ) {
+      reportReusedPid(pid);
+      return "reused";
+    }
+    if (process.env.FOCUSED_API_TEST_SIGNAL_ATTEMPT_FILE) {
+      appendFileSync(
+        process.env.FOCUSED_API_TEST_SIGNAL_ATTEMPT_FILE,
+        `${pid},${signal},${processGroup ? "group" : "direct"}\n`,
+      );
+    }
+    if (
+      (injectedFailure === "true" ||
+        injectedFailure === "EPERM" ||
+        injectedFailure === "EACCES") &&
+      !isRoot
     ) {
       const error = new Error("injected denied direct process signal");
       error.code = injectedFailure === "true" ? "EPERM" : injectedFailure;
       throw error;
     }
-    process.kill(pid, signal);
+    // Node has no pidfd signal API. Keep the verified /proc identity check and
+    // numeric signal adjacent so no runner work widens the unavoidable syscall race.
+    process.kill(processGroup ? -pid : pid, signal);
+    return "signaled";
   } catch (error) {
-    if (error?.code === "ESRCH") {
-      return;
+    if (error?.code === "ENOENT" || error?.code === "ESRCH") {
+      return "absent";
     }
     if (error?.code !== "EPERM" && error?.code !== "EACCES") {
       throw error;
@@ -327,6 +409,7 @@ function killProcess(pid, signal) {
         group.additionalPids.add(pid);
       }
     }
+    return "unknown";
   }
 }
 
@@ -350,18 +433,31 @@ async function reapIsolatedProcessTree(rootPid, knownPids) {
   const deadline = Date.now() + childReapingTimeoutMs;
   while (Date.now() < deadline) {
     discoverChildPids(rootPid, knownPids);
-    const survivors = [...knownPids].filter(
-      (pid) => checkProcessState(pid) !== "absent",
-    );
-    if (survivors.length === 0) {
+    const states = [...knownPids].map(([pid, startTime]) => [
+      pid,
+      checkProcessState(pid, startTime, rootPid),
+    ]);
+    const survivors = states.filter(([, state]) => state === "alive");
+    const unconfirmed = states.filter(([, state]) => state === "unknown");
+    if (survivors.length === 0 && unconfirmed.length === 0) {
       return;
     }
-    for (const pid of survivors.toReversed()) {
-      killProcess(pid, "SIGKILL");
+    for (const [pid] of survivors.toReversed()) {
+      const signalState = signalProcess(
+        pid,
+        knownPids.get(pid),
+        "SIGKILL",
+      );
+      if (signalState === "reused") {
+        knownPids.delete(pid);
+      }
     }
     await delay(10);
   }
-  const states = [...knownPids].map((pid) => [pid, checkProcessState(pid)]);
+  const states = [...knownPids].map(([pid, startTime]) => [
+    pid,
+    checkProcessState(pid, startTime, rootPid),
+  ]);
   const survivors = states
     .filter(([, state]) => state === "alive")
     .map(([pid]) => pid);
@@ -386,8 +482,35 @@ async function reapIsolatedProcessTree(rootPid, knownPids) {
 }
 
 function discoverChildPids(rootPid, knownPids) {
-  for (const pid of listIsolatedChildPids(rootPid)) {
-    knownPids.add(pid);
+  const rootStartTime = knownPids.get(rootPid);
+  if (
+    rootStartTime === undefined ||
+    checkProcessState(rootPid, rootStartTime, rootPid, true) !== "alive"
+  ) {
+    return;
+  }
+  for (const { pid, startTime } of listIsolatedChildProcesses(rootPid)) {
+    if (!knownPids.has(pid)) {
+      knownPids.set(pid, startTime);
+    }
+  }
+  const reusedPidTarget = Number(
+    process.env.FOCUSED_API_TEST_INJECT_REUSED_PID_TARGET,
+  );
+  if (!Number.isInteger(reusedPidTarget) || knownPids.has(reusedPidTarget)) {
+    return;
+  }
+  try {
+    const processRecord = parseProcessStat(
+      readFileSync(`/proc/${reusedPidTarget}/stat`, "utf8"),
+    );
+    if (processRecord) {
+      knownPids.set(reusedPidTarget, processRecord.startTime);
+    }
+  } catch (error) {
+    if (error?.code !== "ENOENT" && error?.code !== "ESRCH") {
+      throw error;
+    }
   }
 }
 
@@ -395,6 +518,23 @@ function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: "inherit", ...options });
     child.focusedIsolatedProcessGroup = options.detached === true;
+    try {
+      if (
+        process.env.FOCUSED_API_TEST_INJECT_ROOT_IDENTITY_CAPTURE_FAILURE ===
+        "true"
+      ) {
+        const error = new Error("injected root identity capture failure");
+        error.code = "ENOENT";
+        throw error;
+      }
+      child.focusedProcessStartTime = readProcessRecord(child.pid)?.startTime;
+    } catch (error) {
+      if (error?.code !== "ENOENT" && error?.code !== "ESRCH") {
+        console.error(
+          `focused API cleanup could not capture root process ${child.pid} identity: ${error?.code ?? "UNKNOWN"} ${error?.message ?? String(error)}`,
+        );
+      }
+    }
     activeChild = child;
     child.on("error", reject);
     child.on("close", (code, signal) => {
@@ -437,20 +577,45 @@ async function main() {
     terminationStarted = true;
     const child = activeChild;
     if (child) {
-      const childPids = new Set();
-      discoverChildPids(child.pid, childPids);
-      killChild(child, "SIGTERM");
-      const graceDeadline = Date.now() + childTerminationGraceMs;
-      while (Date.now() < graceDeadline) {
-        await delay(10);
+      const childPids = new Map();
+      const rootStartTime = child.focusedProcessStartTime;
+      if (rootStartTime !== undefined) {
+        childPids.set(child.pid, rootStartTime);
         discoverChildPids(child.pid, childPids);
+        signalProcess(
+          child.pid,
+          rootStartTime,
+          "SIGTERM",
+          child.focusedIsolatedProcessGroup,
+          true,
+        );
+        const graceDeadline = Date.now() + childTerminationGraceMs;
+        while (Date.now() < graceDeadline) {
+          await delay(10);
+          discoverChildPids(child.pid, childPids);
+        }
+        const rootSignalState = signalProcess(
+          child.pid,
+          rootStartTime,
+          "SIGKILL",
+          child.focusedIsolatedProcessGroup,
+          true,
+        );
+        if (rootSignalState === "reused") {
+          childPids.delete(child.pid);
+        }
+        for (const [pid, startTime] of [...childPids].toReversed()) {
+          if (pid === child.pid) {
+            continue;
+          }
+          const signalState = signalProcess(pid, startTime, "SIGKILL");
+          if (signalState === "reused") {
+            childPids.delete(pid);
+          }
+        }
+        discoverChildPids(child.pid, childPids);
+        await reapIsolatedProcessTree(child.pid, childPids);
       }
-      for (const pid of [...childPids].toReversed()) {
-        killProcess(pid, "SIGKILL");
-      }
-      killChild(child, "SIGKILL");
-      discoverChildPids(child.pid, childPids);
-      await reapIsolatedProcessTree(child.pid, childPids);
       reportProcessStatReadFailureSummaries();
       reportProcessExistenceFailureSummaries();
       reportDirectSignalFailureSummaries();
@@ -520,11 +685,11 @@ async function main() {
       );
       await writeFile(
         resistantHelper,
-        'process.on("SIGTERM", () => {});\nawait new Promise(() => {});\n',
+        'process.on("SIGTERM", () => {});\nsetInterval(() => {}, 1_000);\n',
       );
       await writeFile(
         resistantBundler,
-        'import { spawn } from "node:child_process";\nimport { writeFileSync } from "node:fs";\nprocess.on("SIGTERM", () => {});\nconst helper = spawn(process.execPath, [process.env.FOCUSED_API_TEST_HELPER_SCRIPT], { stdio: "ignore" });\nhelper.on("spawn", () => { writeFileSync(process.env.FOCUSED_API_TEST_HANDSHAKE_FILE, process.env.FOCUSED_API_TEST_RUNNER_PID + "," + process.pid + "," + helper.pid); });\nawait new Promise(() => {});\n',
+        'import { spawn } from "node:child_process";\nimport { writeFileSync } from "node:fs";\nprocess.on("SIGTERM", () => {});\nconst helper = spawn(process.execPath, [process.env.FOCUSED_API_TEST_HELPER_SCRIPT], { stdio: "ignore" });\nhelper.on("spawn", () => { writeFileSync(process.env.FOCUSED_API_TEST_HANDSHAKE_FILE, process.env.FOCUSED_API_TEST_RUNNER_PID + "," + process.pid + "," + helper.pid); });\nsetInterval(() => {}, 1_000);\n',
       );
       const bundlerEnvironment = {
         ...process.env,
@@ -534,6 +699,33 @@ async function main() {
       await Promise.race([
         run(process.execPath, [resistantBundler], {
           env: bundlerEnvironment,
+        }),
+        termination,
+      ]);
+    }
+    if (
+      process.env.FOCUSED_API_TEST_INJECT_FAILURE ===
+      "reused-root-with-helper-during-esbuild"
+    ) {
+      const unrelatedHelper = join(
+        bundleDirectory,
+        "reused-root-unrelated-helper.mjs",
+      );
+      const reusedRoot = join(bundleDirectory, "reused-root-bundler.mjs");
+      await writeFile(unrelatedHelper, "setInterval(() => {}, 1_000);\n");
+      await writeFile(
+        reusedRoot,
+        'import { spawn } from "node:child_process";\nimport { writeFileSync } from "node:fs";\nconst helper = spawn(process.execPath, [process.env.FOCUSED_API_TEST_HELPER_SCRIPT], { stdio: "ignore" });\nhelper.on("spawn", () => { setTimeout(() => { if (process.env.FOCUSED_API_TEST_PROCESS_STAT_OVERRIDE_FILE) writeFileSync(process.env.FOCUSED_API_TEST_PROCESS_STAT_OVERRIDE_FILE, JSON.stringify({ pid: process.pid, startTime: "simulated-reused-root" })); writeFileSync(process.env.FOCUSED_API_TEST_HANDSHAKE_FILE, process.env.FOCUSED_API_TEST_RUNNER_PID + "," + process.pid + "," + helper.pid); }, 50); });\nsetInterval(() => {}, 1_000);\n',
+      );
+      const bundlerEnvironment = {
+        ...process.env,
+        FOCUSED_API_TEST_RUNNER_PID: String(process.pid),
+        FOCUSED_API_TEST_HELPER_SCRIPT: unrelatedHelper,
+      };
+      await Promise.race([
+        run(process.execPath, [reusedRoot], {
+          env: bundlerEnvironment,
+          stdio: "ignore",
         }),
         termination,
       ]);
@@ -552,7 +744,7 @@ async function main() {
       );
       await writeFile(
         resistantHelper,
-        'process.on("SIGTERM", () => {});\nawait new Promise(() => {});\n',
+        'process.on("SIGTERM", () => {});\nsetInterval(() => {}, 1_000);\n',
       );
       await writeFile(
         resistantBundler,
@@ -584,7 +776,7 @@ async function main() {
       );
       await writeFile(
         resistantHelper,
-        'process.on("SIGTERM", () => {});\nawait new Promise(() => {});\n',
+        'process.on("SIGTERM", () => {});\nsetInterval(() => {}, 1_000);\n',
       );
       await writeFile(
         resistantBundler,

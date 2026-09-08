@@ -1499,6 +1499,187 @@ for (const errorCode of ["EPERM", "EACCES"]) {
 }
 
 test(
+  "cancellation skips a PID whose process identity changed before direct signaling",
+  { timeout: 15_000 },
+  async () => {
+    const before = await listBundleDirectories();
+    const unrelated = spawn(
+      process.execPath,
+      ["-e", "setInterval(() => {}, 1_000)"],
+      { stdio: "ignore" },
+    );
+    try {
+      const interrupted = await interruptFocusedTestDuringAssertions(
+        "test:validation",
+        {
+          ...process.env,
+          FOCUSED_API_TEST_INJECT_FAILURE: "ignore-sigterm-during-esbuild",
+          FOCUSED_API_TEST_INJECT_REUSED_PID_TARGET: String(unrelated.pid),
+        },
+        false,
+        "focused-api-reused-process-id",
+      );
+
+      assert.equal(interrupted.interrupted, true);
+      assert.equal(interrupted.code, 143, [
+        "focused API test did not complete the intended SIGTERM cleanup path",
+        interrupted.signal ? `signal: ${interrupted.signal}` : "",
+        interrupted.stdout,
+        interrupted.stderr,
+      ].filter(Boolean).join("\n"));
+      assert.match(
+        interrupted.stderr,
+        new RegExp(
+          `focused API cleanup skipped reused process ID ${unrelated.pid}; process identity changed`,
+        ),
+        "focused API cleanup did not safely report the simulated reused PID",
+      );
+      assert.equal(
+        processExists(unrelated.pid),
+        true,
+        "cleanup signaled the unrelated process whose identity did not match",
+      );
+    } finally {
+      unrelated.kill("SIGKILL");
+      await waitForProcessExit(unrelated.pid);
+    }
+
+    const after = await listBundleDirectories();
+    const leaked = [...after].filter((directory) => !before.has(directory));
+    assert.deepEqual(
+      leaked,
+      [],
+      `reused-PID cancellation left focused API bundle directories behind: ${leaked.join(", ")}`,
+    );
+  },
+);
+
+test(
+  "a reused root PID stops discovery and process-group signaling",
+  { timeout: 15_000 },
+  async () => {
+    const processStatOverridePath = join(
+      tmpdir(),
+      `focused-api-process-stat-${randomUUID()}.json`,
+    );
+    const signalAttemptPath = join(
+      tmpdir(),
+      `focused-api-root-signal-attempts-${randomUUID()}.txt`,
+    );
+    const interrupted = await interruptFocusedTestDuringAssertions(
+      "test:validation",
+      {
+        ...process.env,
+        FOCUSED_API_TEST_INJECT_FAILURE:
+          "reused-root-with-helper-during-esbuild",
+        FOCUSED_API_TEST_PROCESS_STAT_OVERRIDE_FILE: processStatOverridePath,
+        FOCUSED_API_TEST_SIGNAL_ATTEMPT_FILE: signalAttemptPath,
+      },
+      false,
+      "focused-api-reused-root",
+    );
+
+    assert.equal(interrupted.interrupted, true);
+    assert.equal(interrupted.code, 143, [
+      "focused API test did not complete the reused-root cleanup path",
+      interrupted.signal ? `signal: ${interrupted.signal}` : "",
+      interrupted.stdout,
+      interrupted.stderr,
+    ].filter(Boolean).join("\n"));
+    assert.match(
+      interrupted.stderr,
+      new RegExp(
+        `focused API cleanup skipped reused process ID ${interrupted.activeChildPid}; process identity changed`,
+      ),
+      "focused API cleanup did not report the reused root identity",
+    );
+    assert.ok(interrupted.helperPid, "reused-root fixture did not report its helper");
+    assert.throws(
+      () => readFileSync(signalAttemptPath, "utf8"),
+      (error) => error?.code === "ENOENT",
+      "cleanup attempted to signal after the spawn-time root identity changed",
+    );
+
+    for (const pid of [interrupted.activeChildPid, interrupted.helperPid]) {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch (error) {
+        if (error?.code !== "ESRCH") {
+          throw error;
+        }
+      }
+    }
+    await Promise.all([
+      waitForProcessExit(interrupted.activeChildPid),
+      waitForProcessExit(interrupted.helperPid),
+    ]);
+    rmSync(processStatOverridePath, { force: true });
+    rmSync(signalAttemptPath, { force: true });
+  },
+);
+
+test(
+  "a vanished root identity aborts signaling without aborting cancellation cleanup",
+  { timeout: 15_000 },
+  async () => {
+    const before = await listBundleDirectories();
+    const signalAttemptPath = join(
+      tmpdir(),
+      `focused-api-signal-attempts-${randomUUID()}.txt`,
+    );
+    const interrupted = await interruptFocusedTestDuringAssertions(
+      "test:validation",
+      {
+        ...process.env,
+        FOCUSED_API_TEST_INJECT_FAILURE:
+          "reused-root-with-helper-during-esbuild",
+        FOCUSED_API_TEST_INJECT_ROOT_IDENTITY_CAPTURE_FAILURE: "true",
+        FOCUSED_API_TEST_SIGNAL_ATTEMPT_FILE: signalAttemptPath,
+      },
+      false,
+      "focused-api-missing-root-identity",
+    );
+
+    assert.equal(interrupted.interrupted, true);
+    assert.equal(interrupted.code, 143, [
+      "focused API test did not complete cleanup after root identity disappeared",
+      interrupted.signal ? `signal: ${interrupted.signal}` : "",
+      interrupted.stdout,
+      interrupted.stderr,
+    ].filter(Boolean).join("\n"));
+    assert.ok(interrupted.helperPid, "missing-root fixture did not report its helper");
+    assert.throws(
+      () => readFileSync(signalAttemptPath, "utf8"),
+      (error) => error?.code === "ENOENT",
+      "cleanup attempted to signal a process without a verified root identity",
+    );
+
+    for (const pid of [interrupted.activeChildPid, interrupted.helperPid]) {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch (error) {
+        if (error?.code !== "ESRCH") {
+          throw error;
+        }
+      }
+    }
+    await Promise.all([
+      waitForProcessExit(interrupted.activeChildPid),
+      waitForProcessExit(interrupted.helperPid),
+    ]);
+    rmSync(signalAttemptPath, { force: true });
+
+    const after = await listBundleDirectories();
+    const leaked = [...after].filter((directory) => !before.has(directory));
+    assert.deepEqual(
+      leaked,
+      [],
+      `missing-root cancellation left bundle directories behind: ${leaked.join(", ")}`,
+    );
+  },
+);
+
+test(
   "SIGTERM reaps a resistant bundler helper without disrupting a healthy focused API check",
   { timeout: 120_000 },
   async () => {
