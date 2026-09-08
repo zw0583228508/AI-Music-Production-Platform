@@ -9,7 +9,7 @@
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "pretypecheck": "tsc --build ../../lib/api-client-react/tsconfig.json ../../lib/replit-auth-web/tsconfig.json --force",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test:repair-view": "pnpm --filter @workspace/api-server exec esbuild ../music-studio/src/pages/project-workspace-repair.test.ts --bundle --platform=node --format=esm --outfile=/tmp/music-studio-repair-view.test.mjs && node --test /tmp/music-studio-repair-view.test.mjs"
+    "test:repair-view": "pnpm exec esbuild src/pages/project-workspace-repair.test.ts --bundle --platform=node --format=esm --outfile=/tmp/music-studio-repair-view.test.mjs && node --test /tmp/music-studio-repair-view.test.mjs"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -57,6 +57,7 @@
     "cmdk": "^1.1.1",
     "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.6.0",
+    "esbuild": "catalog:",
     "framer-motion": "catalog:",
     "input-otp": "^1.4.2",
     "lucide-react": "catalog:",
