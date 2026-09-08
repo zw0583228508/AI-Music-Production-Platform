@@ -84,6 +84,44 @@ const suites = {
 };
 
 const supportedPermissionFailureCodes = new Set(["EPERM", "EACCES"]);
+const supportedFocusedFailureModes = new Set([
+  "after-tempdir",
+  "esbuild",
+  "ignore-sigterm-during-esbuild",
+  "ignore-sigterm-bundler-helper-during-esbuild",
+  "reused-root-with-helper-during-esbuild",
+  "launch-helper-on-sigterm-during-esbuild",
+  "continuously-launch-helpers-during-esbuild",
+  "prelaunch-four-helpers-during-esbuild",
+  "later-esbuild",
+  "await-sigint",
+  "await-sigterm",
+  "bundled-test",
+  "during-node-test",
+  "await-sigterm-during-node-test",
+  "ignore-sigterm-during-node-test",
+]);
+
+function validateFocusedFaultSetting(environmentVariable, supportedValues) {
+  const configuredValue = process.env[environmentVariable] ?? "";
+  if (configuredValue === "" || supportedValues.has(configuredValue)) {
+    return;
+  }
+  throw new Error(
+    `${environmentVariable} has unsupported cleanup fault value: ${configuredValue}; supported values are ${[...supportedValues].join(", ")}`,
+  );
+}
+
+validateFocusedFaultSetting(
+  "FOCUSED_API_TEST_INJECT_FAILURE",
+  supportedFocusedFailureModes,
+);
+for (const environmentVariable of [
+  "FOCUSED_API_TEST_INJECT_PROCESS_DIRECTORY_READ_FAILURE",
+  "FOCUSED_API_TEST_INJECT_ROOT_IDENTITY_CAPTURE_FAILURE",
+]) {
+  validateFocusedFaultSetting(environmentVariable, new Set(["true"]));
+}
 
 function parsePermissionFailureCodes(
   environmentVariable,
@@ -137,7 +175,7 @@ function parseDirectSignalFailureConfiguration() {
   }
   if (unsupportedEntries.length > 0) {
     throw new Error(
-      `${environmentVariable} has unsupported cleanup fault entr${unsupportedEntries.length === 1 ? "y" : "ies"}: ${unsupportedEntries.join(", ")}; supported entries use SIGTERM or SIGKILL with EPERM or EACCES`,
+      `${environmentVariable} has unsupported cleanup fault entr${unsupportedEntries.length === 1 ? "y" : "ies"}: ${unsupportedEntries.join(", ")}; supported values are true, EPERM, EACCES, or comma-separated SIGTERM or SIGKILL entries with EPERM or EACCES`,
     );
   }
   return configuration;
