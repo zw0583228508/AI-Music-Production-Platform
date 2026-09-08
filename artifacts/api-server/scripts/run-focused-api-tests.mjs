@@ -92,6 +92,12 @@ const reportedProcessExistenceFailures = new Set();
 const processExistenceFailureDetailLimit = 1;
 const processExistenceFailureSummaryPidLimit = 10;
 const processExistenceFailureGroups = new Map();
+const processExistenceFailureConfiguration = (
+  process.env.FOCUSED_API_TEST_INJECT_PROCESS_EXISTENCE_CHECK_FAILURE ?? ""
+)
+  .split(",")
+  .filter((errorCode) => errorCode === "EPERM" || errorCode === "EACCES");
+const processExistenceFailureAssignments = new Map();
 const reportedProcessStatReadFailures = new Set();
 const processStatReadFailureDetailLimit = 1;
 const processStatReadFailureSummaryPidLimit = 10;
@@ -293,16 +299,31 @@ function checkProcessState(
   try {
     const injectedFailure =
       process.env.FOCUSED_API_TEST_INJECT_PROCESS_EXISTENCE_CHECK_FAILURE;
+    let assignedFailure = processExistenceFailureAssignments.get(pid);
+    if (
+      !assignedFailure &&
+      processExistenceFailureConfiguration.length > 1
+    ) {
+      assignedFailure =
+        processExistenceFailureConfiguration[
+          processExistenceFailureAssignments.size %
+            processExistenceFailureConfiguration.length
+        ];
+      processExistenceFailureAssignments.set(pid, assignedFailure);
+    }
     if (
       !ignoreInjectedFailure &&
       (
       injectedFailure === "true" ||
       injectedFailure === "EPERM" ||
-      injectedFailure === "EACCES"
+      injectedFailure === "EACCES" ||
+      assignedFailure
       )
     ) {
       const error = new Error("injected denied process existence check");
-      error.code = injectedFailure === "true" ? "EPERM" : injectedFailure;
+      error.code =
+        assignedFailure ??
+        (injectedFailure === "true" ? "EPERM" : injectedFailure);
       throw error;
     }
     const processRecord = readProcessRecord(pid);
@@ -872,6 +893,39 @@ async function main() {
       await writeFile(
         resistantBundler,
         'import { spawn } from "node:child_process";\nimport { appendFileSync, writeFileSync } from "node:fs";\nprocess.on("SIGTERM", () => { const launch = () => { const helper = spawn(process.execPath, [process.env.FOCUSED_API_TEST_HELPER_SCRIPT], { stdio: "ignore" }); helper.on("spawn", () => appendFileSync(process.env.FOCUSED_API_TEST_HANDSHAKE_FILE, "," + helper.pid)); }; launch(); setInterval(launch, 15); });\nwriteFileSync(process.env.FOCUSED_API_TEST_HANDSHAKE_FILE, process.env.FOCUSED_API_TEST_RUNNER_PID + "," + process.pid);\nsetInterval(() => {}, 1_000);\n',
+      );
+      const bundlerEnvironment = {
+        ...process.env,
+        FOCUSED_API_TEST_RUNNER_PID: String(process.pid),
+        FOCUSED_API_TEST_HELPER_SCRIPT: resistantHelper,
+      };
+      await Promise.race([
+        run(process.execPath, [resistantBundler], {
+          env: bundlerEnvironment,
+          detached: true,
+        }),
+        termination,
+      ]);
+    }
+    if (
+      process.env.FOCUSED_API_TEST_INJECT_FAILURE ===
+      "prelaunch-four-helpers-during-esbuild"
+    ) {
+      const resistantHelper = join(
+        bundleDirectory,
+        "prelaunched-resistant-helper.mjs",
+      );
+      const resistantBundler = join(
+        bundleDirectory,
+        "prelaunched-helper-bundler.mjs",
+      );
+      await writeFile(
+        resistantHelper,
+        'process.on("SIGTERM", () => {});\nsetInterval(() => {}, 1_000);\n',
+      );
+      await writeFile(
+        resistantBundler,
+        'import { spawn } from "node:child_process";\nimport { writeFileSync } from "node:fs";\nprocess.on("SIGTERM", () => {});\nconst launch = () => new Promise((resolve) => { const helper = spawn(process.execPath, [process.env.FOCUSED_API_TEST_HELPER_SCRIPT], { stdio: "ignore" }); helper.on("spawn", () => resolve(helper.pid)); });\nconst helpers = await Promise.all(Array.from({ length: 4 }, launch));\nwriteFileSync(process.env.FOCUSED_API_TEST_HANDSHAKE_FILE, process.env.FOCUSED_API_TEST_RUNNER_PID + "," + process.pid + "," + helpers.join(","));\nsetInterval(() => {}, 1_000);\n',
       );
       const bundlerEnvironment = {
         ...process.env,

@@ -1401,6 +1401,94 @@ for (const errorCode of ["EPERM", "EACCES"]) {
   );
 }
 
+test(
+  "denied process existence checks keep EPERM and EACCES diagnostics separated across processes",
+  { timeout: 15_000 },
+  async () => {
+    const before = await listBundleDirectories();
+    const startedAt = Date.now();
+    const interrupted = await interruptFocusedTestDuringAssertions(
+      "test:validation",
+      {
+        ...process.env,
+        FOCUSED_API_TEST_INJECT_FAILURE:
+          "prelaunch-four-helpers-during-esbuild",
+        FOCUSED_API_TEST_INJECT_PROCESS_EXISTENCE_CHECK_FAILURE:
+          "EPERM,EACCES",
+      },
+      false,
+      "focused-api-mixed-permission-process-existence-checks",
+    );
+    const cleanupDurationMs = Date.now() - startedAt;
+
+    assert.equal(interrupted.interrupted, true, [
+      "focused API test never reached its signal-resistant bundling phase",
+      interrupted.stdout,
+      interrupted.stderr,
+    ].filter(Boolean).join("\n"));
+    assert.equal(interrupted.code, 143, [
+      "focused API test did not complete the intended SIGTERM cleanup path",
+      interrupted.signal ? `signal: ${interrupted.signal}` : "",
+      interrupted.stdout,
+      interrupted.stderr,
+    ].filter(Boolean).join("\n"));
+
+    for (const errorCode of ["EPERM", "EACCES"]) {
+      const detailedFailurePattern = new RegExp(
+        `focused API cleanup could not check whether process \\d+ exists: ${errorCode} injected denied process existence check`,
+        "g",
+      );
+      const detailedFailures =
+        interrupted.stderr.match(detailedFailurePattern) ?? [];
+      assert.equal(
+        detailedFailures.length,
+        1,
+        `focused API cleanup did not emit exactly one detailed ${errorCode} process existence-check failure`,
+      );
+      assert.match(
+        interrupted.stderr,
+        new RegExp(
+          `focused API cleanup suppressed detailed ${errorCode} process existence-check failures for \\d+ additional processes; affected PIDs: \\d+(?:, \\d+)*(?:, and \\d+ more)?`,
+        ),
+        `focused API cleanup did not summarize additional ${errorCode} process existence-check failures separately`,
+      );
+    }
+    assert.match(
+      interrupted.stderr,
+      /focused API cleanup could not confirm process exit after bounded reaping: \d+(?:, \d+)*/,
+      "focused API cleanup did not report which process exits remained unconfirmed",
+    );
+    assert.ok(
+      cleanupDurationMs < 10_000,
+      `focused API cleanup exceeded its bounded window: ${cleanupDurationMs}ms`,
+    );
+
+    await Promise.all(
+      [interrupted.activeChildPid, ...interrupted.helperPids].map((pid) =>
+        waitForProcessExit(pid),
+      ),
+    );
+    for (const pid of [
+      interrupted.activeChildPid,
+      ...interrupted.helperPids,
+    ]) {
+      assert.equal(
+        processExists(pid),
+        false,
+        `signal-resistant fixture process ${pid} remained alive`,
+      );
+    }
+
+    const after = await listBundleDirectories();
+    const leaked = [...after].filter((directory) => !before.has(directory));
+    assert.deepEqual(
+      leaked,
+      [],
+      `mixed permission process existence-check failures left focused API bundle directories behind: ${leaked.join(", ")}`,
+    );
+  },
+);
+
 for (const errorCode of ["EPERM", "EACCES"]) {
   test(
     `a denied ${errorCode} direct process signal cannot interrupt bounded cancellation cleanup`,
