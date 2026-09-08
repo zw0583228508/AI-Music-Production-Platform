@@ -90,10 +90,35 @@ const supportedPidLimitReadFailureCodes = new Set([
   "ENOENT",
   "EPERM",
 ]);
+const supportedCleanupDiagnosticCodes = new Set([
+  "EACCES",
+  "EISDIR",
+  "ENOENT",
+  "EPERM",
+  "ESRCH",
+]);
 const injectedPidLimitReadFailureCodes = new Map([
   ["UNEXPECTED_LONG", `E${"X".repeat(1_024)}`],
   ["UNEXPECTED_MALFORMED", { unexpected: "host error label" }],
 ]);
+const injectedCleanupErrorCodes = new Map([
+  ["UNEXPECTED_LONG", `E${"X".repeat(1_024)}`],
+  ["UNEXPECTED_MALFORMED", { unexpected: "cleanup error label" }],
+]);
+
+function normalizeCleanupErrorCode(error) {
+  return supportedCleanupDiagnosticCodes.has(error?.code)
+    ? error.code
+    : "UNKNOWN";
+}
+
+function injectedCleanupErrorCode(fallback) {
+  return (
+    injectedCleanupErrorCodes.get(
+      process.env.FOCUSED_API_TEST_INJECT_UNUSUAL_CLEANUP_ERROR_CODE,
+    ) ?? fallback
+  );
+}
 const supportedFocusedFailureModes = new Set([
   "after-tempdir",
   "esbuild",
@@ -197,6 +222,10 @@ validateFocusedFaultSetting(
     "UNKNOWN",
     ...injectedPidLimitReadFailureCodes.keys(),
   ]),
+);
+validateFocusedFaultSetting(
+  "FOCUSED_API_TEST_INJECT_UNUSUAL_CLEANUP_ERROR_CODE",
+  new Set(injectedCleanupErrorCodes.keys()),
 );
 
 function parsePermissionFailureCodes(
@@ -365,13 +394,14 @@ function listIsolatedChildProcesses(rootPid) {
     ) {
       injectedProcessDirectoryReadFailure = true;
       const error = new Error("injected unreadable process table");
-      error.code = "EACCES";
+      error.code = injectedCleanupErrorCode("EACCES");
       throw error;
     }
     entries = readdirSync("/proc", { withFileTypes: true });
   } catch (error) {
+    const errorCode = normalizeCleanupErrorCode(error);
     console.error(
-      `focused API cleanup could not enumerate /proc: ${error?.code ?? "UNKNOWN"} ${error?.message ?? String(error)}`,
+      `focused API cleanup could not enumerate /proc: ${errorCode} ${error?.message ?? String(error)}`,
     );
     return [];
   }
@@ -403,7 +433,7 @@ function listIsolatedChildProcesses(rootPid) {
       ) {
         injectedProcessStatReadFailure = true;
         const error = new Error("injected unreadable process record");
-        error.code = assignedFailure ?? "EACCES";
+        error.code = injectedCleanupErrorCode(assignedFailure ?? "EACCES");
         throw error;
       }
       const processRecord = parseProcessStat(
@@ -421,10 +451,10 @@ function listIsolatedChildProcesses(rootPid) {
         pidsInSession.push(pid);
       }
     } catch (error) {
-      if (error?.code === "ENOENT" || error?.code === "ESRCH") {
+      const errorCode = normalizeCleanupErrorCode(error);
+      if (errorCode === "ENOENT" || errorCode === "ESRCH") {
         continue;
       }
-      const errorCode = error?.code ?? "UNKNOWN";
       const failureKey = `${entry.name}:${errorCode}`;
       if (!reportedProcessStatReadFailures.has(failureKey)) {
         reportedProcessStatReadFailures.add(failureKey);
@@ -505,9 +535,10 @@ function checkProcessState(
       )
     ) {
       const error = new Error("injected denied process existence check");
-      error.code =
+      error.code = injectedCleanupErrorCode(
         assignedFailure ??
-        (injectedFailure === "true" ? "EPERM" : injectedFailure);
+          (injectedFailure === "true" ? "EPERM" : injectedFailure),
+      );
       throw error;
     }
     const processRecord = readProcessRecord(pid);
@@ -520,13 +551,13 @@ function checkProcessState(
     }
     return "alive";
   } catch (error) {
-    if (error?.code === "ENOENT" || error?.code === "ESRCH") {
+    const errorCode = normalizeCleanupErrorCode(error);
+    if (errorCode === "ENOENT" || errorCode === "ESRCH") {
       return "absent";
     }
-    const failureKey = `${pid}:${error?.code ?? "UNKNOWN"}`;
+    const failureKey = `${pid}:${errorCode}`;
     if (!reportedProcessExistenceFailures.has(failureKey)) {
       reportedProcessExistenceFailures.add(failureKey);
-      const errorCode = error?.code ?? "UNKNOWN";
       const group = processExistenceFailureGroups.get(errorCode) ?? {
         errorCode,
         detailedCount: 0,
@@ -612,11 +643,12 @@ function signalProcess(
       !isRoot
     ) {
       const error = new Error("injected denied direct process signal");
-      error.code =
+      error.code = injectedCleanupErrorCode(
         signalFailure ??
         (injectedDirectFailure === "true"
           ? "EPERM"
-          : injectedDirectFailure);
+          : injectedDirectFailure),
+      );
       throw error;
     }
     if (
@@ -627,10 +659,11 @@ function signalProcess(
         injectedProcessGroupFailure === "EACCES")
     ) {
       const error = new Error("injected denied process-group signal");
-      error.code =
+      error.code = injectedCleanupErrorCode(
         injectedProcessGroupFailure === "true"
           ? "EPERM"
-          : injectedProcessGroupFailure;
+          : injectedProcessGroupFailure,
+      );
       throw error;
     }
     // Node has no pidfd signal API. Keep the verified /proc identity check and
@@ -638,26 +671,23 @@ function signalProcess(
     process.kill(processGroup ? -pid : pid, signal);
     return "signaled";
   } catch (error) {
-    if (error?.code === "ENOENT" || error?.code === "ESRCH") {
+    const errorCode = normalizeCleanupErrorCode(error);
+    if (errorCode === "ENOENT" || errorCode === "ESRCH") {
       return "absent";
     }
-    if (error?.code !== "EPERM" && error?.code !== "EACCES") {
-      throw error;
-    }
     if (processGroup && isRoot) {
-      const failureKey = `${pid}:${signal}:${error.code}`;
+      const failureKey = `${pid}:${signal}:${errorCode}`;
       if (!reportedProcessGroupSignalFailures.has(failureKey)) {
         reportedProcessGroupSignalFailures.add(failureKey);
         console.error(
-          `focused API cleanup could not signal process group ${pid} with ${signal}: ${error.code} ${error?.message ?? String(error)}`,
+          `focused API cleanup could not signal process group ${pid} with ${signal}: ${errorCode} ${error?.message ?? String(error)}`,
         );
       }
       return "unknown";
     }
-    const failureKey = `${pid}:${signal}:${error?.code ?? "UNKNOWN"}`;
+    const failureKey = `${pid}:${signal}:${errorCode}`;
     if (!reportedDirectSignalFailures.has(failureKey)) {
       reportedDirectSignalFailures.add(failureKey);
-      const errorCode = error?.code ?? "UNKNOWN";
       const groupKey = `${signal}:${errorCode}`;
       const group = directSignalFailureGroups.get(groupKey) ?? {
         signal,
@@ -771,7 +801,8 @@ function discoverChildPids(rootPid, knownPids) {
       knownPids.set(reusedPidTarget, processRecord.startTime);
     }
   } catch (error) {
-    if (error?.code !== "ENOENT" && error?.code !== "ESRCH") {
+    const errorCode = normalizeCleanupErrorCode(error);
+    if (errorCode !== "ENOENT" && errorCode !== "ESRCH") {
       throw error;
     }
   }
@@ -787,14 +818,15 @@ function run(command, args, options = {}) {
         "true"
       ) {
         const error = new Error("injected root identity capture failure");
-        error.code = "ENOENT";
+        error.code = injectedCleanupErrorCode("ENOENT");
         throw error;
       }
       child.focusedProcessStartTime = readProcessRecord(child.pid)?.startTime;
     } catch (error) {
-      if (error?.code !== "ENOENT" && error?.code !== "ESRCH") {
+      const errorCode = normalizeCleanupErrorCode(error);
+      if (errorCode !== "ENOENT" && errorCode !== "ESRCH") {
         console.error(
-          `focused API cleanup could not capture root process ${child.pid} identity: ${error?.code ?? "UNKNOWN"} ${error?.message ?? String(error)}`,
+          `focused API cleanup could not capture root process ${child.pid} identity: ${errorCode} ${error?.message ?? String(error)}`,
         );
       }
     }
@@ -850,9 +882,10 @@ async function main() {
         try {
           rootStartTime = readProcessRecord(child.pid)?.startTime;
         } catch (error) {
-          if (error?.code !== "ENOENT" && error?.code !== "ESRCH") {
+          const errorCode = normalizeCleanupErrorCode(error);
+          if (errorCode !== "ENOENT" && errorCode !== "ESRCH") {
             console.error(
-              `focused API cleanup could not recover root process ${child.pid} identity: ${error?.code ?? "UNKNOWN"} ${error?.message ?? String(error)}`,
+              `focused API cleanup could not recover root process ${child.pid} identity: ${errorCode} ${error?.message ?? String(error)}`,
             );
           }
         }

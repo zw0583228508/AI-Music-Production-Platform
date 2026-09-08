@@ -1623,6 +1623,130 @@ test(
   },
 );
 
+for (const [injectedCode, faultEnvironment, faultValue, expectedDiagnostic] of [
+  [
+    "UNEXPECTED_LONG",
+    "FOCUSED_API_TEST_INJECT_PROCESS_STAT_READ_FAILURE",
+    "EPERM,EACCES",
+    /focused API cleanup suppressed detailed UNKNOWN process record read failures/u,
+  ],
+  [
+    "UNEXPECTED_MALFORMED",
+    "FOCUSED_API_TEST_INJECT_PROCESS_EXISTENCE_CHECK_FAILURE",
+    "EPERM,EACCES",
+    /focused API cleanup suppressed detailed UNKNOWN process existence-check failures/u,
+  ],
+  [
+    "UNEXPECTED_LONG",
+    "FOCUSED_API_TEST_INJECT_DIRECT_PROCESS_SIGNAL_FAILURE",
+    "SIGTERM:EPERM,SIGKILL:EACCES",
+    /focused API cleanup suppressed detailed SIG(?:TERM|KILL) UNKNOWN signal failures/u,
+  ],
+]) {
+  test(
+    `${injectedCode} ${faultEnvironment} labels collapse into bounded UNKNOWN cancellation diagnostics`,
+    { timeout: 15_000 },
+    async () => {
+      const before = await listBundleDirectories();
+      const interrupted = await interruptFocusedTestDuringAssertions(
+        "test:validation",
+        {
+          ...process.env,
+          FOCUSED_API_TEST_INJECT_FAILURE:
+            faultEnvironment ===
+            "FOCUSED_API_TEST_INJECT_PROCESS_EXISTENCE_CHECK_FAILURE"
+              ? "prelaunch-four-helpers-during-esbuild"
+              : "continuously-launch-helpers-during-esbuild",
+          [faultEnvironment]: faultValue,
+          FOCUSED_API_TEST_INJECT_UNUSUAL_CLEANUP_ERROR_CODE: injectedCode,
+        },
+        false,
+        `focused-api-${injectedCode.toLowerCase()}-cleanup-code`,
+      );
+
+      assert.equal(interrupted.interrupted, true);
+      assert.equal(interrupted.code, 143, [
+        "unusual cleanup error label prevented bounded cancellation",
+        interrupted.stdout,
+        interrupted.stderr,
+      ].filter(Boolean).join("\n"));
+      assert.match(interrupted.stderr, expectedDiagnostic);
+      assert.doesNotMatch(
+        interrupted.stderr,
+        /EX{64}|\[object Object\]|cleanup error label/u,
+        "cleanup diagnostics exposed an unusual error-code value",
+      );
+      await Promise.all(
+        [interrupted.activeChildPid, ...interrupted.helperPids].map((pid) =>
+          waitForProcessExit(pid),
+        ),
+      );
+      const after = await listBundleDirectories();
+      assert.deepEqual(
+        [...after].filter((directory) => !before.has(directory)),
+        [],
+      );
+    },
+  );
+}
+
+test(
+  "malformed process-table, identity, and process-group labels stay UNKNOWN during cancellation",
+  { timeout: 15_000 },
+  async () => {
+    const before = await listBundleDirectories();
+    const interrupted = await interruptFocusedTestDuringAssertions(
+      "test:validation",
+      {
+        ...process.env,
+        FOCUSED_API_TEST_INJECT_FAILURE:
+          "ignore-sigterm-bundler-helper-during-esbuild",
+        FOCUSED_API_TEST_INJECT_PROCESS_DIRECTORY_READ_FAILURE: "true",
+        FOCUSED_API_TEST_INJECT_ROOT_IDENTITY_CAPTURE_FAILURE: "true",
+        FOCUSED_API_TEST_INJECT_PROCESS_GROUP_SIGNAL_FAILURE: "EPERM",
+        FOCUSED_API_TEST_INJECT_UNUSUAL_CLEANUP_ERROR_CODE:
+          "UNEXPECTED_MALFORMED",
+      },
+      false,
+      "focused-api-malformed-process-inspection-code",
+    );
+
+    assert.equal(interrupted.interrupted, true);
+    assert.equal(interrupted.code, 143, [
+      "malformed process-inspection labels prevented bounded cancellation",
+      interrupted.stdout,
+      interrupted.stderr,
+    ].filter(Boolean).join("\n"));
+    assert.match(
+      interrupted.stderr,
+      /focused API cleanup could not capture root process \d+ identity: UNKNOWN/u,
+    );
+    assert.match(
+      interrupted.stderr,
+      /focused API cleanup could not enumerate \/proc: UNKNOWN/u,
+    );
+    assert.match(
+      interrupted.stderr,
+      /focused API cleanup could not signal process group \d+ with SIGTERM: UNKNOWN/u,
+    );
+    assert.doesNotMatch(
+      interrupted.stderr,
+      /\[object Object\]|cleanup error label/u,
+      "cleanup diagnostics exposed a malformed error-code value",
+    );
+    await Promise.all(
+      [interrupted.activeChildPid, ...interrupted.helperPids].map((pid) =>
+        waitForProcessExit(pid),
+      ),
+    );
+    const after = await listBundleDirectories();
+    assert.deepEqual(
+      [...after].filter((directory) => !before.has(directory)),
+      [],
+    );
+  },
+);
+
 test(
   "an unreadable process table cannot prevent process-group cancellation",
   { timeout: 15_000 },
