@@ -2618,6 +2618,9 @@ components:
       required: [sourceCandidateId, findingId, seed, attempt, maxAttempts, scope, musicalReason, outsideScopePreserved, changedScopes, sourceQualityScore, repairedQualityScore, improved]
       properties:
         sourceCandidateId: { type: string }
+        sourceCandidateLabel:
+          type: string
+          description: Display-safe parent label persisted independently of the historical source job.
         findingId: { type: string }
         seed: { type: number, minimum: 0, maximum: 2147483647 }
         attempt: { type: number, minimum: 1 }

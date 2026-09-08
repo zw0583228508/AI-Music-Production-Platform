@@ -77,6 +77,26 @@ for (const status of Object.keys(supportedStatuses) as CandidateEvaluationStatus
           ? "near_duplicate"
           : "sufficiently_distinct",
       },
+      repair: {
+        sourceCandidateId: "archived-source-candidate",
+        sourceCandidateLabel: "Original Groove",
+        findingId: "critic-groove",
+        seed: 42,
+        attempt: 1,
+        maxAttempts: 2,
+        scope: {
+          affectedSections: ["Chorus"],
+          startBar: 9,
+          endBar: 16,
+          affectedTrackIds: ["drums"],
+        },
+        musicalReason: "The chorus rushes the backbeat.",
+        outsideScopePreserved: true,
+        changedScopes: [],
+        sourceQualityScore: 0.7,
+        repairedQualityScore: 0.84,
+        improved: true,
+      },
     };
 
     const publicEvaluation = publicCandidateEvaluation(evaluation);
@@ -90,6 +110,7 @@ for (const status of Object.keys(supportedStatuses) as CandidateEvaluationStatus
         ? "near_duplicate"
         : "sufficiently_distinct",
     });
+    assert.equal(publicEvaluation.repair?.sourceCandidateLabel, "Original Groove");
 
     const serialized = JSON.stringify(publicEvaluation);
     assert.equal(serialized.includes('"fingerprint"'), false);
@@ -103,6 +124,7 @@ for (const status of Object.keys(supportedStatuses) as CandidateEvaluationStatus
 
 const repairEvidence = {
   sourceCandidateId: "source",
+  sourceCandidateLabel: "Original Groove",
   findingId: "finding",
   seed: 10,
   attempt: 1,
@@ -162,6 +184,7 @@ test("candidate response parser retains new repair changed scopes", () => {
     repairedCandidateResponse(publicCandidateEvaluation(evaluation)),
   ]);
   assert.deepEqual(parsed[0].evaluation.repair?.changedScopes, repairEvidence.changedScopes);
+  assert.equal(parsed[0].evaluation.repair?.sourceCandidateLabel, "Original Groove");
 });
 
 test("candidate response parser upgrades historical repair evidence with empty changed scopes", () => {

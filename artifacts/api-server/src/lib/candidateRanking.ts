@@ -102,6 +102,9 @@ export function publicCandidateEvaluation(evaluation: CandidateEvaluation) {
       ? {
           repair: {
             sourceCandidateId: evaluation.repair.sourceCandidateId,
+            ...(evaluation.repair.sourceCandidateLabel
+              ? { sourceCandidateLabel: evaluation.repair.sourceCandidateLabel }
+              : {}),
             findingId: evaluation.repair.findingId,
             seed: evaluation.repair.seed,
             attempt: evaluation.repair.attempt,

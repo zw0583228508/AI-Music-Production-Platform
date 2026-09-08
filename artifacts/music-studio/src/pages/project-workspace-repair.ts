@@ -65,11 +65,13 @@ export function repairOutcomeTitle(repair: {
 
 export function repairLineageLabel(
   sourceCandidateId: string,
+  persistedSourceCandidateLabel: string | undefined,
   sourceCandidate: GenerationCandidate | null,
 ): string {
   return `Repair of ${
-    sourceCandidate?.id === sourceCandidateId
+    persistedSourceCandidateLabel ??
+    (sourceCandidate?.id === sourceCandidateId
       ? sourceCandidate.label
-      : sourceCandidateId.slice(0, 8)
+      : sourceCandidateId.slice(0, 8))
   }`;
 }

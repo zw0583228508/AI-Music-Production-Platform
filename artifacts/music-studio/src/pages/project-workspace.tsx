@@ -1588,6 +1588,7 @@ export default function ProjectWorkspace() {
                                         <Badge variant={repair.improved ? "default" : "secondary"}>
                                           {repairLineageLabel(
                                             repair.sourceCandidateId,
+                                             repair.sourceCandidateLabel,
                                             persistedRepairSourceCandidate,
                                           )}
                                         </Badge>

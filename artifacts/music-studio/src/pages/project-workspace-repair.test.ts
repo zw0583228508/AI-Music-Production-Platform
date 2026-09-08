@@ -70,21 +70,19 @@ test("successful repair identifies its parent immediately and after reload", () 
   const source = candidate();
   const repaired = candidate({
     id: "repaired-candidate",
-    jobId: "repair-job",
-    label: "Repaired Groove",
     evaluation: {
-      repair: {
-        sourceCandidateId: source.id,
-        improved: true,
-        outsideScopePreserved: true,
-      },
+      repair: { sourceCandidateId: source.id },
     },
   } as Partial<GenerationCandidate>);
 
-  assert.equal(repairLineageLabel(source.id, source), "Repair of Original Groove");
+  assert.equal(repairLineageLabel(source.id, undefined, source), "Repair of Original Groove");
   const reloadedSource = resolveRepairSourceCandidate(null, [source], [repaired]);
   assert.equal(reloadedSource?.id, source.id);
-  assert.equal(repairLineageLabel(source.id, reloadedSource), "Repair of Original Groove");
+  assert.equal(repairLineageLabel(source.id, undefined, reloadedSource), "Repair of Original Groove");
+  assert.equal(
+    repairLineageLabel(source.id, source.label, null),
+    "Repair of Original Groove",
+  );
 });
 
 test("queued and failed rendering paths retain a reload-derived source", () => {
