@@ -4,11 +4,13 @@ import type { SongModelData } from "@workspace/db";
 import {
   buildArrangementBrain,
   buildTrackModels,
+  applyCompositionIntelligence,
   createArrangementPlan,
   createStyleSpec,
   ensureArrangementPlanHierarchy,
   getInstrumentPerformanceCapability,
   getInstrumentDefinition,
+  performedMaterialSha256,
   HarmonyEngine,
 } from "../src/lib/musicEngines";
 import {
@@ -18,6 +20,7 @@ import {
 } from "../src/lib/analysisProviders";
 import { fuseProviderSongModels } from "../src/lib/songModelValidation";
 import { estimateTruePeak4x } from "../src/lib/audioMeter";
+import { repeatedFormSongModel } from "../src/lib/__fixtures__/songModelValidation";
 
 test("4x windowed-sinc true peak meter detects an inter-sample over", () => {
   const samples = Float32Array.from({ length: 128 }, (_, index) =>
@@ -120,6 +123,163 @@ const planFor = (model: SongModelData, version = 7, controls: Record<string, num
     { id: "voice", name: "Voice", role: "vocal" },
   ],
   parameters: { songModelVersion: version, ...controls },
+});
+
+test("Composition Intelligence v2 reuses motifs and changes performed events reproducibly", () => {
+  const model = song({
+    audio: {
+      ...song().audio,
+      durationSeconds: repeatedFormSongModel.audio.durationSeconds,
+      analysisDurationSeconds: repeatedFormSongModel.audio.durationSeconds,
+    },
+    sections: repeatedFormSongModel.sections,
+    energy: repeatedFormSongModel.energy,
+    chords: [{ start: 0, end: 32, symbol: "C", roman: "I", confidence: .9 }],
+  });
+  const style = createStyleSpec("cinematic pop", {
+    density: .65, harmonyComplexity: 6, energy: .7,
+  });
+  const tracks = [
+    { id: "piano", name: "Piano", role: "harmony" },
+    { id: "drums", name: "Drums", role: "rhythm" },
+  ];
+  const create = (compositionVersion: "1.0" | "2.0") => createArrangementPlan({
+    arrangementId: "composition-v2-fixture",
+    version: 1,
+    songModel: model,
+    style,
+    tracks,
+    parameters: { songModelVersion: 12, seed: 4401, energy: .7, density: .65 },
+    compositionVersion,
+  });
+  const legacy = create("1.0");
+  const v2 = create("2.0");
+  const firstChorus = v2.compositionIntelligence!.phrases.find((phrase) =>
+    phrase.sectionId === v2.hierarchy.sections[1].id)!;
+  const repeatedChorus = v2.compositionIntelligence!.phrases.find((phrase) =>
+    phrase.sectionId === v2.hierarchy.sections[3].id)!;
+
+  assert.equal(v2.compositionIntelligence?.mode, "reasoning_core");
+  assert.equal(v2.provenance.version, "2.0.0");
+  assert.equal(repeatedChorus.sourceMotifRef, firstChorus.motifRef);
+  assert.equal(repeatedChorus.motifRef, firstChorus.motifRef);
+  assert.equal(v2.compositionIntelligence?.instrumentRoles.find((role) =>
+    role.trackId === "drums")?.function, "pulse");
+
+  const materialize = (plan: ReturnType<typeof create>) => buildTrackModels({
+    songModel: model, plan, tracks, style, seed: 4401,
+  });
+  const first = materialize(v2);
+  const second = materialize(create("2.0"));
+  const old = materialize(legacy);
+  const historical = structuredClone(legacy);
+  delete historical.compositionIntelligence;
+  const historicalOutput = materialize(historical);
+  assert.deepEqual(first, second);
+  assert.notDeepEqual(first.map((track) => track.notes), old.map((track) => track.notes));
+  assert.deepEqual(historicalOutput.map((track) => track.notes), old.map((track) => track.notes));
+  assert.equal(old[0].provenance.parameters.compositionVersion, "1.0");
+  assert.equal(first[0].provenance.parameters.compositionVersion, "2.0");
+  assert.equal(first[0].provenance.parameters.compositionSeed, 4401);
+  assert.equal(first[0].performanceEvidence?.compositionSeed, 4401);
+  assert.equal(
+    first[0].performanceEvidence?.performanceSeed,
+    first[0].performanceEvidence?.seed,
+  );
+
+  const arcVariant = structuredClone(v2);
+  const finalSectionId = arcVariant.hierarchy.sections[3].id;
+  const finalArc = arcVariant.compositionIntelligence!.tensionRelease.find((arc) =>
+    arc.sectionId === finalSectionId)!;
+  finalArc.tension = Math.max(0, finalArc.tension - .3);
+  const varied = materialize(arcVariant);
+  const finalSectionStart = 24;
+  assert.deepEqual(
+    varied.map((track) => track.notes.filter((note) => note.start < finalSectionStart)),
+    first.map((track) => track.notes.filter((note) => note.start < finalSectionStart)),
+  );
+  assert.notDeepEqual(
+    varied.map((track) => track.notes.filter((note) => note.start >= finalSectionStart)),
+    first.map((track) => track.notes.filter((note) => note.start >= finalSectionStart)),
+  );
+
+  assert.throws(() => buildTrackModels({
+    songModel: model, plan: v2, tracks, style, seed: 4402,
+  }), /seed does not match/);
+  const changedEvidence = structuredClone(model);
+  changedEvidence.chords[0].symbol = "Dm";
+  assert.throws(() => buildTrackModels({
+    songModel: changedEvidence, plan: v2, tracks, style, seed: 4401,
+  }), /evidence does not match/);
+  for (const mutate of [
+    (value: SongModelData) => { value.energy = [.01]; },
+    (value: SongModelData) => { value.bars = [{ bar: 1, start: 0, end: 2, beats: 4, confidence: 1 }]; },
+    (value: SongModelData) => { value.beats = [{ time: 0, beat: 1, bar: 1, confidence: 1 }]; },
+    (value: SongModelData) => { value.audio.name = "different-source.wav"; },
+  ]) {
+    const altered = structuredClone(model);
+    mutate(altered);
+    assert.throws(() => buildTrackModels({
+      songModel: altered, plan: v2, tracks, style, seed: 4401,
+    }), /evidence does not match/);
+  }
+
+  const phrasePlan = structuredClone(v2);
+  const firstSection = phrasePlan.hierarchy.sections[0];
+  phrasePlan.compositionIntelligence!.phrases =
+    phrasePlan.compositionIntelligence!.phrases.filter((phrase) =>
+      phrase.sectionId !== firstSection.id);
+  phrasePlan.compositionIntelligence!.phrases.push(
+    {
+      id: "phrase:first",
+      sectionId: firstSection.id,
+      startBar: 1,
+      endBar: 2,
+      intent: "state",
+      tension: .1,
+      motifRef: "motif:first",
+      sourceMotifRef: null,
+    },
+    {
+      id: "phrase:second",
+      sectionId: firstSection.id,
+      startBar: 3,
+      endBar: 4,
+      intent: "answer",
+      tension: .8,
+      motifRef: "motif:second",
+      sourceMotifRef: "motif:first",
+    },
+  );
+  const phraseVariant = structuredClone(phrasePlan);
+  phraseVariant.compositionIntelligence!.phrases.find((phrase) =>
+    phrase.id === "phrase:second")!.tension = .2;
+  const phraseOutput = materialize(phrasePlan);
+  const phraseVariantOutput = materialize(phraseVariant);
+  assert.deepEqual(
+    phraseOutput.map((track) => track.notes.filter((note) => note.start < 3.5)),
+    phraseVariantOutput.map((track) => track.notes.filter((note) => note.start < 3.5)),
+  );
+  assert.notDeepEqual(
+    phraseOutput.map((track) => track.notes.filter((note) => note.start >= 3.9 && note.start < 8)),
+    phraseVariantOutput.map((track) => track.notes.filter((note) => note.start >= 3.9 && note.start < 8)),
+  );
+
+  const providerReasoned = applyCompositionIntelligence(old, v2, model);
+  assert.ok(providerReasoned.every((track) =>
+    track.source === "COMPOSITION_INTELLIGENCE" &&
+    track.provenance.parameters.compositionEvidenceSha256 ===
+      v2.compositionIntelligence!.evidenceSha256));
+  assert.ok(providerReasoned.every((track) =>
+    track.performanceEvidence?.performedMaterialSha256 === performedMaterialSha256(track)));
+  assert.notDeepEqual(
+    providerReasoned.map((track) => track.notes),
+    old.map((track) => track.notes),
+  );
+  assert.throws(
+    () => applyCompositionIntelligence(old, v2, changedEvidence),
+    /evidence does not match/,
+  );
 });
 
 test("harmony is deterministic by Song Model version and retains supplied chord evidence", () => {

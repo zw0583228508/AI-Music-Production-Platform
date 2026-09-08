@@ -64,3 +64,16 @@ export const chordMelodyConflictSongModel: SongModelCore = {
     { start: 0.9, end: 1.2, pitch: 70, velocity: 88, confidence: 0.88, source: "MT3" },
   ],
 };
+
+/** Repeated form with measured contrast for Composition Intelligence fixtures. */
+export const repeatedFormSongModel: SongModelCore = {
+  ...validSongModel,
+  audio: { ...validSongModel.audio, durationSeconds: 32 },
+  sections: [
+    { name: "Verse", startBar: 1, endBar: 4, energy: 0.42 },
+    { name: "Chorus", startBar: 5, endBar: 8, energy: 0.76 },
+    { name: "Verse", startBar: 9, endBar: 12, energy: 0.5 },
+    { name: "Chorus", startBar: 13, endBar: 16, energy: 0.88 },
+  ],
+  energy: [0.42, 0.76, 0.5, 0.88],
+};

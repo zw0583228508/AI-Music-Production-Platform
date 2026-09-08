@@ -50,3 +50,4 @@
 - [Vocal phrase evidence](vocal-phrase-evidence.md) — phrases and breaths require verified stem PCM; symbolic alignment conflicts remain explicitly unavailable.
 - [Perceptual audio evidence gates](perceptual-audio-evidence-gates.md) — release confidence requires artifact-bound PCM evidence; unsupported perceptual dimensions must abstain.
 - [Closed-world release verification](closed-world-release-verification.md) — production completion gates must require every named stage and fail closed on missing evidence or provenance.
+- [Composition reasoning authority](composition-reasoning-authority.md) — v2 decisions follow fixed musical precedence and bind seed plus evidence identity through performed output.

@@ -1326,7 +1326,12 @@ export type TrackModel = {
 
 export type TrackPerformanceEvidence = {
   version: "1.0";
+  /** Historical field containing the performance/humanization seed. */
   seed: number;
+  /** Canonical Composition Intelligence seed, when a versioned plan exists. */
+  compositionSeed?: number;
+  /** Explicit alias for the derived performance/humanization seed. */
+  performanceSeed?: number;
   instrumentFamily: InstrumentDefinition["family"];
   articulationProfile: string;
   timingProfile: string;
@@ -1387,6 +1392,52 @@ export type ArrangementPlanSection = {
   activeTracks?: string[];
   /** Provider-neutral orchestration intent indexed by track id. */
   trackDirectives?: Record<string, TrackDirective>;
+};
+
+export type CompositionIntelligenceVersion = "1.0" | "2.0";
+export type CompositionPhraseIntent =
+  | "state"
+  | "develop"
+  | "answer"
+  | "build"
+  | "release"
+  | "protect_vocal";
+export type InstrumentFunction =
+  | "foundation"
+  | "pulse"
+  | "harmony"
+  | "lead"
+  | "counterline"
+  | "texture";
+
+/** Immutable reasoning identity and decisions used to materialize performance events. */
+export type CompositionIntelligencePlan = {
+  version: CompositionIntelligenceVersion;
+  mode: "legacy" | "reasoning_core";
+  precedence: ["song_intent", "dramatic_arc", "section_function", "phrase_intent", "instrument_role", "motif", "harmony_rhythm_voicing", "event"];
+  seed: number;
+  evidenceSha256: string;
+  songIntent: "preserve_observed_form" | "develop_observed_form";
+  tensionRelease: Array<{
+    sectionId: string;
+    tension: number;
+    release: number;
+  }>;
+  phrases: Array<{
+    id: string;
+    sectionId: string;
+    startBar: number;
+    endBar: number;
+    intent: CompositionPhraseIntent;
+    tension: number;
+    motifRef: string;
+    sourceMotifRef: string | null;
+  }>;
+  instrumentRoles: Array<{
+    trackId: string;
+    function: InstrumentFunction;
+    authority: "project_track";
+  }>;
 };
 
 export type ArrangementHierarchyScope = {
@@ -1482,6 +1533,8 @@ export type ArrangementPlan = {
   provenance: ArtifactProvenance;
   /** Auditable song → section → phrase → bar → event planning authority. */
   hierarchy: ArrangementHierarchy;
+  /** Absent only on historical persisted plans, which are interpreted as v1. */
+  compositionIntelligence?: CompositionIntelligencePlan;
 };
 
 export type MusicalNote = {
