@@ -33,6 +33,7 @@
 - [Blocked-provider evidence preimages](blocked-provider-evidence-preimages.md) — retain hash preimages and keep provisioning manifest schemas identical to runtime validators.
 - [Attested generation I/O](attested-generation-response-urls.md) — results repeat health provenance; artifact origins and source allowlists are deployment gates, never request-host defaults.
 - [Focused API bundle boundaries](focused-api-bundle-boundaries.md) — no-route tests should alias database packages to throwing stubs rather than bundle native clients or externalize workspace source.
+- [Nested Node test exits](nested-node-test-exits.md) — nested node test runners must shed the parent test-context marker so child failures retain a nonzero exit status.
 - [DiffRhythm upstream recovery](diffrhythm-upstream-recovery.md) — bypass its unsafe boolean CLI path, install omitted G2P dependencies, and wire pinned local tokenizer/MuQ state explicitly.
 - [Codec threshold fixtures](codec-threshold-fixtures.md) — decode lossy codec fixtures through FFmpeg before waveform checks because worker libsndfile lacks AAC container support.
 - [Modal Docker USER behavior](modal-docker-user.md) — Modal skips Dockerfile USER; verify runtime UID instead of assuming container privilege dropping.
