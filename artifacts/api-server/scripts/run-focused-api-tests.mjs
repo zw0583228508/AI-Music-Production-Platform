@@ -114,26 +114,45 @@ function normalizeCleanupErrorCode(error) {
 }
 
 function formatCleanupErrorMessage(error) {
-  let message;
   try {
-    message = error?.message ?? String(error);
+    const message = error?.message ?? error;
+    const sanitized = String(message)
+      .replace(/[\u0000-\u001f\u007f-\u009f]+/gu, " ")
+      .replace(/\s+/gu, " ")
+      .trim();
+    if (sanitized.length <= cleanupErrorMessageLimit) {
+      return sanitized;
+    }
+    return `${sanitized.slice(0, cleanupErrorMessageLimit - 3)}...`;
   } catch {
-    message = "unavailable error message";
+    return "unavailable error message";
   }
-  const sanitized = String(message)
-    .replace(/[\u0000-\u001f\u007f-\u009f]+/gu, " ")
-    .replace(/\s+/gu, " ")
-    .trim();
-  if (sanitized.length <= cleanupErrorMessageLimit) {
-    return sanitized;
-  }
-  return `${sanitized.slice(0, cleanupErrorMessageLimit - 3)}...`;
 }
 
 function injectedCleanupError(defaultMessage) {
-  return new Error(
+  const error = new Error(
     process.env.FOCUSED_API_TEST_INJECT_CLEANUP_ERROR_MESSAGE ?? defaultMessage,
   );
+  if (
+    process.env.FOCUSED_API_TEST_INJECT_MALFORMED_CLEANUP_MESSAGE ===
+    "throwing-getter"
+  ) {
+    Object.defineProperty(error, "message", {
+      get() {
+        throw new Error("injected throwing cleanup message getter");
+      },
+    });
+  } else if (
+    process.env.FOCUSED_API_TEST_INJECT_MALFORMED_CLEANUP_MESSAGE ===
+    "throwing-string-conversion"
+  ) {
+    error.message = {
+      toString() {
+        throw new Error("injected throwing cleanup message conversion");
+      },
+    };
+  }
+  return error;
 }
 
 function injectedCleanupErrorCode(fallback) {
@@ -250,6 +269,10 @@ validateFocusedFaultSetting(
 validateFocusedFaultSetting(
   "FOCUSED_API_TEST_INJECT_UNUSUAL_CLEANUP_ERROR_CODE",
   new Set(injectedCleanupErrorCodes.keys()),
+);
+validateFocusedFaultSetting(
+  "FOCUSED_API_TEST_INJECT_MALFORMED_CLEANUP_MESSAGE",
+  new Set(["throwing-getter", "throwing-string-conversion"]),
 );
 
 function parsePermissionFailureCodes(
