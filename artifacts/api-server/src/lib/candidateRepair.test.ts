@@ -18,6 +18,27 @@ const plan = {
   songModelVersion: 1,
   parameters: {},
   provenance: {},
+  hierarchy: {
+    version: "1.0",
+    status: "applied",
+    reason: null,
+    precedence: ["song", "section", "phrase", "bar", "event"],
+    song: { id: "plan", intent: "development_arc", climaxSectionId: "section:chorus:2" },
+    sections: [
+      { id: "section:verse:1", sourceSection: "verse", startBar: 1, endBar: 4, function: "verse", development: "initial", targetEnergy: .4, targetDensity: .4, phraseIds: [], barIds: ["bar:section:verse:1:1"] },
+      { id: "section:chorus:2", sourceSection: "chorus", startBar: 5, endBar: 8, function: "chorus", development: "initial", targetEnergy: .8, targetDensity: .8, phraseIds: ["phrase:section:chorus:2:p1"], barIds: ["bar:section:chorus:2:5", "bar:section:chorus:2:6"] },
+    ],
+    phrases: [{ id: "phrase:section:chorus:2:p1", sectionId: "section:chorus:2", startBar: 5, endBar: 5, confidence: .9, intent: "protect_vocal_phrase" }],
+    bars: [
+      { id: "bar:section:verse:1:1", sectionId: "section:verse:1", bar: 1, meter: "4/4", phraseIds: [], vocalSpace: "unknown" },
+      { id: "bar:section:chorus:2:5", sectionId: "section:chorus:2", bar: 5, meter: "3/4", phraseIds: ["phrase:section:chorus:2:p1"], vocalSpace: "occupied" },
+      { id: "bar:section:chorus:2:6", sectionId: "section:chorus:2", bar: 6, meter: "3/4", phraseIds: [], vocalSpace: "available" },
+    ],
+    events: [
+      { id: "event:section:verse:1:1:piano", sectionId: "section:verse:1", barId: "bar:section:verse:1:1", trackId: "piano", intent: "follow_section", source: "section" },
+      { id: "event:section:chorus:2:5:piano", sectionId: "section:chorus:2", barId: "bar:section:chorus:2:5", trackId: "piano", intent: "support_vocal", source: "vocal_phrase" },
+    ],
+  },
 } as unknown as ArrangementPlan;
 const track = (id: string): TrackModel => ({
   id,
@@ -61,6 +82,20 @@ test("bounded repairs preserve every unscoped event and track", () => {
       ...section,
       energy: section.section === "chorus" ? 0.7 : 0.1,
     })),
+    hierarchy: {
+      ...plan.hierarchy,
+      song: { ...plan.hierarchy.song, climaxSectionId: "section:verse:1" },
+      sections: plan.hierarchy.sections.map((section) => ({
+        ...section,
+        targetEnergy: section.id === "section:chorus:2" ? .7 : .1,
+      })),
+      bars: plan.hierarchy.bars.map((bar) => bar.id === "bar:section:chorus:2:5"
+        ? { ...bar, vocalSpace: "available" as const, phraseIds: [] }
+        : bar),
+      events: plan.hierarchy.events.map((event) => event.id === "event:section:chorus:2:5:piano"
+        ? { ...event, intent: "use_vocal_space" as const, source: "vocal_space" as const }
+        : event),
+    },
   };
   const result = applyBoundedRepair({
     snapshot: {
@@ -82,6 +117,14 @@ test("bounded repairs preserve every unscoped event and track", () => {
   assert.equal(result.trackModels[0].notes[1].id, "repaired-inside");
   assert.equal(result.plan.sections[0].energy, 0.4);
   assert.equal(result.plan.sections[1].energy, 0.8);
+  assert.equal(result.plan.hierarchy.song.climaxSectionId, "section:chorus:2");
+  assert.equal(result.plan.hierarchy.sections[0].targetEnergy, .4);
+  assert.equal(result.plan.hierarchy.sections[1].targetEnergy, .8);
+  assert.equal(result.plan.hierarchy.bars.find((bar) => bar.id === "bar:section:chorus:2:5")?.vocalSpace, "available");
+  assert.deepEqual(result.changedScopes, [
+    { level: "bar", id: "bar:section:chorus:2:5" },
+    { level: "event", id: "event:section:chorus:2:5:piano" },
+  ]);
 });
 
 test("critic findings must identify concrete known musical scope", () => {
@@ -163,4 +206,35 @@ test("critic bars cannot extend into an unnamed section", () => {
     affectedTrackIds: ["piano"],
     musicalReason: "This must not rewrite the verse.",
   }, plan, [track("piano")]), /Every repair bar/);
+});
+
+test("repairing a legacy plan materializes a valid hierarchy and reports every added scope", () => {
+  const piano = track("piano");
+  const { hierarchy: _removed, ...legacyPlan } = plan;
+  const finding = normalizeRepairFinding({
+    id: "legacy-upgrade",
+    affectedSections: ["chorus"],
+    startBar: 5,
+    endBar: 6,
+    affectedTrackIds: ["piano"],
+    musicalReason: "Repair the legacy candidate without returning an invalid plan.",
+  }, legacyPlan as ArrangementPlan, [piano]);
+  const result = applyBoundedRepair({
+    snapshot: {
+      sourceCandidateId: "legacy",
+      sourceScore: .4,
+      seed: 3,
+      maxAttempts: 2,
+      finding,
+      plan: legacyPlan as ArrangementPlan,
+      trackModels: [piano],
+    },
+    proposedPlan: plan,
+    proposedTrackModels: [piano],
+    timeBounds: { start: 16, end: 24 },
+  });
+  assert.equal(result.plan.hierarchy.status, "applied");
+  assert.equal(result.changedScopes[0].level, "song");
+  assert.ok(result.changedScopes.some((scope) =>
+    scope.level === "event" && scope.id === "event:section:chorus:2:5:piano"));
 });

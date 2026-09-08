@@ -1665,6 +1665,22 @@ export const CandidateEvaluationDiversityReason = {
   sufficiently_distinct: 'sufficiently_distinct',
 } as const;
 
+export type ArrangementHierarchyScopeLevel = typeof ArrangementHierarchyScopeLevel[keyof typeof ArrangementHierarchyScopeLevel];
+
+
+export const ArrangementHierarchyScopeLevel = {
+  song: 'song',
+  section: 'section',
+  phrase: 'phrase',
+  bar: 'bar',
+  event: 'event',
+} as const;
+
+export interface ArrangementHierarchyScope {
+  level: ArrangementHierarchyScopeLevel;
+  id: string;
+}
+
 export type CandidateRepairEvidenceScope = {
   affectedSections: string[];
   /** @minimum 1 */
@@ -1689,6 +1705,7 @@ export interface CandidateRepairEvidence {
   scope: CandidateRepairEvidenceScope;
   musicalReason: string;
   outsideScopePreserved: boolean;
+  changedScopes: ArrangementHierarchyScope[];
   /**
      * @minimum 0
      * @maximum 1
@@ -3023,6 +3040,153 @@ export interface ArrangementPlanSection {
   trackDirectives?: ArrangementPlanSectionTrackDirectives;
 }
 
+export type ArrangementHierarchyStatus = typeof ArrangementHierarchyStatus[keyof typeof ArrangementHierarchyStatus];
+
+
+export const ArrangementHierarchyStatus = {
+  applied: 'applied',
+  no_op: 'no_op',
+} as const;
+
+export type ArrangementHierarchySongIntent = typeof ArrangementHierarchySongIntent[keyof typeof ArrangementHierarchySongIntent];
+
+
+export const ArrangementHierarchySongIntent = {
+  development_arc: 'development_arc',
+  preserve_observed_form: 'preserve_observed_form',
+} as const;
+
+export type ArrangementHierarchySong = {
+  id: string;
+  intent: ArrangementHierarchySongIntent;
+  /** @nullable */
+  climaxSectionId: string | null;
+};
+
+export type ArrangementHierarchySectionsItemFunction = typeof ArrangementHierarchySectionsItemFunction[keyof typeof ArrangementHierarchySectionsItemFunction];
+
+
+export const ArrangementHierarchySectionsItemFunction = {
+  intro: 'intro',
+  verse: 'verse',
+  prechorus: 'prechorus',
+  chorus: 'chorus',
+  bridge: 'bridge',
+  outro: 'outro',
+  neutral: 'neutral',
+} as const;
+
+export type ArrangementHierarchySectionsItemDevelopment = typeof ArrangementHierarchySectionsItemDevelopment[keyof typeof ArrangementHierarchySectionsItemDevelopment];
+
+
+export const ArrangementHierarchySectionsItemDevelopment = {
+  initial: 'initial',
+  development: 'development',
+  reprise: 'reprise',
+  neutral: 'neutral',
+} as const;
+
+export type ArrangementHierarchySectionsItem = {
+  id: string;
+  sourceSection: string;
+  /** @minimum 1 */
+  startBar: number;
+  /** @minimum 1 */
+  endBar: number;
+  function: ArrangementHierarchySectionsItemFunction;
+  development: ArrangementHierarchySectionsItemDevelopment;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  targetEnergy: number;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  targetDensity: number;
+  phraseIds: string[];
+  barIds: string[];
+};
+
+export type ArrangementHierarchyPhrasesItem = {
+  id: string;
+  sectionId: string;
+  /** @minimum 1 */
+  startBar: number;
+  /** @minimum 1 */
+  endBar: number;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  confidence: number;
+  intent: 'protect_vocal_phrase';
+};
+
+export type ArrangementHierarchyBarsItemVocalSpace = typeof ArrangementHierarchyBarsItemVocalSpace[keyof typeof ArrangementHierarchyBarsItemVocalSpace];
+
+
+export const ArrangementHierarchyBarsItemVocalSpace = {
+  occupied: 'occupied',
+  available: 'available',
+  unknown: 'unknown',
+} as const;
+
+export type ArrangementHierarchyBarsItem = {
+  id: string;
+  sectionId: string;
+  /** @minimum 1 */
+  bar: number;
+  meter: string;
+  phraseIds: string[];
+  vocalSpace: ArrangementHierarchyBarsItemVocalSpace;
+};
+
+export type ArrangementHierarchyEventsItemIntent = typeof ArrangementHierarchyEventsItemIntent[keyof typeof ArrangementHierarchyEventsItemIntent];
+
+
+export const ArrangementHierarchyEventsItemIntent = {
+  support_vocal: 'support_vocal',
+  use_vocal_space: 'use_vocal_space',
+  follow_section: 'follow_section',
+} as const;
+
+export type ArrangementHierarchyEventsItemSource = typeof ArrangementHierarchyEventsItemSource[keyof typeof ArrangementHierarchyEventsItemSource];
+
+
+export const ArrangementHierarchyEventsItemSource = {
+  section: 'section',
+  vocal_phrase: 'vocal_phrase',
+  vocal_space: 'vocal_space',
+} as const;
+
+export type ArrangementHierarchyEventsItem = {
+  id: string;
+  sectionId: string;
+  barId: string;
+  trackId: string;
+  intent: ArrangementHierarchyEventsItemIntent;
+  source: ArrangementHierarchyEventsItemSource;
+};
+
+export interface ArrangementHierarchy {
+  version: '1.0';
+  status: ArrangementHierarchyStatus;
+  /** @nullable */
+  reason: string | null;
+  /**
+     * @minItems 5
+     * @maxItems 5
+     */
+  precedence: ['song', 'section', 'phrase', 'bar', 'event'];
+  song: ArrangementHierarchySong;
+  sections: ArrangementHierarchySectionsItem[];
+  phrases: ArrangementHierarchyPhrasesItem[];
+  bars: ArrangementHierarchyBarsItem[];
+  events: ArrangementHierarchyEventsItem[];
+}
+
 export type ArrangementPlanParameters = { [key: string]: unknown };
 
 export interface ArrangementPlan {
@@ -3033,6 +3197,7 @@ export interface ArrangementPlan {
   songModelVersion: number;
   parameters: ArrangementPlanParameters;
   provenance: ArtifactProvenance;
+  hierarchy: ArrangementHierarchy;
 }
 
 /**

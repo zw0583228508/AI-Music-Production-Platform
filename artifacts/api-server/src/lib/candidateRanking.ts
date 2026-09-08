@@ -106,6 +106,9 @@ export function publicCandidateEvaluation(evaluation: CandidateEvaluation) {
             },
             musicalReason: evaluation.repair.musicalReason,
             outsideScopePreserved: evaluation.repair.outsideScopePreserved,
+            changedScopes: [...((evaluation.repair as typeof evaluation.repair & {
+              changedScopes?: typeof evaluation.repair.changedScopes;
+            }).changedScopes ?? [])].map((scope) => ({ ...scope })),
             sourceQualityScore: evaluation.repair.sourceQualityScore,
             repairedQualityScore: evaluation.repair.repairedQualityScore,
             improved: evaluation.repair.improved,

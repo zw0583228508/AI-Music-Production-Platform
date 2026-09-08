@@ -12,6 +12,7 @@ import type {
   ArticulationEvent,
   AutomationPoint,
   TrackDirective,
+  ArrangementHierarchy,
 } from "@workspace/db";
 import { createHash } from "node:crypto";
 
@@ -419,6 +420,142 @@ export type ArrangementBrain = {
   sections: ArrangementBrainSection[];
 };
 
+export function noOpArrangementHierarchy(
+  arrangementId: string,
+  reason = "legacy_plan_without_hierarchy",
+): ArrangementHierarchy {
+  return {
+    version: "1.0",
+    status: "no_op",
+    reason,
+    precedence: ["song", "section", "phrase", "bar", "event"],
+    song: { id: arrangementId, intent: "preserve_observed_form", climaxSectionId: null },
+    sections: [],
+    phrases: [],
+    bars: [],
+    events: [],
+  };
+}
+
+export function ensureArrangementPlanHierarchy<T extends ArrangementPlan>(plan: T): T {
+  const legacy = plan as T & { hierarchy?: ArrangementHierarchy };
+  return legacy.hierarchy
+    ? plan
+    : { ...plan, hierarchy: noOpArrangementHierarchy(plan.id) };
+}
+
+const canonicalRange = (value: { coordinates?: { start: { seconds: number; bar: number }; end: { seconds: number; bar: number } } }) =>
+  value.coordinates &&
+  Number.isFinite(value.coordinates.start.seconds) &&
+  Number.isFinite(value.coordinates.end.seconds) &&
+  value.coordinates.end.seconds > value.coordinates.start.seconds
+    ? value.coordinates
+    : undefined;
+
+function meterAtBar(songModel: SongModelData, bar: number): string {
+  return songModel.meterMap
+    .filter((change) => change.bar <= bar)
+    .at(-1)?.meter ?? "4/4";
+}
+
+function buildArrangementHierarchy(
+  arrangementId: string,
+  songModel: SongModelData,
+  brain: ArrangementBrain,
+  sections: ArrangementPlanSection[],
+): ArrangementHierarchy {
+  if (!brain.enabled) {
+    return noOpArrangementHierarchy(arrangementId, "insufficient_structural_evidence");
+  }
+
+  const phraseEvidence = songModel.contractVersion === "2.0" &&
+    songModel.vocalIntelligence?.phrases.status === "detected"
+    ? songModel.vocalIntelligence.phrases.events.filter((event) => canonicalRange(event))
+    : [];
+  const spaceEvidence = songModel.contractVersion === "2.0" &&
+    songModel.vocalIntelligence?.arrangementSpace.status === "detected"
+    ? songModel.vocalIntelligence.arrangementSpace.windows.filter((window) => canonicalRange(window))
+    : [];
+  const phrases: ArrangementHierarchy["phrases"] = [];
+  const bars: ArrangementHierarchy["bars"] = [];
+  const events: ArrangementHierarchy["events"] = [];
+  const hierarchySections = sections.map((section, index) => {
+    const sectionId = `section:${section.section}:${index + 1}`;
+    const sectionPhrases = phraseEvidence.filter((phrase) => {
+      const range = canonicalRange(phrase)!;
+      return range.start.bar <= section.endBar && range.end.bar >= section.startBar;
+    }).map((phrase) => {
+      const range = canonicalRange(phrase)!;
+      const id = `phrase:${sectionId}:${phrase.id}`;
+      phrases.push({
+        id,
+        sectionId,
+        startBar: Math.max(section.startBar, range.start.bar),
+        endBar: Math.min(section.endBar, range.end.bar),
+        confidence: round(clamp(phrase.confidence)),
+        intent: "protect_vocal_phrase",
+      });
+      return id;
+    });
+    const barIds: string[] = [];
+    for (let bar = section.startBar; bar <= section.endBar; bar += 1) {
+      const id = `bar:${sectionId}:${bar}`;
+      barIds.push(id);
+      const phraseIds = phrases
+        .filter((phrase) => phrase.sectionId === sectionId && phrase.startBar <= bar && phrase.endBar >= bar)
+        .map((phrase) => phrase.id);
+      const available = spaceEvidence.some((window) => {
+        const range = canonicalRange(window)!;
+        return (window.bars.includes(bar) || (range.start.bar <= bar && range.end.bar >= bar)) &&
+          (!window.sections.length || window.sections.some((name) =>
+            name.toLowerCase().replace(/\s+/g, "_") === section.section));
+      });
+      const vocalSpace = phraseIds.length ? "occupied" : available ? "available" : "unknown";
+      bars.push({ id, sectionId, bar, meter: meterAtBar(songModel, bar), phraseIds, vocalSpace });
+      for (const trackId of section.activeTracks ?? []) {
+        const vocal = /vocal|voice/.test(trackId.toLowerCase());
+        events.push({
+          id: `event:${sectionId}:${bar}:${trackId}`,
+          sectionId,
+          barId: id,
+          trackId,
+          intent: vocal ? "follow_section" : vocalSpace === "occupied" ? "support_vocal" :
+            vocalSpace === "available" ? "use_vocal_space" : "follow_section",
+          source: vocalSpace === "occupied" ? "vocal_phrase" :
+            vocalSpace === "available" ? "vocal_space" : "section",
+        });
+      }
+    }
+    return {
+      id: sectionId,
+      sourceSection: section.section,
+      startBar: section.startBar,
+      endBar: section.endBar,
+      function: brain.sections[index]?.function ?? "neutral",
+      development: brain.sections[index]?.development ?? "neutral",
+      targetEnergy: section.energy,
+      targetDensity: section.density,
+      phraseIds: sectionPhrases,
+      barIds,
+    };
+  });
+  const climax = hierarchySections.reduce<typeof hierarchySections[number] | null>(
+    (best, section) => !best || section.targetEnergy >= best.targetEnergy ? section : best,
+    null,
+  );
+  return {
+    version: "1.0",
+    status: "applied",
+    reason: null,
+    precedence: ["song", "section", "phrase", "bar", "event"],
+    song: { id: arrangementId, intent: "development_arc", climaxSectionId: climax?.id ?? null },
+    sections: hierarchySections,
+    phrases,
+    bars,
+    events,
+  };
+}
+
 /**
  * A deliberately small, evidence-bound global arranger. It only interprets
  * names already present in the Song Model and its measured relative energy;
@@ -608,6 +745,12 @@ export function createArrangementPlan(input: {
     songModelVersion: Number(input.parameters.songModelVersion ?? 0),
     parameters: input.parameters,
     provenance: provenance("ARRANGEMENT_DIRECTOR", "1.0.0", input.parameters, input.parentIds),
+    hierarchy: buildArrangementHierarchy(
+      input.arrangementId,
+      input.songModel,
+      arrangementBrain,
+      sections,
+    ),
   };
 }
 
@@ -881,6 +1024,29 @@ function createArrangementSpaceMap(
   plan: ArrangementPlan,
   fallbackBarSeconds: number,
 ): ArrangementSpaceMap | undefined {
+  const intelligence = songModel.contractVersion === "2.0" ? songModel.vocalIntelligence : undefined;
+  const canonicalPhrases = intelligence?.phrases.status === "detected"
+    ? intelligence.phrases.events.filter(hasCanonicalWindow)
+    : [];
+  const canonicalSpace = intelligence?.arrangementSpace.status === "detected"
+    ? intelligence.arrangementSpace.windows.filter(hasCanonicalWindow)
+    : [];
+  if (canonicalPhrases.length || canonicalSpace.length) {
+    const clipIntelligence = (
+      windows: Array<{ coordinates?: NonNullable<typeof canonicalPhrases[number]["coordinates"]> }>,
+    ) => plan.sections.flatMap((section) => {
+      const bounds = arrangementSectionSeconds(songModel, section, fallbackBarSeconds);
+      return windows.flatMap((window) => {
+        const start = Math.max(bounds.start, window.coordinates!.start.seconds);
+        const end = Math.min(bounds.end, window.coordinates!.end.seconds);
+        return end > start ? [{ start: round(start), end: round(end), section: section.section }] : [];
+      });
+    });
+    return {
+      voiced: clipIntelligence(canonicalPhrases),
+      silent: clipIntelligence(canonicalSpace),
+    };
+  }
   const evidence = songModel.contractVersion === "2.0" ? songModel.vocalEvidence : undefined;
   // A detected status is not enough: use only windows represented on the
   // canonical timeline, and require actual observed voiced occupancy.
@@ -918,6 +1084,61 @@ function intersectsObservedVoice(
   return Boolean(spaceMap?.voiced.some((window) => start < window.end && end > window.start));
 }
 
+function hierarchyEventIntent(
+  plan: ArrangementPlan,
+  sectionIndex: number,
+  trackId: string,
+  trackName: string,
+  time: number,
+  songModel: SongModelData,
+  fallbackBarSeconds: number,
+): ArrangementHierarchy["events"][number]["intent"] | undefined {
+  if (plan.hierarchy?.status !== "applied") return undefined;
+  const section = plan.hierarchy.sections[sectionIndex];
+  if (!section) return undefined;
+  const bar = plan.hierarchy.bars.find((candidate) => {
+    if (candidate.sectionId !== section.id) return false;
+    const observed = songModel.bars.find((source) => source.bar === candidate.bar);
+    const start = observed?.coordinates?.start.seconds ?? observed?.start ??
+      (candidate.bar - 1) * fallbackBarSeconds;
+    const end = observed?.coordinates?.end.seconds ?? observed?.end ??
+      candidate.bar * fallbackBarSeconds;
+    return time >= start && time < end;
+  });
+  return bar
+    ? plan.hierarchy.events.find((event) =>
+      event.barId === bar.id && (event.trackId === trackId || event.trackId === trackName))?.intent
+    : undefined;
+}
+
+function hierarchySpaceMapForTrack(
+  songModel: SongModelData,
+  plan: ArrangementPlan,
+  trackId: string,
+  spaceMap: ArrangementSpaceMap | undefined,
+  fallbackBarSeconds: number,
+): ArrangementSpaceMap | undefined {
+  if (!spaceMap || plan.hierarchy?.status !== "applied") return spaceMap;
+  const supportedBars = new Set(plan.hierarchy.events
+    .filter((event) => event.trackId === trackId && event.intent === "support_vocal")
+    .map((event) => event.barId));
+  return {
+    silent: spaceMap.silent,
+    voiced: spaceMap.voiced.filter((window) =>
+      plan.hierarchy.bars.some((bar) => {
+        if (!supportedBars.has(bar.id)) return false;
+        const section = plan.hierarchy.sections.find((candidate) => candidate.id === bar.sectionId);
+        if (section?.sourceSection !== window.section) return false;
+        const observed = songModel.bars.find((source) => source.bar === bar.bar);
+        const start = observed?.coordinates?.start.seconds ?? observed?.start ??
+          (bar.bar - 1) * fallbackBarSeconds;
+        const end = observed?.coordinates?.end.seconds ?? observed?.end ??
+          bar.bar * fallbackBarSeconds;
+        return window.start < end && window.end > start;
+      })),
+  };
+}
+
 export class CompositionEngine {
   compose(input: {
     songModel: SongModelData;
@@ -942,8 +1163,9 @@ export class CompositionEngine {
         // explicitly active section boundaries so a vocal arrangement can
         // enter/leave without leaking notes through inactive sections.
         input.plan.sections.forEach((section, sectionIndex) => {
-          const sectionStart = (section.startBar - 1) * barSeconds;
-          const sectionEnd = section.endBar * barSeconds;
+          const bounds = arrangementSectionSeconds(input.songModel, section, barSeconds);
+          const sectionStart = bounds.start;
+          const sectionEnd = bounds.end;
           const action = section.tracks[track.id] ?? section.tracks[track.name] ?? "main_harmony";
           const active = section.activeTracks
             ? section.activeTracks.includes(track.id) || section.activeTracks.includes(track.name)
@@ -976,8 +1198,9 @@ export class CompositionEngine {
         });
       } else if (!identity.includes("vocal")) {
         input.plan.sections.forEach((section, sectionIndex) => {
-          const sectionStart = (section.startBar - 1) * barSeconds;
-          const sectionEnd = section.endBar * barSeconds;
+          const bounds = arrangementSectionSeconds(input.songModel, section, barSeconds);
+          const sectionStart = bounds.start;
+          const sectionEnd = bounds.end;
           const action = section.tracks[track.id] ?? section.tracks[track.name] ?? "main_harmony";
           const active = section.activeTracks
             ? section.activeTracks.includes(track.id) || section.activeTracks.includes(track.name)
@@ -1024,10 +1247,14 @@ export class CompositionEngine {
               step * (identity.includes("pad") ? 1.8 : isExit ? .65 : .9),
               sectionEnd - time,
             ));
+            const hierarchyIntent = hierarchyEventIntent(
+              input.plan, sectionIndex, track.id, track.name, time, input.songModel, barSeconds,
+            );
             // Do not replace a measured vocal rest with a guessed one. The
             // observed silent map is intentionally permissive; only measured
             // voiced occupancy removes a phrase/fill event.
-            if (!intersectsObservedVoice(time, time + duration, input.spaceMap)) {
+            if (hierarchyIntent !== "support_vocal" ||
+              !intersectsObservedVoice(time, time + duration, input.spaceMap)) {
               notes.push({
                 id: `${track.id}-${sectionIndex}-${beatIndex}`,
                 start: round(time),
@@ -1040,6 +1267,7 @@ export class CompositionEngine {
               });
             }
             if (directive?.fill && (identity.includes("drum") || identity.includes("rhythm")) && isExit &&
+              (hierarchyIntent === undefined || hierarchyIntent === "use_vocal_space" || hierarchyIntent === "follow_section") &&
               !intersectsObservedVoice(Math.max(sectionStart, sectionEnd - beat * .5), sectionEnd - beat * .28, input.spaceMap)) {
               notes.push({
                 id: `${track.id}-${sectionIndex}-${beatIndex}-fill`,
@@ -1762,7 +1990,15 @@ export function buildTrackModels(input: {
     `${input.plan.id}:song-model:${input.plan.songModelVersion}:${input.seed ?? 0}`,
   );
   return voiced.map((track) =>
-    new PerformanceEngine().perform(track, input.style, deterministicSeed, spaceMap));
+    new PerformanceEngine().perform(
+      track,
+      input.style,
+      deterministicSeed,
+      hierarchySpaceMapForTrack(input.songModel, input.plan, track.id, spaceMap, secondsPerBar(
+        bpm,
+        input.songModel.meterMap[0]?.meter,
+      )),
+    ));
 }
 
 function chordPitchClasses(symbol: string): number[] {

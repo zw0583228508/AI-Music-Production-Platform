@@ -1229,6 +1229,59 @@ export type ArrangementPlanSection = {
   trackDirectives?: Record<string, TrackDirective>;
 };
 
+export type ArrangementHierarchyScope = {
+  level: "song" | "section" | "phrase" | "bar" | "event";
+  id: string;
+};
+
+export type ArrangementHierarchy = {
+  version: "1.0";
+  status: "applied" | "no_op";
+  reason: string | null;
+  precedence: ["song", "section", "phrase", "bar", "event"];
+  song: {
+    id: string;
+    intent: "development_arc" | "preserve_observed_form";
+    climaxSectionId: string | null;
+  };
+  sections: Array<{
+    id: string;
+    sourceSection: string;
+    startBar: number;
+    endBar: number;
+    function: "intro" | "verse" | "prechorus" | "chorus" | "bridge" | "outro" | "neutral";
+    development: "initial" | "development" | "reprise" | "neutral";
+    targetEnergy: number;
+    targetDensity: number;
+    phraseIds: string[];
+    barIds: string[];
+  }>;
+  phrases: Array<{
+    id: string;
+    sectionId: string;
+    startBar: number;
+    endBar: number;
+    confidence: number;
+    intent: "protect_vocal_phrase";
+  }>;
+  bars: Array<{
+    id: string;
+    sectionId: string;
+    bar: number;
+    meter: string;
+    phraseIds: string[];
+    vocalSpace: "occupied" | "available" | "unknown";
+  }>;
+  events: Array<{
+    id: string;
+    sectionId: string;
+    barId: string;
+    trackId: string;
+    intent: "support_vocal" | "use_vocal_space" | "follow_section";
+    source: "section" | "vocal_phrase" | "vocal_space";
+  }>;
+};
+
 export type OrchestrationCue = {
   bar?: number;
   beat?: number;
@@ -1267,6 +1320,8 @@ export type ArrangementPlan = {
   id: string; version: number; sections: ArrangementPlanSection[]; style: StyleSpec;
   songModelVersion: number; parameters: Record<string, number | string | boolean>;
   provenance: ArtifactProvenance;
+  /** Auditable song → section → phrase → bar → event planning authority. */
+  hierarchy: ArrangementHierarchy;
 };
 
 export type MusicalNote = {
@@ -1383,6 +1438,7 @@ export type CandidateRepairEvidence = {
   };
   musicalReason: string;
   outsideScopePreserved: boolean;
+  changedScopes: ArrangementHierarchyScope[];
   sourceQualityScore: number;
   repairedQualityScore: number | null;
   improved: boolean;

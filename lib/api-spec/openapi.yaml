@@ -2607,7 +2607,7 @@ components:
             musicalReason: { type: string, minLength: 1, maxLength: 2000 }
     CandidateRepairEvidence:
       type: object
-      required: [sourceCandidateId, findingId, seed, attempt, maxAttempts, scope, musicalReason, outsideScopePreserved, sourceQualityScore, repairedQualityScore, improved]
+      required: [sourceCandidateId, findingId, seed, attempt, maxAttempts, scope, musicalReason, outsideScopePreserved, changedScopes, sourceQualityScore, repairedQualityScore, improved]
       properties:
         sourceCandidateId: { type: string }
         findingId: { type: string }
@@ -2624,6 +2624,10 @@ components:
             affectedTrackIds: { type: array, items: { type: string } }
         musicalReason: { type: string }
         outsideScopePreserved: { type: boolean }
+        changedScopes:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArrangementHierarchyScope"
         sourceQualityScore: { type: number, minimum: 0, maximum: 1 }
         repairedQualityScore: { type: [number, "null"], minimum: 0, maximum: 1 }
         improved: { type: boolean }
@@ -3196,6 +3200,88 @@ components:
           description: Per-track orchestration intent indexed by track id.
           additionalProperties:
             $ref: "#/components/schemas/TrackDirective"
+    ArrangementHierarchyScope:
+      type: object
+      required: [level, id]
+      properties:
+        level: { type: string, enum: [song, section, phrase, bar, event] }
+        id: { type: string }
+    ArrangementHierarchy:
+      type: object
+      required: [version, status, reason, precedence, song, sections, phrases, bars, events]
+      properties:
+        version: { type: string, const: "1.0" }
+        status: { type: string, enum: [applied, no_op] }
+        reason: { type: [string, "null"] }
+        precedence:
+          type: array
+          prefixItems:
+            - { type: string, const: song }
+            - { type: string, const: section }
+            - { type: string, const: phrase }
+            - { type: string, const: bar }
+            - { type: string, const: event }
+          minItems: 5
+          maxItems: 5
+        song:
+          type: object
+          required: [id, intent, climaxSectionId]
+          properties:
+            id: { type: string }
+            intent: { type: string, enum: [development_arc, preserve_observed_form] }
+            climaxSectionId: { type: [string, "null"] }
+        sections:
+          type: array
+          items:
+            type: object
+            required: [id, sourceSection, startBar, endBar, function, development, targetEnergy, targetDensity, phraseIds, barIds]
+            properties:
+              id: { type: string }
+              sourceSection: { type: string }
+              startBar: { type: number, minimum: 1 }
+              endBar: { type: number, minimum: 1 }
+              function: { type: string, enum: [intro, verse, prechorus, chorus, bridge, outro, neutral] }
+              development: { type: string, enum: [initial, development, reprise, neutral] }
+              targetEnergy: { type: number, minimum: 0, maximum: 1 }
+              targetDensity: { type: number, minimum: 0, maximum: 1 }
+              phraseIds: { type: array, items: { type: string } }
+              barIds: { type: array, items: { type: string } }
+        phrases:
+          type: array
+          items:
+            type: object
+            required: [id, sectionId, startBar, endBar, confidence, intent]
+            properties:
+              id: { type: string }
+              sectionId: { type: string }
+              startBar: { type: number, minimum: 1 }
+              endBar: { type: number, minimum: 1 }
+              confidence: { type: number, minimum: 0, maximum: 1 }
+              intent: { type: string, const: protect_vocal_phrase }
+        bars:
+          type: array
+          items:
+            type: object
+            required: [id, sectionId, bar, meter, phraseIds, vocalSpace]
+            properties:
+              id: { type: string }
+              sectionId: { type: string }
+              bar: { type: number, minimum: 1 }
+              meter: { type: string }
+              phraseIds: { type: array, items: { type: string } }
+              vocalSpace: { type: string, enum: [occupied, available, unknown] }
+        events:
+          type: array
+          items:
+            type: object
+            required: [id, sectionId, barId, trackId, intent, source]
+            properties:
+              id: { type: string }
+              sectionId: { type: string }
+              barId: { type: string }
+              trackId: { type: string }
+              intent: { type: string, enum: [support_vocal, use_vocal_space, follow_section] }
+              source: { type: string, enum: [section, vocal_phrase, vocal_space] }
     OrchestrationCue:
       type: object
       properties:
@@ -3263,7 +3349,7 @@ components:
           additionalProperties: { type: number }
     ArrangementPlan:
       type: object
-      required: [id, version, sections, style, songModelVersion, parameters, provenance]
+      required: [id, version, sections, style, songModelVersion, parameters, provenance, hierarchy]
       properties:
         id: { type: string }
         version: { type: number }
@@ -3272,3 +3358,4 @@ components:
         songModelVersion: { type: number }
         parameters: { type: object }
         provenance: { $ref: "#/components/schemas/ArtifactProvenance" }
+        hierarchy: { $ref: "#/components/schemas/ArrangementHierarchy" }

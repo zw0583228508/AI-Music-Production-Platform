@@ -885,6 +885,10 @@ export const GetProjectResponse = zod.object({
 }),
   "musicalReason": zod.string(),
   "outsideScopePreserved": zod.boolean(),
+  "changedScopes": zod.array(zod.object({
+  "level": zod.enum(['song', 'section', 'phrase', 'bar', 'event']),
+  "id": zod.string()
+})),
   "sourceQualityScore": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax),
   "repairedQualityScore": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax).nullable(),
   "improved": zod.boolean()
@@ -3806,6 +3810,10 @@ export const ListArrangementsResponseItem = zod.object({
 }),
   "musicalReason": zod.string(),
   "outsideScopePreserved": zod.boolean(),
+  "changedScopes": zod.array(zod.object({
+  "level": zod.enum(['song', 'section', 'phrase', 'bar', 'event']),
+  "id": zod.string()
+})),
   "sourceQualityScore": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax),
   "repairedQualityScore": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax).nullable(),
   "improved": zod.boolean()
@@ -4145,6 +4153,10 @@ export const CreateArrangementResponse = zod.object({
 }),
   "musicalReason": zod.string(),
   "outsideScopePreserved": zod.boolean(),
+  "changedScopes": zod.array(zod.object({
+  "level": zod.enum(['song', 'section', 'phrase', 'bar', 'event']),
+  "id": zod.string()
+})),
   "sourceQualityScore": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin).max(createArrangementResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax),
   "repairedQualityScore": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin).max(createArrangementResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax).nullable(),
   "improved": zod.boolean()
@@ -4580,6 +4592,10 @@ export const UpdateArrangementResponse = zod.object({
 }),
   "musicalReason": zod.string(),
   "outsideScopePreserved": zod.boolean(),
+  "changedScopes": zod.array(zod.object({
+  "level": zod.enum(['song', 'section', 'phrase', 'bar', 'event']),
+  "id": zod.string()
+})),
   "sourceQualityScore": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax),
   "repairedQualityScore": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax).nullable(),
   "improved": zod.boolean()
@@ -5040,6 +5056,10 @@ export const RestoreArrangementRevisionResponse = zod.object({
 }),
   "musicalReason": zod.string(),
   "outsideScopePreserved": zod.boolean(),
+  "changedScopes": zod.array(zod.object({
+  "level": zod.enum(['song', 'section', 'phrase', 'bar', 'event']),
+  "id": zod.string()
+})),
   "sourceQualityScore": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax),
   "repairedQualityScore": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax).nullable(),
   "improved": zod.boolean()
@@ -5919,6 +5939,10 @@ export const ListGenerationCandidatesResponseItem = zod.object({
 }),
   "musicalReason": zod.string(),
   "outsideScopePreserved": zod.boolean(),
+  "changedScopes": zod.array(zod.object({
+  "level": zod.enum(['song', 'section', 'phrase', 'bar', 'event']),
+  "id": zod.string()
+})),
   "sourceQualityScore": zod.number().min(listGenerationCandidatesResponseEvaluationRepairSourceQualityScoreMin).max(listGenerationCandidatesResponseEvaluationRepairSourceQualityScoreMax),
   "repairedQualityScore": zod.number().min(listGenerationCandidatesResponseEvaluationRepairRepairedQualityScoreMin).max(listGenerationCandidatesResponseEvaluationRepairRepairedQualityScoreMax).nullable(),
   "improved": zod.boolean()
@@ -6245,6 +6269,10 @@ export const SelectGenerationCandidateResponse = zod.object({
 }),
   "musicalReason": zod.string(),
   "outsideScopePreserved": zod.boolean(),
+  "changedScopes": zod.array(zod.object({
+  "level": zod.enum(['song', 'section', 'phrase', 'bar', 'event']),
+  "id": zod.string()
+})),
   "sourceQualityScore": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax),
   "repairedQualityScore": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax).nullable(),
   "improved": zod.boolean()
