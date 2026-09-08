@@ -217,6 +217,38 @@ test("an unreadable host PID limit fails before focused work with a bounded diag
   }
 });
 
+test("a missing host PID limit fails before focused work with a bounded diagnostic", async () => {
+  const overrideDirectory = await mkdtemp(
+    join(tmpdir(), "focused-api-pid-limit."),
+  );
+  const missingOverridePath = join(overrideDirectory, "missing-pid-max");
+  try {
+    const result = await runFocusedTest("test:validation", {
+      ...process.env,
+      FOCUSED_API_TEST_INJECT_REUSED_PID_TARGET: "1",
+      FOCUSED_API_TEST_PID_MAX_OVERRIDE_FILE: missingOverridePath,
+    });
+
+    assert.equal(result.code, 1);
+    assert.match(
+      result.stderr,
+      /focused API runner could not read host kernel setting \/proc\/sys\/kernel\/pid_max: ENOENT/u,
+    );
+    assert.doesNotMatch(
+      result.stderr,
+      new RegExp(missingOverridePath.replaceAll("/", "\\/")),
+      "diagnostic exposed the missing test input path",
+    );
+    assert.doesNotMatch(
+      result.stdout,
+      /\besbuild\b|TAP version/u,
+      "missing host PID limit reached bundling or focused tests",
+    );
+  } finally {
+    await rm(overrideDirectory, { recursive: true, force: true });
+  }
+});
+
 test("a malformed host PID limit fails before focused work without echoing its contents", async () => {
   const overrideDirectory = await mkdtemp(
     join(tmpdir(), "focused-api-pid-limit."),
