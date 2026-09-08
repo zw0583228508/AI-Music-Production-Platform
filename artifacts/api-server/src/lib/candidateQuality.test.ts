@@ -114,3 +114,119 @@ test("critic returns separate non-overlapping findings in one dimension", () => 
     findings.every((other, otherIndex) =>
       index === otherIndex || finding.endBar < other.startBar || other.endBar < finding.startBar)));
 });
+
+test("critic localizes findings on both sides of a tempo change", () => {
+  const tempoPlan = {
+    ...plan,
+    sections: [
+      { ...plan.sections[0], section: "before", startBar: 1, endBar: 2 },
+      { ...plan.sections[1], section: "after", startBar: 3, endBar: 4 },
+    ],
+  } as ArrangementPlan;
+  const timedTrack = (
+    id: string,
+    instrument: string,
+    notes: TrackModel["notes"],
+  ): TrackModel => ({
+    ...track(id, instrument, 48),
+    notes,
+  });
+  const songModel = {
+    tempoMap: [
+      { time: 0, bpm: 60, confidence: 1 },
+      { time: 8, bpm: 120, confidence: 1 },
+    ],
+    meterMap: [{ bar: 1, meter: "4/4", confidence: 1 }],
+  } as unknown as SongModelData;
+
+  const before = evaluateCandidateMusicalFit({
+    songModel,
+    plan: tempoPlan,
+    tracks: [
+      timedTrack("piano", "piano", [
+        { id: "piano-before", start: 4.25, duration: 0.5, pitch: 60, velocity: 80 },
+      ]),
+      timedTrack("bass", "bass", [
+        { id: "bass-before", start: 4.25, duration: 0.5, pitch: 61, velocity: 80 },
+      ]),
+    ],
+    harmonyDecisions: [],
+  });
+  const after = evaluateCandidateMusicalFit({
+    songModel,
+    plan: tempoPlan,
+    tracks: [
+      timedTrack("piano", "piano", [
+        { id: "piano-after", start: 8.25, duration: 0.5, pitch: 60, velocity: 80 },
+      ]),
+      timedTrack("bass", "bass", [
+        { id: "bass-after", start: 8.25, duration: 0.5, pitch: 61, velocity: 80 },
+      ]),
+    ],
+    harmonyDecisions: [],
+  });
+
+  assert.deepEqual(before.dimensions.registerCollisions.findings[0]?.affectedSections, ["before"]);
+  assert.equal(before.dimensions.registerCollisions.findings[0]?.startBar, 2);
+  assert.deepEqual(after.dimensions.registerCollisions.findings[0]?.affectedSections, ["after"]);
+  assert.equal(after.dimensions.registerCollisions.findings[0]?.startBar, 3);
+});
+
+test("critic keeps 6/8 harmony findings inclusive, section-bounded, and track-scoped", () => {
+  const meterPlan = {
+    ...plan,
+    sections: [
+      { ...plan.sections[0], section: "verse", startBar: 1, endBar: 4 },
+      {
+        ...plan.sections[1],
+        section: "bridge",
+        startBar: 5,
+        endBar: 6,
+        tracks: { piano: "harmony" },
+        activeTracks: ["piano"],
+      },
+      {
+        ...plan.sections[1],
+        section: "",
+        startBar: 7,
+        endBar: 8,
+        tracks: { bass: "bass" },
+        activeTracks: ["bass"],
+      },
+    ],
+  } as ArrangementPlan;
+  const report = evaluateCandidateMusicalFit({
+    songModel: {
+      tempoMap: [
+        { time: 0, bpm: 60, confidence: 1 },
+        { time: 8, bpm: 120, confidence: 1 },
+      ],
+      meterMap: [
+        { bar: 1, meter: "4/4", confidence: 1 },
+        { bar: 5, meter: "6/8", confidence: 1 },
+      ],
+    } as unknown as SongModelData,
+    plan: meterPlan,
+    tracks: [
+      track("piano", "piano", 48),
+      track("bass", "bass", 36),
+      track("drums", "drums", 40),
+    ],
+    harmonyDecisions: [{
+      start: 12.25,
+      end: 15.25,
+      symbol: "Dm",
+      source: "deterministic_candidate_scoring",
+      melodyFit: 0.2,
+      bassFit: 0.3,
+    }],
+  });
+
+  const [finding] = report.dimensions.harmony.findings;
+  assert.ok(finding);
+  assert.deepEqual(finding.affectedSections, ["bridge"]);
+  assert.equal(finding.startBar, 5);
+  assert.equal(finding.endBar, 6);
+  assert.deepEqual(finding.affectedTrackIds, ["piano"]);
+  assert.doesNotMatch(finding.id, /::/);
+});
