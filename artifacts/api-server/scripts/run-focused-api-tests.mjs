@@ -265,6 +265,26 @@ async function main() {
         termination,
       ]);
     }
+    if (
+      process.env.FOCUSED_API_TEST_INJECT_FAILURE ===
+      "ignore-sigterm-during-esbuild"
+    ) {
+      const resistantBundler = join(bundleDirectory, "resistant-bundler.mjs");
+      await writeFile(
+        resistantBundler,
+        'import { writeFileSync } from "node:fs";\nprocess.on("SIGTERM", () => {});\nwriteFileSync(process.env.FOCUSED_API_TEST_HANDSHAKE_FILE, process.env.FOCUSED_API_TEST_RUNNER_PID + "," + process.pid);\nawait new Promise(() => {});\n',
+      );
+      const bundlerEnvironment = {
+        ...process.env,
+        FOCUSED_API_TEST_RUNNER_PID: String(process.pid),
+      };
+      await Promise.race([
+        run(process.execPath, [resistantBundler], {
+          env: bundlerEnvironment,
+        }),
+        termination,
+      ]);
+    }
 
     const bundledTests = [];
     for (const [bundleIndex, [entry, output, extraArguments = []]] of
