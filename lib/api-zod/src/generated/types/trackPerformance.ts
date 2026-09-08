@@ -17,4 +17,6 @@ export interface TrackPerformance {
   notes: MidiNote[];
   expression: ExpressionEvent[];
   articulations: ArticulationEvent[];
+  /** @pattern ^[a-f0-9]{64}$ */
+  performedMaterialSha256?: string;
 }

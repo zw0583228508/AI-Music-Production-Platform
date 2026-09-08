@@ -623,6 +623,61 @@ export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluation
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin = 0;
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax = 1;
 
+export const getProjectResponseTracksItemPerformancePerformedMaterialSha256RegExp = new RegExp('^[a-f0-9]{64}$');
+export const getProjectResponseTracksItemTrackModelDirectiveRhythmicActivityMin = 0;
+export const getProjectResponseTracksItemTrackModelDirectiveRhythmicActivityMax = 1;
+
+export const getProjectResponseTracksItemTrackModelDirectiveHarmonicActivityMin = 0;
+export const getProjectResponseTracksItemTrackModelDirectiveHarmonicActivityMax = 1;
+
+export const getProjectResponseTracksItemTrackModelDirectiveDynamicTargetMin = 0;
+export const getProjectResponseTracksItemTrackModelDirectiveDynamicTargetMax = 1;
+
+export const getProjectResponseTracksItemTrackModelDirectiveEntryBarMin = 0;
+
+export const getProjectResponseTracksItemTrackModelDirectiveEntryBeatMin = 0;
+
+export const getProjectResponseTracksItemTrackModelDirectiveEntryDurationBeatsExclusiveMin = 0;
+
+export const getProjectResponseTracksItemTrackModelDirectiveExitBarMin = 0;
+
+export const getProjectResponseTracksItemTrackModelDirectiveExitBeatMin = 0;
+
+export const getProjectResponseTracksItemTrackModelDirectiveExitDurationBeatsExclusiveMin = 0;
+
+
+export const getProjectResponseTracksItemTrackModelAppliedDirectivesItemStartMin = 0;
+
+export const getProjectResponseTracksItemTrackModelAppliedDirectivesItemEndMin = 0;
+
+export const getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveRhythmicActivityMin = 0;
+export const getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveRhythmicActivityMax = 1;
+
+export const getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveHarmonicActivityMin = 0;
+export const getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveHarmonicActivityMax = 1;
+
+export const getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveDynamicTargetMin = 0;
+export const getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveDynamicTargetMax = 1;
+
+export const getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveEntryBarMin = 0;
+
+export const getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveEntryBeatMin = 0;
+
+export const getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveEntryDurationBeatsExclusiveMin = 0;
+
+export const getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveExitBarMin = 0;
+
+export const getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveExitBeatMin = 0;
+
+export const getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveExitDurationBeatsExclusiveMin = 0;
+
+export const getProjectResponseTracksItemTrackModelMappingMidiChannelMax = 16;
+
+export const getProjectResponseTracksItemTrackModelMappingProgramMin = 0;
+export const getProjectResponseTracksItemTrackModelMappingProgramMax = 127;
+
+export const getProjectResponseTracksItemTrackModelPerformanceEvidenceCanonicalTimelineSha256RegExp = new RegExp('^[a-f0-9]{64}$');
+export const getProjectResponseTracksItemTrackModelPerformanceEvidencePerformedMaterialSha256RegExp = new RegExp('^[a-f0-9]{64}$');
 
 export const GetProjectResponse = zod.object({
   "project": zod.object({
@@ -1003,8 +1058,229 @@ export const GetProjectResponse = zod.object({
   "tick": zod.number(),
   "type": zod.string(),
   "keyswitch": zod.number()
-}))
+})),
+  "performedMaterialSha256": zod.string().regex(getProjectResponseTracksItemPerformancePerformedMaterialSha256RegExp).optional()
+}),
+  "instrumentDefinition": zod.object({
+  "id": zod.string(),
+  "family": zod.enum(['keys', 'strings', 'brass', 'drums', 'guitar', 'voice', 'synth']),
+  "playableRange": zod.object({
+  "min": zod.number(),
+  "max": zod.number()
+}),
+  "comfortableRange": zod.object({
+  "min": zod.number(),
+  "max": zod.number()
+}),
+  "registers": zod.array(zod.object({
+  "name": zod.string(),
+  "min": zod.number(),
+  "max": zod.number(),
+  "character": zod.string()
+})),
+  "polyphonic": zod.boolean(),
+  "maxVoices": zod.number(),
+  "articulations": zod.array(zod.string()),
+  "constraints": zod.object({
+  "maxLeap": zod.number(),
+  "minNoteDuration": zod.number(),
+  "maxSimultaneousNotes": zod.number(),
+  "breathSeconds": zod.number().optional(),
+  "strings": zod.number().optional(),
+  "frets": zod.number().optional(),
+  "hands": zod.number().optional(),
+  "feet": zod.number().optional()
+}),
+  "controls": zod.object({
+  "dynamics": zod.array(zod.number()),
+  "expression": zod.array(zod.number()),
+  "sustain": zod.number().optional(),
+  "pitchBend": zod.boolean(),
+  "aftertouch": zod.boolean()
+}),
+  "directiveMappings": zod.object({
+  "registers": zod.record(zod.string(), zod.object({
+  "min": zod.number(),
+  "max": zod.number()
+})).optional(),
+  "articulationFamilies": zod.record(zod.string(), zod.array(zod.string())).optional(),
+  "dynamicTargets": zod.record(zod.string(), zod.number()).optional(),
+  "controls": zod.record(zod.string(), zod.number()).optional()
+}).optional()
+}).optional(),
+  "trackModel": zod.object({
+  "id": zod.string(),
+  "instrument": zod.string(),
+  "instrumentDefinition": zod.object({
+  "id": zod.string(),
+  "family": zod.enum(['keys', 'strings', 'brass', 'drums', 'guitar', 'voice', 'synth']),
+  "playableRange": zod.object({
+  "min": zod.number(),
+  "max": zod.number()
+}),
+  "comfortableRange": zod.object({
+  "min": zod.number(),
+  "max": zod.number()
+}),
+  "registers": zod.array(zod.object({
+  "name": zod.string(),
+  "min": zod.number(),
+  "max": zod.number(),
+  "character": zod.string()
+})),
+  "polyphonic": zod.boolean(),
+  "maxVoices": zod.number(),
+  "articulations": zod.array(zod.string()),
+  "constraints": zod.object({
+  "maxLeap": zod.number(),
+  "minNoteDuration": zod.number(),
+  "maxSimultaneousNotes": zod.number(),
+  "breathSeconds": zod.number().optional(),
+  "strings": zod.number().optional(),
+  "frets": zod.number().optional(),
+  "hands": zod.number().optional(),
+  "feet": zod.number().optional()
+}),
+  "controls": zod.object({
+  "dynamics": zod.array(zod.number()),
+  "expression": zod.array(zod.number()),
+  "sustain": zod.number().optional(),
+  "pitchBend": zod.boolean(),
+  "aftertouch": zod.boolean()
+}),
+  "directiveMappings": zod.object({
+  "registers": zod.record(zod.string(), zod.object({
+  "min": zod.number(),
+  "max": zod.number()
+})).optional(),
+  "articulationFamilies": zod.record(zod.string(), zod.array(zod.string())).optional(),
+  "dynamicTargets": zod.record(zod.string(), zod.number()).optional(),
+  "controls": zod.record(zod.string(), zod.number()).optional()
+}).optional()
+}),
+  "role": zod.string(),
+  "notes": zod.array(zod.object({
+  "id": zod.string(),
+  "start": zod.number(),
+  "duration": zod.number(),
+  "pitch": zod.number(),
+  "velocity": zod.number(),
+  "channel": zod.number().optional(),
+  "voice": zod.string().optional()
+})),
+  "cc": zod.array(zod.object({
+  "controller": zod.number(),
+  "time": zod.number(),
+  "value": zod.number(),
+  "channel": zod.number().optional()
+})),
+  "articulations": zod.array(zod.object({
+  "tick": zod.number(),
+  "type": zod.string(),
+  "keyswitch": zod.number()
+})),
+  "automation": zod.array(zod.object({
+  "parameter": zod.string(),
+  "time": zod.number(),
+  "value": zod.number()
+})),
+  "source": zod.string(),
+  "version": zod.number(),
+  "provenance": zod.object({
+  "model": zod.string(),
+  "version": zod.string(),
+  "parameters": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()])),
+  "parentIds": zod.array(zod.string()),
+  "createdBy": zod.string()
+}),
+  "directive": zod.object({
+  "role": zod.string().optional(),
+  "register": zod.string().optional(),
+  "rhythmicActivity": zod.number().min(getProjectResponseTracksItemTrackModelDirectiveRhythmicActivityMin).max(getProjectResponseTracksItemTrackModelDirectiveRhythmicActivityMax).optional(),
+  "harmonicActivity": zod.number().min(getProjectResponseTracksItemTrackModelDirectiveHarmonicActivityMin).max(getProjectResponseTracksItemTrackModelDirectiveHarmonicActivityMax).optional(),
+  "dynamicTarget": zod.number().min(getProjectResponseTracksItemTrackModelDirectiveDynamicTargetMin).max(getProjectResponseTracksItemTrackModelDirectiveDynamicTargetMax).optional(),
+  "articulationFamily": zod.string().optional(),
+  "entry": zod.object({
+  "bar": zod.number().min(getProjectResponseTracksItemTrackModelDirectiveEntryBarMin).optional(),
+  "beat": zod.number().min(getProjectResponseTracksItemTrackModelDirectiveEntryBeatMin).optional(),
+  "mode": zod.string().optional(),
+  "durationBeats": zod.number().gt(getProjectResponseTracksItemTrackModelDirectiveEntryDurationBeatsExclusiveMin).optional()
+}).optional(),
+  "exit": zod.object({
+  "bar": zod.number().min(getProjectResponseTracksItemTrackModelDirectiveExitBarMin).optional(),
+  "beat": zod.number().min(getProjectResponseTracksItemTrackModelDirectiveExitBeatMin).optional(),
+  "mode": zod.string().optional(),
+  "durationBeats": zod.number().gt(getProjectResponseTracksItemTrackModelDirectiveExitDurationBeatsExclusiveMin).optional()
+}).optional(),
+  "transition": zod.string().optional(),
+  "fill": zod.boolean().optional()
+}).optional(),
+  "appliedDirectives": zod.array(zod.object({
+  "section": zod.string(),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "start": zod.number().min(getProjectResponseTracksItemTrackModelAppliedDirectivesItemStartMin),
+  "end": zod.number().min(getProjectResponseTracksItemTrackModelAppliedDirectivesItemEndMin),
+  "directive": zod.object({
+  "role": zod.string().optional(),
+  "register": zod.string().optional(),
+  "rhythmicActivity": zod.number().min(getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveRhythmicActivityMin).max(getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveRhythmicActivityMax).optional(),
+  "harmonicActivity": zod.number().min(getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveHarmonicActivityMin).max(getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveHarmonicActivityMax).optional(),
+  "dynamicTarget": zod.number().min(getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveDynamicTargetMin).max(getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveDynamicTargetMax).optional(),
+  "articulationFamily": zod.string().optional(),
+  "entry": zod.object({
+  "bar": zod.number().min(getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveEntryBarMin).optional(),
+  "beat": zod.number().min(getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveEntryBeatMin).optional(),
+  "mode": zod.string().optional(),
+  "durationBeats": zod.number().gt(getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveEntryDurationBeatsExclusiveMin).optional()
+}).optional(),
+  "exit": zod.object({
+  "bar": zod.number().min(getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveExitBarMin).optional(),
+  "beat": zod.number().min(getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveExitBeatMin).optional(),
+  "mode": zod.string().optional(),
+  "durationBeats": zod.number().gt(getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveExitDurationBeatsExclusiveMin).optional()
+}).optional(),
+  "transition": zod.string().optional(),
+  "fill": zod.boolean().optional()
 })
+})).optional(),
+  "mapping": zod.object({
+  "midiChannel": zod.number().min(1).max(getProjectResponseTracksItemTrackModelMappingMidiChannelMax).optional(),
+  "program": zod.number().min(getProjectResponseTracksItemTrackModelMappingProgramMin).max(getProjectResponseTracksItemTrackModelMappingProgramMax).optional(),
+  "articulationMap": zod.record(zod.string(), zod.union([zod.string(),zod.number()])).optional(),
+  "controlMap": zod.record(zod.string(), zod.number()).optional()
+}).optional(),
+  "performanceEvidence": zod.object({
+  "version": zod.enum(['1.0']),
+  "seed": zod.number(),
+  "instrumentFamily": zod.enum(['keys', 'strings', 'brass', 'drums', 'guitar', 'voice', 'synth']),
+  "articulationProfile": zod.string(),
+  "timingProfile": zod.string(),
+  "dynamicsProfile": zod.string(),
+  "canonicalTimelineSha256": zod.string().regex(getProjectResponseTracksItemTrackModelPerformanceEvidenceCanonicalTimelineSha256RegExp),
+  "phraseIds": zod.array(zod.string()),
+  "sectionRanges": zod.array(zod.object({
+  "section": zod.string(),
+  "startBar": zod.number(),
+  "endBar": zod.number(),
+  "start": zod.number(),
+  "end": zod.number()
+})),
+  "playability": zod.object({
+  "valid": zod.boolean(),
+  "checkedNotes": zod.number(),
+  "violations": zod.array(zod.string())
+}),
+  "performedMaterialSha256": zod.string().regex(getProjectResponseTracksItemTrackModelPerformanceEvidencePerformedMaterialSha256RegExp)
+}).optional()
+}).optional(),
+  "provenance": zod.object({
+  "model": zod.string(),
+  "version": zod.string(),
+  "parameters": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()])),
+  "parentIds": zod.array(zod.string()),
+  "createdBy": zod.string()
+}).optional()
 })),
   "artifacts": zod.array(zod.object({
   "id": zod.string(),
@@ -5747,6 +6023,8 @@ export const listGenerationCandidatesResponseTrackModelsItemMappingMidiChannelMa
 export const listGenerationCandidatesResponseTrackModelsItemMappingProgramMin = 0;
 export const listGenerationCandidatesResponseTrackModelsItemMappingProgramMax = 127;
 
+export const listGenerationCandidatesResponseTrackModelsItemPerformanceEvidenceCanonicalTimelineSha256RegExp = new RegExp('^[a-f0-9]{64}$');
+export const listGenerationCandidatesResponseTrackModelsItemPerformanceEvidencePerformedMaterialSha256RegExp = new RegExp('^[a-f0-9]{64}$');
 export const listGenerationCandidatesResponseHarmonyDecisionsItemStartMin = 0;
 
 export const listGenerationCandidatesResponseHarmonyDecisionsItemEndMin = 0;
@@ -6054,6 +6332,29 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "program": zod.number().min(listGenerationCandidatesResponseTrackModelsItemMappingProgramMin).max(listGenerationCandidatesResponseTrackModelsItemMappingProgramMax).optional(),
   "articulationMap": zod.record(zod.string(), zod.union([zod.string(),zod.number()])).optional(),
   "controlMap": zod.record(zod.string(), zod.number()).optional()
+}).optional(),
+  "performanceEvidence": zod.object({
+  "version": zod.enum(['1.0']),
+  "seed": zod.number(),
+  "instrumentFamily": zod.enum(['keys', 'strings', 'brass', 'drums', 'guitar', 'voice', 'synth']),
+  "articulationProfile": zod.string(),
+  "timingProfile": zod.string(),
+  "dynamicsProfile": zod.string(),
+  "canonicalTimelineSha256": zod.string().regex(listGenerationCandidatesResponseTrackModelsItemPerformanceEvidenceCanonicalTimelineSha256RegExp),
+  "phraseIds": zod.array(zod.string()),
+  "sectionRanges": zod.array(zod.object({
+  "section": zod.string(),
+  "startBar": zod.number(),
+  "endBar": zod.number(),
+  "start": zod.number(),
+  "end": zod.number()
+})),
+  "playability": zod.object({
+  "valid": zod.boolean(),
+  "checkedNotes": zod.number(),
+  "violations": zod.array(zod.string())
+}),
+  "performedMaterialSha256": zod.string().regex(listGenerationCandidatesResponseTrackModelsItemPerformanceEvidencePerformedMaterialSha256RegExp)
 }).optional()
 })).nullable(),
   "harmonyDecisions": zod.array(zod.object({
@@ -6896,6 +7197,63 @@ export const ListTracksParams = zod.object({
   "projectId": zod.coerce.string()
 })
 
+export const listTracksResponsePerformancePerformedMaterialSha256RegExp = new RegExp('^[a-f0-9]{64}$');
+export const listTracksResponseTrackModelDirectiveRhythmicActivityMin = 0;
+export const listTracksResponseTrackModelDirectiveRhythmicActivityMax = 1;
+
+export const listTracksResponseTrackModelDirectiveHarmonicActivityMin = 0;
+export const listTracksResponseTrackModelDirectiveHarmonicActivityMax = 1;
+
+export const listTracksResponseTrackModelDirectiveDynamicTargetMin = 0;
+export const listTracksResponseTrackModelDirectiveDynamicTargetMax = 1;
+
+export const listTracksResponseTrackModelDirectiveEntryBarMin = 0;
+
+export const listTracksResponseTrackModelDirectiveEntryBeatMin = 0;
+
+export const listTracksResponseTrackModelDirectiveEntryDurationBeatsExclusiveMin = 0;
+
+export const listTracksResponseTrackModelDirectiveExitBarMin = 0;
+
+export const listTracksResponseTrackModelDirectiveExitBeatMin = 0;
+
+export const listTracksResponseTrackModelDirectiveExitDurationBeatsExclusiveMin = 0;
+
+
+export const listTracksResponseTrackModelAppliedDirectivesItemStartMin = 0;
+
+export const listTracksResponseTrackModelAppliedDirectivesItemEndMin = 0;
+
+export const listTracksResponseTrackModelAppliedDirectivesItemDirectiveRhythmicActivityMin = 0;
+export const listTracksResponseTrackModelAppliedDirectivesItemDirectiveRhythmicActivityMax = 1;
+
+export const listTracksResponseTrackModelAppliedDirectivesItemDirectiveHarmonicActivityMin = 0;
+export const listTracksResponseTrackModelAppliedDirectivesItemDirectiveHarmonicActivityMax = 1;
+
+export const listTracksResponseTrackModelAppliedDirectivesItemDirectiveDynamicTargetMin = 0;
+export const listTracksResponseTrackModelAppliedDirectivesItemDirectiveDynamicTargetMax = 1;
+
+export const listTracksResponseTrackModelAppliedDirectivesItemDirectiveEntryBarMin = 0;
+
+export const listTracksResponseTrackModelAppliedDirectivesItemDirectiveEntryBeatMin = 0;
+
+export const listTracksResponseTrackModelAppliedDirectivesItemDirectiveEntryDurationBeatsExclusiveMin = 0;
+
+export const listTracksResponseTrackModelAppliedDirectivesItemDirectiveExitBarMin = 0;
+
+export const listTracksResponseTrackModelAppliedDirectivesItemDirectiveExitBeatMin = 0;
+
+export const listTracksResponseTrackModelAppliedDirectivesItemDirectiveExitDurationBeatsExclusiveMin = 0;
+
+export const listTracksResponseTrackModelMappingMidiChannelMax = 16;
+
+export const listTracksResponseTrackModelMappingProgramMin = 0;
+export const listTracksResponseTrackModelMappingProgramMax = 127;
+
+export const listTracksResponseTrackModelPerformanceEvidenceCanonicalTimelineSha256RegExp = new RegExp('^[a-f0-9]{64}$');
+export const listTracksResponseTrackModelPerformanceEvidencePerformedMaterialSha256RegExp = new RegExp('^[a-f0-9]{64}$');
+
+
 export const ListTracksResponseItem = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -6931,8 +7289,229 @@ export const ListTracksResponseItem = zod.object({
   "tick": zod.number(),
   "type": zod.string(),
   "keyswitch": zod.number()
-}))
+})),
+  "performedMaterialSha256": zod.string().regex(listTracksResponsePerformancePerformedMaterialSha256RegExp).optional()
+}),
+  "instrumentDefinition": zod.object({
+  "id": zod.string(),
+  "family": zod.enum(['keys', 'strings', 'brass', 'drums', 'guitar', 'voice', 'synth']),
+  "playableRange": zod.object({
+  "min": zod.number(),
+  "max": zod.number()
+}),
+  "comfortableRange": zod.object({
+  "min": zod.number(),
+  "max": zod.number()
+}),
+  "registers": zod.array(zod.object({
+  "name": zod.string(),
+  "min": zod.number(),
+  "max": zod.number(),
+  "character": zod.string()
+})),
+  "polyphonic": zod.boolean(),
+  "maxVoices": zod.number(),
+  "articulations": zod.array(zod.string()),
+  "constraints": zod.object({
+  "maxLeap": zod.number(),
+  "minNoteDuration": zod.number(),
+  "maxSimultaneousNotes": zod.number(),
+  "breathSeconds": zod.number().optional(),
+  "strings": zod.number().optional(),
+  "frets": zod.number().optional(),
+  "hands": zod.number().optional(),
+  "feet": zod.number().optional()
+}),
+  "controls": zod.object({
+  "dynamics": zod.array(zod.number()),
+  "expression": zod.array(zod.number()),
+  "sustain": zod.number().optional(),
+  "pitchBend": zod.boolean(),
+  "aftertouch": zod.boolean()
+}),
+  "directiveMappings": zod.object({
+  "registers": zod.record(zod.string(), zod.object({
+  "min": zod.number(),
+  "max": zod.number()
+})).optional(),
+  "articulationFamilies": zod.record(zod.string(), zod.array(zod.string())).optional(),
+  "dynamicTargets": zod.record(zod.string(), zod.number()).optional(),
+  "controls": zod.record(zod.string(), zod.number()).optional()
+}).optional()
+}).optional(),
+  "trackModel": zod.object({
+  "id": zod.string(),
+  "instrument": zod.string(),
+  "instrumentDefinition": zod.object({
+  "id": zod.string(),
+  "family": zod.enum(['keys', 'strings', 'brass', 'drums', 'guitar', 'voice', 'synth']),
+  "playableRange": zod.object({
+  "min": zod.number(),
+  "max": zod.number()
+}),
+  "comfortableRange": zod.object({
+  "min": zod.number(),
+  "max": zod.number()
+}),
+  "registers": zod.array(zod.object({
+  "name": zod.string(),
+  "min": zod.number(),
+  "max": zod.number(),
+  "character": zod.string()
+})),
+  "polyphonic": zod.boolean(),
+  "maxVoices": zod.number(),
+  "articulations": zod.array(zod.string()),
+  "constraints": zod.object({
+  "maxLeap": zod.number(),
+  "minNoteDuration": zod.number(),
+  "maxSimultaneousNotes": zod.number(),
+  "breathSeconds": zod.number().optional(),
+  "strings": zod.number().optional(),
+  "frets": zod.number().optional(),
+  "hands": zod.number().optional(),
+  "feet": zod.number().optional()
+}),
+  "controls": zod.object({
+  "dynamics": zod.array(zod.number()),
+  "expression": zod.array(zod.number()),
+  "sustain": zod.number().optional(),
+  "pitchBend": zod.boolean(),
+  "aftertouch": zod.boolean()
+}),
+  "directiveMappings": zod.object({
+  "registers": zod.record(zod.string(), zod.object({
+  "min": zod.number(),
+  "max": zod.number()
+})).optional(),
+  "articulationFamilies": zod.record(zod.string(), zod.array(zod.string())).optional(),
+  "dynamicTargets": zod.record(zod.string(), zod.number()).optional(),
+  "controls": zod.record(zod.string(), zod.number()).optional()
+}).optional()
+}),
+  "role": zod.string(),
+  "notes": zod.array(zod.object({
+  "id": zod.string(),
+  "start": zod.number(),
+  "duration": zod.number(),
+  "pitch": zod.number(),
+  "velocity": zod.number(),
+  "channel": zod.number().optional(),
+  "voice": zod.string().optional()
+})),
+  "cc": zod.array(zod.object({
+  "controller": zod.number(),
+  "time": zod.number(),
+  "value": zod.number(),
+  "channel": zod.number().optional()
+})),
+  "articulations": zod.array(zod.object({
+  "tick": zod.number(),
+  "type": zod.string(),
+  "keyswitch": zod.number()
+})),
+  "automation": zod.array(zod.object({
+  "parameter": zod.string(),
+  "time": zod.number(),
+  "value": zod.number()
+})),
+  "source": zod.string(),
+  "version": zod.number(),
+  "provenance": zod.object({
+  "model": zod.string(),
+  "version": zod.string(),
+  "parameters": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()])),
+  "parentIds": zod.array(zod.string()),
+  "createdBy": zod.string()
+}),
+  "directive": zod.object({
+  "role": zod.string().optional(),
+  "register": zod.string().optional(),
+  "rhythmicActivity": zod.number().min(listTracksResponseTrackModelDirectiveRhythmicActivityMin).max(listTracksResponseTrackModelDirectiveRhythmicActivityMax).optional(),
+  "harmonicActivity": zod.number().min(listTracksResponseTrackModelDirectiveHarmonicActivityMin).max(listTracksResponseTrackModelDirectiveHarmonicActivityMax).optional(),
+  "dynamicTarget": zod.number().min(listTracksResponseTrackModelDirectiveDynamicTargetMin).max(listTracksResponseTrackModelDirectiveDynamicTargetMax).optional(),
+  "articulationFamily": zod.string().optional(),
+  "entry": zod.object({
+  "bar": zod.number().min(listTracksResponseTrackModelDirectiveEntryBarMin).optional(),
+  "beat": zod.number().min(listTracksResponseTrackModelDirectiveEntryBeatMin).optional(),
+  "mode": zod.string().optional(),
+  "durationBeats": zod.number().gt(listTracksResponseTrackModelDirectiveEntryDurationBeatsExclusiveMin).optional()
+}).optional(),
+  "exit": zod.object({
+  "bar": zod.number().min(listTracksResponseTrackModelDirectiveExitBarMin).optional(),
+  "beat": zod.number().min(listTracksResponseTrackModelDirectiveExitBeatMin).optional(),
+  "mode": zod.string().optional(),
+  "durationBeats": zod.number().gt(listTracksResponseTrackModelDirectiveExitDurationBeatsExclusiveMin).optional()
+}).optional(),
+  "transition": zod.string().optional(),
+  "fill": zod.boolean().optional()
+}).optional(),
+  "appliedDirectives": zod.array(zod.object({
+  "section": zod.string(),
+  "startBar": zod.number().min(1),
+  "endBar": zod.number().min(1),
+  "start": zod.number().min(listTracksResponseTrackModelAppliedDirectivesItemStartMin),
+  "end": zod.number().min(listTracksResponseTrackModelAppliedDirectivesItemEndMin),
+  "directive": zod.object({
+  "role": zod.string().optional(),
+  "register": zod.string().optional(),
+  "rhythmicActivity": zod.number().min(listTracksResponseTrackModelAppliedDirectivesItemDirectiveRhythmicActivityMin).max(listTracksResponseTrackModelAppliedDirectivesItemDirectiveRhythmicActivityMax).optional(),
+  "harmonicActivity": zod.number().min(listTracksResponseTrackModelAppliedDirectivesItemDirectiveHarmonicActivityMin).max(listTracksResponseTrackModelAppliedDirectivesItemDirectiveHarmonicActivityMax).optional(),
+  "dynamicTarget": zod.number().min(listTracksResponseTrackModelAppliedDirectivesItemDirectiveDynamicTargetMin).max(listTracksResponseTrackModelAppliedDirectivesItemDirectiveDynamicTargetMax).optional(),
+  "articulationFamily": zod.string().optional(),
+  "entry": zod.object({
+  "bar": zod.number().min(listTracksResponseTrackModelAppliedDirectivesItemDirectiveEntryBarMin).optional(),
+  "beat": zod.number().min(listTracksResponseTrackModelAppliedDirectivesItemDirectiveEntryBeatMin).optional(),
+  "mode": zod.string().optional(),
+  "durationBeats": zod.number().gt(listTracksResponseTrackModelAppliedDirectivesItemDirectiveEntryDurationBeatsExclusiveMin).optional()
+}).optional(),
+  "exit": zod.object({
+  "bar": zod.number().min(listTracksResponseTrackModelAppliedDirectivesItemDirectiveExitBarMin).optional(),
+  "beat": zod.number().min(listTracksResponseTrackModelAppliedDirectivesItemDirectiveExitBeatMin).optional(),
+  "mode": zod.string().optional(),
+  "durationBeats": zod.number().gt(listTracksResponseTrackModelAppliedDirectivesItemDirectiveExitDurationBeatsExclusiveMin).optional()
+}).optional(),
+  "transition": zod.string().optional(),
+  "fill": zod.boolean().optional()
 })
+})).optional(),
+  "mapping": zod.object({
+  "midiChannel": zod.number().min(1).max(listTracksResponseTrackModelMappingMidiChannelMax).optional(),
+  "program": zod.number().min(listTracksResponseTrackModelMappingProgramMin).max(listTracksResponseTrackModelMappingProgramMax).optional(),
+  "articulationMap": zod.record(zod.string(), zod.union([zod.string(),zod.number()])).optional(),
+  "controlMap": zod.record(zod.string(), zod.number()).optional()
+}).optional(),
+  "performanceEvidence": zod.object({
+  "version": zod.enum(['1.0']),
+  "seed": zod.number(),
+  "instrumentFamily": zod.enum(['keys', 'strings', 'brass', 'drums', 'guitar', 'voice', 'synth']),
+  "articulationProfile": zod.string(),
+  "timingProfile": zod.string(),
+  "dynamicsProfile": zod.string(),
+  "canonicalTimelineSha256": zod.string().regex(listTracksResponseTrackModelPerformanceEvidenceCanonicalTimelineSha256RegExp),
+  "phraseIds": zod.array(zod.string()),
+  "sectionRanges": zod.array(zod.object({
+  "section": zod.string(),
+  "startBar": zod.number(),
+  "endBar": zod.number(),
+  "start": zod.number(),
+  "end": zod.number()
+})),
+  "playability": zod.object({
+  "valid": zod.boolean(),
+  "checkedNotes": zod.number(),
+  "violations": zod.array(zod.string())
+}),
+  "performedMaterialSha256": zod.string().regex(listTracksResponseTrackModelPerformanceEvidencePerformedMaterialSha256RegExp)
+}).optional()
+}).optional(),
+  "provenance": zod.object({
+  "model": zod.string(),
+  "version": zod.string(),
+  "parameters": zod.record(zod.string(), zod.union([zod.string(),zod.number(),zod.boolean()])),
+  "parentIds": zod.array(zod.string()),
+  "createdBy": zod.string()
+}).optional()
 })
 export const ListTracksResponse = zod.array(ListTracksResponseItem)
 

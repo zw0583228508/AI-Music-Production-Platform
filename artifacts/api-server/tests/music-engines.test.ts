@@ -7,6 +7,7 @@ import {
   createArrangementPlan,
   createStyleSpec,
   ensureArrangementPlanHierarchy,
+  getInstrumentPerformanceCapability,
   getInstrumentDefinition,
   HarmonyEngine,
 } from "../src/lib/musicEngines";
@@ -574,6 +575,32 @@ test("performance remains byte/event stable and every generated pitch is playabl
     assert.ok(track.notes.every((note) => note.pitch >= range.min && note.pitch <= range.max));
     assert.ok(track.cc.length > 0);
     assert.equal(track.notes.length, track.articulations.length);
+    assert.equal(track.performanceEvidence?.playability.valid, true);
+    assert.equal(track.performanceEvidence?.playability.checkedNotes, track.notes.length);
+    assert.match(track.performanceEvidence?.performedMaterialSha256 ?? "", /^[a-f0-9]{64}$/);
+    assert.match(track.performanceEvidence?.canonicalTimelineSha256 ?? "", /^[a-f0-9]{64}$/);
+    assert.ok(Array.isArray(track.performanceEvidence?.sectionRanges));
+  }
+});
+
+test("every supported instrument family declares native performance capabilities", () => {
+  const instruments = [
+    ["Piano", "harmony"],
+    ["Strings", "harmony"],
+    ["Brass", "accent"],
+    ["Drums", "rhythm"],
+    ["Guitar", "harmony"],
+    ["Voice", "vocal"],
+    ["Synth Pad", "pad"],
+  ] as const;
+  for (const [name, role] of instruments) {
+    const definition = getInstrumentDefinition(name, role);
+    const capability = getInstrumentPerformanceCapability(definition);
+    assert.equal(capability.family, definition.family);
+    assert.ok(capability.nativeRenderers.length > 0);
+    assert.ok(capability.articulationProfile);
+    assert.ok(capability.timingProfile);
+    assert.ok(capability.dynamicsProfile);
   }
 });
 

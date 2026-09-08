@@ -11,7 +11,7 @@ const bundlePath = `/tmp/native-renderers-${process.pid}.mjs`;
 await build({
   stdin: {
     contents: `
-      export { PedalboardRenderer } from "./src/lib/musicEngines";
+      export { PedalboardRenderer, SfzRenderer, performedMaterialSha256 } from "./src/lib/musicEngines";
       export { validateNativeRenderSamples } from "./src/lib/exportEngine";
     `,
     resolveDir: apiDirectory,
@@ -26,7 +26,7 @@ await build({
 globalThis.require = __createRequire(import.meta.url);`,
   },
 });
-const { PedalboardRenderer, validateNativeRenderSamples } =
+const { PedalboardRenderer, SfzRenderer, performedMaterialSha256, validateNativeRenderSamples } =
   await import(pathToFileURL(bundlePath).href);
 
 after(async () => {
@@ -80,10 +80,16 @@ const trackModel = {
   id: "native-track",
   instrument: "strings",
   role: "harmony",
+  instrumentDefinition: {
+    family: "strings",
+    playableRange: { min: 55, max: 103 },
+    constraints: { minNoteDuration: 0.1 },
+  },
   notes: [{ id: "n1", start: 0, duration: 0.8, pitch: 60, velocity: 96 }],
   cc: [],
   articulations: [],
   automation: [],
+  mapping: null,
 };
 
 const asset = {
@@ -99,11 +105,13 @@ const asset = {
 function respondHealth(response) {
   response.writeHead(200, { "Content-Type": "application/json" });
   response.end(JSON.stringify({
+    contractVersion: "1.0",
     healthy: true,
     runtimeReady: true,
     smokeTested: true,
     provider: "VST3",
     modelVersion: "pedalboard-0.9.19",
+    runtimeIdentity: "music-ai-worker/python-3.11/pedalboard-0.9.19",
     asset,
     smokeEvidence: {
       assetId: asset.id,
@@ -151,10 +159,15 @@ test("VST3 adapter renders the exact canonical TrackModel with asset attestation
       const audio_base64 = wavBase64(8000, 1);
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify({
+        contractVersion: "1.0",
         provider: "VST3",
         trackModelId: trackModel.id,
         trackModelSha256: sha256(canonicalJson(trackModel)),
         outputSha256: sha256(Buffer.from(audio_base64, "base64")),
+        performedMaterialSha256: performedMaterialSha256(trackModel),
+        sampleRate: 8000,
+        frameCount: 8000,
+        durationSeconds: 1,
         version: "licensed-orchestra",
         asset,
         audio_base64,
@@ -190,9 +203,14 @@ test("renderer refuses audio whose attestation names another TrackModel", async 
     }
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({
+      contractVersion: "1.0",
       provider: "VST3",
       trackModelId: "another-track",
       asset,
+      performedMaterialSha256: performedMaterialSha256(trackModel),
+      sampleRate: 8000,
+      frameCount: 8000,
+      durationSeconds: 1,
       audio_base64: wavBase64(8000, 1),
     }));
   }, async () => {
@@ -212,10 +230,15 @@ test("renderer refuses an output checksum that does not match the returned WAV",
     const audio_base64 = wavBase64(8000, 1);
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({
+      contractVersion: "1.0",
       provider: "VST3",
       trackModelId: trackModel.id,
       trackModelSha256: sha256(canonicalJson(trackModel)),
       outputSha256: "d".repeat(64),
+      performedMaterialSha256: performedMaterialSha256(trackModel),
+      sampleRate: 8000,
+      frameCount: 8000,
+      durationSeconds: 1,
       asset,
       audio_base64,
     }));
@@ -236,10 +259,15 @@ test("renderer refuses a TrackModel checksum that does not match the request", a
     const audio_base64 = wavBase64(8000, 1);
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({
+      contractVersion: "1.0",
       provider: "VST3",
       trackModelId: trackModel.id,
       trackModelSha256: "e".repeat(64),
       outputSha256: sha256(Buffer.from(audio_base64, "base64")),
+      performedMaterialSha256: performedMaterialSha256(trackModel),
+      sampleRate: 8000,
+      frameCount: 8000,
+      durationSeconds: 1,
       asset,
       audio_base64,
     }));

@@ -289,6 +289,7 @@ class ProcessRequest(BaseModel):
 class RenderRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
+    contract_version: Literal["1.0"] = Field(default="1.0", alias="contractVersion")
     provider: Literal["VST3", "SFIZZ_VSCO2_CE"]
     track_model: dict | None = Field(default=None, alias="trackModel")
     sample_rate: int = Field(default=44100, alias="sampleRate", ge=8000, le=192000)
@@ -1045,6 +1046,7 @@ def renderer_health(provider: str) -> dict:
             and marker.get("nativeHostAttested") is True
         )
         return {
+            "contractVersion": "1.0",
             "status": "ok" if smoke_tested else "unhealthy",
             "healthy": smoke_tested,
             "provider": provider,
@@ -1052,6 +1054,7 @@ def renderer_health(provider: str) -> dict:
             "checkpointReady": True,
             "packageReady": True,
             "modelVersion": package_version,
+            "runtimeIdentity": f"music-ai-worker/python-3.11/{package_version}",
             "checksum": asset["sha256"],
             "smokeTested": smoke_tested,
             "asset": {
@@ -1387,6 +1390,7 @@ def analyze(payload: SourceRequest) -> dict:
     notes.sort(key=lambda note: (note["start"], note["end"], note["pitch"]))
     overall = float(np.mean([note["confidence"] for note in notes])) if notes else 0.0
     return {
+        "contractVersion": "1.0",
         "provider": payload.provider,
         "version": MANIFEST["basic_pitch"]["version"],
         "confidence": overall,
@@ -1514,12 +1518,26 @@ def render(payload: RenderRequest) -> dict:
         sort_keys=True,
     ).encode("utf-8")
     return {
+        "contractVersion": "1.0",
         "provider": payload.provider,
         "version": asset["id"],
         "asset": asset,
         "audio_base64": encoded_audio,
         "outputSha256": hashlib.sha256(audio_bytes).hexdigest(),
         "trackModelSha256": hashlib.sha256(track_model_bytes).hexdigest(),
+        "performedMaterialSha256": hashlib.sha256(json.dumps({
+            "id": track["id"],
+            "instrument": track["instrument"],
+            "role": track["role"],
+            "notes": track["notes"],
+            "cc": track["cc"],
+            "articulations": track["articulations"],
+            "automation": track["automation"],
+            "mapping": track.get("mapping"),
+        }, separators=(",", ":"), sort_keys=True).encode("utf-8")).hexdigest(),
+        "sampleRate": payload.sample_rate,
+        "frameCount": int(audio.shape[1]),
+        "durationSeconds": payload.duration_seconds,
         "format": "wav",
         "encoding": "pcm_s16le",
         "trackModelId": track["id"],

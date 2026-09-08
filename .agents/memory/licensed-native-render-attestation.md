@@ -9,6 +9,12 @@ Never treat endpoint configuration, audible audio, or TrackModel-sensitive outpu
 
 **How to apply:** Require matching health/smoke evidence before each native render, reject request/output checksum mismatches and other unattested responses, validate audio quality and lineage, and retain deterministic samples whenever any binding fails. If native audio is transformed locally, preserve separate checksums for the provider-returned audio and the exact exported bytes; never present an intermediate checksum as proof of the downloadable stem.
 
+Production readiness must additionally bind the performed-material digest to the exact canonical tempo, meter, bar, phrase, and section evidence used to create it. Generic local synthesis remains explicitly preview-only.
+
+**Why:** Matching native asset checksums can still certify the wrong musical performance when saved edits or canonical phrase/timeline changes leave stale evidence attached to a TrackModel.
+
+**How to apply:** Recompute performed-material evidence after edits; compare phrase IDs, section ranges, timeline digest, MIDI digest, and native render digest before claiming production readiness. Unsupported mapped timelines must remain preview-only rather than receiving partial certification.
+
 Native-code installation is a separate trust boundary from studio administration. Uploaded hosts and VST3 assets must match preapproved identities and checksums before execute permission, plugin loading, or smoke verification; admin status alone never grants native-code execution.
 
 **Why:** A legitimate studio administrator account can still be compromised, and an upload form that directly executes arbitrary host bytes turns that compromise into worker code execution.

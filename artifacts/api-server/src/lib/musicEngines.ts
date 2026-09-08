@@ -34,14 +34,16 @@ export type RenderedTrack = {
   trackModel: TrackModel;
   samples: Float32Array;
   renderer: "LOCAL_EXPRESSIVE_SYNTH" | "SFIZZ_VSCO2_CE" | "PEDALBOARD_VST3";
-  rendererStatus?: "licensed-native" | "deterministic-fallback";
+  rendererStatus?: "licensed-native" | "preview-only";
   fallbackReason?: string;
   rendererAttestation?: NativeRendererAttestation;
 };
 
 export type NativeRendererAttestation = {
+  contractVersion: "1.0";
   provider: string;
   modelVersion: string;
+  runtimeIdentity: string;
   assetId: string;
   assetIdentity: string;
   assetSha256: string;
@@ -52,7 +54,76 @@ export type NativeRendererAttestation = {
   smokeOutputSha256: string;
   trackModelSha256: string;
   rendererOutputSha256: string;
+  performedMaterialSha256: string;
+  sampleRate: number;
+  frameCount: number;
+  durationSeconds: number;
 };
+
+export type InstrumentPerformanceCapability = {
+  family: InstrumentDefinition["family"];
+  nativeRenderers: Array<"PEDALBOARD_VST3" | "SFIZZ_VSCO2_CE">;
+  articulationProfile: string;
+  timingProfile: string;
+  dynamicsProfile: string;
+};
+
+const PERFORMANCE_CAPABILITIES: Record<InstrumentDefinition["family"], InstrumentPerformanceCapability> = {
+  keys: { family: "keys", nativeRenderers: ["PEDALBOARD_VST3", "SFIZZ_VSCO2_CE"], articulationProfile: "key-attack-and-pedal", timingProfile: "phrase-locked-keyboard", dynamicsProfile: "velocity-and-expression" },
+  strings: { family: "strings", nativeRenderers: ["PEDALBOARD_VST3", "SFIZZ_VSCO2_CE"], articulationProfile: "bowed-and-pizzicato", timingProfile: "phrase-legato", dynamicsProfile: "continuous-bow-expression" },
+  brass: { family: "brass", nativeRenderers: ["PEDALBOARD_VST3", "SFIZZ_VSCO2_CE"], articulationProfile: "breath-and-tongue", timingProfile: "breath-phrase", dynamicsProfile: "breath-expression" },
+  drums: { family: "drums", nativeRenderers: ["PEDALBOARD_VST3", "SFIZZ_VSCO2_CE"], articulationProfile: "kit-limb-articulation", timingProfile: "meter-aware-groove", dynamicsProfile: "accent-and-ghost-note" },
+  guitar: { family: "guitar", nativeRenderers: ["PEDALBOARD_VST3", "SFIZZ_VSCO2_CE"], articulationProfile: "pick-strum-and-fret", timingProfile: "string-aware-phrase", dynamicsProfile: "pick-velocity" },
+  voice: { family: "voice", nativeRenderers: ["PEDALBOARD_VST3", "SFIZZ_VSCO2_CE"], articulationProfile: "source-phrase-preserving", timingProfile: "canonical-source-locked", dynamicsProfile: "phrase-expression" },
+  synth: { family: "synth", nativeRenderers: ["PEDALBOARD_VST3", "SFIZZ_VSCO2_CE"], articulationProfile: "patch-articulation", timingProfile: "phrase-locked-synth", dynamicsProfile: "velocity-expression-aftertouch" },
+};
+
+export function getInstrumentPerformanceCapability(
+  instrument: InstrumentDefinition,
+): InstrumentPerformanceCapability {
+  return PERFORMANCE_CAPABILITIES[instrument.family];
+}
+
+export function performedMaterialSha256(track: TrackModel): string {
+  return createHash("sha256").update(canonicalJson({
+    id: track.id,
+    instrument: track.instrument,
+    role: track.role,
+    notes: track.notes,
+    cc: track.cc,
+    articulations: track.articulations,
+    automation: track.automation,
+    mapping: track.mapping ?? null,
+  })).digest("hex");
+}
+
+export function canonicalPerformanceTimelineSha256(songModel: SongModelData): string {
+  const phrases = songModel.contractVersion === "2.0" &&
+    songModel.vocalIntelligence?.phrases.status === "detected"
+    ? songModel.vocalIntelligence.phrases.events.map((phrase) => ({
+        id: phrase.id,
+        start: phrase.start,
+        end: phrase.end,
+        coordinates: phrase.coordinates ?? null,
+      }))
+    : [];
+  return createHash("sha256").update(canonicalJson({
+    ppq: songModel.timebase?.ppq ?? 480,
+    tempoMap: songModel.tempoMap,
+    meterMap: songModel.meterMap,
+    bars: songModel.bars.map((bar) => bar.coordinates ?? {
+      bar: bar.bar, start: bar.start, end: bar.end,
+    }),
+    phrases,
+  })).digest("hex");
+}
+
+export function canonicalPerformancePhraseIds(songModel: SongModelData): string[] {
+  return songModel.contractVersion === "2.0" &&
+    songModel.vocalIntelligence?.phrases.status === "detected"
+    ? songModel.vocalIntelligence.phrases.events.map((phrase) => phrase.id)
+    : [];
+}
 
 export type LicensedInstrumentSmokeEvidence = {
   assetId: string;
@@ -195,6 +266,13 @@ export type QualityReport = {
   evaluatedAt: string;
   renderArtifactIds: string[];
   lineageComplete: boolean;
+  productionReadiness?: {
+    ready: boolean;
+    status: "production-ready" | "preview-only";
+    reasons: string[];
+    performedMaterialSha256: string;
+    midiAgreementSha256: string;
+  };
 };
 
 export type RenderPipelineResult = {
@@ -1385,6 +1463,10 @@ export class PerformanceEngine {
     style: StyleSpec,
     seed = 0,
     spaceMap?: ArrangementSpaceMap,
+    context?: {
+      canonicalTimelineSha256: string;
+      phraseIds: string[];
+    },
   ): TrackModel {
     const profile: PerformanceProfile = /vocal|voice|melody/i.test(track.role)
       // Section-gated source melody must not be humanized across a hard
@@ -1402,9 +1484,10 @@ export class PerformanceEngine {
     const cc: ControlEvent[] = [];
     const automation: AutomationPoint[] = [];
     track.notes.forEach((note, index) => {
-      const appliedDirective = track.appliedDirectives?.find(
+      const appliedRange = track.appliedDirectives?.find(
         (item) => item.start <= note.start && item.end > note.start,
-      )?.directive ?? track.directive;
+      );
+      const appliedDirective = appliedRange?.directive ?? track.directive;
       const offset = Math.sin((randomSeed % 31 + index * 13) * 0.37) * profile.timing;
       const directiveVelocity = appliedDirective?.dynamicTarget === undefined
         ? 0
@@ -1423,10 +1506,19 @@ export class PerformanceEngine {
         : track.instrumentDefinition.articulations[0] ?? "normal";
       const performed = {
         ...note,
-        start: Math.max(0, round(note.start + offset)),
+        start: Math.max(
+          appliedRange?.start ?? 0,
+          round(note.start + offset),
+        ),
         duration: round(note.duration + (articulation === "legato" ? profile.legatoOverlap : 0)),
         velocity,
       };
+      if (appliedRange) {
+        performed.duration = round(Math.max(
+          track.instrumentDefinition.constraints.minNoteDuration,
+          Math.min(performed.duration, appliedRange.end - performed.start),
+        ));
+      }
       // Timing variation/legato must not reintroduce an intersection that
       // composition deliberately removed. Vocal events are never filtered.
       if (!/vocal|voice|melody/i.test(track.role) &&
@@ -1460,7 +1552,7 @@ export class PerformanceEngine {
       }
     }
     if (track.instrumentDefinition.controls.sustain) cc.push({ controller: 64, time: 0, value: 127 });
-    return {
+    const performedTrack: TrackModel = {
       ...track,
       notes,
       cc,
@@ -1470,13 +1562,52 @@ export class PerformanceEngine {
       version: track.version + 1,
       provenance: provenance("PERFORMANCE_ENGINE", "1.0.0", { seed, timing: profile.timing, humanized: true }, [track.provenance.model]),
     };
+    const capability = getInstrumentPerformanceCapability(track.instrumentDefinition);
+    const violations = performedTrack.notes.flatMap((note) => {
+      const errors: string[] = [];
+      if (note.pitch < track.instrumentDefinition.playableRange.min ||
+        note.pitch > track.instrumentDefinition.playableRange.max) {
+        errors.push(`${note.id}:pitch`);
+      }
+      if (note.duration < track.instrumentDefinition.constraints.minNoteDuration) {
+        errors.push(`${note.id}:duration`);
+      }
+      return errors;
+    });
+    return {
+      ...performedTrack,
+      performanceEvidence: {
+        version: "1.0",
+        seed,
+        instrumentFamily: track.instrumentDefinition.family,
+        articulationProfile: capability.articulationProfile,
+        timingProfile: capability.timingProfile,
+        dynamicsProfile: capability.dynamicsProfile,
+        canonicalTimelineSha256: context?.canonicalTimelineSha256 ??
+          createHash("sha256").update("legacy-timeline").digest("hex"),
+        phraseIds: context?.phraseIds ?? [],
+        sectionRanges: (track.appliedDirectives ?? []).map((item) => ({
+          section: item.section,
+          startBar: item.startBar,
+          endBar: item.endBar,
+          start: item.start,
+          end: item.end,
+        })),
+        playability: {
+          valid: violations.length === 0,
+          checkedNotes: performedTrack.notes.length,
+          violations,
+        },
+        performedMaterialSha256: performedMaterialSha256(performedTrack),
+      },
+    };
   }
 }
 
 export class SoundLibraryRegistry {
   resolve(instrument: InstrumentDefinition): { library: string; vendor: string; patch: string; renderProvider: "LOCAL_EXPRESSIVE_SYNTH"; articulation: string[] } {
     return {
-      library: "Local Expressive Preview",
+      library: "Local Expressive Preview (non-production)",
       vendor: "Replit Workspace",
       patch: instrument.id,
       renderProvider: "LOCAL_EXPRESSIVE_SYNTH",
@@ -1612,9 +1743,11 @@ async function renderRemoteInstrument(input: {
     throw new Error(`${input.provider} health returned HTTP ${healthResponse.status}`);
   }
   const health = await healthResponse.json() as {
+    contractVersion?: string;
     healthy?: boolean;
     provider?: string;
     modelVersion?: string;
+    runtimeIdentity?: string;
     runtimeReady?: boolean;
     smokeTested?: boolean;
     asset?: {
@@ -1641,10 +1774,12 @@ async function renderRemoteInstrument(input: {
   const smoke = health.smokeEvidence;
   if (
     health.healthy !== true ||
+    health.contractVersion !== "1.0" ||
     health.runtimeReady !== true ||
     health.smokeTested !== true ||
     health.provider !== input.provider ||
     !health.modelVersion ||
+    !health.runtimeIdentity ||
     !asset?.id ||
     !asset.identity ||
     !asset.sha256 ||
@@ -1670,6 +1805,7 @@ async function renderRemoteInstrument(input: {
     method: "POST",
     headers,
     body: JSON.stringify({
+      contractVersion: "1.0",
       provider: input.provider,
       trackModel: input.track,
       sampleRate: input.sampleRate,
@@ -1684,10 +1820,15 @@ async function renderRemoteInstrument(input: {
     throw new Error(`${input.provider} renderer returned unattested audio`);
   }
   const payload = await response.json() as {
+    contractVersion?: string;
     provider?: string;
     trackModelId?: string;
     trackModelSha256?: string;
     outputSha256?: string;
+    performedMaterialSha256?: string;
+    sampleRate?: number;
+    frameCount?: number;
+    durationSeconds?: number;
     audio_base64?: string;
     asset?: {
       id?: string;
@@ -1701,8 +1842,13 @@ async function renderRemoteInstrument(input: {
   };
   if (
     payload.provider !== input.provider ||
+    payload.contractVersion !== "1.0" ||
     payload.trackModelId !== input.track.id ||
     payload.trackModelSha256 !== trackModelSha256 ||
+    payload.performedMaterialSha256 !== performedMaterialSha256(input.track) ||
+    payload.sampleRate !== input.sampleRate ||
+    payload.frameCount !== Math.ceil(input.sampleRate * input.durationSeconds) ||
+    payload.durationSeconds !== input.durationSeconds ||
     typeof payload.outputSha256 !== "string" ||
     typeof payload.audio_base64 !== "string" ||
     payload.asset?.id !== asset.id ||
@@ -1726,11 +1872,17 @@ async function renderRemoteInstrument(input: {
   if (payload.outputSha256 !== outputSha256) {
     throw new Error(`${input.provider} renderer output checksum did not match returned audio`);
   }
+  const samples = decodePcm16Wav(audio, input.sampleRate);
+  if (samples.length / 2 !== payload.frameCount) {
+    throw new Error(`${input.provider} renderer frame count did not match returned audio`);
+  }
   return {
-    samples: decodePcm16Wav(audio, input.sampleRate),
+    samples,
     attestation: {
+      contractVersion: "1.0",
       provider: input.provider,
       modelVersion: health.modelVersion,
+      runtimeIdentity: health.runtimeIdentity,
       assetId: asset.id,
       assetIdentity: asset.identity,
       assetSha256: asset.sha256,
@@ -1741,6 +1893,10 @@ async function renderRemoteInstrument(input: {
       smokeOutputSha256: smoke.outputSha256,
       trackModelSha256,
       rendererOutputSha256: outputSha256,
+      performedMaterialSha256: payload.performedMaterialSha256,
+      sampleRate: input.sampleRate,
+      frameCount: payload.frameCount,
+      durationSeconds: input.durationSeconds,
     },
   };
 }
@@ -1989,6 +2145,8 @@ export function buildTrackModels(input: {
   const deterministicSeed = hashSeed(
     `${input.plan.id}:song-model:${input.plan.songModelVersion}:${input.seed ?? 0}`,
   );
+  const canonicalTimelineSha256 = canonicalPerformanceTimelineSha256(input.songModel);
+  const phraseIds = canonicalPerformancePhraseIds(input.songModel);
   return voiced.map((track) =>
     new PerformanceEngine().perform(
       track,
@@ -1998,6 +2156,7 @@ export function buildTrackModels(input: {
         bpm,
         input.songModel.meterMap[0]?.meter,
       )),
+      { canonicalTimelineSha256, phraseIds },
     ));
 }
 
@@ -2171,7 +2330,7 @@ export function applyArrangementEditorChanges(input: {
     }
 
     if (!edited) return trackModel;
-    return {
+    const editedTrack: TrackModel = {
       ...trackModel,
       notes: notes.sort((left, right) => left.start - right.start),
       cc: cc.sort((left, right) => left.time - right.time),
@@ -2184,6 +2343,20 @@ export function applyArrangementEditorChanges(input: {
         { baseTrackModelVersion: trackModel.version },
         trackModel.provenance.parentIds,
       ),
+    };
+    return {
+      ...editedTrack,
+      performanceEvidence: trackModel.performanceEvidence
+        ? {
+            ...trackModel.performanceEvidence,
+            playability: {
+              valid: true,
+              checkedNotes: editedTrack.notes.length,
+              violations: [],
+            },
+            performedMaterialSha256: performedMaterialSha256(editedTrack),
+          }
+        : undefined,
     };
   });
 }
@@ -2239,6 +2412,8 @@ export function renderMusicPipeline(input: {
     return {
       trackModel,
       renderer: provider,
+      rendererStatus: "preview-only" as const,
+      fallbackReason: "Local expressive synthesis is preview-only and cannot support a production-ready claim.",
       samples,
     };
   });

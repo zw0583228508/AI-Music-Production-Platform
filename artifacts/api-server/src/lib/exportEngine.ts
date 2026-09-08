@@ -13,6 +13,10 @@ import {
   PedalboardRenderer,
   QualityEngine,
   SfzRenderer,
+  canonicalPerformanceTimelineSha256,
+  canonicalPerformancePhraseIds,
+  getInstrumentPerformanceCapability,
+  performedMaterialSha256,
   renderMusicPipeline,
   type RenderedTrack,
 } from "./musicEngines";
@@ -46,7 +50,7 @@ export type GeneratedExportFile = {
 export type ExportRendererEvidence = {
   trackName: string;
   role: string;
-  rendererStatus: "licensed-native" | "deterministic-fallback";
+  rendererStatus: "licensed-native" | "preview-only";
   rendererProvider: string;
   rendererProduct?: string;
   nativeHost?: string;
@@ -58,6 +62,10 @@ export type ExportRendererEvidence = {
   trackModelSha256?: string;
   rendererOutputSha256?: string;
   stemOutputSha256?: string;
+  runtimeIdentity?: string;
+  performedMaterialSha256: string;
+  midiAgreementSha256: string;
+  productionReady: boolean;
   fallbackReason?: string;
 };
 
@@ -78,6 +86,10 @@ export function rendererEvidenceTechnicalMetadata(
     ...(evidence.trackModelSha256 ? { trackModelSha256: evidence.trackModelSha256 } : {}),
     ...(evidence.rendererOutputSha256 ? { rendererOutputSha256: evidence.rendererOutputSha256 } : {}),
     ...(evidence.stemOutputSha256 ? { stemOutputSha256: evidence.stemOutputSha256 } : {}),
+    ...(evidence.runtimeIdentity ? { runtimeIdentity: evidence.runtimeIdentity } : {}),
+    performedMaterialSha256: evidence.performedMaterialSha256,
+    midiAgreementSha256: evidence.midiAgreementSha256,
+    productionReady: String(evidence.productionReady),
     ...(evidence.fallbackReason ? { fallbackReason: evidence.fallbackReason } : {}),
   };
 }
@@ -630,13 +642,15 @@ export async function renderArrangementExport(input: {
   const remoteTracks: RenderedTrack[] = await Promise.all(pipeline.tracks.map(async (rendered): Promise<RenderedTrack> => {
       const fallback = (reason: string): RenderedTrack => ({
         ...rendered,
-        rendererStatus: "deterministic-fallback",
+        rendererStatus: "preview-only",
         fallbackReason: reason,
       });
-      const usePedalboard = pedalboardRenderer.isConfigured();
+      const capability = getInstrumentPerformanceCapability(rendered.trackModel.instrumentDefinition);
+      const usePedalboard = pedalboardRenderer.isConfigured() &&
+        capability.nativeRenderers.includes("PEDALBOARD_VST3");
       const useSfizz = !usePedalboard &&
         sfizzRenderer.isConfigured() &&
-        ["strings", "brass"].includes(rendered.trackModel.instrumentDefinition.family);
+        capability.nativeRenderers.includes("SFIZZ_VSCO2_CE");
       if (!usePedalboard && !useSfizz) {
         return fallback(
           nativeRendererConfigured
@@ -700,14 +714,89 @@ export async function renderArrangementExport(input: {
   );
   const nativeTracks = remoteTracks.filter((track) =>
     track.rendererStatus === "licensed-native");
+  const performedMaterialDigests = remoteTracks
+    .map((track) => performedMaterialSha256(track.trackModel));
+  const aggregatePerformedMaterialSha256 = createHash("sha256")
+    .update(JSON.stringify(performedMaterialDigests))
+    .digest("hex");
+  const performanceMidi = createPerformanceMidi(
+    remoteTracks.map((track) => track.trackModel),
+    input.bpm,
+    input.meter,
+    pipeline.durationSeconds,
+  );
+  const midiOutputSha256 = createHash("sha256").update(performanceMidi).digest("hex");
+  const midiAgreementSha256 = createHash("sha256").update(JSON.stringify({
+    performedMaterialSha256: aggregatePerformedMaterialSha256,
+    midiOutputSha256,
+    bpm: input.bpm,
+    meter: input.meter,
+    durationSeconds: pipeline.durationSeconds,
+  })).digest("hex");
+  const readinessReasons = [
+    ...(remoteTracks.length === 0 ? ["No active performed tracks were rendered."] : []),
+    ...(nativeTracks.length !== remoteTracks.length
+      ? ["Every active track must have an attested native instrument render."] : []),
+    ...(!quality.lineageComplete ? ["Render lineage is incomplete."] : []),
+    ...(quality.checks.silence < 0.005 ? ["Rendered audio is silent or effectively empty."] : []),
+    ...(quality.checks.clipping < 0.999 ? ["Rendered audio contains excessive clipping."] : []),
+    ...(quality.checks.notePlayability < 0.98 ? ["Performed notes failed playability validation."] : []),
+    ...(quality.checks.timing < 0.8 ? ["Performed notes are not aligned to the canonical timeline."] : []),
+    ...(quality.checks.sectionCoverage < 1 ? ["Performed material does not cover every active arrangement section."] : []),
+    ...(input.songModel.tempoMap.length > 1 || input.songModel.meterMap.length > 1
+      ? ["Production rendering currently requires one canonical tempo and meter segment; mapped changes remain preview-only."] : []),
+    ...(input.songModel.contractVersion === "2.0" &&
+      input.songModel.vocalIntelligence?.phrases.status === "detected" &&
+      input.songModel.vocalIntelligence.phrases.events.some((phrase) =>
+        !phrase.coordinates ||
+        !Number.isFinite(phrase.coordinates.start.tick) ||
+        !Number.isFinite(phrase.coordinates.end.tick) ||
+        phrase.coordinates.end.tick <= phrase.coordinates.start.tick)
+      ? ["Detected phrases require complete canonical coordinates for production rendering."] : []),
+    ...remoteTracks.flatMap((track) =>
+      track.rendererAttestation?.performedMaterialSha256 === performedMaterialSha256(track.trackModel)
+        ? []
+        : [`${track.trackModel.id} native render does not attest its performed material.`]),
+    ...remoteTracks.flatMap((track) => {
+      const evidence = track.trackModel.performanceEvidence;
+      if (!evidence) return [`${track.trackModel.id} is missing deterministic performance evidence.`];
+      const failures: string[] = [];
+      if (evidence.canonicalTimelineSha256 !== canonicalPerformanceTimelineSha256(input.songModel)) {
+        failures.push(`${track.trackModel.id} performance evidence does not match the canonical timeline.`);
+      }
+      if (JSON.stringify(evidence.phraseIds) !==
+        JSON.stringify(canonicalPerformancePhraseIds(input.songModel))) {
+        failures.push(`${track.trackModel.id} performance evidence does not match canonical phrases.`);
+      }
+      const expectedSectionRanges = (track.trackModel.appliedDirectives ?? []).map((item) => ({
+        section: item.section,
+        startBar: item.startBar,
+        endBar: item.endBar,
+        start: item.start,
+        end: item.end,
+      }));
+      if (JSON.stringify(evidence.sectionRanges) !== JSON.stringify(expectedSectionRanges)) {
+        failures.push(`${track.trackModel.id} performance evidence does not match canonical section ranges.`);
+      }
+      if (evidence.performedMaterialSha256 !== performedMaterialSha256(track.trackModel)) {
+        failures.push(`${track.trackModel.id} performance evidence is stale for the performed material.`);
+      }
+      if (!evidence.playability.valid) {
+        failures.push(`${track.trackModel.id} performance evidence reports playability violations.`);
+      }
+      return failures;
+    }),
+  ];
   const nativeQualityPassed =
-    quality.lineageComplete &&
-    quality.checks.silence >= 0.005 &&
-    quality.checks.clipping >= 0.999 &&
-    quality.checks.notePlayability >= 0.98;
-  if (nativeTracks.length && nativeQualityPassed) {
-    const hasLocalTracks = remoteTracks.some((track) =>
-      track.rendererStatus !== "licensed-native");
+    readinessReasons.length === 0;
+  quality.productionReadiness = {
+    ready: nativeQualityPassed,
+    status: nativeQualityPassed ? "production-ready" : "preview-only",
+    reasons: readinessReasons,
+    performedMaterialSha256: aggregatePerformedMaterialSha256,
+    midiAgreementSha256,
+  };
+  if (nativeQualityPassed) {
     pipeline = {
       ...pipeline,
       tracks: remoteTracks,
@@ -717,7 +806,7 @@ export async function renderArrangementExport(input: {
       quality,
       provenance: [
         ...pipeline.provenance.filter((item) =>
-          item.model !== "LOCAL_EXPRESSIVE_SYNTH" || hasLocalTracks),
+          item.model !== "LOCAL_EXPRESSIVE_SYNTH"),
         ...nativeTracks.map((track) => ({
           model: track.renderer,
           version: "attested-native-asset",
@@ -731,10 +820,12 @@ export async function renderArrangementExport(input: {
             licenseOwner: track.rendererAttestation!.licenseOwner,
             licenseReference: track.rendererAttestation!.licenseReference,
             rendererIdentity: track.rendererAttestation!.rendererIdentity,
+            runtimeIdentity: track.rendererAttestation!.runtimeIdentity,
             rendererSha256: track.rendererAttestation!.rendererSha256,
             smokeOutputSha256: track.rendererAttestation!.smokeOutputSha256,
             trackModelSha256: track.rendererAttestation!.trackModelSha256,
             rendererOutputSha256: track.rendererAttestation!.rendererOutputSha256,
+            performedMaterialSha256: track.rendererAttestation!.performedMaterialSha256,
           },
           parentIds: input.trackModelArtifactIds?.[track.trackModel.id]
             ? [input.trackModelArtifactIds[track.trackModel.id]]
@@ -751,9 +842,9 @@ export async function renderArrangementExport(input: {
           candidate.trackModel.id === track.trackModel.id);
         return {
           ...track,
-          rendererStatus: "deterministic-fallback" as const,
+          rendererStatus: "preview-only" as const,
           fallbackReason: nativeTracks.length
-            ? "The attested native render did not pass export quality gates."
+            ? `Production rendering was blocked: ${readinessReasons.join(" ")}`
             : attemptedTrack?.fallbackReason ??
               "No attested licensed native renderer produced this stem.",
         };
@@ -830,11 +921,15 @@ export async function renderArrangementExport(input: {
         rendererEvidence: {
           trackName: track?.name ?? stem.trackModel.instrument,
           role: track?.role ?? stem.trackModel.role,
-          rendererStatus: stem.rendererStatus ?? "deterministic-fallback",
+          rendererStatus: stem.rendererStatus ?? "preview-only",
           rendererProvider: attestation?.provider ?? stem.renderer,
+          performedMaterialSha256: performedMaterialSha256(stem.trackModel),
+          midiAgreementSha256,
+          productionReady: nativeQualityPassed,
           ...(attestation ? {
             rendererProduct: attestation.assetIdentity,
             nativeHost: attestation.rendererIdentity,
+            runtimeIdentity: attestation.runtimeIdentity,
             licenseOwner: attestation.licenseOwner,
             licenseReference: attestation.licenseReference,
             assetSha256: attestation.assetSha256,
@@ -891,16 +986,14 @@ export async function renderArrangementExport(input: {
       type: "MIDI",
       format: "MIDI",
       contentType: "audio/midi",
-      data: createPerformanceMidi(
-        pipeline.tracks.map((stem) => stem.trackModel),
-        input.bpm,
-        input.meter,
-        pipeline.durationSeconds,
-      ),
+      data: performanceMidi,
       provenance: fileProvenance("PERFORMANCE_ENGINE", "1.0.0", {
         expressiveControls: true,
         humanized: true,
         seed: input.seed ?? 0,
+        performedMaterialSha256: aggregatePerformedMaterialSha256,
+        midiOutputSha256,
+        midiAgreementSha256,
       }, Object.values(input.trackModelArtifactIds ?? {}).length
         ? Object.values(input.trackModelArtifactIds ?? {})
         : input.parentIds),
@@ -931,7 +1024,7 @@ export async function renderArrangementExport(input: {
         parentIds: trackModelParents,
       },
       renderer,
-      rendererStatus: rendererStatus ?? "deterministic-fallback",
+      rendererStatus: rendererStatus ?? "preview-only",
       ...(fallbackReason ? { fallbackReason } : {}),
       ...(rendererAttestation ? {
         rendererAttestation,
@@ -946,6 +1039,7 @@ export async function renderArrangementExport(input: {
       },
     },
     quality: pipeline.quality,
+    productionReadiness: pipeline.quality.productionReadiness,
     provenance: pipeline.provenance.map((item) => {
       const parentIds = item.model === "ARRANGEMENT_DIRECTOR"
         ? planParents

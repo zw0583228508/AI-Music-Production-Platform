@@ -440,6 +440,12 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
            stemCount: renderEvidence.length,
            nativeStemCount,
            fallbackStemCount: renderEvidence.length - nativeStemCount,
+           productionReady: renderEvidence.length > 0 &&
+             renderEvidence.every((evidence) => evidence.productionReady),
+           renderStatus: renderEvidence.length > 0 &&
+             renderEvidence.every((evidence) => evidence.productionReady)
+             ? "production-ready"
+             : "preview-only",
             pedalboardProcessing: pedalboardRequested ? "processed" : "not-requested",
             processingEvidence: JSON.stringify(processingEvidence),
          },
