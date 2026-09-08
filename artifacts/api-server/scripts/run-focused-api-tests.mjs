@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { rmSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -89,7 +89,7 @@ const childReapingTimeoutMs = 3_000;
 
 function killChild(child, signal) {
   try {
-    if (child.spawnargs[1] === "--test") {
+    if (child.focusedIsolatedProcessGroup) {
       process.kill(-child.pid, signal);
     } else {
       child.kill(signal);
@@ -107,36 +107,35 @@ function delay(milliseconds) {
   });
 }
 
-async function listIsolatedChildPids(rootPid) {
+function listIsolatedChildPids(rootPid) {
   const childrenByParent = new Map();
   const pidsInSession = [];
-  const entries = await readdir("/proc", { withFileTypes: true });
-  await Promise.all(
-    entries
-      .filter((entry) => entry.isDirectory() && /^\d+$/u.test(entry.name))
-      .map(async (entry) => {
-        try {
-          const stat = await readFile(`/proc/${entry.name}/stat`, "utf8");
-          const match = stat.match(/^(\d+) \(.*\) \S+ (\d+) \d+ (\d+) /u);
-          if (!match) {
-            return;
-          }
-          const pid = Number(match[1]);
-          const parentPid = Number(match[2]);
-          const sessionId = Number(match[3]);
-          const children = childrenByParent.get(parentPid) ?? [];
-          children.push(pid);
-          childrenByParent.set(parentPid, children);
-          if (sessionId === rootPid) {
-            pidsInSession.push(pid);
-          }
-        } catch (error) {
-          if (error?.code !== "ENOENT" && error?.code !== "ESRCH") {
-            throw error;
-          }
-        }
-      }),
-  );
+  const entries = readdirSync("/proc", { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !/^\d+$/u.test(entry.name)) {
+      continue;
+    }
+    try {
+      const stat = readFileSync(`/proc/${entry.name}/stat`, "utf8");
+      const match = stat.match(/^(\d+) \(.*\) \S+ (\d+) \d+ (\d+) /u);
+      if (!match) {
+        continue;
+      }
+      const pid = Number(match[1]);
+      const parentPid = Number(match[2]);
+      const sessionId = Number(match[3]);
+      const children = childrenByParent.get(parentPid) ?? [];
+      children.push(pid);
+      childrenByParent.set(parentPid, children);
+      if (sessionId === rootPid) {
+        pidsInSession.push(pid);
+      }
+    } catch (error) {
+      if (error?.code !== "ENOENT" && error?.code !== "ESRCH") {
+        throw error;
+      }
+    }
+  }
 
   const descendants = [];
   const pending = [...(childrenByParent.get(rootPid) ?? [])];
@@ -180,9 +179,16 @@ async function waitForProcessesToExit(pids) {
   }
 }
 
+function discoverChildPids(rootPid, knownPids) {
+  for (const pid of listIsolatedChildPids(rootPid)) {
+    knownPids.add(pid);
+  }
+}
+
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: "inherit", ...options });
+    child.focusedIsolatedProcessGroup = options.detached === true;
     activeChild = child;
     child.on("error", reject);
     child.on("close", (code, signal) => {
@@ -223,19 +229,25 @@ async function main() {
     terminationStarted = true;
     const child = activeChild;
     if (child) {
-      const childPids = await listIsolatedChildPids(child.pid);
+      const childPids = new Set();
+      discoverChildPids(child.pid, childPids);
       killChild(child, "SIGTERM");
-      await delay(childTerminationGraceMs);
+      const graceDeadline = Date.now() + childTerminationGraceMs;
+      while (Date.now() < graceDeadline) {
+        await delay(10);
+        discoverChildPids(child.pid, childPids);
+      }
       killChild(child, "SIGKILL");
-      for (const pid of childPids.toReversed()) {
+      discoverChildPids(child.pid, childPids);
+      for (const pid of [...childPids].toReversed()) {
         killProcess(pid, "SIGKILL");
       }
-      await waitForProcessesToExit(childPids);
+      await waitForProcessesToExit([...childPids]);
     }
-    rmSync(bundleDirectory, { recursive: true, force: true });
+    await rm(bundleDirectory, { recursive: true, force: true });
     process.off("SIGINT", handleSigint);
     process.off("SIGTERM", handleSigterm);
-    process.kill(process.pid, signal);
+    process.exit(signal === "SIGINT" ? 130 : 143);
   };
   const handleSigint = () => {
     void handleTermination("SIGINT");
@@ -272,7 +284,7 @@ async function main() {
       const resistantBundler = join(bundleDirectory, "resistant-bundler.mjs");
       await writeFile(
         resistantBundler,
-        'import { writeFileSync } from "node:fs";\nprocess.on("SIGTERM", () => {});\nwriteFileSync(process.env.FOCUSED_API_TEST_HANDSHAKE_FILE, process.env.FOCUSED_API_TEST_RUNNER_PID + "," + process.pid);\nawait new Promise(() => {});\n',
+        'import { writeFileSync } from "node:fs";\nprocess.on("SIGTERM", () => {});\nwriteFileSync(process.env.FOCUSED_API_TEST_HANDSHAKE_FILE, process.env.FOCUSED_API_TEST_RUNNER_PID + "," + process.pid);\nsetInterval(() => {}, 1_000);\n',
       );
       const bundlerEnvironment = {
         ...process.env,
@@ -281,6 +293,7 @@ async function main() {
       await Promise.race([
         run(process.execPath, [resistantBundler], {
           env: bundlerEnvironment,
+          detached: true,
         }),
         termination,
       ]);
@@ -301,6 +314,35 @@ async function main() {
       await writeFile(
         resistantBundler,
         'import { spawn } from "node:child_process";\nimport { writeFileSync } from "node:fs";\nprocess.on("SIGTERM", () => {});\nconst helper = spawn(process.execPath, [process.env.FOCUSED_API_TEST_HELPER_SCRIPT], { stdio: "ignore" });\nhelper.on("spawn", () => { writeFileSync(process.env.FOCUSED_API_TEST_HANDSHAKE_FILE, process.env.FOCUSED_API_TEST_RUNNER_PID + "," + process.pid + "," + helper.pid); });\nawait new Promise(() => {});\n',
+      );
+      const bundlerEnvironment = {
+        ...process.env,
+        FOCUSED_API_TEST_RUNNER_PID: String(process.pid),
+        FOCUSED_API_TEST_HELPER_SCRIPT: resistantHelper,
+      };
+      await Promise.race([
+        run(process.execPath, [resistantBundler], {
+          env: bundlerEnvironment,
+        }),
+        termination,
+      ]);
+    }
+    if (
+      process.env.FOCUSED_API_TEST_INJECT_FAILURE ===
+      "launch-helper-on-sigterm-during-esbuild"
+    ) {
+      const resistantHelper = join(bundleDirectory, "late-resistant-helper.mjs");
+      const resistantBundler = join(
+        bundleDirectory,
+        "resistant-bundler-with-late-helper.mjs",
+      );
+      await writeFile(
+        resistantHelper,
+        'process.on("SIGTERM", () => {});\nawait new Promise(() => {});\n',
+      );
+      await writeFile(
+        resistantBundler,
+        'import { spawn } from "node:child_process";\nimport { writeFileSync } from "node:fs";\nlet launched = false;\nprocess.on("SIGTERM", () => { if (launched) return; launched = true; const helper = spawn(process.execPath, [process.env.FOCUSED_API_TEST_HELPER_SCRIPT], { stdio: "ignore" }); writeFileSync(process.env.FOCUSED_API_TEST_HANDSHAKE_FILE, process.env.FOCUSED_API_TEST_RUNNER_PID + "," + process.pid + "," + helper.pid); });\nwriteFileSync(process.env.FOCUSED_API_TEST_HANDSHAKE_FILE, process.env.FOCUSED_API_TEST_RUNNER_PID + "," + process.pid);\nsetInterval(() => {}, 1_000);\n',
       );
       const bundlerEnvironment = {
         ...process.env,

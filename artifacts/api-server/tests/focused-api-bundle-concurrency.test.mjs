@@ -142,9 +142,6 @@ function interruptFocusedTestDuringAssertions(
     let repeatedSignalTimer;
 
     const interruptWhenAssertionIsActive = () => {
-      if (interrupted) {
-        return;
-      }
       try {
         const marker = readFileSync(handshakePath, "utf8").match(
           /^(\d+),(\d+)(?:,(\d+))?$/u,
@@ -152,10 +149,13 @@ function interruptFocusedTestDuringAssertions(
         if (!marker) {
           return;
         }
-        interrupted = true;
         runnerPid = Number(marker[1]);
         testChildPid = Number(marker[2]);
         helperPid = marker[3] ? Number(marker[3]) : undefined;
+        if (interrupted) {
+          return;
+        }
+        interrupted = true;
         process.kill(runnerPid, "SIGTERM");
         if (repeatSignal) {
           repeatedSignalTimer = setTimeout(() => {
@@ -188,6 +188,19 @@ function interruptFocusedTestDuringAssertions(
     child.on("close", (code, signal) => {
       clearInterval(handshakePoll);
       clearTimeout(repeatedSignalTimer);
+      if (!helperPid) {
+        try {
+          const marker = readFileSync(handshakePath, "utf8").match(
+            /^(\d+),(\d+),(\d+)$/u,
+          );
+          helperPid = marker ? Number(marker[3]) : undefined;
+        } catch (error) {
+          if (error?.code !== "ENOENT") {
+            reject(error);
+            return;
+          }
+        }
+      }
       rmSync(handshakePath, { force: true });
       resolve({
         script,
@@ -1189,6 +1202,71 @@ test(
       leaked,
       [],
       `mixed healthy and helper-backed bundler cancellation left bundle directories behind: ${leaked.join(", ")}`,
+    );
+  },
+);
+
+test(
+  "SIGTERM reaps a helper launched during cancellation without disrupting a healthy focused API check",
+  { timeout: 120_000 },
+  async () => {
+    const before = await listBundleDirectories();
+    const [interrupted, healthy] = await Promise.all([
+      interruptFocusedTestDuringAssertions(
+        "test:validation",
+        {
+          ...process.env,
+          FOCUSED_API_TEST_INJECT_FAILURE:
+            "launch-helper-on-sigterm-during-esbuild",
+        },
+        false,
+        "focused-api-late-bundler-helper",
+      ),
+      runFocusedTest("test:source-ingestion"),
+    ]);
+
+    assert.equal(interrupted.interrupted, true, [
+      `${interrupted.script} never reached its cancellation-race bundling phase`,
+      interrupted.stdout,
+      interrupted.stderr,
+    ].filter(Boolean).join("\n"));
+    assert.equal(interrupted.code, 143, [
+      `${interrupted.script} did not terminate through the intended SIGTERM path`,
+      interrupted.signal ? `signal: ${interrupted.signal}` : "",
+      interrupted.stdout,
+      interrupted.stderr,
+    ].filter(Boolean).join("\n"));
+    assert.ok(
+      interrupted.helperPid,
+      "bundler did not report the helper launched from its SIGTERM handler",
+    );
+    await Promise.all([
+      waitForProcessExit(interrupted.activeChildPid),
+      waitForProcessExit(interrupted.helperPid),
+    ]);
+    assert.equal(
+      processExists(interrupted.activeChildPid),
+      false,
+      `signal-resistant bundler child ${interrupted.activeChildPid} remained alive`,
+    );
+    assert.equal(
+      processExists(interrupted.helperPid),
+      false,
+      `late-launched bundler helper ${interrupted.helperPid} remained alive`,
+    );
+    assert.equal(healthy.code, 0, [
+      `${healthy.script} failed while a different focused check reaped a late-launched helper`,
+      healthy.signal ? `signal: ${healthy.signal}` : "",
+      healthy.stdout,
+      healthy.stderr,
+    ].filter(Boolean).join("\n"));
+
+    const after = await listBundleDirectories();
+    const leaked = [...after].filter((directory) => !before.has(directory));
+    assert.deepEqual(
+      leaked,
+      [],
+      `mixed healthy and cancellation-race focused API tests left bundle directories behind: ${leaked.join(", ")}`,
     );
   },
 );
