@@ -271,3 +271,59 @@ test("dense collisions retain one deterministic finding per separate trouble spo
   ]);
   assert.deepEqual(repeatedFindings.map(({ id }) => id), findings.map(({ id }) => id));
 });
+
+test("register-collision scoring preserves exact counts for dense symbolic notes", () => {
+  const dense = (id: string, pitch: number): TrackModel => ({
+    ...track(id, id, pitch),
+    notes: Array.from({ length: 40 }, (_, index) => ({
+      id: `${id}-${index}`,
+      start: index * 0.01,
+      duration: 1,
+      pitch,
+      velocity: 80,
+    })),
+  } as TrackModel);
+
+  const result = evaluateCandidateMusicalFit({
+    songModel: {
+      tempoMap: [{ time: 0, bpm: 60, confidence: 1 }],
+      meterMap: [{ bar: 1, meter: "4/4", confidence: 1 }],
+    } as unknown as SongModelData,
+    plan,
+    tracks: [dense("piano", 60), dense("strings", 62), dense("bass", 48)],
+    harmonyDecisions: [],
+  }).dimensions.registerCollisions;
+
+  assert.equal(result.evidence[0]?.observations.crossTrackOverlaps, 4_800);
+  assert.equal(result.evidence[0]?.observations.closeRegisterCollisions, 1_600);
+  assert.equal(result.score, 0.667);
+});
+
+test("register-collision scoring scales across sparse long-form arrangements", {
+  timeout: 2_000,
+}, () => {
+  const sparse = (id: string, pitch: number, offset: number): TrackModel => ({
+    ...track(id, id, pitch),
+    notes: Array.from({ length: 10_000 }, (_, index) => ({
+      id: `${id}-${index}`,
+      start: index * 2 + offset,
+      duration: 0.25,
+      pitch,
+      velocity: 80,
+    })),
+  } as TrackModel);
+
+  const result = evaluateCandidateMusicalFit({
+    songModel: {
+      tempoMap: [{ time: 0, bpm: 60, confidence: 1 }],
+      meterMap: [{ bar: 1, meter: "4/4", confidence: 1 }],
+    } as unknown as SongModelData,
+    plan,
+    tracks: [sparse("piano", 60, 0), sparse("bass", 61, 1)],
+    harmonyDecisions: [],
+  }).dimensions.registerCollisions;
+
+  assert.equal(result.evidence[0]?.observations.crossTrackOverlaps, 0);
+  assert.equal(result.evidence[0]?.observations.closeRegisterCollisions, 0);
+  assert.equal(result.score, 1);
+});

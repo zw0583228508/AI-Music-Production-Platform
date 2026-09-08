@@ -35,6 +35,44 @@ const weights: Record<CandidateMusicCriticDimension, number> = {
 const clamp = (value: number): number => Math.max(0, Math.min(1, value));
 const round = (value: number): number => Math.round(value * 1_000) / 1_000;
 
+type TimedTrackNote = {
+  trackId: string;
+  note: TrackModel["notes"][number];
+  ordinal: number;
+};
+
+function forEachCrossTrackOverlap(
+  tracks: TrackModel[],
+  visit: (left: TimedTrackNote, right: TimedTrackNote) => void,
+): number {
+  const notes: TimedTrackNote[] = [];
+  let ordinal = 0;
+  for (const track of tracks) {
+    for (const note of track.notes) {
+      notes.push({ trackId: track.id, note, ordinal });
+      ordinal += 1;
+    }
+  }
+  notes.sort((left, right) => left.note.start - right.note.start || left.ordinal - right.ordinal);
+
+  let active: TimedTrackNote[] = [];
+  let overlaps = 0;
+  for (const current of notes) {
+    active = active.filter((candidate) =>
+      candidate.note.start + candidate.note.duration > current.note.start);
+    for (const candidate of active) {
+      if (candidate.trackId === current.trackId) continue;
+      const [left, right] = candidate.ordinal < current.ordinal
+        ? [candidate, current]
+        : [current, candidate];
+      overlaps += 1;
+      visit(left, right);
+    }
+    active.push(current);
+  }
+  return overlaps;
+}
+
 const available = (
   score: number,
   explanation: string,
@@ -203,22 +241,13 @@ function scoreContrast(plan: ArrangementPlan): CandidateMusicCriticDimensionResu
 }
 
 function scoreRegisterCollisions(tracks: TrackModel[]): CandidateMusicCriticDimensionResult {
-  const notes = tracks.flatMap((track) => track.notes.map((note) => ({ ...note, trackId: track.id })));
-  if (!notes.length) return unavailable("Symbolic note evidence is unavailable.", "track_notes");
-  let overlaps = 0;
-  let collisions = 0;
-  for (let left = 0; left < notes.length; left += 1) {
-    for (let right = left + 1; right < notes.length; right += 1) {
-      if (notes[left].trackId === notes[right].trackId) continue;
-      if (
-        notes[left].start < notes[right].start + notes[right].duration &&
-        notes[right].start < notes[left].start + notes[left].duration
-      ) {
-        overlaps += 1;
-        if (Math.abs(notes[left].pitch - notes[right].pitch) <= 2) collisions += 1;
-      }
-    }
+  if (!tracks.some((track) => track.notes.length)) {
+    return unavailable("Symbolic note evidence is unavailable.", "track_notes");
   }
+  let collisions = 0;
+  const overlaps = forEachCrossTrackOverlap(tracks, (left, right) => {
+    if (Math.abs(left.note.pitch - right.note.pitch) <= 2) collisions += 1;
+  });
   return available(
     1 - collisions / Math.max(1, overlaps),
     "Penalizes close-register collisions between simultaneously active tracks.",
@@ -414,32 +443,25 @@ function localizeCriticFindings(input: {
     left.time - right.time ||
     left.leftTrackId.localeCompare(right.leftTrackId) ||
     left.rightTrackId.localeCompare(right.rightTrackId);
-  const notes = tracks.flatMap((track) => track.notes.map((note) => ({ trackId: track.id, note })));
-  for (let left = 0; left < notes.length; left += 1) {
-    for (let right = left + 1; right < notes.length; right += 1) {
-      if (notes[left].trackId !== notes[right].trackId &&
-        notes[left].note.start < notes[right].note.start + notes[right].note.duration &&
-        notes[right].note.start < notes[left].note.start + notes[left].note.duration &&
-        Math.abs(notes[left].note.pitch - notes[right].note.pitch) <= 2) {
-        const time = Math.max(notes[left].note.start, notes[right].note.start);
-        const section = sectionAtTime(time);
-        if (!section) continue;
-        const bar = timeline.coordinateAtSeconds(time).bar;
-        const collision: LocalizedCollision = {
-          leftTrackId: notes[left].trackId,
-          rightTrackId: notes[right].trackId,
-          time,
-          section,
-          bar,
-        };
-        const rangeKey = `${section.section}:${bar}`;
-        const existing = collisionsByRange.get(rangeKey);
-        if (!existing || compareCollisions(collision, existing) < 0) {
-          collisionsByRange.set(rangeKey, collision);
-        }
-      }
+  forEachCrossTrackOverlap(tracks, (left, right) => {
+    if (Math.abs(left.note.pitch - right.note.pitch) > 2) return;
+    const time = Math.max(left.note.start, right.note.start);
+    const section = sectionAtTime(time);
+    if (!section) return;
+    const bar = timeline.coordinateAtSeconds(time).bar;
+    const collision: LocalizedCollision = {
+      leftTrackId: left.trackId,
+      rightTrackId: right.trackId,
+      time,
+      section,
+      bar,
+    };
+    const rangeKey = `${section.section}:${bar}`;
+    const existing = collisionsByRange.get(rangeKey);
+    if (!existing || compareCollisions(collision, existing) < 0) {
+      collisionsByRange.set(rangeKey, collision);
     }
-  }
+  });
   const collisions = [...collisionsByRange.values()].sort(compareCollisions);
   for (const collision of collisions) {
     add("registerCollisions", collision.section,
