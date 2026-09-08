@@ -120,13 +120,17 @@ async function main() {
     process.argv[3] ??
     (await mkdtemp(join(tmpdir(), "music-studio-api-tests.")));
   const termination = new Promise(() => {});
-  const handleTermination = () => {
+  const handleTermination = (signal) => {
     activeChild?.kill("SIGTERM");
     rmSync(bundleDirectory, { recursive: true, force: true });
-    process.off("SIGTERM", handleTermination);
-    process.kill(process.pid, "SIGTERM");
+    process.off("SIGINT", handleSigint);
+    process.off("SIGTERM", handleSigterm);
+    process.kill(process.pid, signal);
   };
-  process.once("SIGTERM", handleTermination);
+  const handleSigint = () => handleTermination("SIGINT");
+  const handleSigterm = () => handleTermination("SIGTERM");
+  process.once("SIGINT", handleSigint);
+  process.once("SIGTERM", handleSigterm);
   try {
     if (process.env.FOCUSED_API_TEST_INJECT_FAILURE === "after-tempdir") {
       const error = new Error(
@@ -185,8 +189,15 @@ async function main() {
       }
     }
 
-    if (process.env.FOCUSED_API_TEST_INJECT_FAILURE === "await-sigterm") {
-      console.error("focused API bundles ready for SIGTERM");
+    if (
+      process.env.FOCUSED_API_TEST_INJECT_FAILURE === "await-sigint" ||
+      process.env.FOCUSED_API_TEST_INJECT_FAILURE === "await-sigterm"
+    ) {
+      const awaitedSignal =
+        process.env.FOCUSED_API_TEST_INJECT_FAILURE === "await-sigint"
+          ? "SIGINT"
+          : "SIGTERM";
+      console.error(`focused API bundles ready for ${awaitedSignal}`);
       await termination;
     }
 
@@ -217,7 +228,8 @@ async function main() {
       termination,
     ]);
   } finally {
-    process.off("SIGTERM", handleTermination);
+    process.off("SIGINT", handleSigint);
+    process.off("SIGTERM", handleSigterm);
     await rm(bundleDirectory, { recursive: true, force: true });
   }
 }
