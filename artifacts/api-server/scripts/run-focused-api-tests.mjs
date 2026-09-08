@@ -119,6 +119,7 @@ for (const [signal, errorCode] of (
   directSignalFailureConfiguration.set(signal, errorCodes);
 }
 const directSignalFailureAssignments = new Map();
+const reportedProcessGroupSignalFailures = new Set();
 
 function delay(milliseconds) {
   return new Promise((resolve) => {
@@ -364,7 +365,7 @@ function signalProcess(
   isRoot = false,
 ) {
   try {
-    const injectedFailure =
+    const injectedDirectFailure =
       process.env.FOCUSED_API_TEST_INJECT_DIRECT_PROCESS_SIGNAL_FAILURE;
     const configuredSignalFailures =
       directSignalFailureConfiguration.get(signal) ?? [];
@@ -378,6 +379,8 @@ function signalProcess(
         ];
       directSignalFailureAssignments.set(assignmentKey, signalFailure);
     }
+    const injectedProcessGroupFailure =
+      process.env.FOCUSED_API_TEST_INJECT_PROCESS_GROUP_SIGNAL_FAILURE;
     const processRecord = readProcessRecord(pid);
     if (!processRecord) {
       throw new Error(`unparseable /proc/${pid}/stat`);
@@ -398,16 +401,32 @@ function signalProcess(
       );
     }
     if (
-      (injectedFailure === "true" ||
-        injectedFailure === "EPERM" ||
-        injectedFailure === "EACCES" ||
+      (injectedDirectFailure === "true" ||
+        injectedDirectFailure === "EPERM" ||
+        injectedDirectFailure === "EACCES" ||
         signalFailure) &&
       !isRoot
     ) {
       const error = new Error("injected denied direct process signal");
       error.code =
         signalFailure ??
-        (injectedFailure === "true" ? "EPERM" : injectedFailure);
+        (injectedDirectFailure === "true"
+          ? "EPERM"
+          : injectedDirectFailure);
+      throw error;
+    }
+    if (
+      processGroup &&
+      isRoot &&
+      (injectedProcessGroupFailure === "true" ||
+        injectedProcessGroupFailure === "EPERM" ||
+        injectedProcessGroupFailure === "EACCES")
+    ) {
+      const error = new Error("injected denied process-group signal");
+      error.code =
+        injectedProcessGroupFailure === "true"
+          ? "EPERM"
+          : injectedProcessGroupFailure;
       throw error;
     }
     // Node has no pidfd signal API. Keep the verified /proc identity check and
@@ -420,6 +439,16 @@ function signalProcess(
     }
     if (error?.code !== "EPERM" && error?.code !== "EACCES") {
       throw error;
+    }
+    if (processGroup && isRoot) {
+      const failureKey = `${pid}:${signal}:${error.code}`;
+      if (!reportedProcessGroupSignalFailures.has(failureKey)) {
+        reportedProcessGroupSignalFailures.add(failureKey);
+        console.error(
+          `focused API cleanup could not signal process group ${pid} with ${signal}: ${error.code} ${error?.message ?? String(error)}`,
+        );
+      }
+      return "unknown";
     }
     const failureKey = `${pid}:${signal}:${error?.code ?? "UNKNOWN"}`;
     if (!reportedDirectSignalFailures.has(failureKey)) {
@@ -651,6 +680,15 @@ async function main() {
             childPids.delete(pid);
           }
         }
+        for (const [pid, startTime] of [...childPids].toReversed()) {
+          if (pid === child.pid) {
+            continue;
+          }
+          const signalState = signalProcess(pid, startTime, "SIGKILL");
+          if (signalState === "reused") {
+            childPids.delete(pid);
+          }
+        }
         const rootSignalState = signalProcess(
           child.pid,
           rootStartTime,
@@ -660,15 +698,6 @@ async function main() {
         );
         if (rootSignalState === "reused") {
           childPids.delete(child.pid);
-        }
-        for (const [pid, startTime] of [...childPids].toReversed()) {
-          if (pid === child.pid) {
-            continue;
-          }
-          const signalState = signalProcess(pid, startTime, "SIGKILL");
-          if (signalState === "reused") {
-            childPids.delete(pid);
-          }
         }
         discoverChildPids(child.pid, childPids);
         await reapIsolatedProcessTree(child.pid, childPids);
@@ -760,6 +789,7 @@ async function main() {
       await Promise.race([
         run(process.execPath, [resistantBundler], {
           env: bundlerEnvironment,
+          detached: true,
         }),
         termination,
       ]);
