@@ -1499,6 +1499,106 @@ for (const errorCode of ["EPERM", "EACCES"]) {
 }
 
 test(
+  "denied direct signals keep SIGTERM and SIGKILL diagnostics separated during bounded cancellation cleanup",
+  { timeout: 15_000 },
+  async () => {
+    const before = await listBundleDirectories();
+    const startedAt = Date.now();
+    const interrupted = await interruptFocusedTestDuringAssertions(
+      "test:validation",
+      {
+        ...process.env,
+        FOCUSED_API_TEST_INJECT_FAILURE:
+          "continuously-launch-helpers-during-esbuild",
+        FOCUSED_API_TEST_INJECT_DIRECT_PROCESS_SIGNAL_FAILURE:
+          "SIGTERM:EPERM,SIGKILL:EPERM",
+      },
+      false,
+      "focused-api-mixed-denied-direct-process-signals",
+    );
+    const cleanupDurationMs = Date.now() - startedAt;
+
+    assert.equal(
+      interrupted.interrupted,
+      true,
+      [
+        "focused API test never reached its signal-resistant bundling phase",
+        interrupted.stdout,
+        interrupted.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    assert.equal(
+      interrupted.code,
+      143,
+      [
+        "focused API test did not complete the intended SIGTERM cleanup path",
+        interrupted.signal ? `signal: ${interrupted.signal}` : "",
+        interrupted.stdout,
+        interrupted.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+
+    for (const signal of ["SIGTERM", "SIGKILL"]) {
+      const detailedFailurePattern = new RegExp(
+        `focused API cleanup could not signal process \\d+ with ${signal}: EPERM injected denied direct process signal`,
+        "g",
+      );
+      const detailedFailures =
+        interrupted.stderr.match(detailedFailurePattern) ?? [];
+      assert.equal(
+        detailedFailures.length,
+        1,
+        `focused API cleanup did not emit exactly one detailed ${signal} EPERM signal failure`,
+      );
+      assert.match(
+        interrupted.stderr,
+        new RegExp(
+          `focused API cleanup suppressed detailed ${signal} EPERM signal failures for \\d+ additional processes; affected PIDs: \\d+(?:, \\d+)*(?:, and \\d+ more)?`,
+        ),
+        `focused API cleanup did not summarize additional ${signal} EPERM failures under the correct signal`,
+      );
+    }
+    assert.doesNotMatch(
+      interrupted.stderr,
+      /suppressed detailed (?:SIGTERM|SIGKILL) EACCES/,
+      "focused API cleanup reported the mixed-signal fixture under an unconfigured error code",
+    );
+    assert.ok(
+      cleanupDurationMs < 10_000,
+      `focused API cleanup exceeded its bounded window: ${cleanupDurationMs}ms`,
+    );
+
+    await Promise.all(
+      [interrupted.activeChildPid, ...interrupted.helperPids].map((pid) =>
+        waitForProcessExit(pid),
+      ),
+    );
+    for (const pid of [
+      interrupted.activeChildPid,
+      ...interrupted.helperPids,
+    ]) {
+      assert.equal(
+        processExists(pid),
+        false,
+        `signal-resistant fixture process ${pid} remained alive`,
+      );
+    }
+
+    const after = await listBundleDirectories();
+    const leaked = [...after].filter((directory) => !before.has(directory));
+    assert.deepEqual(
+      leaked,
+      [],
+      `mixed denied direct process signals left focused API bundle directories behind: ${leaked.join(", ")}`,
+    );
+  },
+);
+
+test(
   "cancellation skips a PID whose process identity changed before direct signaling",
   { timeout: 15_000 },
   async () => {
@@ -1619,7 +1719,7 @@ test(
 );
 
 test(
-  "a vanished root identity aborts signaling without aborting cancellation cleanup",
+  "a missing spawn-time root identity is recovered before cancellation signaling",
   { timeout: 15_000 },
   async () => {
     const before = await listBundleDirectories();
@@ -1647,26 +1747,26 @@ test(
       interrupted.stdout,
       interrupted.stderr,
     ].filter(Boolean).join("\n"));
-    assert.ok(interrupted.helperPid, "missing-root fixture did not report its helper");
-    assert.throws(
-      () => readFileSync(signalAttemptPath, "utf8"),
-      (error) => error?.code === "ENOENT",
-      "cleanup attempted to signal a process without a verified root identity",
+    assert.ok(
+      interrupted.helperPid,
+      "missing-root fixture did not report its helper",
     );
-
-    for (const pid of [interrupted.activeChildPid, interrupted.helperPid]) {
-      try {
-        process.kill(pid, "SIGKILL");
-      } catch (error) {
-        if (error?.code !== "ESRCH") {
-          throw error;
-        }
-      }
-    }
+    assert.match(
+      readFileSync(signalAttemptPath, "utf8"),
+      new RegExp(`^${interrupted.activeChildPid},SIGTERM,`),
+      "cleanup did not recover and verify the active root before signaling",
+    );
     await Promise.all([
       waitForProcessExit(interrupted.activeChildPid),
       waitForProcessExit(interrupted.helperPid),
     ]);
+    for (const pid of [interrupted.activeChildPid, interrupted.helperPid]) {
+      assert.equal(
+        processExists(pid),
+        false,
+        `missing-root fixture process ${pid} remained alive`,
+      );
+    }
     rmSync(signalAttemptPath, { force: true });
 
     const after = await listBundleDirectories();

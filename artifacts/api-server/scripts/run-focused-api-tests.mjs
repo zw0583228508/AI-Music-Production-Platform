@@ -101,6 +101,16 @@ const directSignalFailureDetailLimit = 1;
 const directSignalFailureSummaryPidLimit = 10;
 const directSignalFailureGroups = new Map();
 const reportedReusedPids = new Set();
+const directSignalFailureConfiguration = new Map(
+  (process.env.FOCUSED_API_TEST_INJECT_DIRECT_PROCESS_SIGNAL_FAILURE ?? "")
+    .split(",")
+    .map((entry) => entry.split(":"))
+    .filter(
+      ([signal, errorCode]) =>
+        (signal === "SIGTERM" || signal === "SIGKILL") &&
+        (errorCode === "EPERM" || errorCode === "EACCES"),
+    ),
+);
 
 function delay(milliseconds) {
   return new Promise((resolve) => {
@@ -348,6 +358,7 @@ function signalProcess(
   try {
     const injectedFailure =
       process.env.FOCUSED_API_TEST_INJECT_DIRECT_PROCESS_SIGNAL_FAILURE;
+    const signalFailure = directSignalFailureConfiguration.get(signal);
     const processRecord = readProcessRecord(pid);
     if (!processRecord) {
       throw new Error(`unparseable /proc/${pid}/stat`);
@@ -370,11 +381,14 @@ function signalProcess(
     if (
       (injectedFailure === "true" ||
         injectedFailure === "EPERM" ||
-        injectedFailure === "EACCES") &&
+        injectedFailure === "EACCES" ||
+        signalFailure) &&
       !isRoot
     ) {
       const error = new Error("injected denied direct process signal");
-      error.code = injectedFailure === "true" ? "EPERM" : injectedFailure;
+      error.code =
+        signalFailure ??
+        (injectedFailure === "true" ? "EPERM" : injectedFailure);
       throw error;
     }
     // Node has no pidfd signal API. Keep the verified /proc identity check and
@@ -578,7 +592,22 @@ async function main() {
     const child = activeChild;
     if (child) {
       const childPids = new Map();
-      const rootStartTime = child.focusedProcessStartTime;
+      let rootStartTime = child.focusedProcessStartTime;
+      if (
+        rootStartTime === undefined &&
+        child.exitCode === null &&
+        child.signalCode === null
+      ) {
+        try {
+          rootStartTime = readProcessRecord(child.pid)?.startTime;
+        } catch (error) {
+          if (error?.code !== "ENOENT" && error?.code !== "ESRCH") {
+            console.error(
+              `focused API cleanup could not recover root process ${child.pid} identity: ${error?.code ?? "UNKNOWN"} ${error?.message ?? String(error)}`,
+            );
+          }
+        }
+      }
       if (rootStartTime !== undefined) {
         childPids.set(child.pid, rootStartTime);
         discoverChildPids(child.pid, childPids);
@@ -593,6 +622,15 @@ async function main() {
         while (Date.now() < graceDeadline) {
           await delay(10);
           discoverChildPids(child.pid, childPids);
+        }
+        for (const [pid, startTime] of [...childPids].toReversed()) {
+          if (pid === child.pid) {
+            continue;
+          }
+          const signalState = signalProcess(pid, startTime, "SIGTERM");
+          if (signalState === "reused") {
+            childPids.delete(pid);
+          }
         }
         const rootSignalState = signalProcess(
           child.pid,
@@ -615,6 +653,10 @@ async function main() {
         }
         discoverChildPids(child.pid, childPids);
         await reapIsolatedProcessTree(child.pid, childPids);
+      } else {
+        child.kill("SIGTERM");
+        await delay(childTerminationGraceMs);
+        child.kill("SIGKILL");
       }
       reportProcessStatReadFailureSummaries();
       reportProcessExistenceFailureSummaries();
