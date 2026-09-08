@@ -16,4 +16,6 @@ export const CandidateMusicCriticEvidenceSource = {
   track_notes: 'track_notes',
   instrument_constraints: 'instrument_constraints',
   style_and_directives: 'style_and_directives',
+  composition_intelligence: 'composition_intelligence',
+  rhythm_evidence: 'rhythm_evidence',
 } as const;

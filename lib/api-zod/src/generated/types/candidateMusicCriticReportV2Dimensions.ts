@@ -7,7 +7,7 @@
  */
 import type { CandidateMusicCriticDimensionResult } from './candidateMusicCriticDimensionResult';
 
-export type CandidateMusicCriticReportDimensions = {
+export type CandidateMusicCriticReportV2Dimensions = {
   vocalFit: CandidateMusicCriticDimensionResult;
   harmony: CandidateMusicCriticDimensionResult;
   development: CandidateMusicCriticDimensionResult;
@@ -16,4 +16,13 @@ export type CandidateMusicCriticReportDimensions = {
   playability: CandidateMusicCriticDimensionResult;
   repetition: CandidateMusicCriticDimensionResult;
   styleAndControlAdherence: CandidateMusicCriticDimensionResult;
+  motifContinuityAndDevelopment: CandidateMusicCriticDimensionResult;
+  phraseIntent: CandidateMusicCriticDimensionResult;
+  vocalInteraction: CandidateMusicCriticDimensionResult;
+  roleDuplication: CandidateMusicCriticDimensionResult;
+  orchestralBalance: CandidateMusicCriticDimensionResult;
+  grooveCoordination: CandidateMusicCriticDimensionResult;
+  voiceLeading: CandidateMusicCriticDimensionResult;
+  countermelodyShape: CandidateMusicCriticDimensionResult;
+  dramaticTrajectory: CandidateMusicCriticDimensionResult;
 };

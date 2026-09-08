@@ -78,6 +78,7 @@ import {
 } from "./candidateDiversity";
 import {
   applyBoundedRepair,
+  boundedRepairSourceSeed,
   audioFindingToRepairFinding,
   MAX_REPAIR_ATTEMPTS,
   repairTimeBounds,
@@ -1169,12 +1170,14 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
       }
       const candidateId = randomUUID();
       const planArtifactId = randomUUID();
-      const candidateParentIds = [
-        ...new Set([
-          ...job.parentArtifactIds,
-          ...candidate.parentArtifactIds,
-        ]),
-      ];
+      const candidateParentIds = snapshot.repair
+        ? [...new Set(job.parentArtifactIds)]
+        : [
+            ...new Set([
+              ...job.parentArtifactIds,
+              ...candidate.parentArtifactIds,
+            ]),
+          ];
       const serializedProviderPlan = JSON.stringify(candidate.plan);
       const planChecksum = sha256(serializedProviderPlan);
       artifactRows.push({
@@ -1230,7 +1233,10 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           tracks: snapshot.tracks,
           candidate: {
             provider: provider.definition.id,
-            seed: candidate.seed,
+            // Bounded repair is a child revision of the persisted source, not
+            // a fresh candidate identity. Keep both generation and reasoning
+            // seeds source-owned through materialization.
+            seed: snapshot.repair?.seed ?? candidate.seed,
             plan: candidate.plan,
             parentArtifactIds: candidateParentIds,
             trackModels: candidate.trackModels,
@@ -1941,10 +1947,9 @@ export async function queueCandidateRepair(
       Object.values(candidate.evaluation.musicCritic!.dimensions).flatMap((dimension) => dimension.findings ?? []),
       candidate.evaluatedPlan, candidate.trackModels,
     );
-  const seed = Number.parseInt(
-    sha256(`${candidate.id}:${normalizedFinding.id}`).slice(0, 8),
-    16,
-  ) % 2_147_483_647;
+  // A bounded repair is another evaluation of the persisted candidate, not a
+  // new stochastic branch. Its seed remains source-owned end to end.
+  const seed = boundedRepairSourceSeed(candidate.seed);
   return queueArrangementGeneration(candidate.arrangementId, {
     candidates: 1,
     provider: candidate.provider as MusicProviderId,

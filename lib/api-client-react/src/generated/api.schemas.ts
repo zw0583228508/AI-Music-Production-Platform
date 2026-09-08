@@ -1711,25 +1711,17 @@ export interface CandidateQualityReport {
   lineageComplete: boolean;
 }
 
-export type CandidateMusicCriticReportCoverageAvailableDimensions = typeof CandidateMusicCriticReportCoverageAvailableDimensions[keyof typeof CandidateMusicCriticReportCoverageAvailableDimensions];
+export type CandidateMusicCriticReportV1Version = typeof CandidateMusicCriticReportV1Version[keyof typeof CandidateMusicCriticReportV1Version];
 
 
-export const CandidateMusicCriticReportCoverageAvailableDimensions = {
-  NUMBER_0: 0,
-  NUMBER_1: 1,
-  NUMBER_2: 2,
-  NUMBER_3: 3,
-  NUMBER_4: 4,
-  NUMBER_5: 5,
-  NUMBER_6: 6,
-  NUMBER_7: 7,
-  NUMBER_8: 8,
+export const CandidateMusicCriticReportV1Version = {
+  'music-critic-v1': 'music-critic-v1',
 } as const;
 
-export type CandidateMusicCriticDimensionResultStatus = typeof CandidateMusicCriticDimensionResultStatus[keyof typeof CandidateMusicCriticDimensionResultStatus];
+export type CandidateMusicCriticDimensionResultV1Status = typeof CandidateMusicCriticDimensionResultV1Status[keyof typeof CandidateMusicCriticDimensionResultV1Status];
 
 
-export const CandidateMusicCriticDimensionResultStatus = {
+export const CandidateMusicCriticDimensionResultV1Status = {
   available: 'available',
   unavailable: 'unavailable',
   failed: 'failed',
@@ -1745,6 +1737,8 @@ export const CandidateMusicCriticEvidenceSource = {
   track_notes: 'track_notes',
   instrument_constraints: 'instrument_constraints',
   style_and_directives: 'style_and_directives',
+  composition_intelligence: 'composition_intelligence',
+  rhythm_evidence: 'rhythm_evidence',
 } as const;
 
 export type CandidateMusicCriticEvidenceObservations = {[key: string]: string | number | boolean};
@@ -1755,7 +1749,7 @@ export interface CandidateMusicCriticEvidence {
   observations: CandidateMusicCriticEvidenceObservations;
 }
 
-export interface CandidateMusicCriticFinding {
+export interface CandidateMusicCriticFindingV1 {
   /** @minLength 1 */
   id: string;
   /**
@@ -1779,6 +1773,128 @@ export interface CandidateMusicCriticFinding {
   musicalReason: string;
 }
 
+export interface CandidateMusicCriticDimensionResultV1 {
+  status: CandidateMusicCriticDimensionResultV1Status;
+  /**
+     * @minimum 0
+     * @maximum 1
+     * @nullable
+     */
+  score: number | null;
+  evidence: CandidateMusicCriticEvidence[];
+  explanation: string;
+  findings: CandidateMusicCriticFindingV1[];
+}
+
+/**
+ * Producer-safe summary of how broadly the aggregate score is supported.
+ */
+export type CandidateMusicCriticReportV1Coverage = {
+  /**
+     * @minimum 0
+     * @maximum 8
+     */
+  availableDimensions: number;
+  totalDimensions: 8;
+  /** True when fewer than half of the critic dimensions have available evidence. */
+  sparse: boolean;
+};
+
+export type CandidateMusicCriticReportV1Dimensions = {
+  vocalFit: CandidateMusicCriticDimensionResultV1;
+  harmony: CandidateMusicCriticDimensionResultV1;
+  development: CandidateMusicCriticDimensionResultV1;
+  contrastAndTransitions: CandidateMusicCriticDimensionResultV1;
+  registerCollisions: CandidateMusicCriticDimensionResultV1;
+  playability: CandidateMusicCriticDimensionResultV1;
+  repetition: CandidateMusicCriticDimensionResultV1;
+  styleAndControlAdherence: CandidateMusicCriticDimensionResultV1;
+};
+
+export interface CandidateMusicCriticReportV1 {
+  version: CandidateMusicCriticReportV1Version;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  score: number;
+  /** Producer-safe summary of how broadly the aggregate score is supported. */
+  coverage: CandidateMusicCriticReportV1Coverage;
+  dimensions: CandidateMusicCriticReportV1Dimensions;
+}
+
+export type CandidateMusicCriticReportV2Version = typeof CandidateMusicCriticReportV2Version[keyof typeof CandidateMusicCriticReportV2Version];
+
+
+export const CandidateMusicCriticReportV2Version = {
+  'music-critic-v2': 'music-critic-v2',
+} as const;
+
+export type CandidateMusicCriticDimensionResultStatus = typeof CandidateMusicCriticDimensionResultStatus[keyof typeof CandidateMusicCriticDimensionResultStatus];
+
+
+export const CandidateMusicCriticDimensionResultStatus = {
+  available: 'available',
+  unavailable: 'unavailable',
+  failed: 'failed',
+} as const;
+
+export type CandidateMusicCriticFindingPermissibleRepairOperationsItem = typeof CandidateMusicCriticFindingPermissibleRepairOperationsItem[keyof typeof CandidateMusicCriticFindingPermissibleRepairOperationsItem];
+
+
+export const CandidateMusicCriticFindingPermissibleRepairOperationsItem = {
+  adjust_notes: 'adjust_notes',
+  adjust_rhythm: 'adjust_rhythm',
+  adjust_register: 'adjust_register',
+  adjust_dynamics: 'adjust_dynamics',
+  adjust_voicing: 'adjust_voicing',
+  adjust_directive: 'adjust_directive',
+} as const;
+
+export type CandidateMusicCriticFindingCanonicalScope = {
+  /** @minimum 1 */
+  startBar: number;
+  /** @minimum 1 */
+  endBar: number;
+};
+
+export type CandidateMusicCriticFindingEvidenceReferencesItem = {
+  source: string;
+  /** @maxLength 2000 */
+  summary: string;
+};
+
+export interface CandidateMusicCriticFinding {
+  /** @minLength 1 */
+  id: string;
+  /**
+     * @minItems 1
+     * @items.minLength 1
+     */
+  affectedSections: string[];
+  /** @minimum 1 */
+  startBar: number;
+  /** @minimum 1 */
+  endBar: number;
+  /**
+     * @minItems 1
+     * @items.minLength 1
+     */
+  affectedTrackIds: string[];
+  /** @items.minLength 1 */
+  affectedRoles: string[];
+  canonicalScope: CandidateMusicCriticFindingCanonicalScope;
+  /** @maxItems 8 */
+  evidenceReferences: CandidateMusicCriticFindingEvidenceReferencesItem[];
+  /** @minItems 1 */
+  permissibleRepairOperations: CandidateMusicCriticFindingPermissibleRepairOperationsItem[];
+  /**
+     * @minLength 1
+     * @maxLength 2000
+     */
+  musicalReason: string;
+}
+
 export interface CandidateMusicCriticDimensionResult {
   status: CandidateMusicCriticDimensionResultStatus;
   /**
@@ -1793,17 +1909,17 @@ export interface CandidateMusicCriticDimensionResult {
   findings: CandidateMusicCriticFinding[];
 }
 
-/**
- * Producer-safe summary of how broadly the aggregate score is supported.
- */
-export type CandidateMusicCriticReportCoverage = {
-  availableDimensions: CandidateMusicCriticReportCoverageAvailableDimensions;
-  totalDimensions: 8;
-  /** True when fewer than half of the critic dimensions have available evidence. */
+export type CandidateMusicCriticReportV2Coverage = {
+  /**
+     * @minimum 0
+     * @maximum 17
+     */
+  availableDimensions: number;
+  totalDimensions: 17;
   sparse: boolean;
 };
 
-export type CandidateMusicCriticReportDimensions = {
+export type CandidateMusicCriticReportV2Dimensions = {
   vocalFit: CandidateMusicCriticDimensionResult;
   harmony: CandidateMusicCriticDimensionResult;
   development: CandidateMusicCriticDimensionResult;
@@ -1812,19 +1928,29 @@ export type CandidateMusicCriticReportDimensions = {
   playability: CandidateMusicCriticDimensionResult;
   repetition: CandidateMusicCriticDimensionResult;
   styleAndControlAdherence: CandidateMusicCriticDimensionResult;
+  motifContinuityAndDevelopment: CandidateMusicCriticDimensionResult;
+  phraseIntent: CandidateMusicCriticDimensionResult;
+  vocalInteraction: CandidateMusicCriticDimensionResult;
+  roleDuplication: CandidateMusicCriticDimensionResult;
+  orchestralBalance: CandidateMusicCriticDimensionResult;
+  grooveCoordination: CandidateMusicCriticDimensionResult;
+  voiceLeading: CandidateMusicCriticDimensionResult;
+  countermelodyShape: CandidateMusicCriticDimensionResult;
+  dramaticTrajectory: CandidateMusicCriticDimensionResult;
 };
 
-export interface CandidateMusicCriticReport {
-  version: 'music-critic-v1';
+export interface CandidateMusicCriticReportV2 {
+  version: CandidateMusicCriticReportV2Version;
   /**
      * @minimum 0
      * @maximum 1
      */
   score: number;
-  /** Producer-safe summary of how broadly the aggregate score is supported. */
-  coverage: CandidateMusicCriticReportCoverage;
-  dimensions: CandidateMusicCriticReportDimensions;
+  coverage: CandidateMusicCriticReportV2Coverage;
+  dimensions: CandidateMusicCriticReportV2Dimensions;
 }
+
+export type CandidateMusicCriticReport = CandidateMusicCriticReportV1 | CandidateMusicCriticReportV2;
 
 export type CandidateAudioCriticReportStatus = typeof CandidateAudioCriticReportStatus[keyof typeof CandidateAudioCriticReportStatus];
 
@@ -2982,7 +3108,7 @@ export interface CandidateRepairInput {
   idempotencyKey?: string;
   /** @minLength 1 */
   findingId: string;
-  finding: CandidateMusicCriticFinding;
+  finding: CandidateMusicCriticFindingV1 | CandidateMusicCriticFinding;
 }
 
 export type GenerationCandidateProvider = typeof GenerationCandidateProvider[keyof typeof GenerationCandidateProvider];

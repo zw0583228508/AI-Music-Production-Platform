@@ -5,13 +5,16 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
-import type { CandidateMusicCriticReportCoverageAvailableDimensions } from './candidateMusicCriticReportCoverageAvailableDimensions';
 
 /**
  * Producer-safe summary of how broadly the aggregate score is supported.
  */
-export type CandidateMusicCriticReportCoverage = {
-  availableDimensions: CandidateMusicCriticReportCoverageAvailableDimensions;
+export type CandidateMusicCriticReportV1Coverage = {
+  /**
+     * @minimum 0
+     * @maximum 8
+     */
+  availableDimensions: number;
   totalDimensions: 8;
   /** True when fewer than half of the critic dimensions have available evidence. */
   sparse: boolean;

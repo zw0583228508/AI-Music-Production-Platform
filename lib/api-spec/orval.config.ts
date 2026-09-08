@@ -68,6 +68,9 @@ export default defineConfig({
       prettier: true,
       override: {
         zod: {
+          strict: {
+            body: true,
+          },
           coerce: {
             query: ['boolean', 'number', 'string'],
             param: ['boolean', 'number', 'string'],

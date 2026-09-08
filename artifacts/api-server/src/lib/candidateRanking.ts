@@ -1,4 +1,8 @@
-import type { CandidateEvaluation } from "@workspace/db";
+import type {
+  CandidateEvaluation,
+  CandidateMusicCriticDimension,
+  CandidateMusicCriticDimensionResult,
+} from "@workspace/db";
 import { musicCriticDimensions } from "./candidateQuality";
 import { perceptualAudioCriticDimensions } from "./perceptualAudioCritic";
 
@@ -12,31 +16,36 @@ const requiredQualityChecks = [
 ];
 
 export function publicCandidateEvaluation(evaluation: CandidateEvaluation) {
+  const criticDimensions = evaluation.musicCritic?.dimensions as Partial<Record<
+    CandidateMusicCriticDimension, CandidateMusicCriticDimensionResult
+  >> | undefined;
   const musicCritic = evaluation.musicCritic
     ? {
         version: evaluation.musicCritic.version,
         score: evaluation.musicCritic.score,
         coverage: evaluation.musicCritic.coverage ?? (() => {
           const availableDimensions = musicCriticDimensions.filter(
-            (name) => evaluation.musicCritic?.dimensions[name]?.status === "available",
+            (name) => criticDimensions?.[name]?.status === "available",
           ).length;
           return {
             availableDimensions,
-            totalDimensions: 8 as const,
-            sparse: availableDimensions < musicCriticDimensions.length / 2,
+            totalDimensions: evaluation.musicCritic?.version === "music-critic-v1" ? 8 : musicCriticDimensions.length,
+            sparse: availableDimensions < (evaluation.musicCritic?.version === "music-critic-v1" ? 8 : musicCriticDimensions.length) / 2,
           };
         })(),
         dimensions: Object.fromEntries(
           musicCriticDimensions.flatMap((name) => {
-            const dimension = evaluation.musicCritic?.dimensions[name];
+            const dimension = criticDimensions?.[name];
             return dimension
               ? [[name, {
                   status: dimension.status,
                   score: dimension.score,
-                  evidence: dimension.evidence.map((evidence) => ({
+                   // Public evidence is a bounded explanation only; internal
+                   // fingerprints, raw observations, and evaluator details stay private.
+                   evidence: dimension.evidence.map((evidence) => ({
                     source: evidence.source,
                     summary: evidence.summary,
-                    observations: { ...evidence.observations },
+                     observations: {},
                   })),
                   explanation: dimension.explanation,
                   findings: (dimension.findings ?? []).map((finding) => ({
@@ -45,6 +54,16 @@ export function publicCandidateEvaluation(evaluation: CandidateEvaluation) {
                     startBar: finding.startBar,
                     endBar: finding.endBar,
                     affectedTrackIds: [...finding.affectedTrackIds],
+                    ...(finding.affectedRoles ? { affectedRoles: [...finding.affectedRoles] } : {}),
+                    ...(finding.canonicalScope ? { canonicalScope: { ...finding.canonicalScope } } : {}),
+                    ...(finding.evidenceReferences ? {
+                      evidenceReferences: finding.evidenceReferences.map((reference) => ({
+                        source: reference.source, summary: reference.summary,
+                      })),
+                    } : {}),
+                    ...(finding.permissibleRepairOperations ? {
+                      permissibleRepairOperations: [...finding.permissibleRepairOperations],
+                    } : {}),
                     musicalReason: finding.musicalReason,
                   })),
                 }]]
@@ -200,14 +219,23 @@ export function hasCompleteQualityEvidence(evaluation: CandidateEvaluation): boo
   const report = evaluation.qualityReport;
   return Number.isFinite(report.score) &&
     Number.isFinite(evaluation.musicCritic.score) &&
-    musicCriticDimensions.every((name) => {
-      const dimension = evaluation.musicCritic?.dimensions[name];
+    (evaluation.musicCritic.version === "music-critic-v1"
+      ? musicCriticDimensions.filter((name) => ![
+        "motifContinuityAndDevelopment", "phraseIntent", "vocalInteraction", "roleDuplication",
+        "orchestralBalance", "grooveCoordination", "voiceLeading", "countermelodyShape", "dramaticTrajectory",
+      ].includes(name))
+      : musicCriticDimensions
+    ).every((name) => {
+      const dimension = evaluation.musicCritic?.dimensions as Partial<Record<
+        CandidateMusicCriticDimension, CandidateMusicCriticDimensionResult
+      >>;
+      const result = dimension?.[name];
       return Boolean(
-        dimension &&
-        dimension.status !== "failed" &&
-        (dimension.status === "unavailable"
-          ? dimension.score === null
-          : Number.isFinite(dimension.score)),
+        result &&
+        result.status !== "failed" &&
+        (result.status === "unavailable"
+          ? result.score === null
+          : Number.isFinite(result.score)),
       );
     }) &&
     !Number.isNaN(Date.parse(report.evaluatedAt)) &&

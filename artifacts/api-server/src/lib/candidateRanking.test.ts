@@ -5,7 +5,7 @@ import type {
   CandidateEvaluationStatus,
 } from "@workspace/db";
 import { ListGenerationCandidatesResponse } from "@workspace/api-zod";
-import { publicCandidateEvaluation } from "./candidateRanking";
+import { hasCompleteQualityEvidence, publicCandidateEvaluation } from "./candidateRanking";
 
 const supportedStatuses = {
   plan_received: true,
@@ -205,4 +205,80 @@ test("candidate response parser upgrades historical repair evidence with empty c
     repairedCandidateResponse(publicCandidateEvaluation(evaluation)),
   ]);
   assert.deepEqual(parsed[0].evaluation.repair?.changedScopes, []);
+});
+
+test("complete historical v1 critic remains rankable and parses through the public schema", () => {
+  const checks = {
+    silence: 1, clipping: 1, notePlayability: 1, timing: 1, sectionCoverage: 1, lineage: 1,
+  };
+  const evaluation = {
+    status: "evaluated", providerScore: .7, renderArtifactIds: ["audio", "midi"],
+    artifacts: [
+      { id: "audio", type: "AUDIO_TRACK", label: "Audio", url: "/audio.wav" },
+      { id: "midi", type: "MIDI", label: "MIDI", url: "/notes.mid" },
+      { id: "quality", type: "QUALITY_REPORT", label: "Quality", url: "/quality.json" },
+    ],
+    qualityReport: {
+      score: .8, checks, weights: checks, strengths: [], weaknesses: [], warnings: [],
+      evaluatedAt: "2026-09-08T00:00:00.000Z", renderArtifactIds: ["audio", "midi"],
+      lineageComplete: true,
+    },
+    musicCritic: { ...musicCritic, coverage: { availableDimensions: 0, totalDimensions: 8, sparse: true } },
+    audioCritic: null, error: null,
+  } as unknown as CandidateEvaluation;
+  assert.equal(hasCompleteQualityEvidence(evaluation), true);
+  const publicEvaluation = publicCandidateEvaluation(evaluation);
+  assert.equal(publicEvaluation.musicCritic?.coverage.totalDimensions, 8);
+  const parsed = ListGenerationCandidatesResponse.parse([
+    repairedCandidateResponse(publicEvaluation),
+  ]);
+  assert.equal(parsed[0].evaluation.musicCritic?.version, "music-critic-v1");
+  assert.equal(parsed[0].evaluation.musicCritic?.coverage.totalDimensions, 8);
+});
+
+test("populated v2 critic public serialization excludes observations fingerprints and evaluator details", () => {
+  const privateValues = ["private-observation", "private-fingerprint", "private-evaluator-detail"];
+  const result = {
+    status: "available" as const, score: .4,
+    evidence: [{
+      source: "composition_intelligence" as const,
+      summary: "Producer-safe summary",
+      observations: { detail: privateValues[0], fingerprint: privateValues[1] },
+    }],
+    explanation: "Readable explanation",
+    findings: [{
+      id: "music-critic-v2:motif:chorus:5-5:piano", affectedSections: ["chorus"],
+      startBar: 5, endBar: 5, affectedTrackIds: ["piano"], affectedRoles: ["harmony"],
+      canonicalScope: { startBar: 5, endBar: 5 },
+      evidenceReferences: [{ source: "composition_intelligence", summary: "Safe reference" }],
+      permissibleRepairOperations: ["adjust_notes"], musicalReason: "Repair this phrase.",
+    }],
+    rawEvaluatorDetails: privateValues[2],
+  };
+  const dimensions = Object.fromEntries([
+    "vocalFit", "harmony", "development", "contrastAndTransitions", "registerCollisions",
+    "playability", "repetition", "styleAndControlAdherence", "motifContinuityAndDevelopment",
+    "phraseIntent", "vocalInteraction", "roleDuplication", "orchestralBalance",
+    "grooveCoordination", "voiceLeading", "countermelodyShape", "dramaticTrajectory",
+  ].map((name) => [name, result]));
+  const evaluation = {
+    status: "evaluated", providerScore: .5, renderArtifactIds: [], artifacts: [],
+    qualityReport: null, audioCritic: null, error: null,
+    musicCritic: {
+      version: "music-critic-v2", score: .4,
+      coverage: { availableDimensions: 17, totalDimensions: 17, sparse: false },
+      dimensions,
+    },
+  } as unknown as CandidateEvaluation;
+  const publicEvaluation = publicCandidateEvaluation(evaluation);
+  const serialized = JSON.stringify(publicEvaluation);
+  for (const value of privateValues) assert.equal(serialized.includes(value), false);
+  assert.deepEqual(
+    publicEvaluation.musicCritic?.dimensions.motifContinuityAndDevelopment.evidence[0].observations,
+    {},
+  );
+  const parsed = ListGenerationCandidatesResponse.parse([
+    repairedCandidateResponse(publicEvaluation),
+  ]);
+  assert.equal(parsed[0].evaluation.musicCritic?.version, "music-critic-v2");
 });

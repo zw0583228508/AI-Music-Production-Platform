@@ -5,17 +5,7 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
-import type { CandidateMusicCriticReportCoverage } from './candidateMusicCriticReportCoverage';
-import type { CandidateMusicCriticReportDimensions } from './candidateMusicCriticReportDimensions';
+import type { CandidateMusicCriticReportV1 } from './candidateMusicCriticReportV1';
+import type { CandidateMusicCriticReportV2 } from './candidateMusicCriticReportV2';
 
-export interface CandidateMusicCriticReport {
-  version: 'music-critic-v1';
-  /**
-     * @minimum 0
-     * @maximum 1
-     */
-  score: number;
-  /** Producer-safe summary of how broadly the aggregate score is supported. */
-  coverage: CandidateMusicCriticReportCoverage;
-  dimensions: CandidateMusicCriticReportDimensions;
-}
+export type CandidateMusicCriticReport = CandidateMusicCriticReportV1 | CandidateMusicCriticReportV2;
