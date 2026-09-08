@@ -3676,6 +3676,24 @@ components:
             checkedNotes: { type: number }
             violations: { type: array, items: { type: string } }
         performedMaterialSha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+    StyleGrammar:
+      type: object
+      required: [version, evidenceSha256, vocabulary]
+      properties:
+        version: { type: string, const: "1.0" }
+        evidenceSha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        vocabulary:
+          type: object
+          required: [groove, voicing, articulation, instrumentation, phraseBehavior, fills, transitions, development]
+          properties:
+            groove: { type: string, enum: [straight, swung, syncopated, four_on_floor] }
+            voicing: { type: string, enum: [close, open, drop_two, quartal, wide] }
+            articulation: { type: string, enum: [legato, tight, accented, pulsed] }
+            instrumentation: { type: string, enum: [acoustic, electronic, hybrid, orchestral] }
+            phraseBehavior: { type: string, enum: [call_response, continuous, sparse_answers, motivic] }
+            fills: { type: string, enum: [none, cadential, frequent, sectional] }
+            transitions: { type: string, enum: [hard_cut, thin_build, riser, orchestral_swell] }
+            development: { type: string, enum: [repetition, additive, transformative, dynamic_arc] }
     StyleSpec:
       type: object
       required: [genre, subgenre, era, tempoCharacter, rhythm, harmony, instrumentation, orchestration, production, dynamics]
@@ -3690,6 +3708,7 @@ components:
         orchestration: { type: object }
         production: { type: object }
         dynamics: { type: object }
+        grammar: { $ref: "#/components/schemas/StyleGrammar" }
     ArrangementPlanSection:
       type: object
       required: [section, startBar, endBar, energy, density, tracks, operations]
@@ -3899,6 +3918,29 @@ components:
         controls:
           type: object
           additionalProperties: { type: number }
+    GenerationPreferenceEffects:
+      type: object
+      required: [orchestrationDensity, responseFrequency, roleEmphasis, voicingCharacter, development, transitionIntensity]
+      properties:
+        orchestrationDensity: { type: number, minimum: -0.35, maximum: 0.35 }
+        responseFrequency: { type: number, minimum: 0.25, maximum: 0.75 }
+        roleEmphasis: { type: string, enum: [foundation, pulse, harmony, counterline, texture] }
+        voicingCharacter: { type: string, enum: [close, open, wide] }
+        development: { type: string, enum: [restrained, balanced, progressive] }
+        transitionIntensity: { type: number, minimum: 0.25, maximum: 0.75 }
+    GenerationPreferenceSnapshot:
+      type: object
+      required: [contractVersion, calibrationId, calibrationVersion, heldOutAgreement, baselineAgreement, heldOutExamples, evaluationSha256, evidenceSha256, effects]
+      properties:
+        contractVersion: { type: string, const: "1.0" }
+        calibrationId: { type: string, minLength: 1 }
+        calibrationVersion: { type: number, minimum: 1, multipleOf: 1 }
+        heldOutAgreement: { type: number, minimum: 0, maximum: 1 }
+        baselineAgreement: { type: number, minimum: 0, maximum: 1 }
+        heldOutExamples: { type: number, minimum: 5, multipleOf: 1 }
+        evaluationSha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        evidenceSha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        effects: { $ref: "#/components/schemas/GenerationPreferenceEffects" }
     ArrangementPlan:
       type: object
       required: [id, version, sections, style, songModelVersion, parameters, provenance, hierarchy]
@@ -3912,3 +3954,7 @@ components:
         provenance: { $ref: "#/components/schemas/ArtifactProvenance" }
         hierarchy: { $ref: "#/components/schemas/ArrangementHierarchy" }
         compositionIntelligence: { $ref: "#/components/schemas/CompositionIntelligencePlan" }
+        generationPreference:
+          oneOf:
+            - { $ref: "#/components/schemas/GenerationPreferenceSnapshot" }
+            - { type: "null" }

@@ -85,7 +85,10 @@ import {
 } from "./candidateRepair";
 import { evaluateCandidateMusicalFit } from "./candidateQuality";
 import { evaluateRenderedPcm } from "./perceptualAudioCritic";
-import { activeCalibrationForOwner } from "./producerDecisionLedger";
+import {
+  activeCalibrationForOwner,
+  activeGenerationPreferenceForOwner,
+} from "./producerDecisionLedger";
 import { appendProducerDecisionTx } from "./producerDecisionLedger";
 
 const sha256 = (value: string | Buffer): string =>
@@ -300,6 +303,7 @@ type CandidateMaterializationInput = {
     parentArtifactIds: string[];
     trackModels?: TrackModel[] | null;
   };
+  generationPreference?: import("@workspace/db").GenerationPreferenceSnapshot | null;
   trackModelsMaterialized?: boolean;
 };
 
@@ -311,7 +315,8 @@ function materializeCandidate(input: CandidateMaterializationInput): {
   harmonyDecisions: HarmonyDecisionEvidence[];
 } {
   const { candidate, source, songModel, tracks } = input;
-  const engineParameters = {
+  const generationPreference = input.generationPreference ?? null;
+  const engineParameters: Record<string, number | string | boolean> = {
     seed: candidate.seed,
     harmonyComplexity: source.harmonyComplexity,
     energy: source.energy,
@@ -321,6 +326,8 @@ function materializeCandidate(input: CandidateMaterializationInput): {
     songModelVersion: input.songModelVersion ?? 0,
     provider: candidate.provider,
     modulationSemitones: source.harmonyComplexity >= 8 ? 2 : 0,
+    styleGrammarVersion: "1.0",
+    generationPreferenceVersion: generationPreference?.calibrationVersion ?? 0,
   };
   const styleSpec = createStyleSpec(source.style, {
     density: source.density,
@@ -328,7 +335,10 @@ function materializeCandidate(input: CandidateMaterializationInput): {
     energy: source.energy,
     orchestraSize: source.orchestraSize,
     rhythmIntensity: source.rhythmIntensity,
-  });
+  }, generationPreference);
+  engineParameters.styleGrammarEvidenceSha256 = styleSpec.grammar?.evidenceSha256 ?? "legacy";
+  engineParameters.generationPreferenceEvidenceSha256 =
+    generationPreference?.evidenceSha256 ?? "none";
   // The global pass is deliberately completed before local plan construction,
   // so every candidate section receives one consistent whole-song direction.
   const arrangementBrain = buildArrangementBrain({
@@ -350,6 +360,7 @@ function materializeCandidate(input: CandidateMaterializationInput): {
     parentIds: candidate.parentArtifactIds,
     arrangementBrain,
     compositionVersion: "2.0",
+    generationPreference,
   });
   const providerSections = new Map(
     candidate.plan.sections.map((section) => [section.name.toLowerCase(), section]),
@@ -597,6 +608,7 @@ export async function queueArrangementGeneration(
   ]);
   const projectRow = project[0];
   if (!projectRow || projectRow.ownerId !== ownerId) return null;
+  const generationPreference = await activeGenerationPreferenceForOwner(ownerId);
 
   const task = input.task ?? "ARRANGEMENT";
   const operation = input.operation ?? null;
@@ -674,6 +686,7 @@ export async function queueArrangementGeneration(
     ...(sourceArtifactId ? { sourceArtifactId } : {}),
     ...(instrument ? { instrument } : {}),
     ...(region ? { region } : {}),
+    generationPreference,
   };
   const idempotencyKey = (input.idempotencyKey?.trim() ||
     `arrangement:${arrangement.id}:v${arrangement.version}:${task}:${sha256(JSON.stringify({
@@ -793,6 +806,7 @@ export async function queueArrangementGeneration(
           role: track.role,
           instrument: track.name,
         })),
+        generationPreference,
         repair: input.repair ?? null,
       },
     };
@@ -1221,6 +1235,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
             parentArtifactIds: candidateParentIds,
             trackModels: candidate.trackModels,
           },
+          generationPreference: snapshot.generationPreference ?? null,
         });
         const bounded = snapshot.repair
           ? applyBoundedRepair({

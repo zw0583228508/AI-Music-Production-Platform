@@ -402,6 +402,10 @@ export const LogoutBrowserSessionResponse = zod.void()
  */
 
 
+
+
+
+
 export const ExchangeMobileAuthorizationCodeBody = zod.object({
   "code": zod.string().min(1),
   "code_verifier": zod.string().min(1),
@@ -431,6 +435,8 @@ export const LogoutMobileSessionResponse = zod.object({
 export const requestSourceUploadUrlBodySizeMax = 524288000;
 
 
+
+
 export const RequestSourceUploadUrlBody = zod.object({
   "projectId": zod.string().min(1),
   "name": zod.string().min(1),
@@ -439,7 +445,10 @@ export const RequestSourceUploadUrlBody = zod.object({
 })
 
 
+
 export const requestSourceUploadUrlResponseMetadataSizeMax = 524288000;
+
+
 
 
 export const RequestSourceUploadUrlResponse = zod.object({
@@ -476,6 +485,7 @@ export const ListProjectsResponse = zod.array(ListProjectsResponseItem)
  */
 
 
+
 export const CreateProjectBody = zod.object({
   "name": zod.string().min(1),
   "sourceType": zod.enum(['FULL_SONG', 'VOCAL_ONLY', 'SOLO_INSTRUMENT', 'INSTRUMENTAL', 'MIDI', 'VIDEO']),
@@ -507,12 +517,16 @@ export const getProjectResponseAnalysisSectionsItemCoordinatesStartSecondsMin = 
 export const getProjectResponseAnalysisSectionsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const getProjectResponseAnalysisSectionsItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectResponseAnalysisSectionsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const getProjectResponseAnalysisSectionsItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectResponseAnalysisSectionsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const getProjectResponseAnalysisSectionsItemCoordinatesEndBeatFractionMin = 0;
@@ -562,10 +576,22 @@ export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluation
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
 
 
+
+
+
+
+
+
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax = 2000;
 
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+
+
+
+
+
 
 
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax = 2000;
@@ -574,10 +600,22 @@ export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluation
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
 
 
+
+
+
+
+
+
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax = 2000;
 
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+
+
+
+
+
 
 
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax = 2000;
@@ -586,10 +624,22 @@ export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluation
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
 
 
+
+
+
+
+
+
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax = 2000;
 
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+
+
+
+
+
 
 
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax = 2000;
@@ -598,10 +648,22 @@ export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluation
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
 
 
+
+
+
+
+
+
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax = 2000;
 
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
+
+
+
+
+
+
 
 
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax = 2000;
@@ -710,6 +772,9 @@ export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluation
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationRepairSeedMax = 2147483647;
 
 
+
+
+
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin = 0;
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax = 1;
 
@@ -737,6 +802,7 @@ export const getProjectResponseTracksItemTrackModelDirectiveExitBarMin = 0;
 export const getProjectResponseTracksItemTrackModelDirectiveExitBeatMin = 0;
 
 export const getProjectResponseTracksItemTrackModelDirectiveExitDurationBeatsExclusiveMin = 0;
+
 
 
 export const getProjectResponseTracksItemTrackModelAppliedDirectivesItemStartMin = 0;
@@ -771,8 +837,16 @@ export const getProjectResponseTracksItemTrackModelMappingProgramMax = 127;
 
 export const getProjectResponseTracksItemTrackModelPerformanceEvidenceCanonicalTimelineSha256RegExp = new RegExp('^[a-f0-9]{64}$');
 export const getProjectResponseTracksItemTrackModelPerformanceEvidencePerformedMaterialSha256RegExp = new RegExp('^[a-f0-9]{64}$');
-
 export const getProjectResponseTracksItemTrackModelHarmonyEvidenceSelectedMotionMin = 0;
+
+export const getProjectResponseTracksItemTrackModelHarmonyEvidenceBaselineMotionMin = 0;
+
+export const getProjectResponseTracksItemTrackModelHarmonyEvidenceMaximumLeapMin = 0;
+
+export const getProjectResponseTracksItemTrackModelHarmonyEvidenceResolutionObligationsMin = 0;
+
+
+
 export const GetProjectResponse = zod.object({
   "project": zod.object({
   "id": zod.string(),
@@ -1548,6 +1622,7 @@ export const deleteProjectResponseAttemptsMin = 0;
 export const deleteProjectResponsePendingObjectCountMin = 0;
 
 
+
 export const DeleteProjectResponse = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -1573,6 +1648,7 @@ export const getProjectDeletionResponseAttemptsMin = 0;
 export const getProjectDeletionResponsePendingObjectCountMin = 0;
 
 
+
 export const GetProjectDeletionResponse = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -1596,6 +1672,7 @@ export const RetryProjectDeletionParams = zod.object({
 export const retryProjectDeletionResponseAttemptsMin = 0;
 
 export const retryProjectDeletionResponsePendingObjectCountMin = 0;
+
 
 
 export const RetryProjectDeletionResponse = zod.object({
@@ -1629,6 +1706,8 @@ export const analyzeProjectResponseSectionsItemCoordinatesStartSecondsMin = 0;
 export const analyzeProjectResponseSectionsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const analyzeProjectResponseSectionsItemCoordinatesStartBeatFractionMin = 0;
 export const analyzeProjectResponseSectionsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
@@ -1637,8 +1716,11 @@ export const analyzeProjectResponseSectionsItemCoordinatesEndSecondsMin = 0;
 export const analyzeProjectResponseSectionsItemCoordinatesEndTickMin = 0;
 
 
+
+
 export const analyzeProjectResponseSectionsItemCoordinatesEndBeatFractionMin = 0;
 export const analyzeProjectResponseSectionsItemCoordinatesEndBeatFractionExclusiveMax = 1;
+
 
 
 export const AnalyzeProjectResponse = zod.object({
@@ -1689,6 +1771,7 @@ export const listProjectSourcesResponseAttemptsItemProgressMin = 0;
 export const listProjectSourcesResponseAttemptsItemProgressMax = 100;
 
 
+
 export const ListProjectSourcesResponseItem = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -1728,7 +1811,10 @@ export const RegisterProjectSourceParams = zod.object({
 })
 
 
+
 export const registerProjectSourceBodySizeMax = 524288000;
+
+
 
 
 export const RegisterProjectSourceBody = zod.object({
@@ -1744,6 +1830,7 @@ export const registerProjectSourceResponseProgressMax = 100;
 
 export const registerProjectSourceResponseAttemptsItemProgressMin = 0;
 export const registerProjectSourceResponseAttemptsItemProgressMax = 100;
+
 
 
 export const RegisterProjectSourceResponse = zod.object({
@@ -1789,6 +1876,7 @@ export const retryProjectSourceAnalysisResponseProgressMax = 100;
 
 export const retryProjectSourceAnalysisResponseAttemptsItemProgressMin = 0;
 export const retryProjectSourceAnalysisResponseAttemptsItemProgressMax = 100;
+
 
 
 export const RetryProjectSourceAnalysisResponse = zod.object({
@@ -1838,7 +1926,9 @@ export const getProjectSongModelResponseFusionDecisionsItemCompatibilityMin = 0;
 export const getProjectSongModelResponseFusionDecisionsItemCompatibilityMax = 1;
 
 
+
 export const getProjectSongModelResponseAudioDurationSecondsExclusiveMin = 0;
+
 
 
 export const getProjectSongModelResponseAnalysisStartSecondsMin = 0;
@@ -1860,6 +1950,8 @@ export const getProjectSongModelResponseTempoMapItemCoordinatesSecondsMin = 0;
 export const getProjectSongModelResponseTempoMapItemCoordinatesTickMin = 0;
 
 
+
+
 export const getProjectSongModelResponseTempoMapItemCoordinatesBeatFractionMin = 0;
 export const getProjectSongModelResponseTempoMapItemCoordinatesBeatFractionExclusiveMax = 1;
 
@@ -1869,6 +1961,8 @@ export const getProjectSongModelResponseMeterMapItemConfidenceMax = 1;
 export const getProjectSongModelResponseMeterMapItemCoordinatesSecondsMin = 0;
 
 export const getProjectSongModelResponseMeterMapItemCoordinatesTickMin = 0;
+
+
 
 
 export const getProjectSongModelResponseMeterMapItemCoordinatesBeatFractionMin = 0;
@@ -1882,12 +1976,16 @@ export const getProjectSongModelResponseKeyMapItemCoordinatesSecondsMin = 0;
 export const getProjectSongModelResponseKeyMapItemCoordinatesTickMin = 0;
 
 
+
+
 export const getProjectSongModelResponseKeyMapItemCoordinatesBeatFractionMin = 0;
 export const getProjectSongModelResponseKeyMapItemCoordinatesBeatFractionExclusiveMax = 1;
 
 export const getProjectSongModelResponseBeatsItemCoordinatesSecondsMin = 0;
 
 export const getProjectSongModelResponseBeatsItemCoordinatesTickMin = 0;
+
+
 
 
 export const getProjectSongModelResponseBeatsItemCoordinatesBeatFractionMin = 0;
@@ -1898,12 +1996,16 @@ export const getProjectSongModelResponseBarsItemCoordinatesStartSecondsMin = 0;
 export const getProjectSongModelResponseBarsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const getProjectSongModelResponseBarsItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseBarsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const getProjectSongModelResponseBarsItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseBarsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const getProjectSongModelResponseBarsItemCoordinatesEndBeatFractionMin = 0;
@@ -1914,12 +2016,16 @@ export const getProjectSongModelResponseMelodyItemCoordinatesStartSecondsMin = 0
 export const getProjectSongModelResponseMelodyItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const getProjectSongModelResponseMelodyItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseMelodyItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const getProjectSongModelResponseMelodyItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseMelodyItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const getProjectSongModelResponseMelodyItemCoordinatesEndBeatFractionMin = 0;
@@ -1940,12 +2046,16 @@ export const getProjectSongModelResponseBassItemCoordinatesStartSecondsMin = 0;
 export const getProjectSongModelResponseBassItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const getProjectSongModelResponseBassItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseBassItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const getProjectSongModelResponseBassItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseBassItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const getProjectSongModelResponseBassItemCoordinatesEndBeatFractionMin = 0;
@@ -1987,12 +2097,16 @@ export const getProjectSongModelResponseChordsItemCoordinatesStartSecondsMin = 0
 export const getProjectSongModelResponseChordsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const getProjectSongModelResponseChordsItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseChordsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const getProjectSongModelResponseChordsItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseChordsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const getProjectSongModelResponseChordsItemCoordinatesEndBeatFractionMin = 0;
@@ -2003,12 +2117,16 @@ export const getProjectSongModelResponseSectionsItemCoordinatesStartSecondsMin =
 export const getProjectSongModelResponseSectionsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const getProjectSongModelResponseSectionsItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseSectionsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const getProjectSongModelResponseSectionsItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseSectionsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const getProjectSongModelResponseSectionsItemCoordinatesEndBeatFractionMin = 0;
@@ -2020,6 +2138,7 @@ export const getProjectSongModelResponseStemsItemConfidenceMax = 1;
 
 export const getProjectSongModelResponseSourceStemsItemChecksumRegExp = new RegExp('^[a-fA-F0-9]{64}$');
 export const getProjectSongModelResponseVocalEvidenceProvenanceOneContentChecksumRegExp = new RegExp('^[a-fA-F0-9]{64}$');
+
 
 
 export const getProjectSongModelResponseVocalEvidenceThresholdsOneRmsMin = 0;
@@ -2040,12 +2159,16 @@ export const getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCo
 export const getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesEndBeatFractionMin = 0;
@@ -2060,12 +2183,16 @@ export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCo
 export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndBeatFractionMin = 0;
@@ -2084,12 +2211,16 @@ export const getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordi
 export const getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndBeatFractionMin = 0;
@@ -2107,12 +2238,16 @@ export const getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoo
 export const getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartTickMin = 0;
 
 
+
+
 export const getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndTickMin = 0;
+
+
 
 
 export const getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndBeatFractionMin = 0;
@@ -2145,12 +2280,16 @@ export const getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindows
 export const getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndBeatFractionMin = 0;
@@ -2161,12 +2300,16 @@ export const getProjectSongModelResponseLyricsItemCoordinatesStartSecondsMin = 0
 export const getProjectSongModelResponseLyricsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const getProjectSongModelResponseLyricsItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseLyricsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const getProjectSongModelResponseLyricsItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseLyricsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const getProjectSongModelResponseLyricsItemCoordinatesEndBeatFractionMin = 0;
@@ -2209,6 +2352,7 @@ export const getProjectSongModelResponseLoudnessOneSamplePeakMin = 0;
 
 export const getProjectSongModelResponseConfidenceMin = 0;
 export const getProjectSongModelResponseConfidenceMax = 1;
+
 
 
 export const GetProjectSongModelResponse = zod.object({
@@ -2859,6 +3003,10 @@ export const correctProjectSongModelBodyMeterRegExp = new RegExp('^[1-9][0-9]*/[
 export const correctProjectSongModelBodySectionsItemNameMax = 120;
 
 
+
+
+
+
 export const CorrectProjectSongModelBody = zod.object({
   "baseVersion": zod.number().min(1),
   "bpm": zod.number().min(correctProjectSongModelBodyBpmMin).max(correctProjectSongModelBodyBpmMax).optional(),
@@ -2881,7 +3029,9 @@ export const correctProjectSongModelResponseFusionDecisionsItemCompatibilityMin 
 export const correctProjectSongModelResponseFusionDecisionsItemCompatibilityMax = 1;
 
 
+
 export const correctProjectSongModelResponseAudioDurationSecondsExclusiveMin = 0;
+
 
 
 export const correctProjectSongModelResponseAnalysisStartSecondsMin = 0;
@@ -2903,6 +3053,8 @@ export const correctProjectSongModelResponseTempoMapItemCoordinatesSecondsMin = 
 export const correctProjectSongModelResponseTempoMapItemCoordinatesTickMin = 0;
 
 
+
+
 export const correctProjectSongModelResponseTempoMapItemCoordinatesBeatFractionMin = 0;
 export const correctProjectSongModelResponseTempoMapItemCoordinatesBeatFractionExclusiveMax = 1;
 
@@ -2912,6 +3064,8 @@ export const correctProjectSongModelResponseMeterMapItemConfidenceMax = 1;
 export const correctProjectSongModelResponseMeterMapItemCoordinatesSecondsMin = 0;
 
 export const correctProjectSongModelResponseMeterMapItemCoordinatesTickMin = 0;
+
+
 
 
 export const correctProjectSongModelResponseMeterMapItemCoordinatesBeatFractionMin = 0;
@@ -2925,12 +3079,16 @@ export const correctProjectSongModelResponseKeyMapItemCoordinatesSecondsMin = 0;
 export const correctProjectSongModelResponseKeyMapItemCoordinatesTickMin = 0;
 
 
+
+
 export const correctProjectSongModelResponseKeyMapItemCoordinatesBeatFractionMin = 0;
 export const correctProjectSongModelResponseKeyMapItemCoordinatesBeatFractionExclusiveMax = 1;
 
 export const correctProjectSongModelResponseBeatsItemCoordinatesSecondsMin = 0;
 
 export const correctProjectSongModelResponseBeatsItemCoordinatesTickMin = 0;
+
+
 
 
 export const correctProjectSongModelResponseBeatsItemCoordinatesBeatFractionMin = 0;
@@ -2941,12 +3099,16 @@ export const correctProjectSongModelResponseBarsItemCoordinatesStartSecondsMin =
 export const correctProjectSongModelResponseBarsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const correctProjectSongModelResponseBarsItemCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseBarsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const correctProjectSongModelResponseBarsItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseBarsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const correctProjectSongModelResponseBarsItemCoordinatesEndBeatFractionMin = 0;
@@ -2957,12 +3119,16 @@ export const correctProjectSongModelResponseMelodyItemCoordinatesStartSecondsMin
 export const correctProjectSongModelResponseMelodyItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const correctProjectSongModelResponseMelodyItemCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseMelodyItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const correctProjectSongModelResponseMelodyItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseMelodyItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const correctProjectSongModelResponseMelodyItemCoordinatesEndBeatFractionMin = 0;
@@ -2983,12 +3149,16 @@ export const correctProjectSongModelResponseBassItemCoordinatesStartSecondsMin =
 export const correctProjectSongModelResponseBassItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const correctProjectSongModelResponseBassItemCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseBassItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const correctProjectSongModelResponseBassItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseBassItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const correctProjectSongModelResponseBassItemCoordinatesEndBeatFractionMin = 0;
@@ -3030,12 +3200,16 @@ export const correctProjectSongModelResponseChordsItemCoordinatesStartSecondsMin
 export const correctProjectSongModelResponseChordsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const correctProjectSongModelResponseChordsItemCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseChordsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const correctProjectSongModelResponseChordsItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseChordsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const correctProjectSongModelResponseChordsItemCoordinatesEndBeatFractionMin = 0;
@@ -3046,12 +3220,16 @@ export const correctProjectSongModelResponseSectionsItemCoordinatesStartSecondsM
 export const correctProjectSongModelResponseSectionsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const correctProjectSongModelResponseSectionsItemCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseSectionsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const correctProjectSongModelResponseSectionsItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseSectionsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const correctProjectSongModelResponseSectionsItemCoordinatesEndBeatFractionMin = 0;
@@ -3063,6 +3241,7 @@ export const correctProjectSongModelResponseStemsItemConfidenceMax = 1;
 
 export const correctProjectSongModelResponseSourceStemsItemChecksumRegExp = new RegExp('^[a-fA-F0-9]{64}$');
 export const correctProjectSongModelResponseVocalEvidenceProvenanceOneContentChecksumRegExp = new RegExp('^[a-fA-F0-9]{64}$');
+
 
 
 export const correctProjectSongModelResponseVocalEvidenceThresholdsOneRmsMin = 0;
@@ -3083,12 +3262,16 @@ export const correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsIt
 export const correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesEndBeatFractionMin = 0;
@@ -3103,12 +3286,16 @@ export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsIt
 export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndBeatFractionMin = 0;
@@ -3127,12 +3314,16 @@ export const correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCo
 export const correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndBeatFractionMin = 0;
@@ -3150,12 +3341,16 @@ export const correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOn
 export const correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartTickMin = 0;
 
 
+
+
 export const correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndTickMin = 0;
+
+
 
 
 export const correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndBeatFractionMin = 0;
@@ -3188,12 +3383,16 @@ export const correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWin
 export const correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndBeatFractionMin = 0;
@@ -3204,12 +3403,16 @@ export const correctProjectSongModelResponseLyricsItemCoordinatesStartSecondsMin
 export const correctProjectSongModelResponseLyricsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const correctProjectSongModelResponseLyricsItemCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseLyricsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const correctProjectSongModelResponseLyricsItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseLyricsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const correctProjectSongModelResponseLyricsItemCoordinatesEndBeatFractionMin = 0;
@@ -3252,6 +3455,7 @@ export const correctProjectSongModelResponseLoudnessOneSamplePeakMin = 0;
 
 export const correctProjectSongModelResponseConfidenceMin = 0;
 export const correctProjectSongModelResponseConfidenceMax = 1;
+
 
 
 export const CorrectProjectSongModelResponse = zod.object({
@@ -3990,10 +4194,22 @@ export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriti
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
 
 
+
+
+
+
+
+
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax = 2000;
 
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+
+
+
+
+
 
 
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax = 2000;
@@ -4002,10 +4218,22 @@ export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriti
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
 
 
+
+
+
+
+
+
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax = 2000;
 
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+
+
+
+
+
 
 
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax = 2000;
@@ -4014,10 +4242,22 @@ export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriti
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
 
 
+
+
+
+
+
+
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax = 2000;
 
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+
+
+
+
+
 
 
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax = 2000;
@@ -4026,10 +4266,22 @@ export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriti
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
 
 
+
+
+
+
+
+
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax = 2000;
 
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
+
+
+
+
+
+
 
 
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax = 2000;
@@ -4138,11 +4390,15 @@ export const listArrangementsResponseGenerationProvenanceOneEvaluationRepairSeed
 export const listArrangementsResponseGenerationProvenanceOneEvaluationRepairSeedMax = 2147483647;
 
 
+
+
+
 export const listArrangementsResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin = 0;
 export const listArrangementsResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax = 1;
 
 export const listArrangementsResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin = 0;
 export const listArrangementsResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax = 1;
+
 
 
 export const ListArrangementsResponseItem = zod.object({
@@ -4576,6 +4832,7 @@ export const CreateArrangementParams = zod.object({
 export const createArrangementBodyHarmonyComplexityMax = 10;
 
 
+
 export const CreateArrangementBody = zod.object({
   "name": zod.string().min(1),
   "style": zod.string(),
@@ -4627,10 +4884,22 @@ export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCrit
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
 
 
+
+
+
+
+
+
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax = 2000;
 
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+
+
+
+
+
 
 
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax = 2000;
@@ -4639,10 +4908,22 @@ export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCrit
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
 
 
+
+
+
+
+
+
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax = 2000;
 
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+
+
+
+
+
 
 
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax = 2000;
@@ -4651,10 +4932,22 @@ export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCrit
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
 
 
+
+
+
+
+
+
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax = 2000;
 
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+
+
+
+
+
 
 
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax = 2000;
@@ -4663,10 +4956,22 @@ export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCrit
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
 
 
+
+
+
+
+
+
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax = 2000;
 
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
+
+
+
+
+
+
 
 
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax = 2000;
@@ -4775,11 +5080,15 @@ export const createArrangementResponseGenerationProvenanceOneEvaluationRepairSee
 export const createArrangementResponseGenerationProvenanceOneEvaluationRepairSeedMax = 2147483647;
 
 
+
+
+
 export const createArrangementResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin = 0;
 export const createArrangementResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax = 1;
 
 export const createArrangementResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin = 0;
 export const createArrangementResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax = 1;
+
 
 
 export const CreateArrangementResponse = zod.object({
@@ -5257,6 +5566,7 @@ export const updateArrangementBodySectionsItemTransposeSemitonesMin = -24;
 export const updateArrangementBodySectionsItemTransposeSemitonesMax = 24;
 
 
+
 export const UpdateArrangementBody = zod.object({
   "name": zod.string().optional(),
   "harmonyComplexity": zod.number().min(1).max(updateArrangementBodyHarmonyComplexityMax).optional(),
@@ -5360,10 +5670,22 @@ export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCrit
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
 
 
+
+
+
+
+
+
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax = 2000;
 
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+
+
+
+
+
 
 
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax = 2000;
@@ -5372,10 +5694,22 @@ export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCrit
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
 
 
+
+
+
+
+
+
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax = 2000;
 
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+
+
+
+
+
 
 
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax = 2000;
@@ -5384,10 +5718,22 @@ export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCrit
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
 
 
+
+
+
+
+
+
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax = 2000;
 
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+
+
+
+
+
 
 
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax = 2000;
@@ -5396,10 +5742,22 @@ export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCrit
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
 
 
+
+
+
+
+
+
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax = 2000;
 
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
+
+
+
+
+
+
 
 
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax = 2000;
@@ -5508,11 +5866,15 @@ export const updateArrangementResponseGenerationProvenanceOneEvaluationRepairSee
 export const updateArrangementResponseGenerationProvenanceOneEvaluationRepairSeedMax = 2147483647;
 
 
+
+
+
 export const updateArrangementResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin = 0;
 export const updateArrangementResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax = 1;
 
 export const updateArrangementResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin = 0;
 export const updateArrangementResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax = 1;
+
 
 
 export const UpdateArrangementResponse = zod.object({
@@ -5983,6 +6345,7 @@ export const listArrangementRevisionsResponseSummaryNoteChangesMin = 0;
 export const listArrangementRevisionsResponseSummaryCcChangesMin = 0;
 
 
+
 export const ListArrangementRevisionsResponseItem = zod.object({
   "id": zod.string(),
   "arrangementId": zod.string(),
@@ -6068,6 +6431,8 @@ export const RestoreArrangementRevisionParams = zod.object({
 })
 
 
+
+
 export const RestoreArrangementRevisionBody = zod.object({
   "expectedVersion": zod.number().min(1)
 })
@@ -6116,10 +6481,22 @@ export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluation
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
 
 
+
+
+
+
+
+
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax = 2000;
 
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+
+
+
+
+
 
 
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax = 2000;
@@ -6128,10 +6505,22 @@ export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluation
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
 
 
+
+
+
+
+
+
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax = 2000;
 
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+
+
+
+
+
 
 
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax = 2000;
@@ -6140,10 +6529,22 @@ export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluation
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
 
 
+
+
+
+
+
+
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax = 2000;
 
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+
+
+
+
+
 
 
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax = 2000;
@@ -6152,10 +6553,22 @@ export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluation
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
 
 
+
+
+
+
+
+
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax = 2000;
 
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
+
+
+
+
+
+
 
 
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax = 2000;
@@ -6264,11 +6677,15 @@ export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluation
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationRepairSeedMax = 2147483647;
 
 
+
+
+
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin = 0;
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax = 1;
 
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin = 0;
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax = 1;
+
 
 
 export const RestoreArrangementRevisionResponse = zod.object({
@@ -6714,6 +7131,7 @@ export const generateArrangementBodyRegionCrossfadeSecondsMin = 0;
 export const generateArrangementBodyRegionCrossfadeSecondsMax = 10;
 
 
+
 export const GenerateArrangementBody = zod.object({
   "candidates": zod.number().min(1).max(generateArrangementBodyCandidatesMax).optional(),
   "idempotencyKey": zod.string().min(1).max(generateArrangementBodyIdempotencyKeyMax).optional(),
@@ -6741,6 +7159,8 @@ export const generateArrangementResponseProgressMin = 0;
 export const generateArrangementResponseProgressMax = 100;
 
 export const generateArrangementResponseAttemptMin = 0;
+
+
 
 
 export const GenerateArrangementResponse = zod.object({
@@ -6811,6 +7231,8 @@ export const getGenerationJobResponseProgressMax = 100;
 export const getGenerationJobResponseAttemptMin = 0;
 
 
+
+
 export const GetGenerationJobResponse = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -6879,6 +7301,8 @@ export const cancelGenerationJobResponseProgressMax = 100;
 export const cancelGenerationJobResponseAttemptMin = 0;
 
 
+
+
 export const CancelGenerationJobResponse = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -6945,6 +7369,8 @@ export const retryGenerationJobResponseProgressMin = 0;
 export const retryGenerationJobResponseProgressMax = 100;
 
 export const retryGenerationJobResponseAttemptMin = 0;
+
+
 
 
 export const RetryGenerationJobResponse = zod.object({
@@ -7061,6 +7487,7 @@ export const listGenerationCandidatesResponseTrackModelsItemDirectiveExitBeatMin
 export const listGenerationCandidatesResponseTrackModelsItemDirectiveExitDurationBeatsExclusiveMin = 0;
 
 
+
 export const listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemStartMin = 0;
 
 export const listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemEndMin = 0;
@@ -7093,8 +7520,14 @@ export const listGenerationCandidatesResponseTrackModelsItemMappingProgramMax = 
 
 export const listGenerationCandidatesResponseTrackModelsItemPerformanceEvidenceCanonicalTimelineSha256RegExp = new RegExp('^[a-f0-9]{64}$');
 export const listGenerationCandidatesResponseTrackModelsItemPerformanceEvidencePerformedMaterialSha256RegExp = new RegExp('^[a-f0-9]{64}$');
-
 export const listGenerationCandidatesResponseTrackModelsItemHarmonyEvidenceSelectedMotionMin = 0;
+
+export const listGenerationCandidatesResponseTrackModelsItemHarmonyEvidenceBaselineMotionMin = 0;
+
+export const listGenerationCandidatesResponseTrackModelsItemHarmonyEvidenceMaximumLeapMin = 0;
+
+export const listGenerationCandidatesResponseTrackModelsItemHarmonyEvidenceResolutionObligationsMin = 0;
+
 export const listGenerationCandidatesResponseHarmonyDecisionsItemStartMin = 0;
 
 export const listGenerationCandidatesResponseHarmonyDecisionsItemEndMin = 0;
@@ -7127,10 +7560,22 @@ export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsV
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
 
 
+
+
+
+
+
+
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax = 2000;
 
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+
+
+
+
+
 
 
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax = 2000;
@@ -7139,10 +7584,22 @@ export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsD
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
 
 
+
+
+
+
+
+
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax = 2000;
 
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+
+
+
+
+
 
 
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax = 2000;
@@ -7151,10 +7608,22 @@ export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsR
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
 
 
+
+
+
+
+
+
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax = 2000;
 
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+
+
+
+
+
 
 
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax = 2000;
@@ -7163,10 +7632,22 @@ export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsR
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
 
 
+
+
+
+
+
+
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax = 2000;
 
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
+
+
+
+
+
+
 
 
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax = 2000;
@@ -7275,11 +7756,15 @@ export const listGenerationCandidatesResponseEvaluationRepairSeedMin = 0;
 export const listGenerationCandidatesResponseEvaluationRepairSeedMax = 2147483647;
 
 
+
+
+
 export const listGenerationCandidatesResponseEvaluationRepairSourceQualityScoreMin = 0;
 export const listGenerationCandidatesResponseEvaluationRepairSourceQualityScoreMax = 1;
 
 export const listGenerationCandidatesResponseEvaluationRepairRepairedQualityScoreMin = 0;
 export const listGenerationCandidatesResponseEvaluationRepairRepairedQualityScoreMax = 1;
+
 
 
 export const ListGenerationCandidatesResponseItem = zod.object({
@@ -7953,10 +8438,22 @@ export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationM
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
 
 
+
+
+
+
+
+
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax = 2000;
 
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+
+
+
+
+
 
 
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax = 2000;
@@ -7965,10 +8462,22 @@ export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationM
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
 
 
+
+
+
+
+
+
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax = 2000;
 
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+
+
+
+
+
 
 
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax = 2000;
@@ -7977,10 +8486,22 @@ export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationM
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
 
 
+
+
+
+
+
+
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax = 2000;
 
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+
+
+
+
+
 
 
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax = 2000;
@@ -7989,10 +8510,22 @@ export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationM
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
 
 
+
+
+
+
+
+
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax = 2000;
 
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
+
+
+
+
+
+
 
 
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax = 2000;
@@ -8101,11 +8634,15 @@ export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationR
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationRepairSeedMax = 2147483647;
 
 
+
+
+
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin = 0;
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax = 1;
 
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin = 0;
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax = 1;
+
 
 
 export const SelectGenerationCandidateResponse = zod.object({
@@ -8537,7 +9074,15 @@ export const RepairGenerationCandidateParams = zod.object({
 export const repairGenerationCandidateBodyIdempotencyKeyMax = 200;
 
 
+
+
+
+
+
+
+
 export const repairGenerationCandidateBodyFindingMusicalReasonMax = 2000;
+
 
 
 export const RepairGenerationCandidateBody = zod.object({
@@ -8560,6 +9105,8 @@ export const repairGenerationCandidateResponseProgressMin = 0;
 export const repairGenerationCandidateResponseProgressMax = 100;
 
 export const repairGenerationCandidateResponseAttemptMin = 0;
+
+
 
 
 export const RepairGenerationCandidateResponse = zod.object({
@@ -8668,6 +9215,8 @@ export const ExportArrangementParams = zod.object({
 export const exportArrangementBodyIdempotencyKeyMax = 200;
 
 
+
+
 export const ExportArrangementBody = zod.object({
   "idempotencyKey": zod.string().min(1).max(exportArrangementBodyIdempotencyKeyMax).optional(),
   "arrangementId": zod.string().nullish(),
@@ -8728,6 +9277,7 @@ export const listTracksResponseTrackModelDirectiveExitBeatMin = 0;
 export const listTracksResponseTrackModelDirectiveExitDurationBeatsExclusiveMin = 0;
 
 
+
 export const listTracksResponseTrackModelAppliedDirectivesItemStartMin = 0;
 
 export const listTracksResponseTrackModelAppliedDirectivesItemEndMin = 0;
@@ -8760,8 +9310,16 @@ export const listTracksResponseTrackModelMappingProgramMax = 127;
 
 export const listTracksResponseTrackModelPerformanceEvidenceCanonicalTimelineSha256RegExp = new RegExp('^[a-f0-9]{64}$');
 export const listTracksResponseTrackModelPerformanceEvidencePerformedMaterialSha256RegExp = new RegExp('^[a-f0-9]{64}$');
-
 export const listTracksResponseTrackModelHarmonyEvidenceSelectedMotionMin = 0;
+
+export const listTracksResponseTrackModelHarmonyEvidenceBaselineMotionMin = 0;
+
+export const listTracksResponseTrackModelHarmonyEvidenceMaximumLeapMin = 0;
+
+export const listTracksResponseTrackModelHarmonyEvidenceResolutionObligationsMin = 0;
+
+
+
 export const ListTracksResponseItem = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -9084,6 +9642,8 @@ export const CreateProjectExportParams = zod.object({
 export const createProjectExportBodyIdempotencyKeyMax = 200;
 
 
+
+
 export const CreateProjectExportBody = zod.object({
   "idempotencyKey": zod.string().min(1).max(createProjectExportBodyIdempotencyKeyMax).optional(),
   "arrangementId": zod.string().nullish(),
@@ -9160,6 +9720,7 @@ export const listMixMasterRevisionsResponseEvidenceVariantsMasteredDurationSecon
 export const listMixMasterRevisionsResponseEvidenceQualityFindingsItemStartSecondsMin = 0;
 
 export const listMixMasterRevisionsResponseEvidenceQualityFindingsItemEndSecondsMin = 0;
+
 
 
 export const ListMixMasterRevisionsResponseItem = zod.object({
@@ -9320,6 +9881,7 @@ export const createMixMasterRevisionBodyMasterProcessingStereoWidthMin = 0;
 export const createMixMasterRevisionBodyMasterProcessingStereoWidthMax = 2;
 
 
+
 export const CreateMixMasterRevisionBody = zod.object({
   "arrangementId": zod.string().min(1),
   "tracks": zod.record(zod.string(), zod.object({
@@ -9379,6 +9941,7 @@ export const createMixMasterRevisionResponseEvidenceVariantsMasteredDurationSeco
 export const createMixMasterRevisionResponseEvidenceQualityFindingsItemStartSecondsMin = 0;
 
 export const createMixMasterRevisionResponseEvidenceQualityFindingsItemEndSecondsMin = 0;
+
 
 
 export const CreateMixMasterRevisionResponse = zod.object({
@@ -9549,6 +10112,7 @@ export const approveMixMasterRevisionResponseEvidenceQualityFindingsItemStartSec
 export const approveMixMasterRevisionResponseEvidenceQualityFindingsItemEndSecondsMin = 0;
 
 
+
 export const ApproveMixMasterRevisionResponse = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -9678,6 +10242,7 @@ export const listProducerDecisionsQueryLimitDefault = 50;
 export const listProducerDecisionsQueryLimitMax = 100;
 
 
+
 export const ListProducerDecisionsQueryParams = zod.object({
   "projectId": zod.coerce.string().optional(),
   "limit": zod.coerce.number().min(1).max(listProducerDecisionsQueryLimitMax).default(listProducerDecisionsQueryLimitDefault)
@@ -9686,6 +10251,8 @@ export const ListProducerDecisionsQueryParams = zod.object({
 export const listProducerDecisionsResponseRatingMax = 5;
 
 export const listProducerDecisionsResponseReasonsMax = 20;
+
+
 
 
 export const ListProducerDecisionsResponseItem = zod.object({
@@ -9725,6 +10292,7 @@ export const createProducerDecisionBodyReasonsItemMax = 500;
 export const createProducerDecisionBodyReasonsMax = 20;
 
 
+
 export const CreateProducerDecisionBody = zod.object({
   "projectId": zod.string().min(1),
   "domain": zod.enum(['candidate', 'repair', 'arrangement', 'performance', 'mix', 'master']),
@@ -9738,6 +10306,8 @@ export const CreateProducerDecisionBody = zod.object({
 export const createProducerDecisionResponseRatingMax = 5;
 
 export const createProducerDecisionResponseReasonsMax = 20;
+
+
 
 
 export const CreateProducerDecisionResponse = zod.object({
@@ -9812,6 +10382,7 @@ export const promoteProducerCalibrationBodyCriticWeightMin = 0;
 export const promoteProducerCalibrationBodyCriticWeightMax = 1;
 
 
+
 export const PromoteProducerCalibrationBody = zod.object({
   "rankingWeight": zod.number().min(promoteProducerCalibrationBodyRankingWeightMin).max(promoteProducerCalibrationBodyRankingWeightMax),
   "criticWeight": zod.number().min(promoteProducerCalibrationBodyCriticWeightMin).max(promoteProducerCalibrationBodyCriticWeightMax)
@@ -9837,6 +10408,7 @@ export const evaluateProducerCalibrationBodyRankingWeightMax = 1;
 
 export const evaluateProducerCalibrationBodyCriticWeightMin = 0;
 export const evaluateProducerCalibrationBodyCriticWeightMax = 1;
+
 
 
 export const EvaluateProducerCalibrationBody = zod.object({
@@ -9974,6 +10546,10 @@ export const RunCopilotParams = zod.object({
 })
 
 
+
+
+
+
 export const RunCopilotBody = zod.object({
   "command": zod.string().min(1),
   "arrangementId": zod.string().optional(),
@@ -9982,6 +10558,9 @@ export const RunCopilotBody = zod.object({
   "startBar": zod.number().min(1).optional(),
   "endBar": zod.number().min(1).optional()
 })
+
+
+
 
 
 export const RunCopilotResponse = zod.object({
@@ -9997,22 +10576,3 @@ export const RunCopilotResponse = zod.object({
   "affectedSections": zod.array(zod.string()),
   "interpreter": zod.enum(['openai', 'deterministic'])
 })
-
-
-export const getProjectResponseTracksItemTrackModelHarmonyEvidenceResolutionObligationsMin = 0;
-
-export const getProjectResponseTracksItemTrackModelHarmonyEvidenceMaximumLeapMin = 0;
-
-export const listGenerationCandidatesResponseTrackModelsItemHarmonyEvidenceResolutionObligationsMin = 0;
-
-export const listTracksResponseTrackModelHarmonyEvidenceBaselineMotionMin = 0;
-
-export const listGenerationCandidatesResponseTrackModelsItemHarmonyEvidenceMaximumLeapMin = 0;
-
-export const listTracksResponseTrackModelHarmonyEvidenceResolutionObligationsMin = 0;
-
-export const listTracksResponseTrackModelHarmonyEvidenceMaximumLeapMin = 0;
-
-export const listGenerationCandidatesResponseTrackModelsItemHarmonyEvidenceBaselineMotionMin = 0;
-
-export const getProjectResponseTracksItemTrackModelHarmonyEvidenceBaselineMotionMin = 0;

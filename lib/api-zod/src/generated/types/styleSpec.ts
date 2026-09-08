@@ -5,6 +5,7 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { StyleGrammar } from './styleGrammar';
 import type { StyleSpecDynamics } from './styleSpecDynamics';
 import type { StyleSpecHarmony } from './styleSpecHarmony';
 import type { StyleSpecInstrumentation } from './styleSpecInstrumentation';
@@ -24,4 +25,5 @@ export interface StyleSpec {
   orchestration: StyleSpecOrchestration;
   production: StyleSpecProduction;
   dynamics: StyleSpecDynamics;
+  grammar?: StyleGrammar;
 }

@@ -995,6 +995,8 @@ export const calibrationVersionsTable = pgTable("music_calibration_versions", {
   criticWeight: doublePrecision("critic_weight").notNull(),
   heldOutAgreement: doublePrecision("held_out_agreement").notNull(),
   baselineAgreement: doublePrecision("baseline_agreement").notNull(),
+  heldOutExamples: integer("held_out_examples"),
+  evaluationSha256: text("evaluation_sha256"),
   status: text("status").notNull().default("candidate"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   promotedAt: timestamp("promoted_at", { withTimezone: true }),
@@ -1048,6 +1050,8 @@ export type GenerationInputSnapshot = {
   };
   songModel: unknown;
   tracks: Array<{ id: string; name: string; role: string; instrument: string }>;
+  /** Immutable approved producer controls frozen before provider work begins. */
+  generationPreference?: GenerationPreferenceSnapshot | null;
   /** Absent on generation jobs persisted before bounded repairs were introduced. */
   repair?: CandidateRepairSnapshot | null;
 };
@@ -1299,8 +1303,25 @@ export type HarmonyDecisionEvidence = {
 
 export type GenerationParameters = Record<string, unknown> & {
   harmonyDecisions?: HarmonyDecisionEvidence[];
+  styleGrammarVersion?: StyleGrammar["version"];
+  styleGrammarEvidenceSha256?: string;
+  generationPreference?: GenerationPreferenceSnapshot | null;
 };
 
+export type StyleGrammar = {
+  version: "1.0";
+  evidenceSha256: string;
+  vocabulary: {
+    groove: "straight" | "swung" | "syncopated" | "four_on_floor";
+    voicing: "close" | "open" | "drop_two" | "quartal" | "wide";
+    articulation: "legato" | "tight" | "accented" | "pulsed";
+    instrumentation: "acoustic" | "electronic" | "hybrid" | "orchestral";
+    phraseBehavior: "call_response" | "continuous" | "sparse_answers" | "motivic";
+    fills: "none" | "cadential" | "frequent" | "sectional";
+    transitions: "hard_cut" | "thin_build" | "riser" | "orchestral_swell";
+    development: "repetition" | "additive" | "transformative" | "dynamic_arc";
+  };
+};
 export type StyleSpec = {
   genre: string; subgenre: string; era: string;
   tempoCharacter: "laid_back" | "steady" | "driving" | "rubato";
@@ -1310,6 +1331,8 @@ export type StyleSpec = {
   orchestration: { density: number; registerSpread: number; dynamics: string };
   production: { stereoWidth: number; room: string; mixProfile: string };
   dynamics: { range: number; accentStrength: number };
+  /** Absent on historical arrangements. */
+  grammar?: StyleGrammar;
 };
 
 export type TrackModel = {
@@ -1642,6 +1665,8 @@ export type ArrangementPlan = {
   hierarchy: ArrangementHierarchy;
   /** Absent only on historical persisted plans, which are interpreted as v1. */
   compositionIntelligence?: CompositionIntelligencePlan;
+  /** Frozen before notes are generated; absent on historical plans. */
+  generationPreference?: GenerationPreferenceSnapshot | null;
 };
 
 export type MusicalNote = {
@@ -1918,6 +1943,15 @@ export type CandidateRepairSnapshot = {
   trackModels: TrackModel[];
 };
 
+export type GenerationPreferenceEffects = {
+  orchestrationDensity: number;
+  responseFrequency: number;
+  roleEmphasis: "foundation" | "pulse" | "harmony" | "counterline" | "texture";
+  voicingCharacter: "close" | "open" | "wide";
+  development: "restrained" | "balanced" | "progressive";
+  transitionIntensity: number;
+};
+
 export type MotifTransformation =
   | "repetition"
   | "rhythmic_variation"
@@ -1926,3 +1960,15 @@ export type MotifTransformation =
   | "register_displacement"
   | "answering_gesture"
   | "orchestral_handoff";
+
+export type GenerationPreferenceSnapshot = {
+  contractVersion: "1.0";
+  calibrationId: string;
+  calibrationVersion: number;
+  heldOutAgreement: number;
+  baselineAgreement: number;
+  heldOutExamples: number;
+  evaluationSha256: string;
+  evidenceSha256: string;
+  effects: GenerationPreferenceEffects;
+};

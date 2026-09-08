@@ -10,6 +10,7 @@ import {
   producerPreferenceVersionsTable,
   type ProducerDecisionContext,
   type ProducerDecisionSource,
+  type GenerationPreferenceSnapshot,
 } from "@workspace/db";
 
 const sha256 = (value: unknown) =>
@@ -150,6 +151,26 @@ export function compareCalibrationOnHeldOut(
     ),
   };
 }
+export function calibrationEvaluationSha256(
+  examples: CalibrationExample[],
+  proposed: { rankingWeight: number; criticWeight: number },
+  baseline: { rankingWeight: number; criticWeight: number },
+): string {
+  return sha256({
+    contractVersion: "1.0",
+    examples: examples
+      .filter((example) => example.split === "held_out")
+      .map((example) => ({
+        id: example.id,
+        label: example.label,
+        rankingScore: example.rankingScore,
+        criticScore: example.criticScore,
+      }))
+      .sort((left, right) => left.id.localeCompare(right.id)),
+    proposed,
+    baseline,
+  });
+}
 export function validateCalibrationWeights(rankingWeight: number, criticWeight: number): void {
   if (!Number.isFinite(rankingWeight) || !Number.isFinite(criticWeight) ||
     rankingWeight < 0 || criticWeight < 0 || rankingWeight > 1 || criticWeight > 1 ||
@@ -192,15 +213,17 @@ export async function promoteCalibration(ownerId: string, rankingWeight: number,
       eq(producerDecisionsTable.ownerId, ownerId),
       eq(producerDecisionsTable.source, "explicit_feedback"),
     )).orderBy(producerDecisionsTable.createdAt);
+    const dataset = buildCalibrationDataset(decisionRows);
+    const baseline = active
+      ? {
+          rankingWeight: active.rankingWeight,
+          criticWeight: active.criticWeight,
+        }
+      : { rankingWeight: .5, criticWeight: .5 };
     const comparison = compareCalibrationOnHeldOut(
-      buildCalibrationDataset(decisionRows),
+      dataset,
       { rankingWeight, criticWeight },
-      active
-        ? {
-            rankingWeight: active.rankingWeight,
-            criticWeight: active.criticWeight,
-          }
-        : undefined,
+      baseline,
     );
     if (!canPromoteCalibration(
       comparison.proposal,
@@ -209,7 +232,19 @@ export async function promoteCalibration(ownerId: string, rankingWeight: number,
     )) {
       throw new Error("Calibration promotion requires at least five held-out decisions and measurable agreement improvement");
     }
-    const [row] = await tx.insert(calibrationVersionsTable).values({ id: randomUUID(), ownerId, version: (latest?.version ?? 0) + 1, rankingWeight, criticWeight, heldOutAgreement: comparison.proposal.heldOutAgreement, baselineAgreement: comparison.baseline.heldOutAgreement, status: "immutable", promotedAt: new Date() }).returning();
+    const [row] = await tx.insert(calibrationVersionsTable).values({
+      id: randomUUID(), ownerId, version: (latest?.version ?? 0) + 1,
+      rankingWeight, criticWeight,
+      heldOutAgreement: comparison.proposal.heldOutAgreement,
+      baselineAgreement: comparison.baseline.heldOutAgreement,
+      heldOutExamples: comparison.proposal.examples,
+      evaluationSha256: calibrationEvaluationSha256(
+        dataset,
+        { rankingWeight, criticWeight },
+        baseline,
+      ),
+      status: "immutable", promotedAt: new Date(),
+    }).returning();
     await tx.insert(calibrationActivePointersTable).values({ ownerId, calibrationVersionId: row.id, updatedAt: new Date() }).onConflictDoUpdate({ target: calibrationActivePointersTable.ownerId, set: { calibrationVersionId: row.id, updatedAt: new Date() } });
     await tx.insert(calibrationActivationHistoryTable).values({ id: randomUUID(), ownerId, calibrationVersionId: row.id, action: "promote" });
     return row;
@@ -228,14 +263,102 @@ export async function activeCalibrationForOwner(ownerId: string) {
     eq(calibrationVersionsTable.id, pointer.calibrationVersionId),
     eq(calibrationVersionsTable.ownerId, ownerId),
   )).limit(1);
-  return row ? { rankingWeight: row.rankingWeight, criticWeight: row.criticWeight } : null;
+  return row ? {
+    id: row.id,
+    version: row.version,
+    rankingWeight: row.rankingWeight,
+    criticWeight: row.criticWeight,
+    heldOutAgreement: row.heldOutAgreement,
+    baselineAgreement: row.baselineAgreement,
+    heldOutExamples: row.heldOutExamples,
+    evaluationSha256: row.evaluationSha256,
+    status: row.status,
+    promotedAt: row.promotedAt,
+  } : null;
+}
+
+const bounded = (value: number, min: number, max: number) =>
+  Math.max(min, Math.min(max, value));
+
+/**
+ * Converts only a held-out-approved immutable calibration into bounded musical
+ * controls. The active pointer is the rollback mechanism; objective gates do
+ * not consume this snapshot and therefore cannot be weakened by it.
+ */
+export function generationPreferenceSnapshot(
+  calibration: NonNullable<Awaited<ReturnType<typeof activeCalibrationForOwner>>>,
+): GenerationPreferenceSnapshot {
+  if (
+    calibration.heldOutExamples === null ||
+    calibration.heldOutExamples < 5 ||
+    !calibration.evaluationSha256
+  ) {
+    throw new Error("Generation preferences require reproducible held-out promotion evidence");
+  }
+  const preference = bounded(calibration.rankingWeight - calibration.criticWeight, -1, 1);
+  const effects = {
+    orchestrationDensity: bounded(preference * .18, -.18, .18),
+    responseFrequency: bounded(.5 + preference * .25, .25, .75),
+    roleEmphasis: preference > .35 ? "counterline" as const
+      : preference < -.35 ? "foundation" as const : "harmony" as const,
+    voicingCharacter: preference > .35 ? "wide" as const
+      : preference < -.35 ? "close" as const : "open" as const,
+    development: preference > .35 ? "progressive" as const
+      : preference < -.35 ? "restrained" as const : "balanced" as const,
+    transitionIntensity: bounded(.5 + preference * .25, .25, .75),
+  };
+  return {
+    contractVersion: "1.0",
+    calibrationId: calibration.id,
+    calibrationVersion: calibration.version,
+    heldOutAgreement: calibration.heldOutAgreement,
+    baselineAgreement: calibration.baselineAgreement,
+    heldOutExamples: calibration.heldOutExamples,
+    evaluationSha256: calibration.evaluationSha256,
+    evidenceSha256: sha256({
+      calibrationId: calibration.id,
+      calibrationVersion: calibration.version,
+      heldOutAgreement: calibration.heldOutAgreement,
+      baselineAgreement: calibration.baselineAgreement,
+      heldOutExamples: calibration.heldOutExamples,
+      evaluationSha256: calibration.evaluationSha256,
+      effects,
+    }),
+    effects,
+  };
+}
+
+export async function activeGenerationPreferenceForOwner(ownerId: string) {
+  const calibration = await activeCalibrationForOwner(ownerId);
+  return calibration &&
+    calibration.status === "immutable" &&
+    calibration.promotedAt !== null &&
+    calibration.heldOutExamples !== null &&
+    calibration.heldOutExamples >= 5 &&
+    calibration.evaluationSha256 !== null &&
+    Number.isFinite(calibration.heldOutAgreement) &&
+    Number.isFinite(calibration.baselineAgreement) &&
+    calibration.heldOutAgreement >= calibration.baselineAgreement + .02
+    ? generationPreferenceSnapshot(calibration)
+    : null;
 }
 export async function rollbackCalibration(ownerId: string, calibrationVersionId: string) {
   return db.transaction(async (tx) => {
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtext(${"producer-calibration:" + ownerId}))`,
     );
-    const [row] = await tx.select().from(calibrationVersionsTable).where(and(eq(calibrationVersionsTable.id, calibrationVersionId), eq(calibrationVersionsTable.ownerId, ownerId))).limit(1);
+    const [row] = await tx.select().from(calibrationVersionsTable).where(and(
+      eq(calibrationVersionsTable.id, calibrationVersionId),
+      eq(calibrationVersionsTable.ownerId, ownerId),
+      eq(calibrationVersionsTable.status, "immutable"),
+    )).limit(1);
+    if (row && (
+      !row.promotedAt ||
+      row.heldOutExamples === null ||
+      row.heldOutExamples < 5 ||
+      !row.evaluationSha256 ||
+      row.heldOutAgreement < row.baselineAgreement + .02
+    )) return null;
     if (!row) return null;
     await tx.insert(calibrationActivePointersTable).values({ ownerId, calibrationVersionId: row.id, updatedAt: new Date() }).onConflictDoUpdate({ target: calibrationActivePointersTable.ownerId, set: { calibrationVersionId: row.id, updatedAt: new Date() } });
     await tx.insert(calibrationActivationHistoryTable).values({ id: randomUUID(), ownerId, calibrationVersionId: row.id, action: "rollback" });

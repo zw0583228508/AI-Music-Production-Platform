@@ -15,11 +15,13 @@ import {
 import {
   appendProducerDecision,
   appendProducerDecisionTx,
+  activeGenerationPreferenceForOwner,
   buildCalibrationDataset,
   canPromoteCalibration,
   compareCalibrationOnHeldOut,
   learningWriteAllowed,
   heldOutAgreement,
+  generationPreferenceSnapshot,
   privateDecisionContext,
   promoteCalibration,
   rollbackCalibration,
@@ -103,6 +105,31 @@ test("learning opt-out blocks explicit and inferred writes but not non-learning 
   assert.equal(learningWriteAllowed(disabled, "objective_evidence"), true);
 });
 
+test("approved calibration becomes an immutable bounded generation preference", () => {
+  const input = {
+    id: "calibration-7",
+    version: 7,
+    rankingWeight: .9,
+    criticWeight: .1,
+    heldOutAgreement: .82,
+    baselineAgreement: .74,
+    heldOutExamples: 6,
+    evaluationSha256: "e".repeat(64),
+    status: "immutable",
+    promotedAt: new Date("2026-01-01T00:00:00.000Z"),
+  };
+  const first = generationPreferenceSnapshot(input);
+  const second = generationPreferenceSnapshot(structuredClone(input));
+  assert.deepEqual(first, second);
+  assert.equal(first.calibrationId, input.id);
+  assert.equal(first.calibrationVersion, input.version);
+  assert.equal(first.effects.roleEmphasis, "counterline");
+  assert.equal(first.effects.voicingCharacter, "wide");
+  assert.ok(first.effects.orchestrationDensity <= .18);
+  assert.ok(first.effects.responseFrequency >= .25 && first.effects.responseFrequency <= .75);
+  assert.match(first.evidenceSha256, /^[a-f0-9]{64}$/);
+});
+
 describe("calibrated candidate ranking", () => {
   const evaluation = (critic: number, quality: number, complete = true) => {
     const dimension = { status: "unavailable", score: null, evidence: [], explanation: "", findings: [] };
@@ -175,6 +202,34 @@ describe("deterministic calibration dataset", () => {
 });
 
 describe("producer decision database concurrency", () => {
+  it("keeps historical promoted calibrations ranking-only when audit evidence is absent", async () => {
+    const ownerId = randomUUID();
+    const calibrationId = randomUUID();
+    try {
+      await db.insert(calibrationVersionsTable).values({
+        id: calibrationId,
+        ownerId,
+        version: 1,
+        rankingWeight: .9,
+        criticWeight: .1,
+        heldOutAgreement: .8,
+        baselineAgreement: .7,
+        status: "immutable",
+        promotedAt: new Date(),
+      });
+      await db.insert(calibrationActivePointersTable).values({
+        ownerId,
+        calibrationVersionId: calibrationId,
+      });
+      assert.equal(await activeGenerationPreferenceForOwner(ownerId), null);
+    } finally {
+      await db.delete(calibrationActivePointersTable)
+        .where(eq(calibrationActivePointersTable.ownerId, ownerId));
+      await db.delete(calibrationVersionsTable)
+        .where(eq(calibrationVersionsTable.ownerId, ownerId));
+    }
+  });
+
   it("stores multiple repair decisions for one owner in a single transaction", async () => {
     const ownerId = randomUUID();
     const projectId = randomUUID();
@@ -348,9 +403,12 @@ describe("producer decision database concurrency", () => {
           version: 1,
           rankingWeight: 0.5,
           criticWeight: 0.5,
-          heldOutAgreement: 0,
-          baselineAgreement: 0,
+          heldOutAgreement: .8,
+          baselineAgreement: .7,
+          heldOutExamples: 5,
+          evaluationSha256: "a".repeat(64),
           status: "immutable",
+          promotedAt: new Date(),
         },
         {
           id: secondId,
@@ -358,9 +416,12 @@ describe("producer decision database concurrency", () => {
           version: 2,
           rankingWeight: 0.1,
           criticWeight: 0.9,
-          heldOutAgreement: 0,
-          baselineAgreement: 0,
+          heldOutAgreement: .8,
+          baselineAgreement: .7,
+          heldOutExamples: 5,
+          evaluationSha256: "b".repeat(64),
           status: "immutable",
+          promotedAt: new Date(),
         },
       ]);
       await db.insert(calibrationActivePointersTable).values({
