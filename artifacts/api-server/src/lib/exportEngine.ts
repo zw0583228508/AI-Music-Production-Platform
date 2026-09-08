@@ -1011,7 +1011,7 @@ export async function renderArrangementExport(input: {
       type: exportAudioRole("mix"),
       format: "WAV",
       contentType: "audio/wav",
-      data: encodeWav(pipeline.mix),
+      data: encodeWav(mix),
       provenance: fileProvenance("MIX_GRAPH", "1.0.0", {
         trackCount: pipeline.tracks.length,
         arrangementAware: true,
@@ -1022,7 +1022,7 @@ export async function renderArrangementExport(input: {
       type: exportAudioRole("premaster"),
       format: "WAV",
       contentType: "audio/wav",
-      data: encodeWav(pipeline.premaster),
+      data: encodeWav(mastered.premaster),
       provenance: fileProvenance("MASTER_ENGINE", "1.0.0", {
         stage: "premaster",
         profile: "DYNAMIC",
@@ -1033,7 +1033,7 @@ export async function renderArrangementExport(input: {
       type: exportAudioRole("master"),
       format: "WAV",
       contentType: "audio/wav",
-      data: encodeWav(pipeline.master),
+      data: encodeWav(mastered.master),
       provenance: fileProvenance("MASTER_ENGINE", "1.0.0", {
         stage: "master",
         profile: input.masterProfile,
