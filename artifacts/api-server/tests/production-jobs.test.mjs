@@ -19,6 +19,7 @@ await build({
         queueProductionJob,
         recoverProductionJobs,
         requestProductionJobCancellation,
+        structuredJobError,
       } from "./src/lib/productionJobs";
       export {
         db,
@@ -56,6 +57,7 @@ const {
   queueProductionJob,
   recoverProductionJobs,
   requestProductionJobCancellation,
+  structuredJobError,
   sql,
 } = await import(pathToFileURL(harnessPath).href);
 
@@ -103,6 +105,60 @@ function isForcedLedgerFailure(error) {
     error.cause instanceof Error &&
     error.cause.message === "forced ledger transition failure";
 }
+
+test("structured job errors survive a throwing message getter", () => {
+  const hostile = Object.create(null, {
+    message: {
+      get() {
+        throw new Error("hostile message getter escaped");
+      },
+    },
+  });
+
+  assert.deepEqual(structuredJobError(hostile), {
+    code: "PRODUCTION_JOB_FAILED",
+    message: "Production job failed",
+    retryable: true,
+  });
+});
+
+test("structured job errors survive throwing string and primitive conversion", () => {
+  const hostileConversions = [
+    {
+      message: {
+        toString() {
+          throw new Error("hostile string conversion escaped");
+        },
+      },
+    },
+    {
+      message: {
+        [Symbol.toPrimitive]() {
+          throw new Error("hostile primitive conversion escaped");
+        },
+      },
+    },
+  ];
+
+  for (const hostile of hostileConversions) {
+    assert.deepEqual(structuredJobError(hostile, "HOST_FAILURE"), {
+      code: "HOST_FAILURE",
+      message: "Production job failed",
+      retryable: true,
+    });
+  }
+});
+
+test("structured job retryability uses the sanitized bounded diagnostic", () => {
+  const formatted = structuredJobError({
+    message: `  invalid\u0000license  ${"x".repeat(400)}`,
+  });
+
+  assert.equal(formatted.message.length, 240);
+  assert.match(formatted.message, /^invalid license /u);
+  assert.match(formatted.message, /\.\.\.$/u);
+  assert.equal(formatted.retryable, false);
+});
 
 before(async () => {
   await db.insert(musicProjectsTable).values({
