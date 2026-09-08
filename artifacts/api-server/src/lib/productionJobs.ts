@@ -9,6 +9,7 @@ import {
   type ProductionJobKind,
   type ProductionJobStatus,
 } from "@workspace/db";
+import { formatHostErrorMessage } from "./hostErrorDiagnostics";
 export { logProductionJobEvent } from "./productionJobLogger";
 
 export const PRODUCTION_JOB_KINDS: ProductionJobKind[] = [
@@ -578,7 +579,7 @@ export async function recoverProductionJobs(now = new Date()): Promise<void> {
 }
 
 export function structuredJobError(error: unknown, fallbackCode = "PRODUCTION_JOB_FAILED"): ProductionJobError {
-  const message = error instanceof Error ? error.message : "Production job failed";
+  const message = formatHostErrorMessage(error, "Production job failed");
   const retryable = !/invalid|unauthorized|forbidden|cancel|not configured|license/i.test(message);
   return { code: fallbackCode, message, retryable };
 }
