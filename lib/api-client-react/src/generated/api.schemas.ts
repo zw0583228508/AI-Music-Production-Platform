@@ -2998,11 +2998,198 @@ export interface ExportInput {
   idempotencyKey?: string;
   /** @nullable */
   arrangementId?: string | null;
+  /** @minLength 1 */
+  approvedRevisionId?: string;
   includeStems?: boolean;
   includeMidi?: boolean;
   includeMix?: boolean;
   includeMetadata?: boolean;
   masterProfile?: ExportInputMasterProfile;
+}
+
+export type MixMasterTrackControlBus = typeof MixMasterTrackControlBus[keyof typeof MixMasterTrackControlBus];
+
+
+export const MixMasterTrackControlBus = {
+  MIX: 'MIX',
+  DRUMS: 'DRUMS',
+  MUSIC: 'MUSIC',
+  VOCALS: 'VOCALS',
+  FX: 'FX',
+} as const;
+
+export type MixMasterTrackControlProcessing = {
+  /**
+     * @minimum 20
+     * @maximum 20000
+     */
+  highPassHz: number;
+  /**
+     * @minimum 1
+     * @maximum 20
+     */
+  compressorRatio: number;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  saturation: number;
+};
+
+export interface MixMasterTrackControl {
+  /**
+     * @minimum -60
+     * @maximum 12
+     */
+  levelDb: number;
+  /**
+     * @minimum -1
+     * @maximum 1
+     */
+  pan: number;
+  bus: MixMasterTrackControlBus;
+  /**
+     * @minimum -80
+     * @maximum 6
+     */
+  sendDb: number;
+  processing: MixMasterTrackControlProcessing;
+}
+
+export type MixMasterRevisionInputTracks = {[key: string]: MixMasterTrackControl};
+
+export type MixMasterRevisionInputMasterProcessing = {
+  limiter: boolean;
+  /**
+     * @minimum 0
+     * @maximum 2
+     */
+  stereoWidth: number;
+};
+
+export type MixMasterRevisionInputMaster = {
+  /**
+     * @minimum -24
+     * @maximum -6
+     */
+  targetLufs: number;
+  /**
+     * @minimum -6
+     * @maximum -0.1
+     */
+  truePeakDbtp: number;
+  processing: MixMasterRevisionInputMasterProcessing;
+};
+
+export interface MixMasterRevisionInput {
+  /** @minLength 1 */
+  arrangementId: string;
+  tracks: MixMasterRevisionInputTracks;
+  master: MixMasterRevisionInputMaster;
+}
+
+export type MixMasterFindingSeverity = typeof MixMasterFindingSeverity[keyof typeof MixMasterFindingSeverity];
+
+
+export const MixMasterFindingSeverity = {
+  info: 'info',
+  warning: 'warning',
+  error: 'error',
+} as const;
+
+export interface MixMasterFinding {
+  id: string;
+  severity: MixMasterFindingSeverity;
+  message: string;
+  control: string;
+  /** @minimum 0 */
+  startSeconds: number;
+  /** @minimum 0 */
+  endSeconds: number;
+}
+
+export interface MixMasterPreviewVariant {
+  url: string;
+  timelineSha256: string;
+  /** @minimum 0 */
+  durationSeconds: number;
+  sourceId?: string;
+  artifactId?: string;
+  checksum?: string;
+}
+
+export type MixMasterRevisionControlsTracks = {[key: string]: MixMasterTrackControl};
+
+export type MixMasterRevisionControlsMasterProcessing = {
+  limiter: boolean;
+  stereoWidth: number;
+};
+
+export type MixMasterRevisionControlsMaster = {
+  targetLufs: number;
+  truePeakDbtp: number;
+  processing: MixMasterRevisionControlsMasterProcessing;
+};
+
+export type MixMasterRevisionControls = {
+  tracks: MixMasterRevisionControlsTracks;
+  master: MixMasterRevisionControlsMaster;
+};
+
+export type MixMasterRevisionVariants = {
+  original: MixMasterPreviewVariant | null;
+  repaired: MixMasterPreviewVariant | null;
+  mixed: MixMasterPreviewVariant;
+  mastered: MixMasterPreviewVariant;
+};
+
+export type MixMasterRevisionEvidenceVariants = {
+  original: MixMasterPreviewVariant | null;
+  repaired: MixMasterPreviewVariant | null;
+  mixed: MixMasterPreviewVariant;
+  mastered: MixMasterPreviewVariant;
+};
+
+export type MixMasterRevisionEvidenceQualityTruePeakMethod = typeof MixMasterRevisionEvidenceQualityTruePeakMethod[keyof typeof MixMasterRevisionEvidenceQualityTruePeakMethod];
+
+
+export const MixMasterRevisionEvidenceQualityTruePeakMethod = {
+  '4x-windowed-sinc-estimate': '4x-windowed-sinc-estimate',
+} as const;
+
+export type MixMasterRevisionEvidenceQuality = {
+  integratedLufs: number;
+  truePeakDbtp: number;
+  truePeakMethod: MixMasterRevisionEvidenceQualityTruePeakMethod;
+  findings: MixMasterFinding[];
+};
+
+export type MixMasterRevisionEvidence = {
+  arrangementId: string;
+  arrangementVersion: number;
+  /** @nullable */
+  songModelVersion: number | null;
+  timelineSha256: string;
+  artifactIds: string[];
+  variants: MixMasterRevisionEvidenceVariants;
+  renderer: string;
+  quality: MixMasterRevisionEvidenceQuality;
+};
+
+export interface MixMasterRevision {
+  id: string;
+  projectId: string;
+  arrangementId: string;
+  version: number;
+  controls: MixMasterRevisionControls;
+  previewUrl: string;
+  variants: MixMasterRevisionVariants;
+  evidence: MixMasterRevisionEvidence;
+  /** @nullable */
+  approvedAt: string | null;
+  /** @nullable */
+  approvedBy: string | null;
+  createdAt: string;
 }
 
 export type ProductionJobKind = typeof ProductionJobKind[keyof typeof ProductionJobKind];

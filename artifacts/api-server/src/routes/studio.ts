@@ -84,6 +84,13 @@ import {
   UpdateArrangementBody,
   UpdateArrangementParams,
   UpdateArrangementResponse,
+  ListMixMasterRevisionsParams,
+  ListMixMasterRevisionsResponse,
+  CreateMixMasterRevisionParams,
+  CreateMixMasterRevisionBody,
+  CreateMixMasterRevisionResponse,
+  ApproveMixMasterRevisionParams,
+  ApproveMixMasterRevisionResponse,
 } from "@workspace/api-zod";
 import {
   analysisJobsTable,
@@ -102,10 +109,13 @@ import {
   songModelsTable,
   studioActivitiesTable,
   tracksTable,
+  mixMasterRevisionsTable,
   type ArrangementRevisionSnapshot,
   type SongModelData,
   type SongModelField,
   type SongModelFieldStatus,
+  type MixMasterControls,
+  type MixMasterFinding,
 } from "@workspace/db";
 import {
   queueProductionJob,
@@ -118,6 +128,7 @@ import {
   formatBytes,
   renderArrangementExport,
 } from "../lib/exportEngine";
+import { estimateTruePeak4x } from "../lib/audioMeter";
 import {
   deleteAnalysisObjects,
   deleteExportObject,
@@ -149,6 +160,7 @@ import {
   applyArrangementEditorChanges,
   applyPlanModulations,
   buildTrackModels,
+  canonicalPerformanceTimelineSha256,
   createArrangementPlan,
   createStyleSpec,
   ensureArrangementPlanHierarchy,
@@ -478,6 +490,20 @@ const iso = (value: Date) => value.toISOString();
 const nullableIso = (value: Date | null) => value ? iso(value) : null;
 const sha256 = (value: Buffer | string): string =>
   createHash("sha256").update(value).digest("hex");
+export function measureWav(buffer: Buffer): { integratedLufs: number; truePeakDbtp: number } {
+  if (buffer.length < 44 || buffer.toString("ascii", 0, 4) !== "RIFF") throw new Error("Rendered preview is not WAV audio");
+  let sum = 0; let peak = 0; const samples = Math.floor((buffer.length - 44) / 2);
+  const pcm = new Float64Array(samples);
+  for (let index = 0; index < samples; index += 1) {
+    const value = buffer.readInt16LE(44 + index * 2) / 32768;
+    pcm[index] = value; sum += value * value;
+  }
+  peak = estimateTruePeak4x(pcm);
+  return {
+    integratedLufs: 20 * Math.log10(Math.sqrt(sum / Math.max(1, samples)) + 1e-12),
+    truePeakDbtp: 20 * Math.log10(peak + 1e-12),
+  };
+}
 const productionJobResponse = (job: typeof productionJobsTable.$inferSelect) => ({
   id: job.id,
   projectId: job.projectId,
@@ -593,6 +619,23 @@ const artifactResponse = (
   checksum: artifact.checksum ?? artifact.hash,
   expiresAt: artifact.expiresAt ? iso(artifact.expiresAt) : null,
   createdAt: iso(artifact.createdAt),
+});
+
+const mixMasterRevisionResponse = (
+  revision: typeof mixMasterRevisionsTable.$inferSelect,
+  previewUrl: string,
+) => ({
+  id: revision.id,
+  projectId: revision.projectId,
+  arrangementId: revision.arrangementId,
+  version: revision.version,
+  controls: revision.controls,
+  previewUrl,
+  variants: revision.evidence.variants,
+  evidence: revision.evidence,
+  approvedAt: nullableIso(revision.approvedAt),
+  approvedBy: revision.approvedBy,
+  createdAt: iso(revision.createdAt),
 });
 
 type ProjectCleanupPlan = {
@@ -2963,6 +3006,285 @@ router.post("/production-jobs/:jobId/retry", async (req, res): Promise<void> => 
   res.status(202).json(productionJobResponse(job));
 });
 
+router.get("/projects/:projectId/mix-master-revisions", async (req, res): Promise<void> => {
+  const params = ListMixMasterRevisionsParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [ownedProject] = await db.select({ id: musicProjectsTable.id })
+    .from(musicProjectsTable)
+    .where(and(
+      eq(musicProjectsTable.id, params.data.projectId),
+      eq(musicProjectsTable.ownerId, req.user!.id),
+    ))
+    .limit(1);
+  if (!ownedProject) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+  const rows = await db.select({
+    revision: mixMasterRevisionsTable,
+    url: musicArtifactsTable.url,
+  }).from(mixMasterRevisionsTable)
+    .innerJoin(musicArtifactsTable, eq(musicArtifactsTable.id, mixMasterRevisionsTable.previewArtifactId))
+    .where(eq(mixMasterRevisionsTable.projectId, params.data.projectId))
+    .orderBy(desc(mixMasterRevisionsTable.version));
+  res.json(ListMixMasterRevisionsResponse.parse(rows.map(({ revision, url }) =>
+    mixMasterRevisionResponse(revision, url ?? ""))));
+});
+
+router.post("/projects/:projectId/mix-master-revisions", async (req, res): Promise<void> => {
+  const params = CreateMixMasterRevisionParams.safeParse(req.params);
+  const body = CreateMixMasterRevisionBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: "Invalid mix/master revision request" });
+    return;
+  }
+  const [arrangementRows, projectRows, songModelRows, tracks, parentArtifacts] = await Promise.all([
+    db.select().from(arrangementsTable).where(and(eq(arrangementsTable.id, body.data.arrangementId), eq(arrangementsTable.projectId, params.data.projectId))).limit(1),
+    db.select().from(musicProjectsTable).where(and(
+      eq(musicProjectsTable.id, params.data.projectId),
+      eq(musicProjectsTable.ownerId, req.user!.id),
+    )).limit(1),
+    db.select().from(songModelsTable).where(eq(songModelsTable.projectId, params.data.projectId)),
+    db.select().from(tracksTable).where(eq(tracksTable.projectId, params.data.projectId)),
+    db.select().from(musicArtifactsTable).where(eq(musicArtifactsTable.projectId, params.data.projectId)),
+  ]);
+  const arrangement = arrangementRows[0];
+  const project = projectRows[0];
+  const songModel = arrangement
+    ? songModelRows.find((model) => model.version === arrangement.songModelVersion)
+    : undefined;
+  if (!project) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+  if (!arrangement || !songModel || !arrangement.plan || !arrangement.styleSpec || !arrangement.trackModels.length) {
+    res.status(409).json({ error: "A persisted arrangement, Song Model, plan, style, and TrackModels are required to audition a revision" });
+    return;
+  }
+  const unknownTrack = Object.keys(body.data.tracks).find((id) => !tracks.some((track) => track.id === id));
+  if (unknownTrack) {
+    res.status(400).json({ error: `Mix controls reference unknown track ${unknownTrack}` });
+    return;
+  }
+  const missingTrack = tracks.find((track) => !body.data.tracks[track.id]);
+  if (missingTrack) {
+    res.status(400).json({ error: `Mix controls are required for track ${missingTrack.id}` });
+    return;
+  }
+  const controls: MixMasterControls = { tracks: body.data.tracks, master: body.data.master };
+  const renderTracks = tracks.map((track) => ({
+    ...track,
+    volume: controls.tracks[track.id]?.levelDb ?? track.volume,
+  }));
+  const timelineSha256 = canonicalPerformanceTimelineSha256(songModel.model);
+  const parentIds = parentArtifacts.filter((artifact) =>
+    (artifact.type === "TRACK_MODEL" && artifact.storageUri?.startsWith(`db://music_arrangements/${arrangement.id}/tracks/`)) ||
+    (artifact.type === "ARRANGEMENT_PLAN" && artifact.storageUri === `db://music_arrangements/${arrangement.id}`),
+  ).map((artifact) => artifact.id);
+  if (!parentIds.length) {
+    res.status(409).json({ error: "Arrangement artifact lineage is unavailable" });
+    return;
+  }
+  const files = await renderArrangementExport({
+    projectName: project.name, bpm: project.bpm, key: project.key, meter: project.meter,
+    arrangementName: arrangement.name, arrangementVersion: arrangement.version,
+    masterProfile: "STREAMING", energy: arrangement.energy, density: arrangement.density,
+    harmonyComplexity: arrangement.harmonyComplexity, sections: arrangement.sections, tracks: renderTracks,
+    songModel: songModel.model, plan: arrangement.plan, trackModels: arrangement.trackModels,
+    styleSpec: arrangement.styleSpec, seed: arrangement.seed ?? undefined,
+    generationProvider: arrangement.generationProvider ?? "ARRANGEMENT_ENGINE",
+    generationModelVersion: arrangement.modelVersion ?? undefined, parentIds,
+    includeStems: false, includeMidi: false, mixMasterControls: controls,
+  });
+  const master = files.find((file) => file.type === "MASTER" && file.format === "WAV");
+  const mixed = files.find((file) => file.type === "MIX" && file.format === "WAV");
+  if (!master || !mixed) throw new Error("Mix/master renderer did not produce both WAV variants");
+  const [source] = await db.select().from(projectSourcesTable).where(and(
+    eq(projectSourcesTable.id, songModel.sourceId),
+    eq(projectSourcesTable.projectId, project.id),
+    eq(projectSourcesTable.status, "ready"),
+  )).limit(1);
+  const renderedDuration = (master.data.length - 44) / (44_100 * 2 * 2);
+  const originalUrl = source && source.sourceType !== "MIDI" &&
+    source.durationSeconds !== null &&
+    Math.abs(source.durationSeconds - renderedDuration) < .05
+    ? `/api/projects/${project.id}/playback?sourceId=${encodeURIComponent(source.id)}`
+    : null;
+  const evaluation = arrangement.generationProvenance?.evaluation;
+  const repairRequested = Boolean((arrangement.generationProvenance?.parameters as Record<string, unknown> | undefined)?.repair);
+  const repairReference = repairRequested && evaluation
+    ? evaluation.artifacts.find((artifact) => artifact.type === "AUDIO_TRACK" && evaluation.renderArtifactIds.includes(artifact.id))
+    : undefined;
+  const repairedArtifact = repairReference
+    ? parentArtifacts.find((artifact) => artifact.id === repairReference.id && artifact.type === "AUDIO_TRACK" &&
+      artifact.state === "ready" && artifact.storageUri?.startsWith("/api/storage/objects/exports/") &&
+      artifact.url?.startsWith("/api/storage/objects/exports/") &&
+      artifact.technicalMetadata.timelineSha256 === timelineSha256)
+    : undefined;
+  let repairedVariant: NonNullable<import("@workspace/db").MixMasterRevisionEvidence["variants"]["repaired"]> | null = null;
+  if (repairedArtifact?.storageUri && repairedArtifact.checksum) {
+    const object = await getPrivateObject(repairedArtifact.storageUri.slice("/api/storage/objects/".length));
+    if (object) {
+      const [bytes] = await object.download();
+      const duration = bytes.length >= 44 && bytes.toString("ascii", 0, 4) === "RIFF"
+        ? (bytes.length - 44) / (44_100 * 2 * 2) : -1;
+      if (sha256(bytes) === repairedArtifact.checksum && Math.abs(duration - renderedDuration) < .05) {
+        repairedVariant = { url: repairedArtifact.url!, artifactId: repairedArtifact.id, checksum: repairedArtifact.checksum, timelineSha256, durationSeconds: duration };
+      }
+    }
+  }
+  const measured = measureWav(master.data);
+  const findings: MixMasterFinding[] = [
+    ...(measured.integratedLufs > -9 ? [{
+      id: "master-loudness", severity: "warning" as const,
+      message: `Measured ${measured.integratedLufs.toFixed(1)} LUFS can reduce transient detail.`,
+      control: "master.targetLufs", startSeconds: 0, endSeconds: songModel.model.audio.durationSeconds,
+    }] : []),
+    ...(measured.truePeakDbtp > -1 ? [{
+      id: "master-true-peak", severity: "warning" as const,
+      message: "True-peak ceiling above -1 dBTP risks codec overs.",
+      control: "master.truePeakDbtp", startSeconds: 0, endSeconds: songModel.model.audio.durationSeconds,
+    }] : []),
+  ];
+  // Object ids do not depend on the allocated version, so byte upload is kept
+  // outside the short serializable allocation transaction.
+  const mixedArtifactId = `mix-preview-${randomUUID()}`;
+  const masteredArtifactId = `master-preview-${randomUUID()}`;
+  let mixedUrl: string | null = null;
+  let masteredUrl: string | null = null;
+  try {
+    mixedUrl = await saveExportObject(`mix-master/${mixedArtifactId}.wav`, mixed.data, "audio/wav");
+    masteredUrl = await saveExportObject(`mix-master/${masteredArtifactId}.wav`, master.data, "audio/wav");
+  } catch (error) {
+    await Promise.all([
+      ...(mixedUrl ? [deleteExportObject(mixedUrl).catch(() => undefined)] : []),
+      ...(masteredUrl ? [deleteExportObject(masteredUrl).catch(() => undefined)] : []),
+    ]);
+    throw error;
+  }
+  let revision: { created: typeof mixMasterRevisionsTable.$inferSelect; version: number };
+  try {
+    revision = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`mix-master-revision:${project.id}`}))`);
+    const current = await tx.select({ version: mixMasterRevisionsTable.version })
+      .from(mixMasterRevisionsTable).where(eq(mixMasterRevisionsTable.projectId, params.data.projectId));
+    const version = Math.max(0, ...current.map((row) => row.version)) + 1;
+    const evidence = {
+      arrangementId: arrangement.id, arrangementVersion: arrangement.version, songModelVersion: arrangement.songModelVersion,
+      timelineSha256, artifactIds: [...parentIds, mixedArtifactId, masteredArtifactId],
+      variants: {
+        original: originalUrl ? { url: originalUrl, sourceId: source!.id, timelineSha256, durationSeconds: renderedDuration } : null,
+        repaired: repairedVariant,
+        mixed: { url: mixedUrl, artifactId: mixedArtifactId, checksum: sha256(mixed.data), timelineSha256, durationSeconds: renderedDuration },
+        mastered: { url: masteredUrl, artifactId: masteredArtifactId, checksum: sha256(master.data), timelineSha256, durationSeconds: renderedDuration },
+      },
+      renderer: "MUSIC_ENGINE@1.0",
+      quality: { integratedLufs: measured.integratedLufs, truePeakDbtp: measured.truePeakDbtp, truePeakMethod: "4x-windowed-sinc-estimate" as const, findings },
+    };
+    await tx.insert(musicArtifactsTable).values({
+      id: mixedArtifactId, projectId: project.id, type: "AUDIO_TRACK", label: `Mixed preview v${version}`,
+      version, size: formatBytes(mixed.data.length), format: "WAV", url: mixedUrl, storageUri: mixedUrl,
+      state: "ready", hash: sha256(mixed.data), checksum: sha256(mixed.data), parentIds,
+      createdBy: "mix-master-renderer", modelVersion: "MUSIC_ENGINE@1.0", immutable: true,
+      technicalMetadata: { timelineSha256, revisionVersion: version, variant: "mixed" },
+    });
+    await tx.insert(musicArtifactsTable).values({
+      id: masteredArtifactId, projectId: project.id, type: "AUDIO_TRACK", label: `Mastered preview v${version}`,
+      version, size: formatBytes(master.data.length), format: "WAV", url: masteredUrl, storageUri: masteredUrl,
+      state: "ready", hash: sha256(master.data), checksum: sha256(master.data), parentIds: [mixedArtifactId],
+      createdBy: "mix-master-renderer", modelVersion: "MUSIC_ENGINE@1.0", immutable: true,
+      technicalMetadata: { timelineSha256, revisionVersion: version, variant: "mastered" },
+    });
+    const [created] = await tx.insert(mixMasterRevisionsTable).values({
+      id: randomUUID(), projectId: project.id, arrangementId: arrangement.id, version, controls, evidence,
+      previewArtifactId: masteredArtifactId, createdBy: req.user!.id,
+    }).returning();
+    return { created, version };
+    });
+  } catch (error) {
+    await Promise.all([deleteExportObject(mixedUrl).catch(() => undefined), deleteExportObject(masteredUrl).catch(() => undefined)]);
+    throw error;
+  }
+  res.status(201).json(CreateMixMasterRevisionResponse.parse(mixMasterRevisionResponse(
+    revision.created,
+    masteredUrl,
+  )));
+});
+
+router.post("/projects/:projectId/mix-master-revisions/:revisionId/approve", async (req, res): Promise<void> => {
+  const params = ApproveMixMasterRevisionParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [ownedProject] = await db.select({ id: musicProjectsTable.id })
+    .from(musicProjectsTable)
+    .where(and(
+      eq(musicProjectsTable.id, params.data.projectId),
+      eq(musicProjectsTable.ownerId, req.user!.id),
+    ))
+    .limit(1);
+  if (!ownedProject) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+  const [existing] = await db.select().from(mixMasterRevisionsTable).where(and(
+    eq(mixMasterRevisionsTable.id, params.data.revisionId),
+    eq(mixMasterRevisionsTable.projectId, params.data.projectId),
+  )).limit(1);
+  if (!existing) {
+    res.status(404).json({ error: "Mix/master revision not found" });
+    return;
+  }
+  const blocking = existing.evidence.quality.findings.find((finding) => finding.severity === "error");
+  if (blocking) {
+    res.status(409).json({ error: `Approval blocked: ${blocking.message}` });
+    return;
+  }
+  const [artifact] = await db.select().from(musicArtifactsTable)
+    .where(eq(musicArtifactsTable.id, existing.previewArtifactId)).limit(1);
+  if (!artifact?.storageUri?.startsWith("/api/storage/objects/exports/") || artifact.state !== "ready" || !artifact.checksum) {
+    res.status(409).json({ error: "Preview artifact is not ready for approval" });
+    return;
+  }
+  const stored = await getPrivateObject(artifact.storageUri.slice("/api/storage/objects/".length));
+  if (!stored) {
+    res.status(409).json({ error: "Preview artifact bytes are unavailable" });
+    return;
+  }
+  const [bytes] = await stored.download();
+  if (sha256(bytes) !== artifact.checksum) {
+    res.status(409).json({ error: "Preview artifact integrity verification failed" });
+    return;
+  }
+  const revision = existing.approvedAt ? existing : await db.transaction(async (tx) => {
+    const [stillOwned] = await tx.select({ id: musicProjectsTable.id })
+      .from(musicProjectsTable)
+      .where(and(
+        eq(musicProjectsTable.id, existing.projectId),
+        eq(musicProjectsTable.ownerId, req.user!.id),
+      ))
+      .limit(1);
+    if (!stillOwned) throw new Error("Project ownership changed during mix/master approval");
+    await tx.update(mixMasterRevisionsTable).set({ approvedAt: null, approvedBy: null }).where(and(
+      eq(mixMasterRevisionsTable.projectId, existing.projectId),
+      eq(mixMasterRevisionsTable.arrangementId, existing.arrangementId),
+    ));
+    const [approved] = await tx.update(mixMasterRevisionsTable).set({
+      approvedAt: new Date(), approvedBy: req.user!.id,
+    }).where(and(
+      eq(mixMasterRevisionsTable.id, existing.id),
+      eq(mixMasterRevisionsTable.projectId, existing.projectId),
+      eq(mixMasterRevisionsTable.arrangementId, existing.arrangementId),
+    )).returning();
+    return approved;
+  });
+  res.json(ApproveMixMasterRevisionResponse.parse(mixMasterRevisionResponse(revision, artifact.url ?? "")));
+});
+
 router.post("/projects/:projectId/export", async (req, res): Promise<void> => {
   await ensureSeeded();
   const params = CreateProjectExportParams.safeParse(req.params);
@@ -2992,6 +3314,28 @@ router.post("/projects/:projectId/export", async (req, res): Promise<void> => {
     : arrangementCandidates[0];
   if (!requestedArrangement) {
     res.status(404).json({ error: "Arrangement not found" });
+    return;
+  }
+  if (!body.data.approvedRevisionId) {
+    res.status(409).json({ error: "An approved mix/master revision is required before export" });
+    return;
+  }
+  const [approvedRevision] = await db.select().from(mixMasterRevisionsTable).where(and(
+    eq(mixMasterRevisionsTable.id, body.data.approvedRevisionId),
+    eq(mixMasterRevisionsTable.projectId, params.data.projectId),
+    eq(mixMasterRevisionsTable.arrangementId, requestedArrangement.id),
+  )).limit(1);
+  if (!approvedRevision?.approvedAt) {
+    res.status(409).json({ error: "The requested mix/master revision is not approved for this arrangement" });
+    return;
+  }
+  const [approvedPreview] = await db.select({
+    checksum: musicArtifactsTable.checksum,
+    state: musicArtifactsTable.state,
+  }).from(musicArtifactsTable)
+    .where(eq(musicArtifactsTable.id, approvedRevision.previewArtifactId)).limit(1);
+  if (!approvedPreview?.checksum || approvedPreview.state !== "ready") {
+    res.status(409).json({ error: "Approved preview artifact is no longer ready" });
     return;
   }
   const idempotencyKey = (body.data.idempotencyKey?.trim() ||
@@ -3024,9 +3368,9 @@ router.post("/projects/:projectId/export", async (req, res): Promise<void> => {
     await transaction.insert(musicArtifactsTable).values({
       id: exportId, projectId: params.data.projectId, type: "EXPORT",
       label: `${requestedArrangement.name} v${version} export`, version, size: "Queued", format: "ZIP",
-      url: `/api/exports/${exportId}/download`, state: "rendering", parentIds: [],
+      url: `/api/exports/${exportId}/download`, state: "rendering", parentIds: [approvedRevision.previewArtifactId],
       createdBy: "export-pipeline", modelVersion: "EXPORT_PIPELINE@1.0.0",
-      parameters: { arrangementId: requestedArrangement.id, includeStems: body.data.includeStems ?? true, includeMidi: body.data.includeMidi ?? true },
+       parameters: { arrangementId: requestedArrangement.id, approvedRevisionId: approvedRevision.id, includeStems: body.data.includeStems ?? true, includeMidi: body.data.includeMidi ?? true },
       storageUri: `db://music_exports/${exportId}`,
       immutable: false,
     });
@@ -3039,6 +3383,9 @@ router.post("/projects/:projectId/export", async (req, res): Promise<void> => {
         arrangementId: requestedArrangement.id,
         exportId,
         version,
+         approvedRevisionId: approvedRevision.id,
+         approvedPreviewChecksum: approvedPreview.checksum,
+         approvedArrangementVersion: approvedRevision.evidence.arrangementVersion,
       },
     }, transaction);
     return { job: queued.job, duplicate: false };

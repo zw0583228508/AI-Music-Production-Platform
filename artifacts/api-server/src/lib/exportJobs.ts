@@ -7,6 +7,7 @@ import {
   musicAuditEventsTable,
   musicUsageLedgerTable,
   musicProjectsTable,
+  mixMasterRevisionsTable,
   productionJobsTable,
   songModelsTable,
   studioActivitiesTable,
@@ -63,6 +64,9 @@ type ExportInputSnapshot = {
   masterProfile?: "STREAMING" | "DYNAMIC" | "CLASSICAL" | "POP" | "LOUD" | "FILM";
   processingProvider?: "PEDALBOARD_BUILTIN";
   pedalboardProcessing?: boolean;
+  approvedRevisionId?: string;
+  approvedPreviewChecksum?: string;
+  approvedArrangementVersion?: number;
 };
 
 const sha256 = (value: Buffer | string) => createHash("sha256").update(value).digest("hex");
@@ -70,10 +74,12 @@ const sha256 = (value: Buffer | string) => createHash("sha256").update(value).di
 function validateProcessingEvidence(
   files: GeneratedExportFile[],
   evidenceByFile: Record<string, PedalboardProcessingEvidence>,
+  approvedMaster = false,
 ): void {
   const expectedNames = files
     .filter((file) =>
       isFinalExportAudioRole(file.type) &&
+      !(approvedMaster && file.type === exportAudioRole("master")) &&
       file.format === "WAV")
     .map((file) => file.name)
     .sort();
@@ -218,6 +224,36 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
       db.select().from(musicArtifactsTable).where(eq(musicArtifactsTable.projectId, job.projectId)),
     ]);
     if (!project || !arrangement) throw new Error("Export project or arrangement is unavailable");
+    if (!input.approvedRevisionId) {
+      throw new Error("Export requires an approved mix/master revision");
+    }
+    const [approvedRevision] = await db.select().from(mixMasterRevisionsTable).where(and(
+      eq(mixMasterRevisionsTable.id, input.approvedRevisionId),
+      eq(mixMasterRevisionsTable.projectId, job.projectId),
+      eq(mixMasterRevisionsTable.arrangementId, arrangement.id),
+    )).limit(1);
+    if (!approvedRevision?.approvedAt) {
+      throw new Error("Approved mix/master revision is unavailable");
+    }
+    const approvedPreview = artifacts.find((artifact) =>
+      artifact.id === approvedRevision.previewArtifactId && artifact.state === "ready" &&
+      artifact.storageUri?.startsWith("/api/storage/objects/exports/"));
+    if (!approvedPreview?.storageUri) {
+      throw new Error("Approved mix/master preview artifact is unavailable");
+    }
+    const approvedObject = await getPrivateObject(
+      approvedPreview.storageUri.slice("/api/storage/objects/".length),
+    );
+    if (!approvedObject) throw new Error("Approved mix/master preview bytes are unavailable");
+    const [approvedWav] = await approvedObject.download();
+    if (sha256(approvedWav) !== approvedPreview.checksum || approvedWav.toString("ascii", 0, 4) !== "RIFF") {
+      throw new Error("Approved mix/master preview failed integrity verification");
+    }
+    if (input.approvedPreviewChecksum !== approvedPreview.checksum ||
+      input.approvedArrangementVersion !== approvedRevision.evidence.arrangementVersion ||
+      input.approvedArrangementVersion !== arrangement.version) {
+      throw new Error("Approved revision no longer matches the export request snapshot");
+    }
     const [exportArtifact] = artifacts.filter((artifact) => artifact.id === input.exportId);
     if (!exportArtifact) throw new Error("Export artifact allocation is unavailable");
     if (exportArtifact.state === "ready") {
@@ -296,6 +332,24 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
     let renderedFiles = [...deterministicFiles, ...providerAudioFiles]
       .filter((file) => (input.includeMix !== false || !isExportAudioRole(file.type)) &&
       (input.includeMetadata !== false || file.type !== "METADATA"));
+    // The release master is the exact producer-approved WAV, not a fresh,
+    // potentially divergent master render. Its immutable artifact remains in
+    // the export graph and the manifest inherits the revision evidence.
+    renderedFiles = renderedFiles.map((file) => file.type === exportAudioRole("master") && file.format === "WAV"
+      ? {
+          ...file,
+          data: approvedWav,
+          provenance: {
+            ...file.provenance,
+            parentIds: [approvedRevision.previewArtifactId],
+            parameters: {
+              ...file.provenance.parameters,
+              approvedRevisionId: approvedRevision.id,
+              approvalEvidence: JSON.stringify(approvedRevision.evidence),
+            },
+          },
+        }
+      : file);
     const pedalboardRequested = input.processingProvider === "PEDALBOARD_BUILTIN" ||
       input.pedalboardProcessing === true ||
       process.env.PEDALBOARD_BUILTIN_EXPORT_PROCESSING === "true";
@@ -305,6 +359,7 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
       // to stems (which would make stems unsuitable for remixing).
       renderedFiles = await Promise.all(renderedFiles.map(async (file) => {
         if (!isFinalExportAudioRole(file.type) || file.format !== "WAV") return file;
+        if (input.approvedRevisionId && file.type === exportAudioRole("master")) return file;
         const processed = await processPedalboardBuiltinWav(file.data);
         processingEvidence[file.name] = processed.evidence;
         return {
@@ -325,7 +380,7 @@ export async function runExportProductionJob(jobId: string): Promise<void> {
       if (!Object.keys(processingEvidence).length) {
         throw new Error("Pedalboard processing was requested but no final WAV was available");
       }
-      validateProcessingEvidence(renderedFiles, processingEvidence);
+      validateProcessingEvidence(renderedFiles, processingEvidence, Boolean(input.approvedRevisionId));
       renderedFiles = renderedFiles.map((file) => {
         if (file.name !== "project/manifest.json") return file;
         const metadata = JSON.parse(file.data.toString()) as Record<string, unknown>;

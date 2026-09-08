@@ -47,6 +47,8 @@ import type {
   LicensedInstrumentPackCatalog,
   LogoutBrowserSessionParams,
   LogoutSuccess,
+  MixMasterRevision,
+  MixMasterRevisionInput,
   MobileTokenExchangeRequest,
   MobileTokenExchangeSuccess,
   MusicProvider,
@@ -3346,7 +3348,7 @@ export const createProjectExport = async (projectId: string,
 
 
 
-export const getCreateProjectExportMutationOptions = <TError = ErrorType<NotFoundResponse>,
+export const getCreateProjectExportMutationOptions = <TError = ErrorType<NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProjectExport>>, TError,{projectId: string;data?: BodyType<ExportInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createProjectExport>>, TError,{projectId: string;data?: BodyType<ExportInput>}, TContext> => {
 
@@ -3375,12 +3377,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CreateProjectExportMutationResult = NonNullable<Awaited<ReturnType<typeof createProjectExport>>>
     export type CreateProjectExportMutationBody = BodyType<ExportInput> | undefined
-    export type CreateProjectExportMutationError = ErrorType<NotFoundResponse>
+    export type CreateProjectExportMutationError = ErrorType<NotFoundResponse | void>
 
     /**
  * @summary Queue a versioned project export render
  */
-export const useCreateProjectExport = <TError = ErrorType<NotFoundResponse>,
+export const useCreateProjectExport = <TError = ErrorType<NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProjectExport>>, TError,{projectId: string;data?: BodyType<ExportInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createProjectExport>>,
@@ -3389,6 +3391,228 @@ export const useCreateProjectExport = <TError = ErrorType<NotFoundResponse>,
         TContext
       > => {
       return useMutation(getCreateProjectExportMutationOptions(options));
+    }
+
+export const getListMixMasterRevisionsUrl = (projectId: string,) => {
+
+
+
+
+  return `/api/projects/${projectId}/mix-master-revisions`
+}
+
+/**
+ * @summary List immutable mix and master revisions
+ */
+export const listMixMasterRevisions = async (projectId: string, options?: Parameters<typeof customFetch>[1]): Promise<MixMasterRevision[]> => {
+
+  return customFetch<MixMasterRevision[]>(getListMixMasterRevisionsUrl(projectId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListMixMasterRevisionsQueryKey = (projectId: string,) => {
+    return [
+    `/api/projects/${projectId}/mix-master-revisions`
+    ] as const;
+    }
+
+
+export const getListMixMasterRevisionsQueryOptions = <TData = Awaited<ReturnType<typeof listMixMasterRevisions>>, TError = ErrorType<unknown>>(projectId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMixMasterRevisions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListMixMasterRevisionsQueryKey(projectId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMixMasterRevisions>>> = ({ signal }) => listMixMasterRevisions(projectId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: projectId !== null && projectId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listMixMasterRevisions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListMixMasterRevisionsQueryResult = NonNullable<Awaited<ReturnType<typeof listMixMasterRevisions>>>
+export type ListMixMasterRevisionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List immutable mix and master revisions
+ */
+
+export function useListMixMasterRevisions<TData = Awaited<ReturnType<typeof listMixMasterRevisions>>, TError = ErrorType<unknown>>(
+ projectId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMixMasterRevisions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListMixMasterRevisionsQueryOptions(projectId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateMixMasterRevisionUrl = (projectId: string,) => {
+
+
+
+
+  return `/api/projects/${projectId}/mix-master-revisions`
+}
+
+/**
+ * @summary Render an immutable WAV audition revision
+ */
+export const createMixMasterRevision = async (projectId: string,
+    mixMasterRevisionInput: MixMasterRevisionInput, options?: Parameters<typeof customFetch>[1]): Promise<MixMasterRevision> => {
+
+  return customFetch<MixMasterRevision>(getCreateMixMasterRevisionUrl(projectId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(mixMasterRevisionInput)
+  }
+);}
+
+
+
+
+
+export const getCreateMixMasterRevisionMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMixMasterRevision>>, TError,{projectId: string;data: BodyType<MixMasterRevisionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createMixMasterRevision>>, TError,{projectId: string;data: BodyType<MixMasterRevisionInput>}, TContext> => {
+
+const mutationKey = ['createMixMasterRevision'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createMixMasterRevision>>, {projectId: string;data: BodyType<MixMasterRevisionInput>}> = (props) => {
+          const {projectId,data} = props ?? {};
+
+          return  createMixMasterRevision(projectId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateMixMasterRevisionMutationResult = NonNullable<Awaited<ReturnType<typeof createMixMasterRevision>>>
+    export type CreateMixMasterRevisionMutationBody = BodyType<MixMasterRevisionInput>
+    export type CreateMixMasterRevisionMutationError = ErrorType<void>
+
+    /**
+ * @summary Render an immutable WAV audition revision
+ */
+export const useCreateMixMasterRevision = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMixMasterRevision>>, TError,{projectId: string;data: BodyType<MixMasterRevisionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createMixMasterRevision>>,
+        TError,
+        {projectId: string;data: BodyType<MixMasterRevisionInput>},
+        TContext
+      > => {
+      return useMutation(getCreateMixMasterRevisionMutationOptions(options));
+    }
+
+export const getApproveMixMasterRevisionUrl = (projectId: string,
+    revisionId: string,) => {
+
+
+
+
+  return `/api/projects/${projectId}/mix-master-revisions/${revisionId}/approve`
+}
+
+/**
+ * @summary Approve an immutable revision for export
+ */
+export const approveMixMasterRevision = async (projectId: string,
+    revisionId: string, options?: Parameters<typeof customFetch>[1]): Promise<MixMasterRevision> => {
+
+  return customFetch<MixMasterRevision>(getApproveMixMasterRevisionUrl(projectId,revisionId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getApproveMixMasterRevisionMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approveMixMasterRevision>>, TError,{projectId: string;revisionId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof approveMixMasterRevision>>, TError,{projectId: string;revisionId: string}, TContext> => {
+
+const mutationKey = ['approveMixMasterRevision'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof approveMixMasterRevision>>, {projectId: string;revisionId: string}> = (props) => {
+          const {projectId,revisionId} = props ?? {};
+
+          return  approveMixMasterRevision(projectId,revisionId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ApproveMixMasterRevisionMutationResult = NonNullable<Awaited<ReturnType<typeof approveMixMasterRevision>>>
+
+    export type ApproveMixMasterRevisionMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Approve an immutable revision for export
+ */
+export const useApproveMixMasterRevision = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approveMixMasterRevision>>, TError,{projectId: string;revisionId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof approveMixMasterRevision>>,
+        TError,
+        {projectId: string;revisionId: string},
+        TContext
+      > => {
+      return useMutation(getApproveMixMasterRevisionMutationOptions(options));
     }
 
 export const getGetProductionJobUrl = (jobId: string,) => {

@@ -15,6 +15,8 @@ export interface ExportInput {
   idempotencyKey?: string;
   /** @nullable */
   arrangementId?: string | null;
+  /** @minLength 1 */
+  approvedRevisionId?: string;
   includeStems?: boolean;
   includeMidi?: boolean;
   includeMix?: boolean;
