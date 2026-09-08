@@ -1472,6 +1472,7 @@ export const GetProjectResponse = zod.object({
 }),
   "directive": zod.object({
   "role": zod.string().optional(),
+  "musicalFunction": zod.enum(['foundation', 'pulse', 'groove', 'harmonic_support', 'texture', 'countermelody', 'hook', 'response', 'lift', 'transition', 'accent', 'doubling', 'pad']).optional(),
   "register": zod.string().optional(),
   "rhythmicActivity": zod.number().min(getProjectResponseTracksItemTrackModelDirectiveRhythmicActivityMin).max(getProjectResponseTracksItemTrackModelDirectiveRhythmicActivityMax).optional(),
   "harmonicActivity": zod.number().min(getProjectResponseTracksItemTrackModelDirectiveHarmonicActivityMin).max(getProjectResponseTracksItemTrackModelDirectiveHarmonicActivityMax).optional(),
@@ -1490,7 +1491,9 @@ export const GetProjectResponse = zod.object({
   "durationBeats": zod.number().gt(getProjectResponseTracksItemTrackModelDirectiveExitDurationBeatsExclusiveMin).optional()
 }).optional(),
   "transition": zod.string().optional(),
-  "fill": zod.boolean().optional()
+  "fill": zod.boolean().optional(),
+  "handoffFromTrackId": zod.string().optional(),
+  "doublingTrackId": zod.string().optional()
 }).optional(),
   "appliedDirectives": zod.array(zod.object({
   "section": zod.string(),
@@ -1500,6 +1503,7 @@ export const GetProjectResponse = zod.object({
   "end": zod.number().min(getProjectResponseTracksItemTrackModelAppliedDirectivesItemEndMin),
   "directive": zod.object({
   "role": zod.string().optional(),
+  "musicalFunction": zod.enum(['foundation', 'pulse', 'groove', 'harmonic_support', 'texture', 'countermelody', 'hook', 'response', 'lift', 'transition', 'accent', 'doubling', 'pad']).optional(),
   "register": zod.string().optional(),
   "rhythmicActivity": zod.number().min(getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveRhythmicActivityMin).max(getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveRhythmicActivityMax).optional(),
   "harmonicActivity": zod.number().min(getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveHarmonicActivityMin).max(getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveHarmonicActivityMax).optional(),
@@ -1518,7 +1522,9 @@ export const GetProjectResponse = zod.object({
   "durationBeats": zod.number().gt(getProjectResponseTracksItemTrackModelAppliedDirectivesItemDirectiveExitDurationBeatsExclusiveMin).optional()
 }).optional(),
   "transition": zod.string().optional(),
-  "fill": zod.boolean().optional()
+  "fill": zod.boolean().optional(),
+  "handoffFromTrackId": zod.string().optional(),
+  "doublingTrackId": zod.string().optional()
 })
 })).optional(),
   "mapping": zod.object({
@@ -7893,6 +7899,7 @@ export const ListGenerationCandidatesResponseItem = zod.object({
 }),
   "directive": zod.object({
   "role": zod.string().optional(),
+  "musicalFunction": zod.enum(['foundation', 'pulse', 'groove', 'harmonic_support', 'texture', 'countermelody', 'hook', 'response', 'lift', 'transition', 'accent', 'doubling', 'pad']).optional(),
   "register": zod.string().optional(),
   "rhythmicActivity": zod.number().min(listGenerationCandidatesResponseTrackModelsItemDirectiveRhythmicActivityMin).max(listGenerationCandidatesResponseTrackModelsItemDirectiveRhythmicActivityMax).optional(),
   "harmonicActivity": zod.number().min(listGenerationCandidatesResponseTrackModelsItemDirectiveHarmonicActivityMin).max(listGenerationCandidatesResponseTrackModelsItemDirectiveHarmonicActivityMax).optional(),
@@ -7911,7 +7918,9 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "durationBeats": zod.number().gt(listGenerationCandidatesResponseTrackModelsItemDirectiveExitDurationBeatsExclusiveMin).optional()
 }).optional(),
   "transition": zod.string().optional(),
-  "fill": zod.boolean().optional()
+  "fill": zod.boolean().optional(),
+  "handoffFromTrackId": zod.string().optional(),
+  "doublingTrackId": zod.string().optional()
 }).optional(),
   "appliedDirectives": zod.array(zod.object({
   "section": zod.string(),
@@ -7921,6 +7930,7 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "end": zod.number().min(listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemEndMin),
   "directive": zod.object({
   "role": zod.string().optional(),
+  "musicalFunction": zod.enum(['foundation', 'pulse', 'groove', 'harmonic_support', 'texture', 'countermelody', 'hook', 'response', 'lift', 'transition', 'accent', 'doubling', 'pad']).optional(),
   "register": zod.string().optional(),
   "rhythmicActivity": zod.number().min(listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveRhythmicActivityMin).max(listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveRhythmicActivityMax).optional(),
   "harmonicActivity": zod.number().min(listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveHarmonicActivityMin).max(listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveHarmonicActivityMax).optional(),
@@ -7939,7 +7949,9 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "durationBeats": zod.number().gt(listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemDirectiveExitDurationBeatsExclusiveMin).optional()
 }).optional(),
   "transition": zod.string().optional(),
-  "fill": zod.boolean().optional()
+  "fill": zod.boolean().optional(),
+  "handoffFromTrackId": zod.string().optional(),
+  "doublingTrackId": zod.string().optional()
 })
 })).optional(),
   "mapping": zod.object({
@@ -9434,6 +9446,7 @@ export const ListTracksResponseItem = zod.object({
 }),
   "directive": zod.object({
   "role": zod.string().optional(),
+  "musicalFunction": zod.enum(['foundation', 'pulse', 'groove', 'harmonic_support', 'texture', 'countermelody', 'hook', 'response', 'lift', 'transition', 'accent', 'doubling', 'pad']).optional(),
   "register": zod.string().optional(),
   "rhythmicActivity": zod.number().min(listTracksResponseTrackModelDirectiveRhythmicActivityMin).max(listTracksResponseTrackModelDirectiveRhythmicActivityMax).optional(),
   "harmonicActivity": zod.number().min(listTracksResponseTrackModelDirectiveHarmonicActivityMin).max(listTracksResponseTrackModelDirectiveHarmonicActivityMax).optional(),
@@ -9452,7 +9465,9 @@ export const ListTracksResponseItem = zod.object({
   "durationBeats": zod.number().gt(listTracksResponseTrackModelDirectiveExitDurationBeatsExclusiveMin).optional()
 }).optional(),
   "transition": zod.string().optional(),
-  "fill": zod.boolean().optional()
+  "fill": zod.boolean().optional(),
+  "handoffFromTrackId": zod.string().optional(),
+  "doublingTrackId": zod.string().optional()
 }).optional(),
   "appliedDirectives": zod.array(zod.object({
   "section": zod.string(),
@@ -9462,6 +9477,7 @@ export const ListTracksResponseItem = zod.object({
   "end": zod.number().min(listTracksResponseTrackModelAppliedDirectivesItemEndMin),
   "directive": zod.object({
   "role": zod.string().optional(),
+  "musicalFunction": zod.enum(['foundation', 'pulse', 'groove', 'harmonic_support', 'texture', 'countermelody', 'hook', 'response', 'lift', 'transition', 'accent', 'doubling', 'pad']).optional(),
   "register": zod.string().optional(),
   "rhythmicActivity": zod.number().min(listTracksResponseTrackModelAppliedDirectivesItemDirectiveRhythmicActivityMin).max(listTracksResponseTrackModelAppliedDirectivesItemDirectiveRhythmicActivityMax).optional(),
   "harmonicActivity": zod.number().min(listTracksResponseTrackModelAppliedDirectivesItemDirectiveHarmonicActivityMin).max(listTracksResponseTrackModelAppliedDirectivesItemDirectiveHarmonicActivityMax).optional(),
@@ -9480,7 +9496,9 @@ export const ListTracksResponseItem = zod.object({
   "durationBeats": zod.number().gt(listTracksResponseTrackModelAppliedDirectivesItemDirectiveExitDurationBeatsExclusiveMin).optional()
 }).optional(),
   "transition": zod.string().optional(),
-  "fill": zod.boolean().optional()
+  "fill": zod.boolean().optional(),
+  "handoffFromTrackId": zod.string().optional(),
+  "doublingTrackId": zod.string().optional()
 })
 })).optional(),
   "mapping": zod.object({

@@ -81,6 +81,39 @@ test("critic localizes a register collision to its bar and implicated tracks", (
   assert.match(finding.id, /^music-critic-v1:registerCollisions:chorus:5-5:/);
 });
 
+test("critic permits close-register overlap only when the part explicitly doubles its target", () => {
+  const piano = track("piano", "piano", 60);
+  const strings = {
+    ...track("strings", "strings", 61),
+    appliedDirectives: [{
+      section: "chorus",
+      startBar: 5,
+      endBar: 8,
+      start: 16,
+      end: 32,
+      directive: {
+        musicalFunction: "doubling",
+        register: "middle",
+        doublingTrackId: "piano",
+      },
+    }],
+  } as TrackModel;
+  const evaluate = (tracks: TrackModel[]) => evaluateCandidateMusicalFit({
+    songModel: {
+      tempoMap: [{ time: 0, bpm: 60, confidence: 1 }],
+      meterMap: [{ bar: 1, meter: "4/4", confidence: 1 }],
+    } as unknown as SongModelData,
+    plan,
+    tracks,
+    harmonyDecisions: [],
+  }).dimensions.registerCollisions;
+  const intentional = evaluate([piano, strings]);
+  assert.equal(intentional.findings.length, 0);
+  const undeclared = structuredClone(strings);
+  delete undeclared.appliedDirectives;
+  assert.ok(evaluate([piano, undeclared]).findings.length > 0);
+});
+
 test("critic returns separate non-overlapping findings in one dimension", () => {
   const separatedTrack = (id: string, instrument: string, pitch: number): TrackModel => ({
     ...track(id, instrument, pitch),

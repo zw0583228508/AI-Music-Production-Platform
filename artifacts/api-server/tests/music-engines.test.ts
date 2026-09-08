@@ -576,6 +576,244 @@ test("historical v2 plans without groove remain readable and nested groove ident
   }), /Shared groove identity/);
 });
 
+test("orchestration assigns unique functions, deterministic handoffs, and distinct climax/release behavior", () => {
+  const model = song({
+    contractVersion: "2.0",
+    timebase: { ppq: 960, originSeconds: 0, coordinateSystem: "seconds+ticks" },
+    audio: { ...song().audio, durationSeconds: 48, analysisDurationSeconds: 48 },
+    sections: [
+      { name: "Verse", startBar: 1, endBar: 4, energy: .45 },
+      { name: "Build", startBar: 5, endBar: 8, energy: .72 },
+      { name: "Chorus", startBar: 9, endBar: 12, energy: .95 },
+      { name: "Outro", startBar: 13, endBar: 16, energy: .25 },
+    ],
+    energy: [.45, .72, .95, .25],
+    chords: [{ start: 0, end: 48, symbol: "C", roman: "I", confidence: .9 }],
+    bars: Array.from({ length: 16 }, (_, index) => {
+      const bar = index + 1;
+      return {
+        bar, start: index * 2, end: bar * 2, beats: 4, confidence: 1,
+        coordinates: {
+          start: { seconds: index * 2, tick: index * 3840, beat: index * 4, bar, beatInBar: 1, beatFraction: 0 },
+          end: { seconds: bar * 2, tick: bar * 3840, beat: bar * 4, bar: bar + 1, beatInBar: 1, beatFraction: 0 },
+        },
+      };
+    }),
+  });
+  const style = createStyleSpec("cinematic pop", {
+    density: .78, harmonyComplexity: 6, energy: .8, orchestraSize: .9,
+  });
+  const tracks = [
+    { id: "bass", name: "Bass", role: "bass" },
+    { id: "drums", name: "Drums", role: "rhythm" },
+    { id: "piano", name: "Piano", role: "melody" },
+    { id: "guitar", name: "Guitar", role: "lead" },
+    { id: "strings", name: "Strings", role: "support" },
+    { id: "pad", name: "Synth Pad", role: "texture" },
+  ];
+  const create = () => createArrangementPlan({
+    arrangementId: "orchestration-fixture",
+    version: 1,
+    songModel: model,
+    style,
+    tracks,
+    parameters: {
+      songModelVersion: 3, seed: 992, energy: .8, density: .78,
+      orchestraSize: .9, rhythmIntensity: .7,
+    },
+    compositionVersion: "2.0",
+  });
+  const plan = create();
+  const assignments = plan.compositionIntelligence?.orchestrationAssignments ?? [];
+  assert.ok(assignments.length > 0);
+  for (const section of plan.hierarchy.sections) {
+    const sectionAssignments = assignments.filter((item) => item.sectionId === section.id);
+    for (const phraseId of new Set(sectionAssignments.map((item) => item.phraseId))) {
+      const occupied = sectionAssignments
+        .filter((item) => item.phraseId === phraseId && item.role !== "doubling")
+        .map((item) => `${item.role}:${item.register}`);
+      assert.equal(new Set(occupied).size, occupied.length);
+    }
+  }
+  assert.deepEqual(assignments, create().compositionIntelligence?.orchestrationAssignments);
+  assert.ok(assignments.some((item) => item.handoffFromTrackId &&
+    item.handoffFromTrackId !== item.trackId));
+  const chorusSectionId = plan.hierarchy.sections[2].id;
+  const chorusHooks = assignments.filter((item) =>
+    item.sectionId === chorusSectionId && item.role === "hook");
+  assert.equal(chorusHooks.length, 2);
+  assert.notEqual(chorusHooks[0].trackId, chorusHooks[1].trackId);
+  assert.equal(chorusHooks[1].handoffFromTrackId, chorusHooks[0].trackId);
+
+  const climax = plan.sections[2];
+  const release = plan.sections[3];
+  assert.ok(climax.activeTracks!.length > release.activeTracks!.length);
+  assert.notDeepEqual(
+    Object.values(climax.trackDirectives!).map((directive) => directive.musicalFunction),
+    Object.values(release.trackDirectives!).map((directive) => directive.musicalFunction),
+  );
+  const rendered = buildTrackModels({ songModel: model, plan, tracks, style, seed: 992 });
+  const performedFunctions = (start: number, end: number) => [...new Set(rendered.flatMap((track) =>
+    track.notes.filter((note) => note.start >= start && note.start < end)
+      .map((note) => note.voice)))].sort();
+  assert.notDeepEqual(performedFunctions(8, 16), performedFunctions(16, 24));
+  assert.notDeepEqual(performedFunctions(16, 24), performedFunctions(24, 32));
+  const performedShape = (start: number, end: number) => rendered.flatMap((track) =>
+    track.notes.filter((note) => note.start >= start && note.start < end)
+      .map((note) => `${track.id}:${note.voice}:${note.pitch}:${note.duration}`));
+  assert.notDeepEqual(performedShape(8, 16), performedShape(16, 24));
+  assert.notDeepEqual(performedShape(16, 24), performedShape(24, 32));
+  const hookCarrier = (start: number, end: number) => rendered.find((track) =>
+    track.notes.some((note) => note.start >= start && note.start < end && note.voice === "hook"))?.id;
+  assert.notEqual(hookCarrier(16, 20), hookCarrier(20, 24));
+  assert.ok(rendered.some((track) => track.notes.some((note) =>
+    ["foundation", "pulse", "groove", "harmonic_support", "texture", "countermelody",
+      "hook", "response", "lift", "transition", "accent", "pad"].includes(note.voice ?? ""))));
+
+  const providerPlan = createArrangementPlan({
+    arrangementId: "orchestration-provider-source",
+    version: 1,
+    songModel: model,
+    style,
+    tracks,
+    parameters: {
+      songModelVersion: 3, seed: 992, energy: .8, density: .78,
+      orchestraSize: .9, rhythmIntensity: .7,
+    },
+    compositionVersion: "1.0",
+  });
+  const providerSource = buildTrackModels({
+    songModel: model, plan: providerPlan, tracks, style, seed: 992,
+  });
+  const providerOrchestrated = applyCompositionIntelligence(providerSource, plan, model);
+  const providerHookCarrier = (start: number, end: number) => providerOrchestrated.find((track) =>
+    track.notes.some((note) => note.start >= start && note.start < end && note.voice === "hook"))?.id;
+  assert.notEqual(providerHookCarrier(16, 20), providerHookCarrier(20, 24));
+  assert.ok(providerOrchestrated.every((track) => track.notes.every((note) => {
+    const sectionIndex = Math.min(3, Math.floor(note.start / 8));
+    const sectionId = plan.hierarchy.sections[sectionIndex].id;
+    const assignmentsAtTrack = assignments.filter((item) =>
+      item.sectionId === sectionId && item.trackId === track.id);
+    return assignmentsAtTrack.some((item) => item.role === note.voice);
+  })));
+  const phraseExitPlan = structuredClone(plan);
+  const secondChorusPhrase = phraseExitPlan.compositionIntelligence!.phrases
+    .filter((phrase) => phrase.sectionId === chorusSectionId)
+    .sort((left, right) => left.startBar - right.startBar)[1];
+  const exitingTrackId = phraseExitPlan.compositionIntelligence!.orchestrationAssignments!
+    .find((item) => item.phraseId === secondChorusPhrase.id)!.trackId;
+  phraseExitPlan.compositionIntelligence!.orchestrationAssignments =
+    phraseExitPlan.compositionIntelligence!.orchestrationAssignments!.filter((item) =>
+      item.phraseId !== secondChorusPhrase.id || item.trackId !== exitingTrackId);
+  const phraseExitOutput = applyCompositionIntelligence(providerSource, phraseExitPlan, model);
+  assert.equal(
+    phraseExitOutput.find((track) => track.id === exitingTrackId)?.notes
+      .filter((note) => note.start >= 20 && note.start < 24).length,
+    0,
+  );
+});
+
+test("same-function same-register duplication requires an explicit doubling role", () => {
+  const model = song({
+    sections: [
+      { name: "Verse", startBar: 1, endBar: 2, energy: .5 },
+      { name: "Chorus", startBar: 3, endBar: 4, energy: .9 },
+    ],
+    energy: [.5, .9],
+  });
+  const style = createStyleSpec("pop", {
+    density: 1, harmonyComplexity: 5, energy: .8, orchestraSize: 1,
+  });
+  const make = (secondRole: string) => createArrangementPlan({
+    arrangementId: `redundancy-${secondRole}`,
+    version: 1,
+    songModel: model,
+    style,
+    tracks: [
+      { id: "piano-a", name: "Piano A", role: "harmony" },
+      { id: "piano-b", name: "Piano B", role: secondRole },
+    ],
+    parameters: { songModelVersion: 1, seed: 7, density: 1, orchestraSize: 1 },
+    compositionVersion: "2.0",
+  });
+  const ordinary = make("harmony").compositionIntelligence!.orchestrationAssignments!;
+  assert.ok(ordinary.every((left, index) => ordinary.every((right, otherIndex) =>
+    index === otherIndex || left.sectionId !== right.sectionId ||
+    left.role !== right.role || left.register !== right.register)));
+  const doubled = make("doubling").compositionIntelligence!.orchestrationAssignments!;
+  assert.ok(doubled.some((item) => item.role === "doubling" && item.doublingTrackId));
+  const doubledPlan = make("doubling");
+  const doubledTracks = buildTrackModels({
+    songModel: model,
+    plan: doubledPlan,
+    tracks: [
+      { id: "piano-a", name: "Piano A", role: "harmony" },
+      { id: "piano-b", name: "Piano B", role: "doubling" },
+    ],
+    style,
+    seed: 7,
+  });
+  const target = doubledTracks.find((track) => track.id === "piano-a")!;
+  const copy = doubledTracks.find((track) => track.id === "piano-b")!;
+  assert.ok(copy.notes.length > 0);
+  assert.deepEqual(
+    copy.notes.map((note) => [note.start, note.duration, note.pitch]),
+    target.notes.map((note) => [note.start, note.duration, note.pitch]),
+  );
+  assert.ok(copy.notes.every((note) => note.voice === "doubling"));
+});
+
+test("ordinary drum functions produce complementary rather than duplicate parts", () => {
+  const model = song({
+    sections: [
+      { name: "Verse", startBar: 1, endBar: 4, energy: .6 },
+      { name: "Chorus", startBar: 5, endBar: 8, energy: .9 },
+    ],
+    energy: [.6, .9],
+  });
+  const style = createStyleSpec("pop", {
+    density: 1, harmonyComplexity: 4, energy: .8, orchestraSize: 1,
+  });
+  const tracks = [
+    { id: "kit-a", name: "Drums A", role: "rhythm" },
+    { id: "kit-b", name: "Drums B", role: "percussion" },
+  ];
+  const plan = createArrangementPlan({
+    arrangementId: "complementary-drums",
+    version: 1,
+    songModel: model,
+    style,
+    tracks,
+    parameters: { songModelVersion: 1, seed: 22, density: 1, orchestraSize: 1 },
+    compositionVersion: "2.0",
+  });
+  const output = buildTrackModels({ songModel: model, plan, tracks, style, seed: 22 });
+  const events = (trackId: string) => output.find((track) => track.id === trackId)!.notes
+    .map((note) => [note.start, note.duration, note.pitch]);
+  assert.notDeepEqual(events("kit-a"), events("kit-b"));
+  const duplicateProviderTracks = output.map((track, index) => ({
+    ...track,
+    notes: output[0].notes.map((note) => ({
+      ...note,
+      id: `${track.id}-provider-${note.id}`,
+      voice: undefined,
+    })),
+    source: `PROVIDER_${index}`,
+  }));
+  const orchestratedProviderTracks = applyCompositionIntelligence(
+    duplicateProviderTracks,
+    plan,
+    model,
+  );
+  const providerEvents = (trackId: string) => orchestratedProviderTracks
+    .find((track) => track.id === trackId)!.notes
+    .map((note) => [note.start, note.duration, note.pitch]);
+  assert.notDeepEqual(providerEvents("kit-a"), providerEvents("kit-b"));
+  assert.ok(orchestratedProviderTracks.flatMap((track) => track.notes)
+    .every((note) => duplicateProviderTracks[0].notes.some((source) =>
+      source.pitch === note.pitch)));
+});
+
 test("harmony is deterministic by Song Model version and retains supplied chord evidence", () => {
   const model = song({
     chords: [{
