@@ -1242,6 +1242,76 @@ test(
 );
 
 test(
+  "a denied process existence check cannot interrupt bounded cancellation cleanup",
+  { timeout: 15_000 },
+  async () => {
+    const before = await listBundleDirectories();
+    const startedAt = Date.now();
+    const interrupted = await interruptFocusedTestDuringAssertions(
+      "test:validation",
+      {
+        ...process.env,
+        FOCUSED_API_TEST_INJECT_FAILURE:
+          "ignore-sigterm-bundler-helper-during-esbuild",
+        FOCUSED_API_TEST_INJECT_PROCESS_EXISTENCE_CHECK_FAILURE: "true",
+      },
+      false,
+      "focused-api-denied-process-existence-check",
+    );
+    const cleanupDurationMs = Date.now() - startedAt;
+
+    assert.equal(interrupted.interrupted, true, [
+      "focused API test never reached its signal-resistant bundling phase",
+      interrupted.stdout,
+      interrupted.stderr,
+    ].filter(Boolean).join("\n"));
+    assert.equal(interrupted.code, 143, [
+      "focused API test did not complete the intended SIGTERM cleanup path",
+      interrupted.signal ? `signal: ${interrupted.signal}` : "",
+      interrupted.stdout,
+      interrupted.stderr,
+    ].filter(Boolean).join("\n"));
+    assert.match(
+      interrupted.stderr,
+      /focused API cleanup could not check whether process \d+ exists: EPERM injected denied process existence check/,
+      "focused API cleanup did not report the denied process check with its PID",
+    );
+    assert.match(
+      interrupted.stderr,
+      /focused API cleanup could not confirm process exit after bounded reaping: \d+(?:, \d+)*/,
+      "focused API cleanup did not report which process exits remained unconfirmed",
+    );
+    assert.ok(
+      cleanupDurationMs < 10_000,
+      `focused API cleanup exceeded its bounded window: ${cleanupDurationMs}ms`,
+    );
+    assert.ok(
+      interrupted.helperPid,
+      "helper-backed bundler did not report its helper process",
+    );
+    await Promise.all([
+      waitForProcessExit(interrupted.activeChildPid),
+      waitForProcessExit(interrupted.helperPid),
+    ]);
+    for (const pid of [interrupted.activeChildPid, interrupted.helperPid]) {
+      assert.equal(
+        processExists(pid),
+        false,
+        `signal-resistant fixture process ${pid} remained alive`,
+      );
+    }
+
+    const after = await listBundleDirectories();
+    const leaked = [...after].filter((directory) => !before.has(directory));
+    assert.deepEqual(
+      leaked,
+      [],
+      `denied process existence check left focused API bundle directories behind: ${leaked.join(", ")}`,
+    );
+  },
+);
+
+test(
   "SIGTERM reaps a resistant bundler helper without disrupting a healthy focused API check",
   { timeout: 120_000 },
   async () => {
