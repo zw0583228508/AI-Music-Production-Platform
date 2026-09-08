@@ -8,6 +8,7 @@ import type {
   ArrangementHierarchyScope,
 } from "@workspace/db";
 import { createCanonicalTimeline } from "./canonicalTimeline";
+import { synchronizeMotifLineage } from "./musicEngines";
 
 export const MAX_REPAIR_ATTEMPTS = 2;
 
@@ -222,9 +223,77 @@ export function applyBoundedRepair(input: {
       }),
     ],
   } : proposedHierarchy;
+  const originalReasoning = snapshot.plan.compositionIntelligence;
+  const proposedReasoning = proposedPlan.compositionIntelligence;
+  const phraseTouchesAffectedTrack = (
+    phrase: NonNullable<typeof originalReasoning>["phrases"][number],
+  ) => phrase.ownerTrackId
+    ? finding.affectedTrackIds.includes(phrase.ownerTrackId)
+    : [...snapshot.trackModels, ...proposedTrackModels]
+        .filter((track) => finding.affectedTrackIds.includes(track.id))
+        .some((track) => track.notes.some((note) =>
+          note.motif?.phraseId === phrase.id || note.motif?.id === phrase.motifRef));
+  const phraseInScope = (phrase: NonNullable<typeof originalReasoning>["phrases"][number]) =>
+    finding.affectedSections.some((name) =>
+      (baseHierarchy?.sections.find((section) => section.id === phrase.sectionId)
+        ?? proposedHierarchy?.sections.find((section) => section.id === phrase.sectionId))
+        ?.sourceSection === name) &&
+    phrase.startBar >= finding.startBar &&
+    phrase.endBar <= finding.endBar &&
+    phraseTouchesAffectedTrack(phrase);
+  if (originalReasoning && proposedReasoning) {
+    const originalMotifIds = originalReasoning.motifs?.map((motif) => motif.id) ?? [];
+    const proposedMotifIds = proposedReasoning.motifs?.map((motif) => motif.id) ?? [];
+    if (new Set(originalMotifIds).size !== originalMotifIds.length ||
+      new Set(proposedMotifIds).size !== proposedMotifIds.length) {
+      throw new Error("Bounded repair requires unique motif identities");
+    }
+    for (const original of originalReasoning.phrases.filter(phraseInScope)) {
+      const proposed = proposedReasoning.phrases.find((phrase) => phrase.id === original.id);
+      if (!proposed ||
+        proposed.motifRef !== original.motifRef ||
+        proposed.sourceMotifRef !== original.sourceMotifRef ||
+        proposed.ownerTrackId !== original.ownerTrackId) {
+        throw new Error("Bounded repair must preserve motif and phrase ownership identity");
+      }
+      const originalMotif = originalReasoning.motifs?.find((motif) =>
+        motif.id === original.motifRef);
+      const proposedMotif = proposedReasoning.motifs?.find((motif) =>
+        motif.id === original.motifRef);
+      if (originalMotif && (!proposedMotif ||
+        proposedMotif.sourcePhraseId !== originalMotif.sourcePhraseId ||
+        proposedMotif.sourceSectionId !== originalMotif.sourceSectionId ||
+        proposedMotif.parentMotifId !== originalMotif.parentMotifId ||
+        proposedMotif.ownerTrackId !== originalMotif.ownerTrackId ||
+        proposedMotif.evidenceSha256 !== originalMotif.evidenceSha256)) {
+        throw new Error("Bounded repair must preserve canonical motif source lineage");
+      }
+    }
+  }
+  const compositionIntelligence = originalReasoning && proposedReasoning ? {
+    ...originalReasoning,
+    phrases: [
+      ...originalReasoning.phrases.filter((phrase) => !phraseInScope(phrase))
+        .map((phrase) => ({ ...phrase })),
+      ...proposedReasoning.phrases.filter(phraseInScope)
+        .map((phrase) => ({ ...phrase })),
+    ].sort((left, right) =>
+      left.startBar - right.startBar || left.endBar - right.endBar || left.id.localeCompare(right.id)),
+    motifs: [
+      ...(originalReasoning.motifs ?? []).filter((motif) =>
+        !originalReasoning.phrases.some((phrase) =>
+          phrase.id === motif.sourcePhraseId && phraseInScope(phrase)))
+        .map((motif) => ({ ...motif })),
+      ...(proposedReasoning.motifs ?? []).filter((motif) =>
+        proposedReasoning.phrases.some((phrase) =>
+          phrase.id === motif.sourcePhraseId && phraseInScope(phrase)))
+        .map((motif) => ({ ...motif })),
+    ].sort((left, right) => left.id.localeCompare(right.id)),
+  } : originalReasoning ?? proposedReasoning;
   const plan: ArrangementPlan = {
     ...snapshot.plan,
     hierarchy,
+    compositionIntelligence,
     sections: snapshot.plan.sections.map((section) =>
       finding.affectedSections.includes(section.section) &&
       section.startBar >= finding.startBar &&
@@ -246,7 +315,7 @@ export function applyBoundedRepair(input: {
     ...proposed.filter((note) =>
       intervalInScope(note.start, note.duration, timeBounds)),
   ].sort((left, right) => left.start - right.start);
-  const trackModels = snapshot.trackModels.map((base) => {
+  let trackModels = snapshot.trackModels.map((base) => {
     if (!finding.affectedTrackIds.includes(base.id)) return base;
     const proposed = proposedTracks.get(base.id);
     if (!proposed) return base;
@@ -267,6 +336,7 @@ export function applyBoundedRepair(input: {
       source: proposed.source,
     };
   });
+  trackModels = synchronizeMotifLineage(trackModels, plan.compositionIntelligence);
   const outsideScopePreserved = snapshot.trackModels.every((base) => {
     const repaired = trackModels.find((track) => track.id === base.id);
     if (!repaired) return false;
@@ -293,7 +363,16 @@ export function applyBoundedRepair(input: {
       base.endBar <= finding.endBar
     ) return true;
     return isDeepStrictEqual(base, plan.sections.find((section) => section.section === base.section));
-  });
+  }) && (!originalReasoning || (
+    originalReasoning.phrases.filter((phrase) => !phraseInScope(phrase)).every((phrase) =>
+      isDeepStrictEqual(phrase, plan.compositionIntelligence?.phrases.find((candidate) =>
+        candidate.id === phrase.id))) &&
+    (originalReasoning.motifs ?? []).filter((motif) =>
+      !originalReasoning.phrases.some((phrase) =>
+        phrase.id === motif.sourcePhraseId && phraseInScope(phrase))).every((motif) =>
+      isDeepStrictEqual(motif, plan.compositionIntelligence?.motifs.find((candidate) =>
+        candidate.id === motif.id)))
+  ));
   const changedScopes = changedHierarchyScopes(originalHierarchy, plan.hierarchy);
   return { plan, trackModels, outsideScopePreserved, changedScopes };
 }
