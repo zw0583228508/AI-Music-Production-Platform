@@ -88,6 +88,7 @@ const childTerminationGraceMs = 500;
 const childReapingTimeoutMs = 3_000;
 let injectedProcessStatReadFailure = false;
 let injectedProcessDirectoryReadFailure = false;
+const reportedProcessExistenceFailures = new Set();
 
 function killChild(child, signal) {
   try {
@@ -181,15 +182,30 @@ function listIsolatedChildPids(rootPid) {
   return [...new Set([rootPid, ...pidsInSession, ...descendants])];
 }
 
-function processExists(pid) {
+function checkProcessState(pid) {
   try {
+    if (
+      process.env.FOCUSED_API_TEST_INJECT_PROCESS_EXISTENCE_CHECK_FAILURE ===
+        "true"
+    ) {
+      const error = new Error("injected denied process existence check");
+      error.code = "EPERM";
+      throw error;
+    }
     process.kill(pid, 0);
-    return true;
+    return "alive";
   } catch (error) {
     if (error?.code === "ESRCH") {
-      return false;
+      return "absent";
     }
-    throw error;
+    const failureKey = `${pid}:${error?.code ?? "UNKNOWN"}`;
+    if (!reportedProcessExistenceFailures.has(failureKey)) {
+      reportedProcessExistenceFailures.add(failureKey);
+      console.error(
+        `focused API cleanup could not check whether process ${pid} exists: ${error?.code ?? "UNKNOWN"} ${error?.message ?? String(error)}`,
+      );
+    }
+    return "unknown";
   }
 }
 
@@ -207,7 +223,9 @@ async function reapIsolatedProcessTree(rootPid, knownPids) {
   const deadline = Date.now() + childReapingTimeoutMs;
   while (Date.now() < deadline) {
     discoverChildPids(rootPid, knownPids);
-    const survivors = [...knownPids].filter(processExists);
+    const survivors = [...knownPids].filter(
+      (pid) => checkProcessState(pid) !== "absent",
+    );
     if (survivors.length === 0) {
       return;
     }
@@ -216,10 +234,21 @@ async function reapIsolatedProcessTree(rootPid, knownPids) {
     }
     await delay(10);
   }
-  const survivors = [...knownPids].filter(processExists);
+  const states = [...knownPids].map((pid) => [pid, checkProcessState(pid)]);
+  const survivors = states
+    .filter(([, state]) => state === "alive")
+    .map(([pid]) => pid);
   if (survivors.length > 0) {
     throw new Error(
       `focused API cleanup timed out with surviving processes: ${survivors.join(", ")}`,
+    );
+  }
+  const unconfirmed = states
+    .filter(([, state]) => state === "unknown")
+    .map(([pid]) => pid);
+  if (unconfirmed.length > 0) {
+    console.error(
+      `focused API cleanup could not confirm process exit after bounded reaping: ${unconfirmed.join(", ")}`,
     );
   }
 }
