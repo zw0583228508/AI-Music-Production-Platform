@@ -102,6 +102,12 @@ const reportedProcessStatReadFailures = new Set();
 const processStatReadFailureDetailLimit = 1;
 const processStatReadFailureSummaryPidLimit = 10;
 const processStatReadFailureGroups = new Map();
+const processStatReadFailureConfiguration = (
+  process.env.FOCUSED_API_TEST_INJECT_PROCESS_STAT_READ_FAILURE ?? ""
+)
+  .split(",")
+  .filter((errorCode) => errorCode === "EPERM" || errorCode === "EACCES");
+const processStatReadFailureAssignments = new Map();
 const reportedDirectSignalFailures = new Set();
 const directSignalFailureDetailLimit = 1;
 const directSignalFailureSummaryPidLimit = 10;
@@ -209,17 +215,30 @@ function listIsolatedChildProcesses(rootPid) {
       continue;
     }
     try {
+      let assignedFailure = processStatReadFailureAssignments.get(entry.name);
+      if (
+        !assignedFailure &&
+        processStatReadFailureConfiguration.length > 1
+      ) {
+        assignedFailure =
+          processStatReadFailureConfiguration[
+            processStatReadFailureAssignments.size %
+              processStatReadFailureConfiguration.length
+          ];
+        processStatReadFailureAssignments.set(entry.name, assignedFailure);
+      }
       if (
         (process.env.FOCUSED_API_TEST_INJECT_PROCESS_STAT_READ_FAILURE ===
           "all" ||
           (!injectedProcessStatReadFailure &&
             process.env.FOCUSED_API_TEST_INJECT_PROCESS_STAT_READ_FAILURE ===
               "true" &&
-            entry.name === String(rootPid)))
+            entry.name === String(rootPid)) ||
+          assignedFailure)
       ) {
         injectedProcessStatReadFailure = true;
         const error = new Error("injected unreadable process record");
-        error.code = "EACCES";
+        error.code = assignedFailure ?? "EACCES";
         throw error;
       }
       const processRecord = parseProcessStat(

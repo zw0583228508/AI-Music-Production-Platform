@@ -1145,7 +1145,7 @@ test(
 );
 
 test(
-  "unreadable process records have bounded diagnostics and cannot strand cancellation cleanup",
+  "mixed unreadable process records retain bounded per-code diagnostics and cannot strand cancellation cleanup",
   { timeout: 15_000 },
   async () => {
     const before = await listBundleDirectories();
@@ -1155,7 +1155,7 @@ test(
       {
         ...process.env,
         FOCUSED_API_TEST_INJECT_FAILURE: "ignore-sigterm-during-esbuild",
-        FOCUSED_API_TEST_INJECT_PROCESS_STAT_READ_FAILURE: "all",
+        FOCUSED_API_TEST_INJECT_PROCESS_STAT_READ_FAILURE: "EPERM,EACCES",
       },
       false,
       "focused-api-unreadable-process-record",
@@ -1185,36 +1185,48 @@ test(
         .filter(Boolean)
         .join("\n"),
     );
-    assert.match(
-      interrupted.stderr,
-      /focused API cleanup could not read \/proc\/\d+\/stat: EACCES injected unreadable process record/,
-      "focused API cleanup did not report the actionable process read failure",
-    );
-    const detailedFailures = interrupted.stderr.match(
-      /focused API cleanup could not read \/proc\/\d+\/stat: EACCES injected unreadable process record/g,
-    ) ?? [];
-    assert.equal(
-      detailedFailures.length,
-      1,
-      `focused API cleanup emitted an unbounded number of detailed process record failures: ${detailedFailures.length}`,
-    );
-    const summary = interrupted.stderr.match(
-      /focused API cleanup suppressed detailed EACCES process record read failures for (\d+) additional processes; affected PIDs: ([^\n]+)/,
-    );
-    assert.ok(
-      summary,
-      "focused API cleanup did not summarize additional unreadable process records by error code and affected PID",
-    );
-    assert.ok(
-      Number(summary[1]) > 0,
-      "focused API cleanup process record summary did not include additional processes",
-    );
-    const sampledPids = summary[2]
-      .replace(/, and \d+ more$/u, "")
-      .split(", ");
-    assert.ok(
-      sampledPids.length <= 10,
-      `focused API cleanup sampled too many affected PIDs: ${sampledPids.length}`,
+    const sampledPidsByCode = new Map();
+    for (const errorCode of ["EPERM", "EACCES"]) {
+      const detailedFailures =
+        interrupted.stderr.match(
+          new RegExp(
+            `focused API cleanup could not read /proc/(\\d+)/stat: ${errorCode} injected unreadable process record`,
+            "g",
+          ),
+        ) ?? [];
+      assert.equal(
+        detailedFailures.length,
+        1,
+        `focused API cleanup did not retain exactly one ${errorCode} process record detail`,
+      );
+      const summary = interrupted.stderr.match(
+        new RegExp(
+          `focused API cleanup suppressed detailed ${errorCode} process record read failures for (\\d+) additional processes; affected PIDs: ([^\\n]+)`,
+        ),
+      );
+      assert.ok(
+        summary,
+        `focused API cleanup did not retain a separate ${errorCode} affected-PID summary`,
+      );
+      assert.ok(
+        Number(summary[1]) > 0,
+        `${errorCode} process record summary did not include additional processes`,
+      );
+      const sampledPids = summary[2]
+        .replace(/, and \d+ more$/u, "")
+        .split(", ");
+      assert.ok(
+        sampledPids.length <= 10,
+        `${errorCode} process record summary sampled too many affected PIDs: ${sampledPids.length}`,
+      );
+      sampledPidsByCode.set(errorCode, new Set(sampledPids));
+    }
+    assert.deepEqual(
+      [...sampledPidsByCode.get("EPERM")].filter((pid) =>
+        sampledPidsByCode.get("EACCES").has(pid),
+      ),
+      [],
+      "mixed process record summaries assigned the same PID to both permission errors",
     );
     assert.ok(
       cleanupDurationMs < 10_000,
