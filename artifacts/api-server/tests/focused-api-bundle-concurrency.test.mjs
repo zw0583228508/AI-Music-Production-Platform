@@ -1145,7 +1145,7 @@ test(
 );
 
 test(
-  "an unreadable process record cannot strand cancellation cleanup",
+  "unreadable process records have bounded diagnostics and cannot strand cancellation cleanup",
   { timeout: 15_000 },
   async () => {
     const before = await listBundleDirectories();
@@ -1155,7 +1155,7 @@ test(
       {
         ...process.env,
         FOCUSED_API_TEST_INJECT_FAILURE: "ignore-sigterm-during-esbuild",
-        FOCUSED_API_TEST_INJECT_PROCESS_STAT_READ_FAILURE: "true",
+        FOCUSED_API_TEST_INJECT_PROCESS_STAT_READ_FAILURE: "all",
       },
       false,
       "focused-api-unreadable-process-record",
@@ -1189,6 +1189,32 @@ test(
       interrupted.stderr,
       /focused API cleanup could not read \/proc\/\d+\/stat: EACCES injected unreadable process record/,
       "focused API cleanup did not report the actionable process read failure",
+    );
+    const detailedFailures = interrupted.stderr.match(
+      /focused API cleanup could not read \/proc\/\d+\/stat: EACCES injected unreadable process record/g,
+    ) ?? [];
+    assert.equal(
+      detailedFailures.length,
+      1,
+      `focused API cleanup emitted an unbounded number of detailed process record failures: ${detailedFailures.length}`,
+    );
+    const summary = interrupted.stderr.match(
+      /focused API cleanup suppressed detailed EACCES process record read failures for (\d+) additional processes; affected PIDs: ([^\n]+)/,
+    );
+    assert.ok(
+      summary,
+      "focused API cleanup did not summarize additional unreadable process records by error code and affected PID",
+    );
+    assert.ok(
+      Number(summary[1]) > 0,
+      "focused API cleanup process record summary did not include additional processes",
+    );
+    const sampledPids = summary[2]
+      .replace(/, and \d+ more$/u, "")
+      .split(", ");
+    assert.ok(
+      sampledPids.length <= 10,
+      `focused API cleanup sampled too many affected PIDs: ${sampledPids.length}`,
     );
     assert.ok(
       cleanupDurationMs < 10_000,
