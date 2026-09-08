@@ -1187,6 +1187,61 @@ test(
 );
 
 test(
+  "an unreadable process table cannot prevent process-group cancellation",
+  { timeout: 15_000 },
+  async () => {
+    const before = await listBundleDirectories();
+    const startedAt = Date.now();
+    const interrupted = await interruptFocusedTestDuringAssertions(
+      "test:validation",
+      {
+        ...process.env,
+        FOCUSED_API_TEST_INJECT_FAILURE: "ignore-sigterm-during-esbuild",
+        FOCUSED_API_TEST_INJECT_PROCESS_DIRECTORY_READ_FAILURE: "true",
+      },
+      false,
+      "focused-api-unreadable-process-table",
+    );
+    const cleanupDurationMs = Date.now() - startedAt;
+
+    assert.equal(interrupted.interrupted, true, [
+      "focused API test never reached its signal-resistant bundling phase",
+      interrupted.stdout,
+      interrupted.stderr,
+    ].filter(Boolean).join("\n"));
+    assert.equal(interrupted.code, 143, [
+      "focused API test did not complete the intended SIGTERM cleanup path",
+      interrupted.signal ? `signal: ${interrupted.signal}` : "",
+      interrupted.stdout,
+      interrupted.stderr,
+    ].filter(Boolean).join("\n"));
+    assert.match(
+      interrupted.stderr,
+      /focused API cleanup could not enumerate \/proc: EACCES injected unreadable process table/,
+      "focused API cleanup did not report the actionable process table failure",
+    );
+    assert.ok(
+      cleanupDurationMs < 10_000,
+      `focused API cleanup exceeded its bounded window: ${cleanupDurationMs}ms`,
+    );
+    await waitForProcessExit(interrupted.activeChildPid);
+    assert.equal(
+      processExists(interrupted.activeChildPid),
+      false,
+      `signal-resistant bundler child ${interrupted.activeChildPid} remained alive`,
+    );
+
+    const after = await listBundleDirectories();
+    const leaked = [...after].filter((directory) => !before.has(directory));
+    assert.deepEqual(
+      leaked,
+      [],
+      `unreadable process table left focused API bundle directories behind: ${leaked.join(", ")}`,
+    );
+  },
+);
+
+test(
   "SIGTERM reaps a resistant bundler helper without disrupting a healthy focused API check",
   { timeout: 120_000 },
   async () => {
