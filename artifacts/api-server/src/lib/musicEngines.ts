@@ -17,6 +17,7 @@ import type {
   CompositionIntelligenceVersion,
 } from "@workspace/db";
 import { createHash } from "node:crypto";
+import { CANONICAL_PPQ, createCanonicalTimeline } from "./canonicalTimeline";
 
 export type PerformanceNote = MusicalNote & {
   articulation: string;
@@ -552,6 +553,217 @@ function meterAtBar(songModel: SongModelData, bar: number): string {
     .at(-1)?.meter ?? "4/4";
 }
 
+function buildSharedGroovePlan(
+  songModel: SongModelData,
+  hierarchy: ArrangementHierarchy,
+  reasoning: Pick<CompositionIntelligencePlan, "seed" | "evidenceSha256" | "phrases" | "instrumentRoles">,
+  style: StyleSpec,
+): NonNullable<CompositionIntelligencePlan["groove"]> {
+  const timeline = createCanonicalTimeline(
+    songModel.tempoMap.map(({ time, bpm }) => ({ time, bpm })),
+    songModel.meterMap.map(({ bar, meter }) => ({ bar, meter })),
+  );
+  const subdivision = style.rhythm.subdivision === "16th" ? "16th" as const : "8th" as const;
+  const roles = reasoning.instrumentRoles.flatMap((role) => {
+    const responsibility = role.function === "foundation" ? "foundation" as const
+      : role.function === "pulse" ? "pulse" as const
+      : role.function === "harmony" ? "syncopation" as const
+      : null;
+    return responsibility ? [{ trackId: role.trackId, responsibility }] : [];
+  });
+  const motifByRef = new Map<string, string>();
+  const motifs = reasoning.phrases.map((phrase) => {
+    const source = motifByRef.get(phrase.motifRef) ?? null;
+    const id = `groove-motif:${hashSeed(`${reasoning.evidenceSha256}:${reasoning.seed}:${phrase.id}:${phrase.motifRef}`)}`;
+    if (!source) motifByRef.set(phrase.motifRef, id);
+    return {
+      id,
+      sourceMotifId: source,
+      phraseId: phrase.id,
+      variation: phrase.intent === "answer" ? "answer" as const
+        : phrase.intent === "develop" || phrase.intent === "build" ? "develop" as const
+        : "state" as const,
+    };
+  });
+  const events: NonNullable<CompositionIntelligencePlan["groove"]>["events"] = [];
+  const arrangementSpaces = songModel.contractVersion === "2.0" &&
+    songModel.vocalIntelligence?.arrangementSpace.status === "detected"
+    ? songModel.vocalIntelligence.arrangementSpace.windows.filter((window) => canonicalRange(window))
+    : [];
+  for (const phrase of reasoning.phrases) {
+    const section = hierarchy.sections.find((candidate) => candidate.id === phrase.sectionId);
+    const motif = motifs.find((candidate) => candidate.phraseId === phrase.id)!;
+    if (!section) continue;
+    if (phrase.intent === "answer" && phrase.startBar > 1) {
+      const phraseStartTick = timeline.barToTick(phrase.startBar);
+      const pickupBeatTicks = CANONICAL_PPQ * 4 /
+        (Number(meterAtBar(songModel, phrase.startBar).split("/")[1]) || 4);
+      const pickupTick = Math.max(0, Math.round(phraseStartTick - pickupBeatTicks / 2));
+      const pickupSection = hierarchy.sections.find((candidate) =>
+        candidate.startBar <= phrase.startBar - 1 && candidate.endBar >= phrase.startBar - 1) ?? section;
+      for (const role of roles) {
+        const musical = timeline.tickToMusicalPosition(pickupTick);
+        events.push({
+          id: `groove-event:${hashSeed(`${reasoning.seed}:${phrase.id}:${role.trackId}:${pickupTick}:pickup`)}`,
+          motifId: motif.id,
+          sectionId: pickupSection.id,
+          phraseId: phrase.id,
+          trackId: role.trackId,
+          responsibility: role.responsibility,
+          gesture: "pickup",
+          sharedAccentId: null,
+          coordinate: {
+            seconds: round(timeline.tickToSeconds(pickupTick)),
+            tick: pickupTick,
+            ...musical,
+          },
+          durationTicks: Math.max(1, Math.round(pickupBeatTicks * .3)),
+          velocity: midi(64 + phrase.tension * 28),
+        });
+      }
+    }
+    for (let bar = phrase.startBar; bar <= phrase.endBar; bar += 1) {
+      const startTick = timeline.barToTick(bar);
+      const endTick = timeline.barToTick(bar + 1);
+      const meter = meterAtBar(songModel, bar).split("/").map(Number);
+      const beatTicks = CANONICAL_PPQ * 4 / (meter[1] || 4);
+      const beatCount = meter[0] || 4;
+      const barInfo = hierarchy.bars.find((candidate) =>
+        candidate.sectionId === section.id && candidate.bar === bar);
+      const exactSpace = arrangementSpaces
+        .filter((window) => {
+          const range = canonicalRange(window)!;
+          return range.start.seconds < timeline.tickToSeconds(endTick) &&
+            range.end.seconds > timeline.tickToSeconds(startTick) &&
+            (!window.sections.length || window.sections.some((name) =>
+              name.toLowerCase().replace(/\s+/g, "_") === section.sourceSection));
+        })
+        .map((window) => {
+          const range = canonicalRange(window)!;
+          return {
+            startTick: Math.max(startTick, timeline.secondsToTick(range.start.seconds)),
+            endTick: Math.min(endTick, timeline.secondsToTick(range.end.seconds)),
+          };
+        })
+        .filter((range) => range.endTick > range.startTick)
+        .sort((left, right) => right.endTick - left.endTick)[0];
+      const finalBar = bar === phrase.endBar;
+      const boundaryGesture = finalBar && section.function === "outro" ? "break" as const
+        : finalBar && exactSpace ? "fill" as const
+        : finalBar && phrase.intent === "build" ? "push" as const
+        : finalBar && phrase.intent === "develop" ? "anticipation" as const
+        : "state" as const;
+      for (const role of roles) {
+        const positions = role.responsibility === "pulse"
+          ? Array.from({ length: beatCount }, (_, index) => index * beatTicks)
+          : role.responsibility === "foundation"
+            ? [0, Math.max(Math.round(beatTicks * 1.5), endTick - startTick - beatTicks / 2)]
+            : Array.from({ length: Math.max(1, beatCount - 1) }, (_, index) =>
+                index * beatTicks + beatTicks / 2);
+        const gestureOffsets = new Map<number, typeof boundaryGesture>();
+        if (boundaryGesture === "break" && finalBar) positions.splice(1);
+        if ((boundaryGesture === "anticipation" || boundaryGesture === "push") && finalBar) {
+          const boundaryOffset = endTick - startTick - beatTicks / 2;
+          positions.push(boundaryOffset);
+          gestureOffsets.set(Math.round(boundaryOffset), boundaryGesture);
+        }
+        if (boundaryGesture === "fill" && finalBar && role.responsibility === "pulse" && exactSpace) {
+          const fillOffsets = [
+            Math.max(exactSpace.startTick, exactSpace.endTick - beatTicks / 2) - startTick,
+            Math.max(exactSpace.startTick, exactSpace.endTick - beatTicks / 4) - startTick,
+          ];
+          positions.push(...fillOffsets);
+          fillOffsets.forEach((offset) => gestureOffsets.set(Math.round(offset), "fill"));
+        }
+        const unique = [...new Set(positions.map(Math.round))].sort((a, b) => a - b);
+        unique.forEach((offset, eventIndex) => {
+          const tick = startTick + offset;
+          if (tick < startTick || tick >= endTick) return;
+          const strongBeat = offset === 0 || offset === Math.round(beatTicks * 2);
+          const sharedAccentId = strongBeat ? `groove-accent:${bar}:${offset}` : null;
+          const gesture = gestureOffsets.get(offset) ??
+            (boundaryGesture === "break" && finalBar && eventIndex === unique.length - 1
+              ? "break" : "state");
+          const musical = timeline.tickToMusicalPosition(tick);
+          const baseDurationTicks = Math.max(1, Math.round(beatTicks * (
+            role.responsibility === "foundation" ? .72 : role.responsibility === "pulse" ? .22 : .38
+          )));
+          const durationTicks = gesture === "fill" && exactSpace
+            ? Math.max(1, Math.min(baseDurationTicks, exactSpace.endTick - tick))
+            : baseDurationTicks;
+          events.push({
+            id: `groove-event:${hashSeed(`${reasoning.seed}:${phrase.id}:${role.trackId}:${tick}:${gesture}`)}`,
+            motifId: motif.id,
+            sectionId: section.id,
+            phraseId: phrase.id,
+            trackId: role.trackId,
+            responsibility: gesture === "fill" ? "fill" : sharedAccentId ? "accent" : role.responsibility,
+            gesture,
+            sharedAccentId,
+            coordinate: {
+              seconds: round(timeline.tickToSeconds(tick)),
+              tick,
+              ...musical,
+            },
+            durationTicks,
+            velocity: midi(58 + phrase.tension * 34 + (sharedAccentId ? 12 : 0) -
+              (phrase.intent === "release" ? 8 : 0)),
+          });
+        });
+      }
+    }
+  }
+  const gesturePriority: Record<typeof events[number]["gesture"], number> = {
+    state: 0,
+    pickup: 1,
+    anticipation: 2,
+    push: 3,
+    break: 4,
+    fill: 5,
+  };
+  const phrasePriority = (phraseId: string) => {
+    const phrase = reasoning.phrases.find((candidate) => candidate.id === phraseId);
+    const intentPriority: Record<CompositionIntelligencePlan["phrases"][number]["intent"], number> = {
+      state: 0,
+      develop: 1,
+      answer: 2,
+      build: 3,
+      release: 4,
+      protect_vocal: 5,
+    };
+    return {
+      intent: phrase ? intentPriority[phrase.intent] : 0,
+      span: phrase ? phrase.endBar - phrase.startBar : Number.MAX_SAFE_INTEGER,
+    };
+  };
+  const collisionSafeEvents = [...events.reduce((selected, event) => {
+    const key = `${event.trackId}:${event.coordinate.tick}`;
+    const current = selected.get(key);
+    const candidatePhrase = phrasePriority(event.phraseId);
+    const currentPhrase = current ? phrasePriority(current.phraseId) : null;
+    if (!current || gesturePriority[event.gesture] > gesturePriority[current.gesture] ||
+      (gesturePriority[event.gesture] === gesturePriority[current.gesture] &&
+        (candidatePhrase.intent > currentPhrase!.intent ||
+          (candidatePhrase.intent === currentPhrase!.intent &&
+            (candidatePhrase.span < currentPhrase!.span ||
+              (candidatePhrase.span === currentPhrase!.span &&
+                event.phraseId.localeCompare(current.phraseId) < 0)))))) {
+      selected.set(key, event);
+    }
+    return selected;
+  }, new Map<string, typeof events[number]>()).values()];
+  return {
+    version: "1.0",
+    seed: reasoning.seed,
+    evidenceSha256: reasoning.evidenceSha256,
+    subdivision,
+    roles,
+    motifs,
+    events: collisionSafeEvents.sort((left, right) =>
+      left.coordinate.tick - right.coordinate.tick || left.trackId.localeCompare(right.trackId)),
+  };
+}
+
 function buildArrangementHierarchy(
   arrangementId: string,
   songModel: SongModelData,
@@ -910,6 +1122,14 @@ export function createArrangementPlan(input: {
       authority: "project_track",
     })),
   };
+  if (compositionVersion === "2.0") {
+    compositionIntelligence.groove = buildSharedGroovePlan(
+      input.songModel,
+      hierarchy,
+      compositionIntelligence,
+      input.style,
+    );
+  }
   return {
     id: input.arrangementId,
     version: input.version,
@@ -1204,32 +1424,19 @@ function createArrangementSpaceMap(
   const canonicalSpace = intelligence?.arrangementSpace.status === "detected"
     ? intelligence.arrangementSpace.windows.filter(hasCanonicalWindow)
     : [];
-  if (canonicalPhrases.length || canonicalSpace.length) {
-    const clipIntelligence = (
-      windows: Array<{ coordinates?: NonNullable<typeof canonicalPhrases[number]["coordinates"]> }>,
-    ) => plan.sections.flatMap((section) => {
-      const bounds = arrangementSectionSeconds(songModel, section, fallbackBarSeconds);
-      return windows.flatMap((window) => {
-        const start = Math.max(bounds.start, window.coordinates!.start.seconds);
-        const end = Math.min(bounds.end, window.coordinates!.end.seconds);
-        return end > start ? [{ start: round(start), end: round(end), section: section.section }] : [];
-      });
-    });
-    return {
-      voiced: clipIntelligence(canonicalPhrases),
-      silent: clipIntelligence(canonicalSpace),
-    };
-  }
   const evidence = songModel.contractVersion === "2.0" ? songModel.vocalEvidence : undefined;
   // A detected status is not enough: use only windows represented on the
   // canonical timeline, and require actual observed voiced occupancy.
-  if (evidence?.status !== "detected" ||
-    !evidence.observedVoicedWindows.some(hasCanonicalWindow) ||
-    ![...evidence.observedVoicedWindows, ...evidence.observedSilentWindows].every(hasCanonicalWindow)) {
+  const canonicalEvidence = evidence?.status === "detected" &&
+    evidence.observedVoicedWindows.some(hasCanonicalWindow) &&
+    [...evidence.observedVoicedWindows, ...evidence.observedSilentWindows].every(hasCanonicalWindow)
+    ? evidence
+    : undefined;
+  if (!canonicalPhrases.length && !canonicalSpace.length && !canonicalEvidence) {
     return undefined;
   }
   const clip = (
-    windows: typeof evidence.observedVoicedWindows,
+    windows: Array<{ coordinates?: { start: { seconds: number }; end: { seconds: number } } }>,
   ) => plan.sections.flatMap((section) => {
     const bounds = arrangementSectionSeconds(songModel, section, fallbackBarSeconds);
     return windows.flatMap((window) => {
@@ -1244,8 +1451,14 @@ function createArrangementSpaceMap(
   return {
     // These arrays remain independently observed states: silence is never
     // synthesized as the complement of voice.
-    voiced: clip(evidence.observedVoicedWindows),
-    silent: clip(evidence.observedSilentWindows),
+    voiced: clip([
+      ...canonicalPhrases,
+      ...(canonicalEvidence?.observedVoicedWindows ?? []),
+    ]),
+    silent: clip([
+      ...canonicalSpace,
+      ...(canonicalEvidence?.observedSilentWindows ?? []),
+    ]),
   };
 }
 
@@ -1319,6 +1532,9 @@ function hierarchySpaceMapForTrack(
   fallbackBarSeconds: number,
 ): ArrangementSpaceMap | undefined {
   if (!spaceMap || plan.hierarchy?.status !== "applied") return spaceMap;
+  if (plan.compositionIntelligence?.groove?.roles.some((role) => role.trackId === trackId)) {
+    return spaceMap;
+  }
   const supportedBars = new Set(plan.hierarchy.events
     .filter((event) => event.trackId === trackId && event.intent === "support_vocal")
     .map((event) => event.barId));
@@ -1353,6 +1569,12 @@ export class CompositionEngine {
       bpm,
       input.songModel.meterMap[0]?.meter,
     );
+    const grooveTimeline = input.plan.compositionIntelligence?.groove
+      ? createCanonicalTimeline(
+          input.songModel.tempoMap.map(({ time, bpm: eventBpm }) => ({ time, bpm: eventBpm })),
+          input.songModel.meterMap.map(({ bar, meter }) => ({ bar, meter })),
+        )
+      : undefined;
     return input.tracks.map((track) => {
       const definition = getInstrumentDefinition(track.instrument || track.name, track.role);
       const notes: MusicalNote[] = [];
@@ -1427,10 +1649,34 @@ export class CompositionEngine {
           }
           const rhythmic = clamp((directive?.rhythmicActivity ?? section.density) +
             (reasoning ? (sectionArc?.tension ?? 0) * .12 : 0));
+          const grooveEvents = reasoning?.groove?.events.filter((event) =>
+            event.trackId === track.id && event.sectionId === hierarchySection?.id);
           const step = identity.includes("drum") || identity.includes("rhythm")
             ? beat * (rhythmic > .7 ? .5 : 1)
             : beat * (directive?.harmonicActivity && directive.harmonicActivity > .65 ? 1 : 2);
-          for (let time = sectionStart; time < sectionEnd; time += step) {
+          const materializationEvents = grooveEvents?.length
+            ? grooveEvents.map((event) => ({
+                time: event.coordinate.seconds,
+                duration: grooveTimeline!.tickToSeconds(
+                  event.coordinate.tick + event.durationTicks,
+                ) - grooveTimeline!.tickToSeconds(event.coordinate.tick),
+                velocity: event.velocity,
+                gesture: event.gesture,
+                id: event.id,
+              }))
+            : Array.from(
+                { length: Math.max(0, Math.ceil((sectionEnd - sectionStart) / step)) },
+                (_, index) => ({
+                  time: sectionStart + index * step,
+                  duration: step,
+                  velocity: undefined,
+                  gesture: "state",
+                  id: `${track.id}-${sectionIndex}-${index}`,
+                }),
+              );
+          for (const grooveEvent of materializationEvents) {
+            const time = grooveEvent.time;
+            if (time < sectionStart || time >= sectionEnd) continue;
             const phraseDecision = compositionPhraseAtTime(
               input.plan, input.songModel, sectionIndex, time, barSeconds,
             );
@@ -1461,8 +1707,9 @@ export class CompositionEngine {
             pitch = Math.max(definition.playableRange.min, Math.min(definition.playableRange.max, pitch));
             const isEntry = Math.abs(time - sectionStart) < .001;
             const isExit = time + step >= sectionEnd;
+            const eventStep = grooveEvents?.length ? grooveEvent.duration : step;
             const duration = round(Math.min(
-              step * (identity.includes("pad") ? 1.8 : isExit ? .65 : .9),
+              eventStep * (identity.includes("pad") ? 1.8 : isExit ? .65 : .9),
               sectionEnd - time,
             ));
             const hierarchyIntent = hierarchyEventIntent(
@@ -1471,22 +1718,27 @@ export class CompositionEngine {
             // Do not replace a measured vocal rest with a guessed one. The
             // observed silent map is intentionally permissive; only measured
             // voiced occupancy removes a phrase/fill event.
-            if (hierarchyIntent !== "support_vocal" ||
+            const protectObservedVoice = Boolean(grooveEvents?.length) ||
+              hierarchyIntent === "support_vocal";
+            if (!protectObservedVoice ||
               !intersectsObservedVoice(time, time + duration, input.spaceMap)) {
               notes.push({
-                id: `${track.id}-${sectionIndex}-${beatIndex}`,
+                id: grooveEvents?.length ? grooveEvent.id : `${track.id}-${sectionIndex}-${beatIndex}`,
                 start: round(time),
                 duration,
                 pitch: midi(pitch),
-                velocity: midi(42 + (directive?.dynamicTarget ?? section.energy) * 66 +
-                  (reasoning ? (sectionArc?.tension ?? 0) * 10 - (sectionArc?.release ?? 0) * 8 +
-                    (phraseDecision?.tension ?? 0) * 4 : 0) +
-                  (isEntry ? 6 : 0) + (directive?.transition === "build" ? beatIndex * .5 : 0) +
-                  (beatIndex % 4 === 0 ? 8 : 0)),
+                velocity: grooveEvent.velocity === undefined
+                  ? midi(42 + (directive?.dynamicTarget ?? section.energy) * 66 +
+                    (reasoning ? (sectionArc?.tension ?? 0) * 10 - (sectionArc?.release ?? 0) * 8 +
+                      (phraseDecision?.tension ?? 0) * 4 : 0) +
+                    (isEntry ? 6 : 0) + (directive?.transition === "build" ? beatIndex * .5 : 0) +
+                    (beatIndex % 4 === 0 ? 8 : 0))
+                  : midi(grooveEvent.velocity + (sectionArc?.tension ?? 0) * 10 -
+                    (sectionArc?.release ?? 0) * 8 + (phraseDecision?.tension ?? 0) * 4),
                 voice: identity.includes("bass") ? "bass" : identity.includes("drum") ? "percussion" : "harmony",
               });
             }
-            if (directive?.fill && (identity.includes("drum") || identity.includes("rhythm")) && isExit &&
+            if (!grooveEvents?.length && directive?.fill && (identity.includes("drum") || identity.includes("rhythm")) && isExit &&
               (hierarchyIntent === undefined || hierarchyIntent === "use_vocal_space" || hierarchyIntent === "follow_section") &&
               !intersectsObservedVoice(Math.max(sectionStart, sectionEnd - beat * .5), sectionEnd - beat * .28, input.spaceMap)) {
               notes.push({
@@ -2386,6 +2638,11 @@ export function buildTrackModels(input: {
     input.plan.compositionIntelligence.evidenceSha256 !==
       compositionEvidenceSha256(input.songModel, input.plan.songModelVersion)) {
     throw new Error("Composition Intelligence v2 evidence does not match the canonical plan");
+  }
+  const groove = input.plan.compositionIntelligence?.groove;
+  if (groove && (groove.seed !== input.plan.compositionIntelligence!.seed ||
+    groove.evidenceSha256 !== input.plan.compositionIntelligence!.evidenceSha256)) {
+    throw new Error("Shared groove identity does not match Composition Intelligence v2");
   }
   const harmony = new HarmonyEngine().generate(input.songModel, input.plan);
   const bpm = input.songModel.tempoMap[0]?.bpm ?? 92;
