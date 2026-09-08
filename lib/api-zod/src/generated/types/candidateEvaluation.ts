@@ -5,6 +5,7 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { CandidateAudioCriticReport } from './candidateAudioCriticReport';
 import type { CandidateEvaluationArtifactsItem } from './candidateEvaluationArtifactsItem';
 import type { CandidateEvaluationDiversity } from './candidateEvaluationDiversity';
 import type { CandidateEvaluationStatus } from './candidateEvaluationStatus';
@@ -20,6 +21,7 @@ export interface CandidateEvaluation {
   artifacts: CandidateEvaluationArtifactsItem[];
   qualityReport: CandidateQualityReport | null;
   musicCritic: CandidateMusicCriticReport | null;
+  audioCritic: CandidateAudioCriticReport | null;
   /** @nullable */
   error: string | null;
   strategy?: CandidateEvaluationStrategy;

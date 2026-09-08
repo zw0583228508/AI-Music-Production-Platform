@@ -402,6 +402,10 @@ export const LogoutBrowserSessionResponse = zod.void()
  */
 
 
+
+
+
+
 export const ExchangeMobileAuthorizationCodeBody = zod.object({
   "code": zod.string().min(1),
   "code_verifier": zod.string().min(1),
@@ -431,6 +435,8 @@ export const LogoutMobileSessionResponse = zod.object({
 export const requestSourceUploadUrlBodySizeMax = 524288000;
 
 
+
+
 export const RequestSourceUploadUrlBody = zod.object({
   "projectId": zod.string().min(1),
   "name": zod.string().min(1),
@@ -439,7 +445,10 @@ export const RequestSourceUploadUrlBody = zod.object({
 })
 
 
+
 export const requestSourceUploadUrlResponseMetadataSizeMax = 524288000;
+
+
 
 
 export const RequestSourceUploadUrlResponse = zod.object({
@@ -476,6 +485,7 @@ export const ListProjectsResponse = zod.array(ListProjectsResponseItem)
  */
 
 
+
 export const CreateProjectBody = zod.object({
   "name": zod.string().min(1),
   "sourceType": zod.enum(['FULL_SONG', 'VOCAL_ONLY', 'SOLO_INSTRUMENT', 'INSTRUMENTAL', 'MIDI', 'VIDEO']),
@@ -507,12 +517,16 @@ export const getProjectResponseAnalysisSectionsItemCoordinatesStartSecondsMin = 
 export const getProjectResponseAnalysisSectionsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const getProjectResponseAnalysisSectionsItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectResponseAnalysisSectionsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const getProjectResponseAnalysisSectionsItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectResponseAnalysisSectionsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const getProjectResponseAnalysisSectionsItemCoordinatesEndBeatFractionMin = 0;
@@ -551,6 +565,7 @@ export const getProjectResponseArrangementsItemSectionsItemMidiTracksCcItemMax =
 export const getProjectResponseArrangementsItemSectionsItemTransposeSemitonesMin = -24;
 export const getProjectResponseArrangementsItemSectionsItemTransposeSemitonesMax = 24;
 
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationArtifactsItemArtifactSha256RegExp = new RegExp('^[a-f0-9]{64}$');
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationQualityReportOneScoreMin = 0;
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
 
@@ -561,10 +576,22 @@ export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluation
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
 
 
+
+
+
+
+
+
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax = 2000;
 
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+
+
+
+
+
 
 
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax = 2000;
@@ -573,10 +600,22 @@ export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluation
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
 
 
+
+
+
+
+
+
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax = 2000;
 
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+
+
+
+
+
 
 
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax = 2000;
@@ -585,10 +624,22 @@ export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluation
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
 
 
+
+
+
+
+
+
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax = 2000;
 
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+
+
+
+
+
 
 
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax = 2000;
@@ -597,13 +648,117 @@ export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluation
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
 
 
+
+
+
+
+
+
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax = 2000;
 
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
 
 
+
+
+
+
+
+
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax = 2000;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneScoreMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneScoreMax = 1;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneCoverageAvailableDimensionsMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneCoverageAvailableDimensionsMax = 7;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneEvidenceOneArtifactSha256RegExp = new RegExp('^[a-f0-9]{64}$');
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitScoreMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitScoreMax = 1;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemStartSecondsMin = 0;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemEndSecondsMin = 0;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMax = 1;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemRecommendationMax = 2000;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingScoreMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingScoreMax = 1;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemStartSecondsMin = 0;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemEndSecondsMin = 0;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMax = 1;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemRecommendationMax = 2000;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceScoreMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceScoreMax = 1;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemStartSecondsMin = 0;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemEndSecondsMin = 0;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMax = 1;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemRecommendationMax = 2000;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsScoreMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsScoreMax = 1;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemStartSecondsMin = 0;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemEndSecondsMin = 0;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMax = 1;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemRecommendationMax = 2000;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMax = 1;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemStartSecondsMin = 0;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemEndSecondsMin = 0;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMax = 1;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemRecommendationMax = 2000;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsScoreMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsScoreMax = 1;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemStartSecondsMin = 0;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemEndSecondsMin = 0;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMax = 1;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemRecommendationMax = 2000;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionScoreMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionScoreMax = 1;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemStartSecondsMin = 0;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemEndSecondsMin = 0;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMin = 0;
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMax = 1;
+
+export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemRecommendationMax = 2000;
 
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationStrategyIndexMin = 0;
 
@@ -615,6 +770,9 @@ export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluation
 
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationRepairSeedMin = 0;
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationRepairSeedMax = 2147483647;
+
+
+
 
 
 export const getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin = 0;
@@ -644,6 +802,7 @@ export const getProjectResponseTracksItemTrackModelDirectiveExitBarMin = 0;
 export const getProjectResponseTracksItemTrackModelDirectiveExitBeatMin = 0;
 
 export const getProjectResponseTracksItemTrackModelDirectiveExitDurationBeatsExclusiveMin = 0;
+
 
 
 export const getProjectResponseTracksItemTrackModelAppliedDirectivesItemStartMin = 0;
@@ -678,6 +837,7 @@ export const getProjectResponseTracksItemTrackModelMappingProgramMax = 127;
 
 export const getProjectResponseTracksItemTrackModelPerformanceEvidenceCanonicalTimelineSha256RegExp = new RegExp('^[a-f0-9]{64}$');
 export const getProjectResponseTracksItemTrackModelPerformanceEvidencePerformedMaterialSha256RegExp = new RegExp('^[a-f0-9]{64}$');
+
 
 export const GetProjectResponse = zod.object({
   "project": zod.object({
@@ -814,7 +974,8 @@ export const GetProjectResponse = zod.object({
   "id": zod.string(),
   "type": zod.enum(['AUDIO_TRACK', 'MIDI', 'QUALITY_REPORT']),
   "label": zod.string(),
-  "url": zod.string()
+  "url": zod.string(),
+  "artifactSha256": zod.string().regex(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationArtifactsItemArtifactSha256RegExp).optional().describe('SHA-256 of the exact stored artifact bytes; absent on historical rows.')
 })),
   "qualityReport": zod.union([zod.object({
   "score": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationQualityReportOneScoreMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationQualityReportOneScoreMax),
@@ -982,6 +1143,122 @@ export const GetProjectResponse = zod.object({
 })
 })
 }),zod.null()]),
+  "audioCritic": zod.union([zod.object({
+  "version": zod.literal("perceptual-audio-critic-v1"),
+  "status": zod.enum(['available', 'unavailable', 'failed', 'insufficient']),
+  "score": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneScoreMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneScoreMax).nullable(),
+  "coverage": zod.object({
+  "availableDimensions": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneCoverageAvailableDimensionsMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneCoverageAvailableDimensionsMax),
+  "totalDimensions": zod.literal(7),
+  "sufficient": zod.boolean()
+}),
+  "evidence": zod.union([zod.object({
+  "artifactId": zod.string(),
+  "artifactSha256": zod.string().regex(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneEvidenceOneArtifactSha256RegExp),
+  "sampleRate": zod.number().min(1),
+  "analyzerVersion": zod.string()
+}).describe('Privacy-bounded evidence derived only from the rendered PCM and its artifact lineage; it contains no samples, waveform, or private source URL.'),zod.null()]),
+  "dimensions": zod.object({
+  "vocalFit": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitScoreMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemRecommendationMax)
+}))
+}),
+  "masking": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingScoreMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemRecommendationMax)
+}))
+}),
+  "balance": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceScoreMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemRecommendationMax)
+}))
+}),
+  "dynamics": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsScoreMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemRecommendationMax)
+}))
+}),
+  "artifactsAndDistortion": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemRecommendationMax)
+}))
+}),
+  "transitions": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsScoreMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemRecommendationMax)
+}))
+}),
+  "repetition": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionScoreMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMin).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemRecommendationMax)
+}))
+})
+})
+}).describe('Deterministic perceptual analysis of rendered PCM. An unavailable, failed, or insufficient report must not be used as positive release evidence.'),zod.null()]),
   "error": zod.string().nullable(),
   "strategy": zod.object({
   "name": zod.enum(['sparse', 'balanced', 'rhythmic', 'harmonic', 'orchestral']),
@@ -1320,6 +1597,7 @@ export const deleteProjectResponseAttemptsMin = 0;
 export const deleteProjectResponsePendingObjectCountMin = 0;
 
 
+
 export const DeleteProjectResponse = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -1345,6 +1623,7 @@ export const getProjectDeletionResponseAttemptsMin = 0;
 export const getProjectDeletionResponsePendingObjectCountMin = 0;
 
 
+
 export const GetProjectDeletionResponse = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -1368,6 +1647,7 @@ export const RetryProjectDeletionParams = zod.object({
 export const retryProjectDeletionResponseAttemptsMin = 0;
 
 export const retryProjectDeletionResponsePendingObjectCountMin = 0;
+
 
 
 export const RetryProjectDeletionResponse = zod.object({
@@ -1401,6 +1681,8 @@ export const analyzeProjectResponseSectionsItemCoordinatesStartSecondsMin = 0;
 export const analyzeProjectResponseSectionsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const analyzeProjectResponseSectionsItemCoordinatesStartBeatFractionMin = 0;
 export const analyzeProjectResponseSectionsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
@@ -1409,8 +1691,11 @@ export const analyzeProjectResponseSectionsItemCoordinatesEndSecondsMin = 0;
 export const analyzeProjectResponseSectionsItemCoordinatesEndTickMin = 0;
 
 
+
+
 export const analyzeProjectResponseSectionsItemCoordinatesEndBeatFractionMin = 0;
 export const analyzeProjectResponseSectionsItemCoordinatesEndBeatFractionExclusiveMax = 1;
+
 
 
 export const AnalyzeProjectResponse = zod.object({
@@ -1461,6 +1746,7 @@ export const listProjectSourcesResponseAttemptsItemProgressMin = 0;
 export const listProjectSourcesResponseAttemptsItemProgressMax = 100;
 
 
+
 export const ListProjectSourcesResponseItem = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -1500,7 +1786,10 @@ export const RegisterProjectSourceParams = zod.object({
 })
 
 
+
 export const registerProjectSourceBodySizeMax = 524288000;
+
+
 
 
 export const RegisterProjectSourceBody = zod.object({
@@ -1516,6 +1805,7 @@ export const registerProjectSourceResponseProgressMax = 100;
 
 export const registerProjectSourceResponseAttemptsItemProgressMin = 0;
 export const registerProjectSourceResponseAttemptsItemProgressMax = 100;
+
 
 
 export const RegisterProjectSourceResponse = zod.object({
@@ -1561,6 +1851,7 @@ export const retryProjectSourceAnalysisResponseProgressMax = 100;
 
 export const retryProjectSourceAnalysisResponseAttemptsItemProgressMin = 0;
 export const retryProjectSourceAnalysisResponseAttemptsItemProgressMax = 100;
+
 
 
 export const RetryProjectSourceAnalysisResponse = zod.object({
@@ -1610,7 +1901,9 @@ export const getProjectSongModelResponseFusionDecisionsItemCompatibilityMin = 0;
 export const getProjectSongModelResponseFusionDecisionsItemCompatibilityMax = 1;
 
 
+
 export const getProjectSongModelResponseAudioDurationSecondsExclusiveMin = 0;
+
 
 
 export const getProjectSongModelResponseAnalysisStartSecondsMin = 0;
@@ -1632,6 +1925,8 @@ export const getProjectSongModelResponseTempoMapItemCoordinatesSecondsMin = 0;
 export const getProjectSongModelResponseTempoMapItemCoordinatesTickMin = 0;
 
 
+
+
 export const getProjectSongModelResponseTempoMapItemCoordinatesBeatFractionMin = 0;
 export const getProjectSongModelResponseTempoMapItemCoordinatesBeatFractionExclusiveMax = 1;
 
@@ -1641,6 +1936,8 @@ export const getProjectSongModelResponseMeterMapItemConfidenceMax = 1;
 export const getProjectSongModelResponseMeterMapItemCoordinatesSecondsMin = 0;
 
 export const getProjectSongModelResponseMeterMapItemCoordinatesTickMin = 0;
+
+
 
 
 export const getProjectSongModelResponseMeterMapItemCoordinatesBeatFractionMin = 0;
@@ -1654,12 +1951,16 @@ export const getProjectSongModelResponseKeyMapItemCoordinatesSecondsMin = 0;
 export const getProjectSongModelResponseKeyMapItemCoordinatesTickMin = 0;
 
 
+
+
 export const getProjectSongModelResponseKeyMapItemCoordinatesBeatFractionMin = 0;
 export const getProjectSongModelResponseKeyMapItemCoordinatesBeatFractionExclusiveMax = 1;
 
 export const getProjectSongModelResponseBeatsItemCoordinatesSecondsMin = 0;
 
 export const getProjectSongModelResponseBeatsItemCoordinatesTickMin = 0;
+
+
 
 
 export const getProjectSongModelResponseBeatsItemCoordinatesBeatFractionMin = 0;
@@ -1670,12 +1971,16 @@ export const getProjectSongModelResponseBarsItemCoordinatesStartSecondsMin = 0;
 export const getProjectSongModelResponseBarsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const getProjectSongModelResponseBarsItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseBarsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const getProjectSongModelResponseBarsItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseBarsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const getProjectSongModelResponseBarsItemCoordinatesEndBeatFractionMin = 0;
@@ -1686,12 +1991,16 @@ export const getProjectSongModelResponseMelodyItemCoordinatesStartSecondsMin = 0
 export const getProjectSongModelResponseMelodyItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const getProjectSongModelResponseMelodyItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseMelodyItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const getProjectSongModelResponseMelodyItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseMelodyItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const getProjectSongModelResponseMelodyItemCoordinatesEndBeatFractionMin = 0;
@@ -1712,12 +2021,16 @@ export const getProjectSongModelResponseBassItemCoordinatesStartSecondsMin = 0;
 export const getProjectSongModelResponseBassItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const getProjectSongModelResponseBassItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseBassItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const getProjectSongModelResponseBassItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseBassItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const getProjectSongModelResponseBassItemCoordinatesEndBeatFractionMin = 0;
@@ -1759,12 +2072,16 @@ export const getProjectSongModelResponseChordsItemCoordinatesStartSecondsMin = 0
 export const getProjectSongModelResponseChordsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const getProjectSongModelResponseChordsItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseChordsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const getProjectSongModelResponseChordsItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseChordsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const getProjectSongModelResponseChordsItemCoordinatesEndBeatFractionMin = 0;
@@ -1775,12 +2092,16 @@ export const getProjectSongModelResponseSectionsItemCoordinatesStartSecondsMin =
 export const getProjectSongModelResponseSectionsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const getProjectSongModelResponseSectionsItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseSectionsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const getProjectSongModelResponseSectionsItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseSectionsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const getProjectSongModelResponseSectionsItemCoordinatesEndBeatFractionMin = 0;
@@ -1792,6 +2113,7 @@ export const getProjectSongModelResponseStemsItemConfidenceMax = 1;
 
 export const getProjectSongModelResponseSourceStemsItemChecksumRegExp = new RegExp('^[a-fA-F0-9]{64}$');
 export const getProjectSongModelResponseVocalEvidenceProvenanceOneContentChecksumRegExp = new RegExp('^[a-fA-F0-9]{64}$');
+
 
 
 export const getProjectSongModelResponseVocalEvidenceThresholdsOneRmsMin = 0;
@@ -1812,12 +2134,16 @@ export const getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCo
 export const getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const getProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesEndBeatFractionMin = 0;
@@ -1832,12 +2158,16 @@ export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCo
 export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const getProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndBeatFractionMin = 0;
@@ -1856,12 +2186,16 @@ export const getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordi
 export const getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const getProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndBeatFractionMin = 0;
@@ -1879,12 +2213,16 @@ export const getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoo
 export const getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartTickMin = 0;
 
 
+
+
 export const getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndTickMin = 0;
+
+
 
 
 export const getProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndBeatFractionMin = 0;
@@ -1917,12 +2255,16 @@ export const getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindows
 export const getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const getProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndBeatFractionMin = 0;
@@ -1933,12 +2275,16 @@ export const getProjectSongModelResponseLyricsItemCoordinatesStartSecondsMin = 0
 export const getProjectSongModelResponseLyricsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const getProjectSongModelResponseLyricsItemCoordinatesStartBeatFractionMin = 0;
 export const getProjectSongModelResponseLyricsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const getProjectSongModelResponseLyricsItemCoordinatesEndSecondsMin = 0;
 
 export const getProjectSongModelResponseLyricsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const getProjectSongModelResponseLyricsItemCoordinatesEndBeatFractionMin = 0;
@@ -1981,6 +2327,7 @@ export const getProjectSongModelResponseLoudnessOneSamplePeakMin = 0;
 
 export const getProjectSongModelResponseConfidenceMin = 0;
 export const getProjectSongModelResponseConfidenceMax = 1;
+
 
 
 export const GetProjectSongModelResponse = zod.object({
@@ -2631,6 +2978,10 @@ export const correctProjectSongModelBodyMeterRegExp = new RegExp('^[1-9][0-9]*/[
 export const correctProjectSongModelBodySectionsItemNameMax = 120;
 
 
+
+
+
+
 export const CorrectProjectSongModelBody = zod.object({
   "baseVersion": zod.number().min(1),
   "bpm": zod.number().min(correctProjectSongModelBodyBpmMin).max(correctProjectSongModelBodyBpmMax).optional(),
@@ -2653,7 +3004,9 @@ export const correctProjectSongModelResponseFusionDecisionsItemCompatibilityMin 
 export const correctProjectSongModelResponseFusionDecisionsItemCompatibilityMax = 1;
 
 
+
 export const correctProjectSongModelResponseAudioDurationSecondsExclusiveMin = 0;
+
 
 
 export const correctProjectSongModelResponseAnalysisStartSecondsMin = 0;
@@ -2675,6 +3028,8 @@ export const correctProjectSongModelResponseTempoMapItemCoordinatesSecondsMin = 
 export const correctProjectSongModelResponseTempoMapItemCoordinatesTickMin = 0;
 
 
+
+
 export const correctProjectSongModelResponseTempoMapItemCoordinatesBeatFractionMin = 0;
 export const correctProjectSongModelResponseTempoMapItemCoordinatesBeatFractionExclusiveMax = 1;
 
@@ -2684,6 +3039,8 @@ export const correctProjectSongModelResponseMeterMapItemConfidenceMax = 1;
 export const correctProjectSongModelResponseMeterMapItemCoordinatesSecondsMin = 0;
 
 export const correctProjectSongModelResponseMeterMapItemCoordinatesTickMin = 0;
+
+
 
 
 export const correctProjectSongModelResponseMeterMapItemCoordinatesBeatFractionMin = 0;
@@ -2697,12 +3054,16 @@ export const correctProjectSongModelResponseKeyMapItemCoordinatesSecondsMin = 0;
 export const correctProjectSongModelResponseKeyMapItemCoordinatesTickMin = 0;
 
 
+
+
 export const correctProjectSongModelResponseKeyMapItemCoordinatesBeatFractionMin = 0;
 export const correctProjectSongModelResponseKeyMapItemCoordinatesBeatFractionExclusiveMax = 1;
 
 export const correctProjectSongModelResponseBeatsItemCoordinatesSecondsMin = 0;
 
 export const correctProjectSongModelResponseBeatsItemCoordinatesTickMin = 0;
+
+
 
 
 export const correctProjectSongModelResponseBeatsItemCoordinatesBeatFractionMin = 0;
@@ -2713,12 +3074,16 @@ export const correctProjectSongModelResponseBarsItemCoordinatesStartSecondsMin =
 export const correctProjectSongModelResponseBarsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const correctProjectSongModelResponseBarsItemCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseBarsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const correctProjectSongModelResponseBarsItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseBarsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const correctProjectSongModelResponseBarsItemCoordinatesEndBeatFractionMin = 0;
@@ -2729,12 +3094,16 @@ export const correctProjectSongModelResponseMelodyItemCoordinatesStartSecondsMin
 export const correctProjectSongModelResponseMelodyItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const correctProjectSongModelResponseMelodyItemCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseMelodyItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const correctProjectSongModelResponseMelodyItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseMelodyItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const correctProjectSongModelResponseMelodyItemCoordinatesEndBeatFractionMin = 0;
@@ -2755,12 +3124,16 @@ export const correctProjectSongModelResponseBassItemCoordinatesStartSecondsMin =
 export const correctProjectSongModelResponseBassItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const correctProjectSongModelResponseBassItemCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseBassItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const correctProjectSongModelResponseBassItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseBassItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const correctProjectSongModelResponseBassItemCoordinatesEndBeatFractionMin = 0;
@@ -2802,12 +3175,16 @@ export const correctProjectSongModelResponseChordsItemCoordinatesStartSecondsMin
 export const correctProjectSongModelResponseChordsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const correctProjectSongModelResponseChordsItemCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseChordsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const correctProjectSongModelResponseChordsItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseChordsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const correctProjectSongModelResponseChordsItemCoordinatesEndBeatFractionMin = 0;
@@ -2818,12 +3195,16 @@ export const correctProjectSongModelResponseSectionsItemCoordinatesStartSecondsM
 export const correctProjectSongModelResponseSectionsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const correctProjectSongModelResponseSectionsItemCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseSectionsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const correctProjectSongModelResponseSectionsItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseSectionsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const correctProjectSongModelResponseSectionsItemCoordinatesEndBeatFractionMin = 0;
@@ -2835,6 +3216,7 @@ export const correctProjectSongModelResponseStemsItemConfidenceMax = 1;
 
 export const correctProjectSongModelResponseSourceStemsItemChecksumRegExp = new RegExp('^[a-fA-F0-9]{64}$');
 export const correctProjectSongModelResponseVocalEvidenceProvenanceOneContentChecksumRegExp = new RegExp('^[a-fA-F0-9]{64}$');
+
 
 
 export const correctProjectSongModelResponseVocalEvidenceThresholdsOneRmsMin = 0;
@@ -2855,12 +3237,16 @@ export const correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsIt
 export const correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const correctProjectSongModelResponseVocalEvidenceObservedVoicedWindowsItemCoordinatesEndBeatFractionMin = 0;
@@ -2875,12 +3261,16 @@ export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsIt
 export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const correctProjectSongModelResponseVocalEvidenceObservedSilentWindowsItemCoordinatesEndBeatFractionMin = 0;
@@ -2899,12 +3289,16 @@ export const correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCo
 export const correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const correctProjectSongModelResponseVocalIntelligencePhrasesEventsItemCoordinatesEndBeatFractionMin = 0;
@@ -2922,12 +3316,16 @@ export const correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOn
 export const correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartTickMin = 0;
 
 
+
+
 export const correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndTickMin = 0;
+
+
 
 
 export const correctProjectSongModelResponseVocalIntelligenceBreathsEventsItemOneCoordinatesEndBeatFractionMin = 0;
@@ -2960,12 +3358,16 @@ export const correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWin
 export const correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const correctProjectSongModelResponseVocalIntelligenceArrangementSpaceWindowsItemCoordinatesEndBeatFractionMin = 0;
@@ -2976,12 +3378,16 @@ export const correctProjectSongModelResponseLyricsItemCoordinatesStartSecondsMin
 export const correctProjectSongModelResponseLyricsItemCoordinatesStartTickMin = 0;
 
 
+
+
 export const correctProjectSongModelResponseLyricsItemCoordinatesStartBeatFractionMin = 0;
 export const correctProjectSongModelResponseLyricsItemCoordinatesStartBeatFractionExclusiveMax = 1;
 
 export const correctProjectSongModelResponseLyricsItemCoordinatesEndSecondsMin = 0;
 
 export const correctProjectSongModelResponseLyricsItemCoordinatesEndTickMin = 0;
+
+
 
 
 export const correctProjectSongModelResponseLyricsItemCoordinatesEndBeatFractionMin = 0;
@@ -3024,6 +3430,7 @@ export const correctProjectSongModelResponseLoudnessOneSamplePeakMin = 0;
 
 export const correctProjectSongModelResponseConfidenceMin = 0;
 export const correctProjectSongModelResponseConfidenceMax = 1;
+
 
 
 export const CorrectProjectSongModelResponse = zod.object({
@@ -3751,6 +4158,7 @@ export const listArrangementsResponseSectionsItemMidiTracksCcItemMax = 127;
 export const listArrangementsResponseSectionsItemTransposeSemitonesMin = -24;
 export const listArrangementsResponseSectionsItemTransposeSemitonesMax = 24;
 
+export const listArrangementsResponseGenerationProvenanceOneEvaluationArtifactsItemArtifactSha256RegExp = new RegExp('^[a-f0-9]{64}$');
 export const listArrangementsResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin = 0;
 export const listArrangementsResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
 
@@ -3761,10 +4169,22 @@ export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriti
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
 
 
+
+
+
+
+
+
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax = 2000;
 
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+
+
+
+
+
 
 
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax = 2000;
@@ -3773,10 +4193,22 @@ export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriti
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
 
 
+
+
+
+
+
+
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax = 2000;
 
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+
+
+
+
+
 
 
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax = 2000;
@@ -3785,10 +4217,22 @@ export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriti
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
 
 
+
+
+
+
+
+
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax = 2000;
 
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+
+
+
+
+
 
 
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax = 2000;
@@ -3797,13 +4241,117 @@ export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriti
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
 
 
+
+
+
+
+
+
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax = 2000;
 
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
 
 
+
+
+
+
+
+
 export const listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax = 2000;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneScoreMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneScoreMax = 1;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneCoverageAvailableDimensionsMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneCoverageAvailableDimensionsMax = 7;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneEvidenceOneArtifactSha256RegExp = new RegExp('^[a-f0-9]{64}$');
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitScoreMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitScoreMax = 1;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemStartSecondsMin = 0;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemEndSecondsMin = 0;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMax = 1;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemRecommendationMax = 2000;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingScoreMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingScoreMax = 1;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemStartSecondsMin = 0;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemEndSecondsMin = 0;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMax = 1;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemRecommendationMax = 2000;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceScoreMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceScoreMax = 1;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemStartSecondsMin = 0;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemEndSecondsMin = 0;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMax = 1;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemRecommendationMax = 2000;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsScoreMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsScoreMax = 1;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemStartSecondsMin = 0;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemEndSecondsMin = 0;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMax = 1;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemRecommendationMax = 2000;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMax = 1;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemStartSecondsMin = 0;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemEndSecondsMin = 0;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMax = 1;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemRecommendationMax = 2000;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsScoreMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsScoreMax = 1;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemStartSecondsMin = 0;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemEndSecondsMin = 0;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMax = 1;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemRecommendationMax = 2000;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionScoreMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionScoreMax = 1;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemStartSecondsMin = 0;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemEndSecondsMin = 0;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMin = 0;
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMax = 1;
+
+export const listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemRecommendationMax = 2000;
 
 export const listArrangementsResponseGenerationProvenanceOneEvaluationStrategyIndexMin = 0;
 
@@ -3817,11 +4365,15 @@ export const listArrangementsResponseGenerationProvenanceOneEvaluationRepairSeed
 export const listArrangementsResponseGenerationProvenanceOneEvaluationRepairSeedMax = 2147483647;
 
 
+
+
+
 export const listArrangementsResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin = 0;
 export const listArrangementsResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax = 1;
 
 export const listArrangementsResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin = 0;
 export const listArrangementsResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax = 1;
+
 
 
 export const ListArrangementsResponseItem = zod.object({
@@ -3915,7 +4467,8 @@ export const ListArrangementsResponseItem = zod.object({
   "id": zod.string(),
   "type": zod.enum(['AUDIO_TRACK', 'MIDI', 'QUALITY_REPORT']),
   "label": zod.string(),
-  "url": zod.string()
+  "url": zod.string(),
+  "artifactSha256": zod.string().regex(listArrangementsResponseGenerationProvenanceOneEvaluationArtifactsItemArtifactSha256RegExp).optional().describe('SHA-256 of the exact stored artifact bytes; absent on historical rows.')
 })),
   "qualityReport": zod.union([zod.object({
   "score": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax),
@@ -4083,6 +4636,122 @@ export const ListArrangementsResponseItem = zod.object({
 })
 })
 }),zod.null()]),
+  "audioCritic": zod.union([zod.object({
+  "version": zod.literal("perceptual-audio-critic-v1"),
+  "status": zod.enum(['available', 'unavailable', 'failed', 'insufficient']),
+  "score": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneScoreMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneScoreMax).nullable(),
+  "coverage": zod.object({
+  "availableDimensions": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneCoverageAvailableDimensionsMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneCoverageAvailableDimensionsMax),
+  "totalDimensions": zod.literal(7),
+  "sufficient": zod.boolean()
+}),
+  "evidence": zod.union([zod.object({
+  "artifactId": zod.string(),
+  "artifactSha256": zod.string().regex(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneEvidenceOneArtifactSha256RegExp),
+  "sampleRate": zod.number().min(1),
+  "analyzerVersion": zod.string()
+}).describe('Privacy-bounded evidence derived only from the rendered PCM and its artifact lineage; it contains no samples, waveform, or private source URL.'),zod.null()]),
+  "dimensions": zod.object({
+  "vocalFit": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitScoreMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemRecommendationMax)
+}))
+}),
+  "masking": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingScoreMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemRecommendationMax)
+}))
+}),
+  "balance": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceScoreMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemRecommendationMax)
+}))
+}),
+  "dynamics": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsScoreMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemRecommendationMax)
+}))
+}),
+  "artifactsAndDistortion": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemRecommendationMax)
+}))
+}),
+  "transitions": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsScoreMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemRecommendationMax)
+}))
+}),
+  "repetition": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionScoreMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMin).max(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(listArrangementsResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemRecommendationMax)
+}))
+})
+})
+}).describe('Deterministic perceptual analysis of rendered PCM. An unavailable, failed, or insufficient report must not be used as positive release evidence.'),zod.null()]),
   "error": zod.string().nullable(),
   "strategy": zod.object({
   "name": zod.enum(['sparse', 'balanced', 'rhythmic', 'harmonic', 'orchestral']),
@@ -4138,6 +4807,7 @@ export const CreateArrangementParams = zod.object({
 export const createArrangementBodyHarmonyComplexityMax = 10;
 
 
+
 export const CreateArrangementBody = zod.object({
   "name": zod.string().min(1),
   "style": zod.string(),
@@ -4178,6 +4848,7 @@ export const createArrangementResponseSectionsItemMidiTracksCcItemMax = 127;
 export const createArrangementResponseSectionsItemTransposeSemitonesMin = -24;
 export const createArrangementResponseSectionsItemTransposeSemitonesMax = 24;
 
+export const createArrangementResponseGenerationProvenanceOneEvaluationArtifactsItemArtifactSha256RegExp = new RegExp('^[a-f0-9]{64}$');
 export const createArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin = 0;
 export const createArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
 
@@ -4188,10 +4859,22 @@ export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCrit
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
 
 
+
+
+
+
+
+
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax = 2000;
 
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+
+
+
+
+
 
 
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax = 2000;
@@ -4200,10 +4883,22 @@ export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCrit
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
 
 
+
+
+
+
+
+
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax = 2000;
 
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+
+
+
+
+
 
 
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax = 2000;
@@ -4212,10 +4907,22 @@ export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCrit
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
 
 
+
+
+
+
+
+
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax = 2000;
 
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+
+
+
+
+
 
 
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax = 2000;
@@ -4224,13 +4931,117 @@ export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCrit
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
 
 
+
+
+
+
+
+
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax = 2000;
 
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
 
 
+
+
+
+
+
+
 export const createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax = 2000;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneScoreMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneScoreMax = 1;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneCoverageAvailableDimensionsMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneCoverageAvailableDimensionsMax = 7;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneEvidenceOneArtifactSha256RegExp = new RegExp('^[a-f0-9]{64}$');
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitScoreMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitScoreMax = 1;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemStartSecondsMin = 0;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemEndSecondsMin = 0;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMax = 1;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemRecommendationMax = 2000;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingScoreMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingScoreMax = 1;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemStartSecondsMin = 0;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemEndSecondsMin = 0;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMax = 1;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemRecommendationMax = 2000;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceScoreMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceScoreMax = 1;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemStartSecondsMin = 0;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemEndSecondsMin = 0;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMax = 1;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemRecommendationMax = 2000;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsScoreMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsScoreMax = 1;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemStartSecondsMin = 0;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemEndSecondsMin = 0;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMax = 1;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemRecommendationMax = 2000;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMax = 1;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemStartSecondsMin = 0;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemEndSecondsMin = 0;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMax = 1;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemRecommendationMax = 2000;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsScoreMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsScoreMax = 1;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemStartSecondsMin = 0;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemEndSecondsMin = 0;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMax = 1;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemRecommendationMax = 2000;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionScoreMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionScoreMax = 1;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemStartSecondsMin = 0;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemEndSecondsMin = 0;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMin = 0;
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMax = 1;
+
+export const createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemRecommendationMax = 2000;
 
 export const createArrangementResponseGenerationProvenanceOneEvaluationStrategyIndexMin = 0;
 
@@ -4244,11 +5055,15 @@ export const createArrangementResponseGenerationProvenanceOneEvaluationRepairSee
 export const createArrangementResponseGenerationProvenanceOneEvaluationRepairSeedMax = 2147483647;
 
 
+
+
+
 export const createArrangementResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin = 0;
 export const createArrangementResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax = 1;
 
 export const createArrangementResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin = 0;
 export const createArrangementResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax = 1;
+
 
 
 export const CreateArrangementResponse = zod.object({
@@ -4342,7 +5157,8 @@ export const CreateArrangementResponse = zod.object({
   "id": zod.string(),
   "type": zod.enum(['AUDIO_TRACK', 'MIDI', 'QUALITY_REPORT']),
   "label": zod.string(),
-  "url": zod.string()
+  "url": zod.string(),
+  "artifactSha256": zod.string().regex(createArrangementResponseGenerationProvenanceOneEvaluationArtifactsItemArtifactSha256RegExp).optional().describe('SHA-256 of the exact stored artifact bytes; absent on historical rows.')
 })),
   "qualityReport": zod.union([zod.object({
   "score": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin).max(createArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax),
@@ -4510,6 +5326,122 @@ export const CreateArrangementResponse = zod.object({
 })
 })
 }),zod.null()]),
+  "audioCritic": zod.union([zod.object({
+  "version": zod.literal("perceptual-audio-critic-v1"),
+  "status": zod.enum(['available', 'unavailable', 'failed', 'insufficient']),
+  "score": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneScoreMin).max(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneScoreMax).nullable(),
+  "coverage": zod.object({
+  "availableDimensions": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneCoverageAvailableDimensionsMin).max(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneCoverageAvailableDimensionsMax),
+  "totalDimensions": zod.literal(7),
+  "sufficient": zod.boolean()
+}),
+  "evidence": zod.union([zod.object({
+  "artifactId": zod.string(),
+  "artifactSha256": zod.string().regex(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneEvidenceOneArtifactSha256RegExp),
+  "sampleRate": zod.number().min(1),
+  "analyzerVersion": zod.string()
+}).describe('Privacy-bounded evidence derived only from the rendered PCM and its artifact lineage; it contains no samples, waveform, or private source URL.'),zod.null()]),
+  "dimensions": zod.object({
+  "vocalFit": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitScoreMin).max(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMin).max(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemRecommendationMax)
+}))
+}),
+  "masking": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingScoreMin).max(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMin).max(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemRecommendationMax)
+}))
+}),
+  "balance": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceScoreMin).max(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMin).max(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemRecommendationMax)
+}))
+}),
+  "dynamics": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsScoreMin).max(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMin).max(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemRecommendationMax)
+}))
+}),
+  "artifactsAndDistortion": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMin).max(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMin).max(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemRecommendationMax)
+}))
+}),
+  "transitions": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsScoreMin).max(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMin).max(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemRecommendationMax)
+}))
+}),
+  "repetition": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionScoreMin).max(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMin).max(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(createArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemRecommendationMax)
+}))
+})
+})
+}).describe('Deterministic perceptual analysis of rendered PCM. An unavailable, failed, or insufficient report must not be used as positive release evidence.'),zod.null()]),
   "error": zod.string().nullable(),
   "strategy": zod.object({
   "name": zod.enum(['sparse', 'balanced', 'rhythmic', 'harmonic', 'orchestral']),
@@ -4609,6 +5541,7 @@ export const updateArrangementBodySectionsItemTransposeSemitonesMin = -24;
 export const updateArrangementBodySectionsItemTransposeSemitonesMax = 24;
 
 
+
 export const UpdateArrangementBody = zod.object({
   "name": zod.string().optional(),
   "harmonyComplexity": zod.number().min(1).max(updateArrangementBodyHarmonyComplexityMax).optional(),
@@ -4701,6 +5634,7 @@ export const updateArrangementResponseSectionsItemMidiTracksCcItemMax = 127;
 export const updateArrangementResponseSectionsItemTransposeSemitonesMin = -24;
 export const updateArrangementResponseSectionsItemTransposeSemitonesMax = 24;
 
+export const updateArrangementResponseGenerationProvenanceOneEvaluationArtifactsItemArtifactSha256RegExp = new RegExp('^[a-f0-9]{64}$');
 export const updateArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin = 0;
 export const updateArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
 
@@ -4711,10 +5645,22 @@ export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCrit
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
 
 
+
+
+
+
+
+
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax = 2000;
 
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+
+
+
+
+
 
 
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax = 2000;
@@ -4723,10 +5669,22 @@ export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCrit
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
 
 
+
+
+
+
+
+
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax = 2000;
 
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+
+
+
+
+
 
 
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax = 2000;
@@ -4735,10 +5693,22 @@ export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCrit
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
 
 
+
+
+
+
+
+
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax = 2000;
 
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+
+
+
+
+
 
 
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax = 2000;
@@ -4747,13 +5717,117 @@ export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCrit
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
 
 
+
+
+
+
+
+
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax = 2000;
 
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
 
 
+
+
+
+
+
+
 export const updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax = 2000;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneScoreMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneScoreMax = 1;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneCoverageAvailableDimensionsMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneCoverageAvailableDimensionsMax = 7;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneEvidenceOneArtifactSha256RegExp = new RegExp('^[a-f0-9]{64}$');
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitScoreMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitScoreMax = 1;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemStartSecondsMin = 0;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemEndSecondsMin = 0;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMax = 1;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemRecommendationMax = 2000;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingScoreMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingScoreMax = 1;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemStartSecondsMin = 0;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemEndSecondsMin = 0;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMax = 1;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemRecommendationMax = 2000;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceScoreMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceScoreMax = 1;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemStartSecondsMin = 0;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemEndSecondsMin = 0;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMax = 1;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemRecommendationMax = 2000;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsScoreMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsScoreMax = 1;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemStartSecondsMin = 0;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemEndSecondsMin = 0;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMax = 1;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemRecommendationMax = 2000;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMax = 1;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemStartSecondsMin = 0;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemEndSecondsMin = 0;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMax = 1;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemRecommendationMax = 2000;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsScoreMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsScoreMax = 1;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemStartSecondsMin = 0;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemEndSecondsMin = 0;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMax = 1;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemRecommendationMax = 2000;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionScoreMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionScoreMax = 1;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemStartSecondsMin = 0;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemEndSecondsMin = 0;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMin = 0;
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMax = 1;
+
+export const updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemRecommendationMax = 2000;
 
 export const updateArrangementResponseGenerationProvenanceOneEvaluationStrategyIndexMin = 0;
 
@@ -4767,11 +5841,15 @@ export const updateArrangementResponseGenerationProvenanceOneEvaluationRepairSee
 export const updateArrangementResponseGenerationProvenanceOneEvaluationRepairSeedMax = 2147483647;
 
 
+
+
+
 export const updateArrangementResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin = 0;
 export const updateArrangementResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax = 1;
 
 export const updateArrangementResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin = 0;
 export const updateArrangementResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax = 1;
+
 
 
 export const UpdateArrangementResponse = zod.object({
@@ -4865,7 +5943,8 @@ export const UpdateArrangementResponse = zod.object({
   "id": zod.string(),
   "type": zod.enum(['AUDIO_TRACK', 'MIDI', 'QUALITY_REPORT']),
   "label": zod.string(),
-  "url": zod.string()
+  "url": zod.string(),
+  "artifactSha256": zod.string().regex(updateArrangementResponseGenerationProvenanceOneEvaluationArtifactsItemArtifactSha256RegExp).optional().describe('SHA-256 of the exact stored artifact bytes; absent on historical rows.')
 })),
   "qualityReport": zod.union([zod.object({
   "score": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax),
@@ -5033,6 +6112,122 @@ export const UpdateArrangementResponse = zod.object({
 })
 })
 }),zod.null()]),
+  "audioCritic": zod.union([zod.object({
+  "version": zod.literal("perceptual-audio-critic-v1"),
+  "status": zod.enum(['available', 'unavailable', 'failed', 'insufficient']),
+  "score": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneScoreMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneScoreMax).nullable(),
+  "coverage": zod.object({
+  "availableDimensions": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneCoverageAvailableDimensionsMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneCoverageAvailableDimensionsMax),
+  "totalDimensions": zod.literal(7),
+  "sufficient": zod.boolean()
+}),
+  "evidence": zod.union([zod.object({
+  "artifactId": zod.string(),
+  "artifactSha256": zod.string().regex(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneEvidenceOneArtifactSha256RegExp),
+  "sampleRate": zod.number().min(1),
+  "analyzerVersion": zod.string()
+}).describe('Privacy-bounded evidence derived only from the rendered PCM and its artifact lineage; it contains no samples, waveform, or private source URL.'),zod.null()]),
+  "dimensions": zod.object({
+  "vocalFit": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitScoreMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemRecommendationMax)
+}))
+}),
+  "masking": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingScoreMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemRecommendationMax)
+}))
+}),
+  "balance": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceScoreMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemRecommendationMax)
+}))
+}),
+  "dynamics": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsScoreMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemRecommendationMax)
+}))
+}),
+  "artifactsAndDistortion": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemRecommendationMax)
+}))
+}),
+  "transitions": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsScoreMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemRecommendationMax)
+}))
+}),
+  "repetition": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionScoreMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMin).max(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(updateArrangementResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemRecommendationMax)
+}))
+})
+})
+}).describe('Deterministic perceptual analysis of rendered PCM. An unavailable, failed, or insufficient report must not be used as positive release evidence.'),zod.null()]),
   "error": zod.string().nullable(),
   "strategy": zod.object({
   "name": zod.enum(['sparse', 'balanced', 'rhythmic', 'harmonic', 'orchestral']),
@@ -5125,6 +6320,7 @@ export const listArrangementRevisionsResponseSummaryNoteChangesMin = 0;
 export const listArrangementRevisionsResponseSummaryCcChangesMin = 0;
 
 
+
 export const ListArrangementRevisionsResponseItem = zod.object({
   "id": zod.string(),
   "arrangementId": zod.string(),
@@ -5210,6 +6406,8 @@ export const RestoreArrangementRevisionParams = zod.object({
 })
 
 
+
+
 export const RestoreArrangementRevisionBody = zod.object({
   "expectedVersion": zod.number().min(1)
 })
@@ -5247,6 +6445,7 @@ export const restoreArrangementRevisionResponseSectionsItemMidiTracksCcItemMax =
 export const restoreArrangementRevisionResponseSectionsItemTransposeSemitonesMin = -24;
 export const restoreArrangementRevisionResponseSectionsItemTransposeSemitonesMax = 24;
 
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationArtifactsItemArtifactSha256RegExp = new RegExp('^[a-f0-9]{64}$');
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin = 0;
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
 
@@ -5257,10 +6456,22 @@ export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluation
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
 
 
+
+
+
+
+
+
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax = 2000;
 
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+
+
+
+
+
 
 
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax = 2000;
@@ -5269,10 +6480,22 @@ export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluation
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
 
 
+
+
+
+
+
+
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax = 2000;
 
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+
+
+
+
+
 
 
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax = 2000;
@@ -5281,10 +6504,22 @@ export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluation
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
 
 
+
+
+
+
+
+
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax = 2000;
 
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+
+
+
+
+
 
 
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax = 2000;
@@ -5293,13 +6528,117 @@ export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluation
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
 
 
+
+
+
+
+
+
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax = 2000;
 
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
 
 
+
+
+
+
+
+
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax = 2000;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneScoreMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneScoreMax = 1;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneCoverageAvailableDimensionsMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneCoverageAvailableDimensionsMax = 7;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneEvidenceOneArtifactSha256RegExp = new RegExp('^[a-f0-9]{64}$');
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitScoreMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitScoreMax = 1;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemStartSecondsMin = 0;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemEndSecondsMin = 0;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMax = 1;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemRecommendationMax = 2000;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingScoreMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingScoreMax = 1;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemStartSecondsMin = 0;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemEndSecondsMin = 0;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMax = 1;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemRecommendationMax = 2000;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceScoreMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceScoreMax = 1;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemStartSecondsMin = 0;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemEndSecondsMin = 0;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMax = 1;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemRecommendationMax = 2000;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsScoreMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsScoreMax = 1;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemStartSecondsMin = 0;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemEndSecondsMin = 0;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMax = 1;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemRecommendationMax = 2000;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMax = 1;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemStartSecondsMin = 0;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemEndSecondsMin = 0;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMax = 1;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemRecommendationMax = 2000;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsScoreMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsScoreMax = 1;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemStartSecondsMin = 0;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemEndSecondsMin = 0;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMax = 1;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemRecommendationMax = 2000;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionScoreMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionScoreMax = 1;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemStartSecondsMin = 0;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemEndSecondsMin = 0;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMin = 0;
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMax = 1;
+
+export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemRecommendationMax = 2000;
 
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationStrategyIndexMin = 0;
 
@@ -5313,11 +6652,15 @@ export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluation
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationRepairSeedMax = 2147483647;
 
 
+
+
+
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin = 0;
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax = 1;
 
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin = 0;
 export const restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax = 1;
+
 
 
 export const RestoreArrangementRevisionResponse = zod.object({
@@ -5411,7 +6754,8 @@ export const RestoreArrangementRevisionResponse = zod.object({
   "id": zod.string(),
   "type": zod.enum(['AUDIO_TRACK', 'MIDI', 'QUALITY_REPORT']),
   "label": zod.string(),
-  "url": zod.string()
+  "url": zod.string(),
+  "artifactSha256": zod.string().regex(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationArtifactsItemArtifactSha256RegExp).optional().describe('SHA-256 of the exact stored artifact bytes; absent on historical rows.')
 })),
   "qualityReport": zod.union([zod.object({
   "score": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax),
@@ -5579,6 +6923,122 @@ export const RestoreArrangementRevisionResponse = zod.object({
 })
 })
 }),zod.null()]),
+  "audioCritic": zod.union([zod.object({
+  "version": zod.literal("perceptual-audio-critic-v1"),
+  "status": zod.enum(['available', 'unavailable', 'failed', 'insufficient']),
+  "score": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneScoreMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneScoreMax).nullable(),
+  "coverage": zod.object({
+  "availableDimensions": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneCoverageAvailableDimensionsMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneCoverageAvailableDimensionsMax),
+  "totalDimensions": zod.literal(7),
+  "sufficient": zod.boolean()
+}),
+  "evidence": zod.union([zod.object({
+  "artifactId": zod.string(),
+  "artifactSha256": zod.string().regex(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneEvidenceOneArtifactSha256RegExp),
+  "sampleRate": zod.number().min(1),
+  "analyzerVersion": zod.string()
+}).describe('Privacy-bounded evidence derived only from the rendered PCM and its artifact lineage; it contains no samples, waveform, or private source URL.'),zod.null()]),
+  "dimensions": zod.object({
+  "vocalFit": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitScoreMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemRecommendationMax)
+}))
+}),
+  "masking": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingScoreMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemRecommendationMax)
+}))
+}),
+  "balance": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceScoreMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemRecommendationMax)
+}))
+}),
+  "dynamics": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsScoreMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemRecommendationMax)
+}))
+}),
+  "artifactsAndDistortion": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemRecommendationMax)
+}))
+}),
+  "transitions": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsScoreMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemRecommendationMax)
+}))
+}),
+  "repetition": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionScoreMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMin).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemRecommendationMax)
+}))
+})
+})
+}).describe('Deterministic perceptual analysis of rendered PCM. An unavailable, failed, or insufficient report must not be used as positive release evidence.'),zod.null()]),
   "error": zod.string().nullable(),
   "strategy": zod.object({
   "name": zod.enum(['sparse', 'balanced', 'rhythmic', 'harmonic', 'orchestral']),
@@ -5646,6 +7106,7 @@ export const generateArrangementBodyRegionCrossfadeSecondsMin = 0;
 export const generateArrangementBodyRegionCrossfadeSecondsMax = 10;
 
 
+
 export const GenerateArrangementBody = zod.object({
   "candidates": zod.number().min(1).max(generateArrangementBodyCandidatesMax).optional(),
   "idempotencyKey": zod.string().min(1).max(generateArrangementBodyIdempotencyKeyMax).optional(),
@@ -5673,6 +7134,8 @@ export const generateArrangementResponseProgressMin = 0;
 export const generateArrangementResponseProgressMax = 100;
 
 export const generateArrangementResponseAttemptMin = 0;
+
+
 
 
 export const GenerateArrangementResponse = zod.object({
@@ -5743,6 +7206,8 @@ export const getGenerationJobResponseProgressMax = 100;
 export const getGenerationJobResponseAttemptMin = 0;
 
 
+
+
 export const GetGenerationJobResponse = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -5811,6 +7276,8 @@ export const cancelGenerationJobResponseProgressMax = 100;
 export const cancelGenerationJobResponseAttemptMin = 0;
 
 
+
+
 export const CancelGenerationJobResponse = zod.object({
   "id": zod.string(),
   "projectId": zod.string(),
@@ -5877,6 +7344,8 @@ export const retryGenerationJobResponseProgressMin = 0;
 export const retryGenerationJobResponseProgressMax = 100;
 
 export const retryGenerationJobResponseAttemptMin = 0;
+
+
 
 
 export const RetryGenerationJobResponse = zod.object({
@@ -5993,6 +7462,7 @@ export const listGenerationCandidatesResponseTrackModelsItemDirectiveExitBeatMin
 export const listGenerationCandidatesResponseTrackModelsItemDirectiveExitDurationBeatsExclusiveMin = 0;
 
 
+
 export const listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemStartMin = 0;
 
 export const listGenerationCandidatesResponseTrackModelsItemAppliedDirectivesItemEndMin = 0;
@@ -6046,6 +7516,7 @@ export const listGenerationCandidatesResponseHarmonyDecisionsItemBassSupportEvid
 
 export const listGenerationCandidatesResponseHarmonyDecisionsItemBassSupportEvidenceMax = 16;
 
+export const listGenerationCandidatesResponseEvaluationArtifactsItemArtifactSha256RegExp = new RegExp('^[a-f0-9]{64}$');
 export const listGenerationCandidatesResponseEvaluationQualityReportOneScoreMin = 0;
 export const listGenerationCandidatesResponseEvaluationQualityReportOneScoreMax = 1;
 
@@ -6056,10 +7527,22 @@ export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsV
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
 
 
+
+
+
+
+
+
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax = 2000;
 
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+
+
+
+
+
 
 
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax = 2000;
@@ -6068,10 +7551,22 @@ export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsD
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
 
 
+
+
+
+
+
+
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax = 2000;
 
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+
+
+
+
+
 
 
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax = 2000;
@@ -6080,10 +7575,22 @@ export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsR
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
 
 
+
+
+
+
+
+
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax = 2000;
 
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+
+
+
+
+
 
 
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax = 2000;
@@ -6092,13 +7599,117 @@ export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsR
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
 
 
+
+
+
+
+
+
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax = 2000;
 
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
 
 
+
+
+
+
+
+
 export const listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax = 2000;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneScoreMin = 0;
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneScoreMax = 1;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneCoverageAvailableDimensionsMin = 0;
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneCoverageAvailableDimensionsMax = 7;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneEvidenceOneArtifactSha256RegExp = new RegExp('^[a-f0-9]{64}$');
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsVocalFitScoreMin = 0;
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsVocalFitScoreMax = 1;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsVocalFitFindingsItemStartSecondsMin = 0;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsVocalFitFindingsItemEndSecondsMin = 0;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMin = 0;
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMax = 1;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsVocalFitFindingsItemRecommendationMax = 2000;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsMaskingScoreMin = 0;
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsMaskingScoreMax = 1;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsMaskingFindingsItemStartSecondsMin = 0;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsMaskingFindingsItemEndSecondsMin = 0;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMin = 0;
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMax = 1;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsMaskingFindingsItemRecommendationMax = 2000;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsBalanceScoreMin = 0;
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsBalanceScoreMax = 1;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsBalanceFindingsItemStartSecondsMin = 0;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsBalanceFindingsItemEndSecondsMin = 0;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMin = 0;
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMax = 1;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsBalanceFindingsItemRecommendationMax = 2000;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsDynamicsScoreMin = 0;
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsDynamicsScoreMax = 1;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsDynamicsFindingsItemStartSecondsMin = 0;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsDynamicsFindingsItemEndSecondsMin = 0;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMin = 0;
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMax = 1;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsDynamicsFindingsItemRecommendationMax = 2000;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMin = 0;
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMax = 1;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemStartSecondsMin = 0;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemEndSecondsMin = 0;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMin = 0;
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMax = 1;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemRecommendationMax = 2000;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsTransitionsScoreMin = 0;
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsTransitionsScoreMax = 1;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsTransitionsFindingsItemStartSecondsMin = 0;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsTransitionsFindingsItemEndSecondsMin = 0;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMin = 0;
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMax = 1;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsTransitionsFindingsItemRecommendationMax = 2000;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsRepetitionScoreMin = 0;
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsRepetitionScoreMax = 1;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsRepetitionFindingsItemStartSecondsMin = 0;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsRepetitionFindingsItemEndSecondsMin = 0;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMin = 0;
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMax = 1;
+
+export const listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsRepetitionFindingsItemRecommendationMax = 2000;
 
 export const listGenerationCandidatesResponseEvaluationStrategyIndexMin = 0;
 
@@ -6112,11 +7723,15 @@ export const listGenerationCandidatesResponseEvaluationRepairSeedMin = 0;
 export const listGenerationCandidatesResponseEvaluationRepairSeedMax = 2147483647;
 
 
+
+
+
 export const listGenerationCandidatesResponseEvaluationRepairSourceQualityScoreMin = 0;
 export const listGenerationCandidatesResponseEvaluationRepairSourceQualityScoreMax = 1;
 
 export const listGenerationCandidatesResponseEvaluationRepairRepairedQualityScoreMin = 0;
 export const listGenerationCandidatesResponseEvaluationRepairRepairedQualityScoreMax = 1;
+
 
 
 export const ListGenerationCandidatesResponseItem = zod.object({
@@ -6394,7 +8009,8 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "id": zod.string(),
   "type": zod.enum(['AUDIO_TRACK', 'MIDI', 'QUALITY_REPORT']),
   "label": zod.string(),
-  "url": zod.string()
+  "url": zod.string(),
+  "artifactSha256": zod.string().regex(listGenerationCandidatesResponseEvaluationArtifactsItemArtifactSha256RegExp).optional().describe('SHA-256 of the exact stored artifact bytes; absent on historical rows.')
 })),
   "qualityReport": zod.union([zod.object({
   "score": zod.number().min(listGenerationCandidatesResponseEvaluationQualityReportOneScoreMin).max(listGenerationCandidatesResponseEvaluationQualityReportOneScoreMax),
@@ -6562,6 +8178,122 @@ export const ListGenerationCandidatesResponseItem = zod.object({
 })
 })
 }),zod.null()]),
+  "audioCritic": zod.union([zod.object({
+  "version": zod.literal("perceptual-audio-critic-v1"),
+  "status": zod.enum(['available', 'unavailable', 'failed', 'insufficient']),
+  "score": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneScoreMin).max(listGenerationCandidatesResponseEvaluationAudioCriticOneScoreMax).nullable(),
+  "coverage": zod.object({
+  "availableDimensions": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneCoverageAvailableDimensionsMin).max(listGenerationCandidatesResponseEvaluationAudioCriticOneCoverageAvailableDimensionsMax),
+  "totalDimensions": zod.literal(7),
+  "sufficient": zod.boolean()
+}),
+  "evidence": zod.union([zod.object({
+  "artifactId": zod.string(),
+  "artifactSha256": zod.string().regex(listGenerationCandidatesResponseEvaluationAudioCriticOneEvidenceOneArtifactSha256RegExp),
+  "sampleRate": zod.number().min(1),
+  "analyzerVersion": zod.string()
+}).describe('Privacy-bounded evidence derived only from the rendered PCM and its artifact lineage; it contains no samples, waveform, or private source URL.'),zod.null()]),
+  "dimensions": zod.object({
+  "vocalFit": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsVocalFitScoreMin).max(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsVocalFitScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsVocalFitFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsVocalFitFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMin).max(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsVocalFitFindingsItemRecommendationMax)
+}))
+}),
+  "masking": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsMaskingScoreMin).max(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsMaskingScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsMaskingFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsMaskingFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMin).max(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsMaskingFindingsItemRecommendationMax)
+}))
+}),
+  "balance": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsBalanceScoreMin).max(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsBalanceScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsBalanceFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsBalanceFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMin).max(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsBalanceFindingsItemRecommendationMax)
+}))
+}),
+  "dynamics": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsDynamicsScoreMin).max(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsDynamicsScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsDynamicsFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsDynamicsFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMin).max(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsDynamicsFindingsItemRecommendationMax)
+}))
+}),
+  "artifactsAndDistortion": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMin).max(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMin).max(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemRecommendationMax)
+}))
+}),
+  "transitions": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsTransitionsScoreMin).max(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsTransitionsScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsTransitionsFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsTransitionsFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMin).max(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsTransitionsFindingsItemRecommendationMax)
+}))
+}),
+  "repetition": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsRepetitionScoreMin).max(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsRepetitionScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsRepetitionFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsRepetitionFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMin).max(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(listGenerationCandidatesResponseEvaluationAudioCriticOneDimensionsRepetitionFindingsItemRecommendationMax)
+}))
+})
+})
+}).describe('Deterministic perceptual analysis of rendered PCM. An unavailable, failed, or insufficient report must not be used as positive release evidence.'),zod.null()]),
   "error": zod.string().nullable(),
   "strategy": zod.object({
   "name": zod.enum(['sparse', 'balanced', 'rhythmic', 'harmonic', 'orchestral']),
@@ -6645,6 +8377,7 @@ export const selectGenerationCandidateResponseSectionsItemMidiTracksCcItemMax = 
 export const selectGenerationCandidateResponseSectionsItemTransposeSemitonesMin = -24;
 export const selectGenerationCandidateResponseSectionsItemTransposeSemitonesMax = 24;
 
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationArtifactsItemArtifactSha256RegExp = new RegExp('^[a-f0-9]{64}$');
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin = 0;
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax = 1;
 
@@ -6655,10 +8388,22 @@ export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationM
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitScoreMax = 1;
 
 
+
+
+
+
+
+
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax = 2000;
 
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMin = 0;
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyScoreMax = 1;
+
+
+
+
+
+
 
 
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax = 2000;
@@ -6667,10 +8412,22 @@ export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationM
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentScoreMax = 1;
 
 
+
+
+
+
+
+
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax = 2000;
 
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMin = 0;
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsScoreMax = 1;
+
+
+
+
+
+
 
 
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax = 2000;
@@ -6679,10 +8436,22 @@ export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationM
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsScoreMax = 1;
 
 
+
+
+
+
+
+
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax = 2000;
 
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMin = 0;
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityScoreMax = 1;
+
+
+
+
+
+
 
 
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax = 2000;
@@ -6691,13 +8460,117 @@ export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationM
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionScoreMax = 1;
 
 
+
+
+
+
+
+
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax = 2000;
 
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMin = 0;
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceScoreMax = 1;
 
 
+
+
+
+
+
+
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax = 2000;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneScoreMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneScoreMax = 1;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneCoverageAvailableDimensionsMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneCoverageAvailableDimensionsMax = 7;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneEvidenceOneArtifactSha256RegExp = new RegExp('^[a-f0-9]{64}$');
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitScoreMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitScoreMax = 1;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemStartSecondsMin = 0;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemEndSecondsMin = 0;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMax = 1;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemRecommendationMax = 2000;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingScoreMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingScoreMax = 1;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemStartSecondsMin = 0;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemEndSecondsMin = 0;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMax = 1;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemRecommendationMax = 2000;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceScoreMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceScoreMax = 1;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemStartSecondsMin = 0;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemEndSecondsMin = 0;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMax = 1;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemRecommendationMax = 2000;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsScoreMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsScoreMax = 1;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemStartSecondsMin = 0;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemEndSecondsMin = 0;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMax = 1;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemRecommendationMax = 2000;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMax = 1;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemStartSecondsMin = 0;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemEndSecondsMin = 0;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMax = 1;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemRecommendationMax = 2000;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsScoreMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsScoreMax = 1;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemStartSecondsMin = 0;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemEndSecondsMin = 0;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMax = 1;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemRecommendationMax = 2000;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionScoreMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionScoreMax = 1;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemStartSecondsMin = 0;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemEndSecondsMin = 0;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMin = 0;
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMax = 1;
+
+export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemRecommendationMax = 2000;
 
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationStrategyIndexMin = 0;
 
@@ -6711,11 +8584,15 @@ export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationR
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationRepairSeedMax = 2147483647;
 
 
+
+
+
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMin = 0;
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationRepairSourceQualityScoreMax = 1;
 
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMin = 0;
 export const selectGenerationCandidateResponseGenerationProvenanceOneEvaluationRepairRepairedQualityScoreMax = 1;
+
 
 
 export const SelectGenerationCandidateResponse = zod.object({
@@ -6809,7 +8686,8 @@ export const SelectGenerationCandidateResponse = zod.object({
   "id": zod.string(),
   "type": zod.enum(['AUDIO_TRACK', 'MIDI', 'QUALITY_REPORT']),
   "label": zod.string(),
-  "url": zod.string()
+  "url": zod.string(),
+  "artifactSha256": zod.string().regex(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationArtifactsItemArtifactSha256RegExp).optional().describe('SHA-256 of the exact stored artifact bytes; absent on historical rows.')
 })),
   "qualityReport": zod.union([zod.object({
   "score": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationQualityReportOneScoreMax),
@@ -6977,6 +8855,122 @@ export const SelectGenerationCandidateResponse = zod.object({
 })
 })
 }),zod.null()]),
+  "audioCritic": zod.union([zod.object({
+  "version": zod.literal("perceptual-audio-critic-v1"),
+  "status": zod.enum(['available', 'unavailable', 'failed', 'insufficient']),
+  "score": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneScoreMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneScoreMax).nullable(),
+  "coverage": zod.object({
+  "availableDimensions": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneCoverageAvailableDimensionsMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneCoverageAvailableDimensionsMax),
+  "totalDimensions": zod.literal(7),
+  "sufficient": zod.boolean()
+}),
+  "evidence": zod.union([zod.object({
+  "artifactId": zod.string(),
+  "artifactSha256": zod.string().regex(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneEvidenceOneArtifactSha256RegExp),
+  "sampleRate": zod.number().min(1),
+  "analyzerVersion": zod.string()
+}).describe('Privacy-bounded evidence derived only from the rendered PCM and its artifact lineage; it contains no samples, waveform, or private source URL.'),zod.null()]),
+  "dimensions": zod.object({
+  "vocalFit": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitScoreMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsVocalFitFindingsItemRecommendationMax)
+}))
+}),
+  "masking": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingScoreMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsMaskingFindingsItemRecommendationMax)
+}))
+}),
+  "balance": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceScoreMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsBalanceFindingsItemRecommendationMax)
+}))
+}),
+  "dynamics": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsScoreMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsDynamicsFindingsItemRecommendationMax)
+}))
+}),
+  "artifactsAndDistortion": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsArtifactsAndDistortionFindingsItemRecommendationMax)
+}))
+}),
+  "transitions": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsScoreMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsTransitionsFindingsItemRecommendationMax)
+}))
+}),
+  "repetition": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'failed']),
+  "score": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionScoreMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionScoreMax).nullable(),
+  "explanation": zod.string(),
+  "findings": zod.array(zod.object({
+  "id": zod.string(),
+  "startSeconds": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemStartSecondsMin),
+  "endSeconds": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemEndSecondsMin),
+  "affectedTrackIds": zod.array(zod.string()).optional(),
+  "confidence": zod.number().min(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMin).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemConfidenceMax),
+  "provenance": zod.enum(['rendered_pcm']),
+  "recommendation": zod.string().max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationAudioCriticOneDimensionsRepetitionFindingsItemRecommendationMax)
+}))
+})
+})
+}).describe('Deterministic perceptual analysis of rendered PCM. An unavailable, failed, or insufficient report must not be used as positive release evidence.'),zod.null()]),
   "error": zod.string().nullable(),
   "strategy": zod.object({
   "name": zod.enum(['sparse', 'balanced', 'rhythmic', 'harmonic', 'orchestral']),
@@ -7030,7 +9024,15 @@ export const RepairGenerationCandidateParams = zod.object({
 export const repairGenerationCandidateBodyIdempotencyKeyMax = 200;
 
 
+
+
+
+
+
+
+
 export const repairGenerationCandidateBodyFindingMusicalReasonMax = 2000;
+
 
 
 export const RepairGenerationCandidateBody = zod.object({
@@ -7053,6 +9055,8 @@ export const repairGenerationCandidateResponseProgressMin = 0;
 export const repairGenerationCandidateResponseProgressMax = 100;
 
 export const repairGenerationCandidateResponseAttemptMin = 0;
+
+
 
 
 export const RepairGenerationCandidateResponse = zod.object({
@@ -7161,6 +9165,7 @@ export const ExportArrangementParams = zod.object({
 export const exportArrangementBodyIdempotencyKeyMax = 200;
 
 
+
 export const ExportArrangementBody = zod.object({
   "idempotencyKey": zod.string().min(1).max(exportArrangementBodyIdempotencyKeyMax).optional(),
   "arrangementId": zod.string().nullish(),
@@ -7218,6 +9223,7 @@ export const listTracksResponseTrackModelDirectiveExitBarMin = 0;
 export const listTracksResponseTrackModelDirectiveExitBeatMin = 0;
 
 export const listTracksResponseTrackModelDirectiveExitDurationBeatsExclusiveMin = 0;
+
 
 
 export const listTracksResponseTrackModelAppliedDirectivesItemStartMin = 0;
@@ -7559,6 +9565,7 @@ export const CreateProjectExportParams = zod.object({
 export const createProjectExportBodyIdempotencyKeyMax = 200;
 
 
+
 export const CreateProjectExportBody = zod.object({
   "idempotencyKey": zod.string().min(1).max(createProjectExportBodyIdempotencyKeyMax).optional(),
   "arrangementId": zod.string().nullish(),
@@ -7696,6 +9703,10 @@ export const RunCopilotParams = zod.object({
 })
 
 
+
+
+
+
 export const RunCopilotBody = zod.object({
   "command": zod.string().min(1),
   "arrangementId": zod.string().optional(),
@@ -7704,6 +9715,9 @@ export const RunCopilotBody = zod.object({
   "startBar": zod.number().min(1).optional(),
   "endBar": zod.number().min(1).optional()
 })
+
+
+
 
 
 export const RunCopilotResponse = zod.object({
@@ -7719,3 +9733,5 @@ export const RunCopilotResponse = zod.object({
   "affectedSections": zod.array(zod.string()),
   "interpreter": zod.enum(['openai', 'deterministic'])
 })
+
+

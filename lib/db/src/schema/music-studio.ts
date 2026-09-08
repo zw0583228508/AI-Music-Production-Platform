@@ -1132,6 +1132,7 @@ export const musicGenerationCandidatesTable = pgTable(
         artifacts: [],
         qualityReport: null,
         musicCritic: null,
+        audioCritic: null,
         error: null,
       }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -1445,6 +1446,8 @@ export type CandidateEvaluation = {
   artifacts: CandidateEvaluationArtifact[];
   qualityReport: CandidateQualityReport | null;
   musicCritic: CandidateMusicCriticReport | null;
+  /** Deterministic PCM-only evidence, deliberately independent of the symbolic critic. */
+  audioCritic: CandidateAudioCriticReport | null;
   error: string | null;
   strategy?: CandidateStrategyEvidence;
   diversity?: CandidateDiversityEvidence;
@@ -1550,11 +1553,55 @@ export type CandidateMusicCriticReport = {
   >;
 };
 
+export type CandidateAudioCriticDimension =
+  | "vocalFit"
+  | "masking"
+  | "balance"
+  | "dynamics"
+  | "artifactsAndDistortion"
+  | "transitions"
+  | "repetition";
+
+export type CandidateAudioCriticFinding = {
+  id: string;
+  startSeconds: number;
+  endSeconds: number;
+  /** Present only where a rendered stem or a single-track render supports attribution. */
+  affectedTrackIds?: string[];
+  confidence: number;
+  provenance: "rendered_pcm";
+  recommendation: string;
+};
+
+export type CandidateAudioCriticDimensionResult = {
+  status: "available" | "unavailable" | "failed";
+  score: number | null;
+  explanation: string;
+  findings: CandidateAudioCriticFinding[];
+};
+
+export type CandidateAudioCriticReport = {
+  version: "perceptual-audio-critic-v1";
+  status: "available" | "unavailable" | "failed" | "insufficient";
+  score: number | null;
+  coverage: { availableDimensions: number; totalDimensions: 7; sufficient: boolean };
+  /** Hash/metadata only: samples and storage locations are never persisted in critic evidence. */
+  evidence: {
+    artifactId: string;
+    artifactSha256: string;
+    sampleRate: number;
+    analyzerVersion: string;
+  } | null;
+  dimensions: Record<CandidateAudioCriticDimension, CandidateAudioCriticDimensionResult>;
+};
+
 export type CandidateEvaluationArtifact = {
   id: string;
   type: "AUDIO_TRACK" | "MIDI" | "QUALITY_REPORT";
   label: string;
   url: string;
+  /** Exact stored artifact bytes; optional only for historical rows. */
+  artifactSha256?: string;
 };
 
 export type CandidateRepairSnapshot = {

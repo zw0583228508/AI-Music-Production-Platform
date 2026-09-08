@@ -60,6 +60,7 @@ for (const status of Object.keys(supportedStatuses) as CandidateEvaluationStatus
       artifacts: [],
       qualityReport: null,
       musicCritic,
+      audioCritic: null,
       error: null,
       diversity: {
         fingerprint: {
@@ -177,6 +178,7 @@ test("candidate response parser retains new repair changed scopes", () => {
     artifacts: [],
     qualityReport: null,
     musicCritic: null,
+    audioCritic: null,
     error: null,
     repair: repairEvidence,
   };

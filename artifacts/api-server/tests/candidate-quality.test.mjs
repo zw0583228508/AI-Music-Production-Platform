@@ -16,6 +16,8 @@ await build({
       } from "./src/lib/musicEngines";
        export { hasCompleteQualityEvidence, isSelectableCandidate, publicCandidateEvaluation, rankEvaluatedCandidates } from "./src/lib/candidateRanking";
        export { evaluateCandidateMusicalFit } from "./src/lib/candidateQuality";
+       export { evaluateRenderedPcm } from "./src/lib/perceptualAudioCritic";
+       export { audioFindingToRepairFinding } from "./src/lib/candidateRepair";
        export {
          candidateDistance,
          diversityEvidence,
@@ -46,6 +48,8 @@ const {
    seedForCandidate,
    strategyForCandidate,
   evaluateCandidateMusicalFit,
+   evaluateRenderedPcm,
+   audioFindingToRepairFinding,
 } =
   await import(pathToFileURL(bundlePath).href);
 after(() => unlink(bundlePath).catch(() => undefined));
@@ -244,14 +248,20 @@ test("6/8 section coverage honors the denominator at a section boundary", () => 
 
 test("6/8 candidate generation and render quality share one bar timeline", () => {
   const songModel = {
-    tempoMap: [{ start: 0, end: 6, bpm: 60, confidence: 1 }],
-    meterMap: [{ start: 0, end: 6, meter: "6/8", confidence: 1 }],
-    keyMap: [{ start: 0, end: 6, key: "C", mode: "major", confidence: 1 }],
+    audio: { name: "test.wav", contentType: "audio/wav", size: 0, durationSeconds: 6, sampleRate: 1_000, channels: 1 },
+    tempoMap: [{ time: 0, bpm: 60, confidence: 1 }],
+    meterMap: [{ bar: 1, meter: "6/8", confidence: 1 }],
+    keyMap: [{ time: 0, key: "C", confidence: 1 }],
     chords: [],
     melody: [],
     sections: [
       { name: "A", startBar: 1, endBar: 1, energy: 0.5 },
       { name: "B", startBar: 2, endBar: 2, energy: 0.8 },
+    ],
+    energy: [0.5, 0.8],
+    bars: [
+      { bar: 1, start: 0, end: 3, beats: 6, confidence: 1 },
+      { bar: 2, start: 3, end: 6, beats: 6, confidence: 1 },
     ],
   };
   const style = createStyleSpec(
@@ -286,6 +296,27 @@ test("6/8 candidate generation and render quality share one bar timeline", () =>
   assert.ok(secondSectionNotes.length > 0);
   assert.equal(result.quality.checks.sectionCoverage, 1);
   assert.ok(result.durationSeconds <= 7);
+  const localAudio = evaluateRenderedPcm({
+    pcm: result.master, channels: 2, sampleRate: 1_000,
+    artifactId: "local-wav", artifactSha256: "c".repeat(64),
+    renderedTracks: result.tracks.map(({ trackModel, samples }) => ({
+      id: trackModel.id, pcm: samples, channels: 2, sampleRate: 1_000,
+    })),
+  });
+  // Add a second real renderer buffer to exercise evidence qualification.
+  const multitrackAudio = evaluateRenderedPcm({
+    ...localAudio, pcm: result.master, channels: 2, sampleRate: 1_000,
+    artifactId: "local-wav", artifactSha256: "c".repeat(64),
+    renderedTracks: [
+      ...result.tracks.map(({ trackModel, samples }) => ({
+        id: trackModel.id, pcm: samples, channels: 2, sampleRate: 1_000,
+      })),
+      { id: "duplicate-render", pcm: result.tracks[0].samples.slice(), channels: 2, sampleRate: 1_000 },
+    ],
+  });
+  assert.equal(multitrackAudio.status, "available");
+  assert.equal(multitrackAudio.dimensions.masking.status, "available");
+  assert.equal(multitrackAudio.dimensions.balance.status, "available");
 });
 
 test("failed quality evidence is unranked regardless of provider score", () => {
@@ -359,12 +390,31 @@ test("failed quality evidence is unranked regardless of provider score", () => {
 });
 
 test("verified provider audio is selectable without inventing symbolic TrackModels", () => {
+  const providerPcm = new Float32Array(4_000).fill(.15);
+  const providerAudioCritic = evaluateRenderedPcm({
+    pcm: providerPcm,
+    sampleRate: 1_000,
+    channels: 2,
+    artifactId: "audio",
+    artifactSha256: "d".repeat(64),
+    renderedTracks: [],
+  });
+  assert.equal(providerAudioCritic.status, "available");
+  assert.equal(providerAudioCritic.dimensions.vocalFit.status, "unavailable");
+  assert.equal(providerAudioCritic.dimensions.masking.status, "unavailable");
+  assert.equal(providerAudioCritic.dimensions.balance.status, "unavailable");
   const evaluation = {
     status: "evaluated",
     providerScore: 0.8,
     renderArtifactIds: ["audio"],
     artifacts: [
-      { id: "audio", type: "AUDIO_TRACK", label: "Provider audio", url: "export-object://audio" },
+      {
+        id: "audio",
+        type: "AUDIO_TRACK",
+        label: "Provider audio",
+        url: "export-object://audio",
+        artifactSha256: "d".repeat(64),
+      },
       { id: "quality", type: "QUALITY_REPORT", label: "Quality", url: "export-object://quality" },
     ],
     qualityReport: {
@@ -409,6 +459,7 @@ test("verified provider audio is selectable without inventing symbolic TrackMode
         explanation: "Unavailable",
       },
     }),
+    audioCritic: providerAudioCritic,
     error: null,
   };
   assert.equal(hasCompleteQualityEvidence(evaluation), true);
@@ -483,6 +534,14 @@ test("diversity-rejected candidates are neither ranked nor selectable", () => {
 
 test("music critic reports every rubric dimension with typed unavailable evidence", () => {
   const songModel = {
+    audio: { name: "test.wav", contentType: "audio/wav", size: 0, durationSeconds: 8, sampleRate: 1_000, channels: 1 },
+    tempoMap: [{ time: 0, bpm: 120, confidence: 1 }],
+    meterMap: [{ bar: 1, meter: "4/4", confidence: 1 }],
+    keyMap: [{ time: 0, key: "C", confidence: 1 }],
+    melody: [],
+    chords: [],
+    sections: [],
+    energy: [],
     vocalEvidence: {
       status: "not_available",
       reason: "No verified vocal stem",
@@ -522,6 +581,117 @@ test("music critic reports every rubric dimension with typed unavailable evidenc
     assert.ok(result.evidence.length > 0);
     assert.equal(typeof result.explanation, "string");
   }
+});
+
+test("perceptual audio critic is deterministic, privacy-bounded, and localizes PCM defects", () => {
+  const pcm = new Float32Array(4_000).fill(.2);
+  for (let index = 1_000; index < 1_500; index++) pcm[index] = 1;
+  const input = {
+    pcm: new Float32Array(pcm.length * 2).map((_, index) => pcm[Math.floor(index / 2)]), sampleRate: 1_000, channels: 2, artifactId: "audio",
+    artifactSha256: "a".repeat(64), renderedTracks: [
+      { id: "solo", pcm: pcm.slice(), channels: 1, sampleRate: 1_000 }, { id: "support", pcm: pcm.slice(), channels: 1, sampleRate: 1_000 },
+    ],
+  };
+  const first = evaluateRenderedPcm(input);
+  const second = evaluateRenderedPcm(input);
+  assert.deepEqual(first, second);
+  assert.equal(first.status, "available");
+  assert.equal(first.coverage.sufficient, true);
+  assert.equal(first.dimensions.vocalFit.status, "unavailable");
+  const clipping = first.dimensions.artifactsAndDistortion.findings[0];
+  assert.deepEqual(
+    { startSeconds: clipping.startSeconds, endSeconds: clipping.endSeconds, affectedTrackIds: clipping.affectedTrackIds },
+    { startSeconds: 1, endSeconds: 1.5, affectedTrackIds: undefined },
+  );
+  assert.equal("pcm" in first.evidence, false);
+  assert.equal(evaluateRenderedPcm({ ...input, pcm: null }).status, "unavailable");
+  assert.equal(evaluateRenderedPcm({ ...input, pcm: new Float32Array(10) }).status, "insufficient");
+  assert.equal(evaluateRenderedPcm({ ...input, artifactSha256: "not-a-hash" }).status, "failed");
+  const providerOnly = evaluateRenderedPcm({ ...input, renderedTracks: [] });
+  assert.equal(providerOnly.status, "available");
+  assert.equal(providerOnly.coverage.sufficient, true);
+  assert.equal(providerOnly.dimensions.masking.status, "unavailable");
+  assert.equal(providerOnly.dimensions.balance.status, "unavailable");
+  const validVocalEvidence = {
+    status: "detected", reason: null, sampleRate: 1_000, channels: 1, frameSizeSamples: 500, thresholds: null,
+    provenance: { sourceStemRole: "vocals", objectPath: "private/source.wav", provider: "test", contentChecksum: "b".repeat(64) },
+    observedVoicedWindows: [{ start: 0, end: .5 }], observedSilentWindows: [],
+  };
+  const verifiedVocals = evaluateRenderedPcm({
+    ...input,
+    analyzedDurationSeconds: 4,
+    vocalEvidence: validVocalEvidence,
+  });
+  assert.equal(verifiedVocals.status, "available");
+  assert.equal(verifiedVocals.dimensions.vocalFit.status, "available");
+  assert.equal(evaluateRenderedPcm({
+    ...input, analyzedDurationSeconds: 4,
+    vocalEvidence: { ...validVocalEvidence, provenance: { sourceStemRole: "", objectPath: "", provider: "" },
+      observedVoicedWindows: [{ start: 0, end: 5 }], observedSilentWindows: [] },
+  }).dimensions.vocalFit.status, "unavailable");
+  assert.equal(evaluateRenderedPcm({
+    ...input, analyzedDurationSeconds: 20,
+    vocalEvidence: { ...validVocalEvidence, observedVoicedWindows: [{ start: 3.8, end: 5 }] },
+  }).dimensions.vocalFit.status, "unavailable", "source duration cannot extend the rendered PCM");
+  assert.equal(evaluateRenderedPcm({
+    ...input,
+    vocalEvidence: {
+      ...validVocalEvidence,
+      provenance: { ...validVocalEvidence.provenance, sourceStemRole: "drums" },
+    },
+  }).dimensions.vocalFit.status, "unavailable");
+});
+
+test("perceptual audio critic scans large multitrack PCM without boxed array copies", () => {
+  const sampleRate = 8_000;
+  const seconds = 30;
+  const frames = sampleRate * seconds;
+  const stereo = new Float32Array(frames * 2);
+  const left = new Float32Array(frames);
+  const right = new Float32Array(frames);
+  for (let frame = 0; frame < frames; frame++) {
+    const sample = Math.sin(frame / 19) * .12;
+    stereo[frame * 2] = sample;
+    stereo[frame * 2 + 1] = sample * .9;
+    left[frame] = sample;
+    right[frame] = sample * .6;
+  }
+  const report = evaluateRenderedPcm({
+    pcm: stereo,
+    sampleRate,
+    channels: 2,
+    artifactId: "large-audio",
+    artifactSha256: "c".repeat(64),
+    renderedTracks: [
+      { id: "left", pcm: left, channels: 1, sampleRate },
+      { id: "right", pcm: right, channels: 1, sampleRate },
+    ],
+  });
+  assert.equal(report.status, "available");
+  assert.equal(report.dimensions.masking.status, "available");
+  assert.equal(report.dimensions.balance.status, "available");
+});
+
+test("audio findings map seconds to canonical bounded repair scopes and reject fabrication", () => {
+  const finding = {
+    id: "pcm-finding", startSeconds: 3.1, endSeconds: 5.9, affectedTrackIds: ["piano-track"],
+    confidence: .9, provenance: "rendered_pcm", recommendation: "Repair the second bar.",
+  };
+  const repaired = audioFindingToRepairFinding({
+    finding,
+    plan: { ...plan, sections: [{ ...plan.sections[0], startBar: 1, endBar: 2 }] },
+    trackModels: [track],
+    tempoMap: [{ time: 0, bpm: 60 }],
+    meterMap: [{ bar: 1, meter: "6/8" }],
+  });
+  assert.deepEqual(
+    { startBar: repaired.startBar, endBar: repaired.endBar, tracks: repaired.affectedTrackIds },
+    { startBar: 2, endBar: 2, tracks: ["piano-track"] },
+  );
+  assert.throws(() => audioFindingToRepairFinding({
+    finding: { ...finding, affectedTrackIds: ["fabricated"] },
+    plan, trackModels: [track], tempoMap: [{ time: 0, bpm: 60 }], meterMap: [{ bar: 1, meter: "6/8" }],
+  }));
 });
 
 test("a failed critic dimension fences quality evidence", () => {

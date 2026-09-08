@@ -3,12 +3,39 @@ import type {
   ArrangementPlan,
   CandidateRepairSnapshot,
   CriticRepairFinding,
+  CandidateAudioCriticFinding,
   TrackModel,
   ArrangementHierarchyScope,
 } from "@workspace/db";
 import { createCanonicalTimeline } from "./canonicalTimeline";
 
 export const MAX_REPAIR_ATTEMPTS = 2;
+
+/** Converts only persisted PCM findings into a canonical, bounded repair scope. */
+export function audioFindingToRepairFinding(input: {
+  finding: CandidateAudioCriticFinding;
+  plan: ArrangementPlan;
+  trackModels: TrackModel[];
+  tempoMap: Array<{ time: number; bpm: number }>;
+  meterMap: Array<{ bar: number; meter: string }>;
+}): CriticRepairFinding {
+  const { finding, plan, trackModels } = input;
+  if (!Number.isFinite(finding.startSeconds) || !Number.isFinite(finding.endSeconds) ||
+    finding.startSeconds < 0 || finding.endSeconds <= finding.startSeconds ||
+    !finding.affectedTrackIds?.length) throw new Error("Audio finding is not an actionable bounded repair scope");
+  const knownTracks = new Set(trackModels.map((track) => track.id));
+  const tracks = finding.affectedTrackIds.filter((id) => knownTracks.has(id));
+  if (!tracks.length) throw new Error("Audio finding has no valid rendered track attribution");
+  const timeline = createCanonicalTimeline(input.tempoMap, input.meterMap);
+  const startBar = timeline.coordinateAtSeconds(finding.startSeconds).bar;
+  const endBar = timeline.coordinateAtSeconds(Math.max(finding.startSeconds, finding.endSeconds - 1e-6)).bar;
+  const sections = plan.sections.filter((section) => section.endBar >= startBar && section.startBar <= endBar)
+    .map((section) => section.section);
+  return normalizeRepairFinding({
+    id: finding.id, affectedSections: sections, startBar, endBar, affectedTrackIds: tracks,
+    musicalReason: finding.recommendation,
+  }, plan, trackModels);
+}
 
 function changedHierarchyScopes(
   before: ArrangementPlan["hierarchy"] | undefined,

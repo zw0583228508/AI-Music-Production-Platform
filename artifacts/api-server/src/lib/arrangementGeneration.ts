@@ -76,11 +76,13 @@ import {
 } from "./candidateDiversity";
 import {
   applyBoundedRepair,
+  audioFindingToRepairFinding,
   MAX_REPAIR_ATTEMPTS,
   repairTimeBounds,
   validateServerAuthoredRepairFinding,
 } from "./candidateRepair";
 import { evaluateCandidateMusicalFit } from "./candidateQuality";
+import { evaluateRenderedPcm } from "./perceptualAudioCritic";
 
 const sha256 = (value: string | Buffer): string =>
   createHash("sha256").update(value).digest("hex");
@@ -1245,10 +1247,12 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           },
         });
         const wav = providerWav ?? encodeWav(pipeline.master);
+        // Analyze precisely the bytes persisted as the audio artifact, after WAV quantization.
+        const renderedPcm = decodePcm16Wav(wav, 44_100);
         const quality = providerWav
           ? new QualityEngine().assess(
               materialized.trackModels,
-              decodePcm16Wav(providerWav, 44_100),
+              renderedPcm,
               materialized.plan,
               {
                 lineageComplete: pipeline.quality.lineageComplete,
@@ -1264,6 +1268,19 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           plan: materialized.plan,
           tracks: materialized.trackModels,
           harmonyDecisions: materialized.harmonyDecisions,
+        });
+        const audioCritic = evaluateRenderedPcm({
+          pcm: renderedPcm,
+          sampleRate: 44_100,
+          channels: 2,
+          artifactId: audioArtifactId,
+          artifactSha256: sha256(wav),
+          ...(providerWav ? {} : { renderedTracks: pipeline.tracks.map((track) => ({
+            id: track.trackModel.id, pcm: track.samples, channels: 2, sampleRate: 44_100,
+          })) }),
+          vocalEvidence: evaluationSongModel.vocalEvidence,
+          analyzedDurationSeconds: evaluationSongModel.analysisDurationSeconds ??
+            evaluationSongModel.audio.durationSeconds,
         });
         const candidateDuration =
           candidate.audioArtifact?.durationSeconds ?? pipeline.durationSeconds;
@@ -1327,6 +1344,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           providerScore: candidate.score,
           quality,
           musicCritic,
+           audioCritic,
         }, null, 2));
         const qualityUrl = await saveExportObject(
           `${objectPrefix}/quality-report.json`,
@@ -1340,7 +1358,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           providerScore: candidate.score,
           renderArtifactIds,
           artifacts: [
-            { id: audioArtifactId, type: "AUDIO_TRACK", label: "Rendered audio", url: audioUrl },
+            { id: audioArtifactId, type: "AUDIO_TRACK", label: "Rendered audio", url: audioUrl, artifactSha256: sha256(wav) },
             ...(midiUrl
               ? [{ id: midiArtifactId, type: "MIDI" as const, label: "Performance MIDI", url: midiUrl }]
               : []),
@@ -1348,6 +1366,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           ],
           qualityReport: quality,
           musicCritic,
+           audioCritic,
           error: null,
           strategy: {
             name: strategy,
@@ -1374,14 +1393,14 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
                   outsideScopePreserved: true,
                   changedScopes: bounded?.changedScopes ?? [],
                   sourceQualityScore: snapshot.repair.sourceScore,
-                  repairedQualityScore: musicCritic.score,
-                  improved: musicCritic.score > snapshot.repair.sourceScore,
+                  repairedQualityScore: (musicCritic.score + (audioCritic.score ?? musicCritic.score)) / 2,
+                  improved: (musicCritic.score + (audioCritic.score ?? musicCritic.score)) / 2 > snapshot.repair.sourceScore,
                 },
               }
             : {}),
         };
-        evaluationScore = musicCritic.score;
-        candidateStatus = snapshot.repair && musicCritic.score <= snapshot.repair.sourceScore
+        evaluationScore = (musicCritic.score + (audioCritic.score ?? musicCritic.score)) / 2;
+        candidateStatus = snapshot.repair && evaluationScore <= snapshot.repair.sourceScore
           ? "repair_not_improved"
           : "validated";
         if (candidateStatus === "repair_not_improved") {
@@ -1509,6 +1528,7 @@ export async function runArrangementGeneration(jobId: string): Promise<void> {
           artifacts: [],
           qualityReport: null,
           musicCritic: null,
+          audioCritic: null,
           error: error instanceof Error ? error.message : "Candidate evaluation failed",
           strategy: {
             name: strategy,
@@ -1817,14 +1837,28 @@ export async function queueCandidateRepair(
     .where(eq(musicProjectsTable.id, candidate.projectId))
     .limit(1);
   if (project?.ownerId !== ownerId) return null;
-  const normalizedFinding = validateServerAuthoredRepairFinding(
-    findingId,
-    finding,
-    Object.values(candidate.evaluation.musicCritic!.dimensions)
-      .flatMap((dimension) => dimension.findings ?? []),
-    candidate.evaluatedPlan,
-    candidate.trackModels,
-  );
+  const audioFinding = candidate.evaluation.audioCritic?.dimensions
+    ? Object.values(candidate.evaluation.audioCritic.dimensions)
+      .flatMap((dimension) => dimension.findings).find((item) => item.id === findingId)
+    : undefined;
+  const normalizedFinding = audioFinding
+    ? await (async () => {
+        const [job] = await db.select({ songModelId: musicGenerationJobsTable.songModelId })
+          .from(musicGenerationJobsTable).where(eq(musicGenerationJobsTable.id, candidate.jobId)).limit(1);
+        if (!job?.songModelId) throw new Error("Audio finding cannot be mapped without canonical song timing");
+        const [songModel] = await db.select({ model: songModelsTable.model }).from(songModelsTable)
+          .where(eq(songModelsTable.id, job.songModelId)).limit(1);
+        if (!songModel) throw new Error("Audio finding cannot be mapped without its song model");
+        return audioFindingToRepairFinding({
+          finding: audioFinding, plan: candidate.evaluatedPlan!, trackModels: candidate.trackModels!,
+          tempoMap: songModel.model.tempoMap, meterMap: songModel.model.meterMap,
+        });
+      })()
+    : validateServerAuthoredRepairFinding(
+      findingId, finding,
+      Object.values(candidate.evaluation.musicCritic!.dimensions).flatMap((dimension) => dimension.findings ?? []),
+      candidate.evaluatedPlan, candidate.trackModels,
+    );
   const seed = Number.parseInt(
     sha256(`${candidate.id}:${normalizedFinding.id}`).slice(0, 8),
     16,
@@ -1840,7 +1874,9 @@ export async function queueCandidateRepair(
     repair: {
       sourceCandidateId: candidate.id,
       sourceCandidateLabel: candidate.label,
-      sourceScore: candidate.evaluation.musicCritic!.score,
+      sourceScore: audioFinding
+        ? (candidate.evaluation.musicCritic!.score + (candidate.evaluation.audioCritic!.score ?? 0)) / 2
+        : candidate.evaluation.musicCritic!.score,
       seed,
       maxAttempts: MAX_REPAIR_ATTEMPTS,
       finding: normalizedFinding,

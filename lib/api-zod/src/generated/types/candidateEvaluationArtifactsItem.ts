@@ -12,4 +12,9 @@ export type CandidateEvaluationArtifactsItem = {
   type: CandidateEvaluationArtifactsItemType;
   label: string;
   url: string;
+  /**
+     * SHA-256 of the exact stored artifact bytes; absent on historical rows.
+     * @pattern ^[a-f0-9]{64}$
+     */
+  artifactSha256?: string;
 };
