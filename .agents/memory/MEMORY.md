@@ -49,3 +49,4 @@
 - [OpenAPI bounded counts](openapi-bounded-counts.md) — avoid bare integer schemas until generated Zod targets support zod.int; use bounded numbers for small count summaries.
 - [Vocal phrase evidence](vocal-phrase-evidence.md) — phrases and breaths require verified stem PCM; symbolic alignment conflicts remain explicitly unavailable.
 - [Perceptual audio evidence gates](perceptual-audio-evidence-gates.md) — release confidence requires artifact-bound PCM evidence; unsupported perceptual dimensions must abstain.
+- [Closed-world release verification](closed-world-release-verification.md) — production completion gates must require every named stage and fail closed on missing evidence or provenance.

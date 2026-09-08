@@ -1,0 +1,399 @@
+{
+  "contractVersion": "1.0",
+  "fixtureId": "representative-song-v1",
+  "releaseReady": false,
+  "summary": {
+    "passed": 8,
+    "abstained": 1,
+    "failed": 0,
+    "blocked": 2
+  },
+  "invariants": {
+    "deterministicRecovery": true,
+    "lineagePreserved": true,
+    "producerDecisionsPreserved": true,
+    "outputAudible": true,
+    "outputNotCopied": true,
+    "producerControlsAudible": true,
+    "masterEvidenceBound": true
+  },
+  "evidence": {
+    "canonicalTimelineSha256": "06deeccab0049017f44f4b03b2bda6521c9904ae2b2839f01e793bba429dafa5",
+    "seed": 4242,
+    "repairScopeSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "lineageArtifactIds": [
+      "candidate-artifact",
+      "export-artifact",
+      "master-artifact",
+      "mix-artifact",
+      "performance-artifact",
+      "plan-artifact",
+      "repair-artifact",
+      "song-model-artifact",
+      "source-artifact"
+    ],
+    "producerDecisionIds": [
+      "decision-accepted"
+    ],
+    "retry": {
+      "seed": 4242,
+      "repairScopeSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "canonicalTimelineSha256": "06deeccab0049017f44f4b03b2bda6521c9904ae2b2839f01e793bba429dafa5",
+      "stageOutputAggregateSha256": "59d9428a65baebf811a9a9e151c3cc09755c24ee824fcd7e6635f05b0bc213c1",
+      "masterSha256": "6c9d82f54dcbcb48be1a39c4b296a16551c283ddfb6bd40fb099017511063260",
+      "exportSha256": "c6f75c00a6085a9505db64a44a53f85d5485e8705664ca98e707582792b5550d",
+      "lineageArtifactIds": [
+        "candidate-artifact",
+        "export-artifact",
+        "master-artifact",
+        "mix-artifact",
+        "performance-artifact",
+        "plan-artifact",
+        "repair-artifact",
+        "song-model-artifact",
+        "source-artifact"
+      ],
+      "producerDecisionIds": [
+        "decision-accepted"
+      ]
+    },
+    "audio": {
+      "sourceSha256": "6b6b9e1668cb2be8564e3e037f919607f313e9f963b57fe4d68bc05d848934f7",
+      "masterSha256": "6c9d82f54dcbcb48be1a39c4b296a16551c283ddfb6bd40fb099017511063260",
+      "peak": 0.912017822265625,
+      "activeFrameRatio": 0.4369784580498866,
+      "controlBaselineSha256": "8472fa56d2ac28c5ad243695c3678d444b1de568d69d27dfbdc4d37b4e7f71e3",
+      "controlVariantSha256": "6c9d82f54dcbcb48be1a39c4b296a16551c283ddfb6bd40fb099017511063260",
+      "controlDeltaRms": 0.3502406613379202
+    }
+  },
+  "capabilities": [
+    {
+      "capability": "analysis",
+      "status": "passed",
+      "evidence": {
+        "inputSha256": "6b6b9e1668cb2be8564e3e037f919607f313e9f963b57fe4d68bc05d848934f7",
+        "outputSha256": "00988a8bdf947969934551584752913f85c039aa3543aee9bb275bea8afe8302",
+        "checks": [
+          "canonical-analysis"
+        ]
+      },
+      "artifactIds": [
+        "candidate-artifact",
+        "export-artifact",
+        "master-artifact",
+        "mix-artifact",
+        "performance-artifact",
+        "plan-artifact",
+        "repair-artifact",
+        "song-model-artifact",
+        "source-artifact"
+      ],
+      "provenance": {
+        "provider": "RETAINED_SONG_MODEL_FIXTURE",
+        "modelVersion": "1",
+        "runtimeSha256": "5d498e7e6d94ce58e02a199de4d1fb640bdcb969b6b5fa0a9eb7332260a8efc5",
+        "runtimeIdentity": "node-local-production-path",
+        "licenseReference": "project-runtime-license",
+        "decisionId": "decision-accepted"
+      }
+    },
+    {
+      "capability": "phrase_intelligence",
+      "status": "passed",
+      "evidence": {
+        "inputSha256": "521873f898715c5c4b112e89143610242b1a1700ab516772ec08cd0d880b667f",
+        "outputSha256": "a5b1a30eaa5e7101a180042e640da1b0fcf9f7c7d162af69a6788d52f5a4e27c",
+        "checks": [
+          "verified-vocal-phrases"
+        ]
+      },
+      "artifactIds": [
+        "candidate-artifact",
+        "export-artifact",
+        "master-artifact",
+        "mix-artifact",
+        "performance-artifact",
+        "plan-artifact",
+        "repair-artifact",
+        "song-model-artifact",
+        "source-artifact"
+      ],
+      "provenance": {
+        "provider": "LOCAL_DETERMINISTIC_ENGINE",
+        "modelVersion": "1",
+        "runtimeSha256": "5d498e7e6d94ce58e02a199de4d1fb640bdcb969b6b5fa0a9eb7332260a8efc5",
+        "runtimeIdentity": "node-local-production-path",
+        "licenseReference": "project-runtime-license",
+        "decisionId": "decision-accepted"
+      }
+    },
+    {
+      "capability": "hierarchical_planning",
+      "status": "passed",
+      "evidence": {
+        "inputSha256": "3551f1d963fee0b59e7879ec511ff7d9096f8505caa4ac9159b43bed56fcdbbf",
+        "outputSha256": "b32b4ff81904b5e414a993b00d9c6a002fac81dc33e4bc172296904e3cbbd41d",
+        "checks": [
+          "hierarchy-applied"
+        ]
+      },
+      "artifactIds": [
+        "candidate-artifact",
+        "export-artifact",
+        "master-artifact",
+        "mix-artifact",
+        "performance-artifact",
+        "plan-artifact",
+        "repair-artifact",
+        "song-model-artifact",
+        "source-artifact"
+      ],
+      "provenance": {
+        "provider": "LOCAL_DETERMINISTIC_ENGINE",
+        "modelVersion": "1",
+        "runtimeSha256": "5d498e7e6d94ce58e02a199de4d1fb640bdcb969b6b5fa0a9eb7332260a8efc5",
+        "runtimeIdentity": "node-local-production-path",
+        "licenseReference": "project-runtime-license",
+        "decisionId": "decision-accepted"
+      }
+    },
+    {
+      "capability": "candidate_generation",
+      "status": "passed",
+      "evidence": {
+        "inputSha256": "b32b4ff81904b5e414a993b00d9c6a002fac81dc33e4bc172296904e3cbbd41d",
+        "outputSha256": "d3259218a288860ba4ed863a8a574b5657a2c41916df92e59b61cde78263bdda",
+        "checks": [
+          "deterministic-seed"
+        ]
+      },
+      "artifactIds": [
+        "candidate-artifact",
+        "export-artifact",
+        "master-artifact",
+        "mix-artifact",
+        "performance-artifact",
+        "plan-artifact",
+        "repair-artifact",
+        "song-model-artifact",
+        "source-artifact"
+      ],
+      "provenance": {
+        "provider": "LOCAL_DETERMINISTIC_ENGINE",
+        "modelVersion": "1",
+        "runtimeSha256": "5d498e7e6d94ce58e02a199de4d1fb640bdcb969b6b5fa0a9eb7332260a8efc5",
+        "runtimeIdentity": "node-local-production-path",
+        "licenseReference": "project-runtime-license",
+        "decisionId": "decision-accepted"
+      }
+    },
+    {
+      "capability": "critique",
+      "status": "passed",
+      "evidence": {
+        "inputSha256": "d3259218a288860ba4ed863a8a574b5657a2c41916df92e59b61cde78263bdda",
+        "outputSha256": "5217ab38ddd45bcbfe33a1cee61c08f86f16fda9aae084931023d731687bb522",
+        "checks": [
+          "music-critic"
+        ]
+      },
+      "artifactIds": [
+        "candidate-artifact",
+        "export-artifact",
+        "master-artifact",
+        "mix-artifact",
+        "performance-artifact",
+        "plan-artifact",
+        "repair-artifact",
+        "song-model-artifact",
+        "source-artifact"
+      ],
+      "provenance": {
+        "provider": "LOCAL_DETERMINISTIC_ENGINE",
+        "modelVersion": "1",
+        "runtimeSha256": "5d498e7e6d94ce58e02a199de4d1fb640bdcb969b6b5fa0a9eb7332260a8efc5",
+        "runtimeIdentity": "node-local-production-path",
+        "licenseReference": "project-runtime-license",
+        "decisionId": "decision-accepted"
+      }
+    },
+    {
+      "capability": "bounded_repair",
+      "status": "passed",
+      "evidence": {
+        "inputSha256": "5217ab38ddd45bcbfe33a1cee61c08f86f16fda9aae084931023d731687bb522",
+        "outputSha256": "82e01d530abe1acc29514e1160de9582e787dc35ea1aabe179f785470b478451",
+        "checks": [
+          "outside-scope-preserved"
+        ]
+      },
+      "artifactIds": [
+        "candidate-artifact",
+        "export-artifact",
+        "master-artifact",
+        "mix-artifact",
+        "performance-artifact",
+        "plan-artifact",
+        "repair-artifact",
+        "song-model-artifact",
+        "source-artifact"
+      ],
+      "provenance": {
+        "provider": "LOCAL_DETERMINISTIC_ENGINE",
+        "modelVersion": "1",
+        "runtimeSha256": "5d498e7e6d94ce58e02a199de4d1fb640bdcb969b6b5fa0a9eb7332260a8efc5",
+        "runtimeIdentity": "node-local-production-path",
+        "licenseReference": "project-runtime-license",
+        "decisionId": "decision-accepted"
+      }
+    },
+    {
+      "capability": "performance",
+      "status": "blocked",
+      "evidence": {
+        "inputSha256": "b32b4ff81904b5e414a993b00d9c6a002fac81dc33e4bc172296904e3cbbd41d",
+        "outputSha256": "870c3c1402840d9f0fe102314884b338d01176fd1d5bd830c23db677e1368f35",
+        "checks": [
+          "expressive-performance"
+        ]
+      },
+      "artifactIds": [
+        "candidate-artifact",
+        "export-artifact",
+        "master-artifact",
+        "mix-artifact",
+        "performance-artifact",
+        "plan-artifact",
+        "repair-artifact",
+        "song-model-artifact",
+        "source-artifact"
+      ],
+      "provenance": {
+        "provider": "LOCAL_DETERMINISTIC_ENGINE",
+        "modelVersion": "1",
+        "runtimeSha256": "5d498e7e6d94ce58e02a199de4d1fb640bdcb969b6b5fa0a9eb7332260a8efc5",
+        "runtimeIdentity": "node-local-production-path",
+        "licenseReference": "project-runtime-license",
+        "decisionId": "decision-accepted"
+      }
+    },
+    {
+      "capability": "mix",
+      "status": "passed",
+      "evidence": {
+        "inputSha256": "22d0a7b3f022804979b5339f1205370f4be197348250618db3e7cf4496e0025b",
+        "outputSha256": "2b7b8297e0f6f61f41131f5110fc3b12291de4fe25c77564f458fac80d78b232",
+        "checks": [
+          "non-silent-mix"
+        ]
+      },
+      "artifactIds": [
+        "candidate-artifact",
+        "export-artifact",
+        "master-artifact",
+        "mix-artifact",
+        "performance-artifact",
+        "plan-artifact",
+        "repair-artifact",
+        "song-model-artifact",
+        "source-artifact"
+      ],
+      "provenance": {
+        "provider": "LOCAL_DETERMINISTIC_ENGINE",
+        "modelVersion": "1",
+        "runtimeSha256": "5d498e7e6d94ce58e02a199de4d1fb640bdcb969b6b5fa0a9eb7332260a8efc5",
+        "runtimeIdentity": "node-local-production-path",
+        "licenseReference": "project-runtime-license",
+        "decisionId": "decision-accepted"
+      }
+    },
+    {
+      "capability": "master",
+      "status": "passed",
+      "evidence": {
+        "inputSha256": "2b7b8297e0f6f61f41131f5110fc3b12291de4fe25c77564f458fac80d78b232",
+        "outputSha256": "6c9d82f54dcbcb48be1a39c4b296a16551c283ddfb6bd40fb099017511063260",
+        "checks": [
+          "control-sensitive-master"
+        ]
+      },
+      "artifactIds": [
+        "candidate-artifact",
+        "export-artifact",
+        "master-artifact",
+        "mix-artifact",
+        "performance-artifact",
+        "plan-artifact",
+        "repair-artifact",
+        "song-model-artifact",
+        "source-artifact"
+      ],
+      "provenance": {
+        "provider": "LOCAL_DETERMINISTIC_ENGINE",
+        "modelVersion": "1",
+        "runtimeSha256": "5d498e7e6d94ce58e02a199de4d1fb640bdcb969b6b5fa0a9eb7332260a8efc5",
+        "runtimeIdentity": "node-local-production-path",
+        "licenseReference": "project-runtime-license",
+        "decisionId": "decision-accepted"
+      }
+    },
+    {
+      "capability": "export",
+      "status": "blocked",
+      "evidence": {
+        "inputSha256": "c9f7bed66f66f9ddaf145295f7ef9031538a70d33c6e59048c2d2b2e1dac7e5c",
+        "outputSha256": "c6f75c00a6085a9505db64a44a53f85d5485e8705664ca98e707582792b5550d",
+        "checks": [
+          "wav-midi-export"
+        ]
+      },
+      "artifactIds": [
+        "candidate-artifact",
+        "export-artifact",
+        "master-artifact",
+        "mix-artifact",
+        "performance-artifact",
+        "plan-artifact",
+        "repair-artifact",
+        "song-model-artifact",
+        "source-artifact"
+      ],
+      "provenance": {
+        "provider": "LOCAL_DETERMINISTIC_ENGINE",
+        "modelVersion": "1",
+        "runtimeSha256": "5d498e7e6d94ce58e02a199de4d1fb640bdcb969b6b5fa0a9eb7332260a8efc5",
+        "runtimeIdentity": "node-local-production-path",
+        "licenseReference": "project-runtime-license",
+        "decisionId": "decision-accepted"
+      }
+    },
+    {
+      "capability": "lyrics_alignment",
+      "status": "abstained",
+      "evidence": {
+        "inputSha256": "0ddf4315a122f80eb3503f988b62a2b81fdbe2c643a1b837abde93222f82300d",
+        "outputSha256": "2b31097e725b8b7c2e6df7bdc24789b6dbd4c4675c7abb0fdbf5660b0080755e",
+        "checks": [
+          "honest-abstention"
+        ]
+      },
+      "artifactIds": [
+        "song-model-artifact"
+      ],
+      "provenance": {
+        "provider": "VERIFIED_FIXTURE",
+        "modelVersion": "1",
+        "runtimeSha256": "5d498e7e6d94ce58e02a199de4d1fb640bdcb969b6b5fa0a9eb7332260a8efc5",
+        "runtimeIdentity": "fixture-runtime",
+        "licenseReference": "commercial-fixture-license",
+        "decisionId": "decision-accepted"
+      }
+    }
+  ],
+  "blockers": [
+    "Required capability performance is blocked",
+    "Required capability export is blocked"
+  ],
+  "verificationId": "244397b1de487253afdd2949b9a12e4fb1aea59f42f564b3c8819f365371dddd"
+}
