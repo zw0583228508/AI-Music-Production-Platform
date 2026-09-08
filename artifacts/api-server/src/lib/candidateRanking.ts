@@ -1,5 +1,6 @@
 import type { CandidateEvaluation } from "@workspace/db";
 import { musicCriticDimensions } from "./candidateQuality";
+import { perceptualAudioCriticDimensions } from "./perceptualAudioCritic";
 
 const requiredQualityChecks = [
   "silence",
@@ -52,6 +53,27 @@ export function publicCandidateEvaluation(evaluation: CandidateEvaluation) {
         ),
       }
     : null;
+  const audioCritic = evaluation.audioCritic
+    ? {
+        version: evaluation.audioCritic.version,
+        status: evaluation.audioCritic.status,
+        score: evaluation.audioCritic.score,
+        coverage: { ...evaluation.audioCritic.coverage },
+        // Evidence is intentionally metadata/hash only, never PCM or a private URL.
+        evidence: evaluation.audioCritic.evidence ? { ...evaluation.audioCritic.evidence } : null,
+        dimensions: Object.fromEntries(perceptualAudioCriticDimensions.map((name) => {
+          const dimension = evaluation.audioCritic!.dimensions[name];
+          return [name, {
+            status: dimension.status, score: dimension.score, explanation: dimension.explanation,
+            findings: dimension.findings.map((finding) => ({
+              id: finding.id, startSeconds: finding.startSeconds, endSeconds: finding.endSeconds,
+              ...(finding.affectedTrackIds ? { affectedTrackIds: [...finding.affectedTrackIds] } : {}),
+              confidence: finding.confidence, provenance: finding.provenance, recommendation: finding.recommendation,
+            })),
+          }];
+        })),
+      }
+    : null;
   return {
     status: evaluation.status,
     providerScore: evaluation.providerScore,
@@ -61,6 +83,7 @@ export function publicCandidateEvaluation(evaluation: CandidateEvaluation) {
       type: artifact.type,
       label: artifact.label,
       url: artifact.url,
+      ...(artifact.artifactSha256 ? { artifactSha256: artifact.artifactSha256 } : {}),
     })),
     qualityReport: evaluation.qualityReport
       ? {
@@ -76,6 +99,7 @@ export function publicCandidateEvaluation(evaluation: CandidateEvaluation) {
         }
       : null,
     musicCritic,
+    audioCritic,
     error: evaluation.error,
     ...(evaluation.strategy
       ? {
@@ -144,6 +168,15 @@ export function hasCompleteQualityEvidence(evaluation: CandidateEvaluation): boo
     !evaluation.musicCritic ||
     !evaluation.qualityReport.lineageComplete
   ) return false;
+  // Historical rows predate the PCM critic. Any row carrying the new report must
+  // have sufficient, successful audio evidence; provider confidence cannot bypass it.
+  if (evaluation.audioCritic && (
+    evaluation.audioCritic.status !== "available" ||
+    !evaluation.audioCritic.coverage.sufficient ||
+    !Number.isFinite(evaluation.audioCritic.score) ||
+    !evaluation.audioCritic.evidence ||
+    !renderedAudioEvidenceMatches(evaluation)
+  )) return false;
   const renderArtifactIds = new Set(evaluation.renderArtifactIds);
   if (
     renderArtifactIds.size < 1 ||
@@ -185,6 +218,18 @@ export function hasCompleteQualityEvidence(evaluation: CandidateEvaluation): boo
       Number.isFinite(report.weights[check]));
 }
 
+function renderedAudioEvidenceMatches(evaluation: CandidateEvaluation): boolean {
+  const evidence = evaluation.audioCritic?.evidence;
+  return Boolean(evidence && evaluation.renderArtifactIds.includes(evidence.artifactId) &&
+    evaluation.artifacts.some((artifact) => artifact.id === evidence.artifactId &&
+      artifact.type === "AUDIO_TRACK" && artifact.artifactSha256 === evidence.artifactSha256) &&
+    perceptualAudioCriticDimensions.every((name) => {
+      const dimension = evaluation.audioCritic?.dimensions[name];
+      return dimension && dimension.status !== "failed" &&
+        (dimension.status === "unavailable" ? dimension.score === null : Number.isFinite(dimension.score));
+    }));
+}
+
 export function isSelectableCandidate(candidate: {
   status: string;
   evaluation: CandidateEvaluation;
@@ -212,6 +257,15 @@ export function isSelectableCandidate(candidate: {
     candidate.evaluatedStyleSpec !== null;
 }
 
+/** Neither critic replaces the other. New complete evidence is reconciled evenly. */
+export function reconciledEvidenceScore(evaluation: CandidateEvaluation): number {
+  const symbolic = evaluation.musicCritic?.score;
+  const audio = evaluation.audioCritic?.score;
+  return Number.isFinite(symbolic) && Number.isFinite(audio)
+    ? (symbolic! + audio!) / 2
+    : symbolic ?? audio ?? -1;
+}
+
 export function rankEvaluatedCandidates<
   T extends { id?: string; score: number; evaluation: CandidateEvaluation },
 >(candidates: T[]): Array<T & { rank: number | null }> {
@@ -221,8 +275,7 @@ export function rankEvaluatedCandidates<
       const leftEvaluated = hasCompleteQualityEvidence(left.evaluation) ? 1 : 0;
       const rightEvaluated = hasCompleteQualityEvidence(right.evaluation) ? 1 : 0;
       return rightEvaluated - leftEvaluated ||
-        (right.evaluation.musicCritic?.score ?? -1) -
-          (left.evaluation.musicCritic?.score ?? -1) ||
+        reconciledEvidenceScore(right.evaluation) - reconciledEvidenceScore(left.evaluation) ||
         right.evaluation.providerScore - left.evaluation.providerScore ||
         (left.id ?? "").localeCompare(right.id ?? "");
     })

@@ -2476,7 +2476,7 @@ components:
         lineageComplete: { type: boolean }
     CandidateEvaluation:
       type: object
-      required: [status, providerScore, renderArtifactIds, artifacts, qualityReport, musicCritic, error]
+      required: [status, providerScore, renderArtifactIds, artifacts, qualityReport, musicCritic, audioCritic, error]
       properties:
         status:
           type: string
@@ -2497,6 +2497,10 @@ components:
                 enum: [AUDIO_TRACK, MIDI, QUALITY_REPORT]
               label: { type: string }
               url: { type: string }
+              artifactSha256:
+                type: string
+                pattern: '^[a-f0-9]{64}$'
+                description: SHA-256 of the exact stored artifact bytes; absent on historical rows.
         qualityReport:
           oneOf:
             - $ref: "#/components/schemas/CandidateQualityReport"
@@ -2504,6 +2508,10 @@ components:
         musicCritic:
           oneOf:
             - $ref: "#/components/schemas/CandidateMusicCriticReport"
+            - type: "null"
+        audioCritic:
+          oneOf:
+            - $ref: "#/components/schemas/CandidateAudioCriticReport"
             - type: "null"
         error:
           type: [string, "null"]
@@ -2603,6 +2611,66 @@ components:
             playability: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
             repetition: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
             styleAndControlAdherence: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
+    CandidateAudioCriticEvidence:
+      type: object
+      description: Privacy-bounded evidence derived only from the rendered PCM and its artifact lineage; it contains no samples, waveform, or private source URL.
+      required: [artifactId, artifactSha256, sampleRate, analyzerVersion]
+      properties:
+        artifactId: { type: string }
+        artifactSha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+        sampleRate: { type: number, minimum: 1 }
+        analyzerVersion: { type: string }
+    CandidateAudioCriticFinding:
+      type: object
+      required: [id, startSeconds, endSeconds, confidence, provenance, recommendation]
+      properties:
+        id: { type: string }
+        startSeconds: { type: number, minimum: 0 }
+        endSeconds: { type: number, minimum: 0 }
+        affectedTrackIds: { type: array, items: { type: string } }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        provenance: { type: string, enum: [rendered_pcm] }
+        recommendation: { type: string, maxLength: 2000 }
+    CandidateAudioCriticDimensionResult:
+      type: object
+      required: [status, score, explanation, findings]
+      properties:
+        status: { type: string, enum: [available, unavailable, failed] }
+        score: { type: [number, "null"], minimum: 0, maximum: 1 }
+        explanation: { type: string }
+        findings:
+          type: array
+          items: { $ref: "#/components/schemas/CandidateAudioCriticFinding" }
+    CandidateAudioCriticReport:
+      type: object
+      description: Deterministic perceptual analysis of rendered PCM. An unavailable, failed, or insufficient report must not be used as positive release evidence.
+      required: [version, status, score, coverage, evidence, dimensions]
+      properties:
+        version: { type: string, const: perceptual-audio-critic-v1 }
+        status: { type: string, enum: [available, unavailable, failed, insufficient] }
+        score: { type: [number, "null"], minimum: 0, maximum: 1 }
+        coverage:
+          type: object
+          required: [availableDimensions, totalDimensions, sufficient]
+          properties:
+            availableDimensions: { type: number, minimum: 0, maximum: 7 }
+            totalDimensions: { type: number, const: 7 }
+            sufficient: { type: boolean }
+        evidence:
+          oneOf:
+            - $ref: "#/components/schemas/CandidateAudioCriticEvidence"
+            - type: "null"
+        dimensions:
+          type: object
+          required: [vocalFit, masking, balance, dynamics, artifactsAndDistortion, transitions, repetition]
+          properties:
+            vocalFit: { $ref: "#/components/schemas/CandidateAudioCriticDimensionResult" }
+            masking: { $ref: "#/components/schemas/CandidateAudioCriticDimensionResult" }
+            balance: { $ref: "#/components/schemas/CandidateAudioCriticDimensionResult" }
+            dynamics: { $ref: "#/components/schemas/CandidateAudioCriticDimensionResult" }
+            artifactsAndDistortion: { $ref: "#/components/schemas/CandidateAudioCriticDimensionResult" }
+            transitions: { $ref: "#/components/schemas/CandidateAudioCriticDimensionResult" }
+            repetition: { $ref: "#/components/schemas/CandidateAudioCriticDimensionResult" }
     CandidateRepairInput:
       type: object
       required: [findingId, finding]

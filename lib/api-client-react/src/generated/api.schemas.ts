@@ -1671,6 +1671,110 @@ export interface CandidateMusicCriticReport {
   dimensions: CandidateMusicCriticReportDimensions;
 }
 
+export type CandidateAudioCriticReportStatus = typeof CandidateAudioCriticReportStatus[keyof typeof CandidateAudioCriticReportStatus];
+
+
+export const CandidateAudioCriticReportStatus = {
+  available: 'available',
+  unavailable: 'unavailable',
+  failed: 'failed',
+  insufficient: 'insufficient',
+} as const;
+
+/**
+ * Privacy-bounded evidence derived only from the rendered PCM and its artifact lineage; it contains no samples, waveform, or private source URL.
+ */
+export interface CandidateAudioCriticEvidence {
+  artifactId: string;
+  /** @pattern ^[a-f0-9]{64}$ */
+  artifactSha256: string;
+  /** @minimum 1 */
+  sampleRate: number;
+  analyzerVersion: string;
+}
+
+export type CandidateAudioCriticDimensionResultStatus = typeof CandidateAudioCriticDimensionResultStatus[keyof typeof CandidateAudioCriticDimensionResultStatus];
+
+
+export const CandidateAudioCriticDimensionResultStatus = {
+  available: 'available',
+  unavailable: 'unavailable',
+  failed: 'failed',
+} as const;
+
+export type CandidateAudioCriticFindingProvenance = typeof CandidateAudioCriticFindingProvenance[keyof typeof CandidateAudioCriticFindingProvenance];
+
+
+export const CandidateAudioCriticFindingProvenance = {
+  rendered_pcm: 'rendered_pcm',
+} as const;
+
+export interface CandidateAudioCriticFinding {
+  id: string;
+  /** @minimum 0 */
+  startSeconds: number;
+  /** @minimum 0 */
+  endSeconds: number;
+  affectedTrackIds?: string[];
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  confidence: number;
+  provenance: CandidateAudioCriticFindingProvenance;
+  /** @maxLength 2000 */
+  recommendation: string;
+}
+
+export interface CandidateAudioCriticDimensionResult {
+  status: CandidateAudioCriticDimensionResultStatus;
+  /**
+     * @minimum 0
+     * @maximum 1
+     * @nullable
+     */
+  score: number | null;
+  explanation: string;
+  findings: CandidateAudioCriticFinding[];
+}
+
+export type CandidateAudioCriticReportCoverage = {
+  /**
+     * @minimum 0
+     * @maximum 7
+     */
+  availableDimensions: number;
+  totalDimensions: 7;
+  sufficient: boolean;
+};
+
+export type CandidateAudioCriticReportDimensions = {
+  vocalFit: CandidateAudioCriticDimensionResult;
+  masking: CandidateAudioCriticDimensionResult;
+  balance: CandidateAudioCriticDimensionResult;
+  dynamics: CandidateAudioCriticDimensionResult;
+  artifactsAndDistortion: CandidateAudioCriticDimensionResult;
+  transitions: CandidateAudioCriticDimensionResult;
+  repetition: CandidateAudioCriticDimensionResult;
+};
+
+/**
+ * Deterministic perceptual analysis of rendered PCM. An unavailable, failed, or insufficient report must not be used as positive release evidence.
+ */
+export interface CandidateAudioCriticReport {
+  version: 'perceptual-audio-critic-v1';
+  status: CandidateAudioCriticReportStatus;
+  /**
+     * @minimum 0
+     * @maximum 1
+     * @nullable
+     */
+  score: number | null;
+  coverage: CandidateAudioCriticReportCoverage;
+  evidence: CandidateAudioCriticEvidence | null;
+  dimensions: CandidateAudioCriticReportDimensions;
+}
+
 export type CandidateEvaluationStrategyName = typeof CandidateEvaluationStrategyName[keyof typeof CandidateEvaluationStrategyName];
 
 
@@ -1753,6 +1857,11 @@ export type CandidateEvaluationArtifactsItem = {
   type: CandidateEvaluationArtifactsItemType;
   label: string;
   url: string;
+  /**
+     * SHA-256 of the exact stored artifact bytes; absent on historical rows.
+     * @pattern ^[a-f0-9]{64}$
+     */
+  artifactSha256?: string;
 };
 
 export type CandidateEvaluationStrategy = {
@@ -1788,6 +1897,7 @@ export interface CandidateEvaluation {
   artifacts: CandidateEvaluationArtifactsItem[];
   qualityReport: CandidateQualityReport | null;
   musicCritic: CandidateMusicCriticReport | null;
+  audioCritic: CandidateAudioCriticReport | null;
   /** @nullable */
   error: string | null;
   strategy?: CandidateEvaluationStrategy;
@@ -1896,6 +2006,256 @@ export interface TrackPerformance {
   /** @pattern ^[a-f0-9]{64}$ */
   performedMaterialSha256?: string;
 }
+
+export type InstrumentDefinitionFamily = typeof InstrumentDefinitionFamily[keyof typeof InstrumentDefinitionFamily];
+
+
+export const InstrumentDefinitionFamily = {
+  keys: 'keys',
+  strings: 'strings',
+  brass: 'brass',
+  drums: 'drums',
+  guitar: 'guitar',
+  voice: 'voice',
+  synth: 'synth',
+} as const;
+
+export type InstrumentDirectiveMappingsRegisters = {[key: string]: {
+  min: number;
+  max: number;
+}};
+
+export type InstrumentDirectiveMappingsArticulationFamilies = {[key: string]: string[]};
+
+export type InstrumentDirectiveMappingsDynamicTargets = {[key: string]: number};
+
+export type InstrumentDirectiveMappingsControls = {[key: string]: number};
+
+export interface InstrumentDirectiveMappings {
+  registers?: InstrumentDirectiveMappingsRegisters;
+  articulationFamilies?: InstrumentDirectiveMappingsArticulationFamilies;
+  dynamicTargets?: InstrumentDirectiveMappingsDynamicTargets;
+  controls?: InstrumentDirectiveMappingsControls;
+}
+
+export type InstrumentDefinitionPlayableRange = {
+  min: number;
+  max: number;
+};
+
+export type InstrumentDefinitionComfortableRange = {
+  min: number;
+  max: number;
+};
+
+export type InstrumentDefinitionRegistersItem = {
+  name: string;
+  min: number;
+  max: number;
+  character: string;
+};
+
+export type InstrumentDefinitionConstraints = {
+  maxLeap: number;
+  minNoteDuration: number;
+  maxSimultaneousNotes: number;
+  breathSeconds?: number;
+  strings?: number;
+  frets?: number;
+  hands?: number;
+  feet?: number;
+};
+
+export type InstrumentDefinitionControls = {
+  dynamics: number[];
+  expression: number[];
+  sustain?: number;
+  pitchBend: boolean;
+  aftertouch: boolean;
+};
+
+export interface InstrumentDefinition {
+  id: string;
+  family: InstrumentDefinitionFamily;
+  playableRange: InstrumentDefinitionPlayableRange;
+  comfortableRange: InstrumentDefinitionComfortableRange;
+  registers: InstrumentDefinitionRegistersItem[];
+  polyphonic: boolean;
+  maxVoices: number;
+  articulations: string[];
+  constraints: InstrumentDefinitionConstraints;
+  controls: InstrumentDefinitionControls;
+  directiveMappings?: InstrumentDirectiveMappings;
+}
+
+export interface MusicalNote {
+  id: string;
+  start: number;
+  duration: number;
+  pitch: number;
+  velocity: number;
+  channel?: number;
+  voice?: string;
+}
+
+export interface ControlEvent {
+  controller: number;
+  time: number;
+  value: number;
+  channel?: number;
+}
+
+export interface TrackAutomationPoint {
+  parameter: string;
+  time: number;
+  value: number;
+}
+
+export type ArtifactProvenanceParameters = {[key: string]: string | number | boolean};
+
+export interface ArtifactProvenance {
+  model: string;
+  version: string;
+  parameters: ArtifactProvenanceParameters;
+  parentIds: string[];
+  createdBy: string;
+}
+
+export interface OrchestrationCue {
+  /** @minimum 0 */
+  bar?: number;
+  /** @minimum 0 */
+  beat?: number;
+  mode?: string;
+  /** @exclusiveMinimum 0 */
+  durationBeats?: number;
+}
+
+export interface TrackDirective {
+  role?: string;
+  register?: string;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  rhythmicActivity?: number;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  harmonicActivity?: number;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  dynamicTarget?: number;
+  articulationFamily?: string;
+  entry?: OrchestrationCue;
+  exit?: OrchestrationCue;
+  transition?: string;
+  fill?: boolean;
+}
+
+export interface AppliedTrackDirective {
+  section: string;
+  /** @minimum 1 */
+  startBar: number;
+  /** @minimum 1 */
+  endBar: number;
+  /** @minimum 0 */
+  start: number;
+  /** @minimum 0 */
+  end: number;
+  directive: TrackDirective;
+}
+
+export type TrackMappingMetadataArticulationMap = {[key: string]: string | number};
+
+export type TrackMappingMetadataControlMap = {[key: string]: number};
+
+export interface TrackMappingMetadata {
+  /**
+     * @minimum 1
+     * @maximum 16
+     */
+  midiChannel?: number;
+  /**
+     * @minimum 0
+     * @maximum 127
+     */
+  program?: number;
+  articulationMap?: TrackMappingMetadataArticulationMap;
+  controlMap?: TrackMappingMetadataControlMap;
+}
+
+export type TrackPerformanceEvidenceVersion = typeof TrackPerformanceEvidenceVersion[keyof typeof TrackPerformanceEvidenceVersion];
+
+
+export const TrackPerformanceEvidenceVersion = {
+  '10': '1.0',
+} as const;
+
+export type TrackPerformanceEvidenceInstrumentFamily = typeof TrackPerformanceEvidenceInstrumentFamily[keyof typeof TrackPerformanceEvidenceInstrumentFamily];
+
+
+export const TrackPerformanceEvidenceInstrumentFamily = {
+  keys: 'keys',
+  strings: 'strings',
+  brass: 'brass',
+  drums: 'drums',
+  guitar: 'guitar',
+  voice: 'voice',
+  synth: 'synth',
+} as const;
+
+export type TrackPerformanceEvidenceSectionRangesItem = {
+  section: string;
+  startBar: number;
+  endBar: number;
+  start: number;
+  end: number;
+};
+
+export type TrackPerformanceEvidencePlayability = {
+  valid: boolean;
+  checkedNotes: number;
+  violations: string[];
+};
+
+export interface TrackPerformanceEvidence {
+  version: TrackPerformanceEvidenceVersion;
+  seed: number;
+  instrumentFamily: TrackPerformanceEvidenceInstrumentFamily;
+  articulationProfile: string;
+  timingProfile: string;
+  dynamicsProfile: string;
+  /** @pattern ^[a-f0-9]{64}$ */
+  canonicalTimelineSha256: string;
+  phraseIds: string[];
+  sectionRanges: TrackPerformanceEvidenceSectionRangesItem[];
+  playability: TrackPerformanceEvidencePlayability;
+  /** @pattern ^[a-f0-9]{64}$ */
+  performedMaterialSha256: string;
+}
+
+export interface TrackModel {
+  id: string;
+  instrument: string;
+  instrumentDefinition: InstrumentDefinition;
+  role: string;
+  notes: MusicalNote[];
+  cc: ControlEvent[];
+  articulations: ArticulationEvent[];
+  automation: TrackAutomationPoint[];
+  source: string;
+  version: number;
+  provenance: ArtifactProvenance;
+  directive?: TrackDirective;
+  appliedDirectives?: AppliedTrackDirective[];
+  mapping?: TrackMappingMetadata;
+  performanceEvidence?: TrackPerformanceEvidence;
+}
+
 export interface Track {
   id: string;
   projectId: string;
@@ -2461,205 +2821,7 @@ export type GenerationCandidatePlan = {
   sections: ArrangementSection[];
   tracks?: GenerationCandidatePlanTracksItem[];
 };
-export type InstrumentDefinitionFamily = typeof InstrumentDefinitionFamily[keyof typeof InstrumentDefinitionFamily];
 
-
-export const InstrumentDefinitionFamily = {
-  keys: 'keys',
-  strings: 'strings',
-  brass: 'brass',
-  drums: 'drums',
-  guitar: 'guitar',
-  voice: 'voice',
-  synth: 'synth',
-} as const;
-
-export type InstrumentDirectiveMappingsRegisters = {[key: string]: {
-  min: number;
-  max: number;
-}};
-
-export type InstrumentDirectiveMappingsArticulationFamilies = {[key: string]: string[]};
-
-export type InstrumentDirectiveMappingsDynamicTargets = {[key: string]: number};
-
-export type InstrumentDirectiveMappingsControls = {[key: string]: number};
-
-export interface InstrumentDirectiveMappings {
-  registers?: InstrumentDirectiveMappingsRegisters;
-  articulationFamilies?: InstrumentDirectiveMappingsArticulationFamilies;
-  dynamicTargets?: InstrumentDirectiveMappingsDynamicTargets;
-  controls?: InstrumentDirectiveMappingsControls;
-}
-
-export type InstrumentDefinitionPlayableRange = {
-  min: number;
-  max: number;
-};
-
-export type InstrumentDefinitionComfortableRange = {
-  min: number;
-  max: number;
-};
-
-export type InstrumentDefinitionRegistersItem = {
-  name: string;
-  min: number;
-  max: number;
-  character: string;
-};
-
-export type InstrumentDefinitionConstraints = {
-  maxLeap: number;
-  minNoteDuration: number;
-  maxSimultaneousNotes: number;
-  breathSeconds?: number;
-  strings?: number;
-  frets?: number;
-  hands?: number;
-  feet?: number;
-};
-
-export type InstrumentDefinitionControls = {
-  dynamics: number[];
-  expression: number[];
-  sustain?: number;
-  pitchBend: boolean;
-  aftertouch: boolean;
-};
-
-export interface InstrumentDefinition {
-  id: string;
-  family: InstrumentDefinitionFamily;
-  playableRange: InstrumentDefinitionPlayableRange;
-  comfortableRange: InstrumentDefinitionComfortableRange;
-  registers: InstrumentDefinitionRegistersItem[];
-  polyphonic: boolean;
-  maxVoices: number;
-  articulations: string[];
-  constraints: InstrumentDefinitionConstraints;
-  controls: InstrumentDefinitionControls;
-  directiveMappings?: InstrumentDirectiveMappings;
-}
-
-export interface MusicalNote {
-  id: string;
-  start: number;
-  duration: number;
-  pitch: number;
-  velocity: number;
-  channel?: number;
-  voice?: string;
-}
-
-export interface ControlEvent {
-  controller: number;
-  time: number;
-  value: number;
-  channel?: number;
-}
-
-export interface TrackAutomationPoint {
-  parameter: string;
-  time: number;
-  value: number;
-}
-
-export type ArtifactProvenanceParameters = {[key: string]: string | number | boolean};
-
-export interface ArtifactProvenance {
-  model: string;
-  version: string;
-  parameters: ArtifactProvenanceParameters;
-  parentIds: string[];
-  createdBy: string;
-}
-
-export interface OrchestrationCue {
-  /** @minimum 0 */
-  bar?: number;
-  /** @minimum 0 */
-  beat?: number;
-  mode?: string;
-  /** @exclusiveMinimum 0 */
-  durationBeats?: number;
-}
-
-export interface TrackDirective {
-  role?: string;
-  register?: string;
-  /**
-     * @minimum 0
-     * @maximum 1
-     */
-  rhythmicActivity?: number;
-  /**
-     * @minimum 0
-     * @maximum 1
-     */
-  harmonicActivity?: number;
-  /**
-     * @minimum 0
-     * @maximum 1
-     */
-  dynamicTarget?: number;
-  articulationFamily?: string;
-  entry?: OrchestrationCue;
-  exit?: OrchestrationCue;
-  transition?: string;
-  fill?: boolean;
-}
-
-export interface AppliedTrackDirective {
-  section: string;
-  /** @minimum 1 */
-  startBar: number;
-  /** @minimum 1 */
-  endBar: number;
-  /** @minimum 0 */
-  start: number;
-  /** @minimum 0 */
-  end: number;
-  directive: TrackDirective;
-}
-
-export type TrackMappingMetadataArticulationMap = {[key: string]: string | number};
-
-export type TrackMappingMetadataControlMap = {[key: string]: number};
-
-export interface TrackMappingMetadata {
-  /**
-     * @minimum 1
-     * @maximum 16
-     */
-  midiChannel?: number;
-  /**
-     * @minimum 0
-     * @maximum 127
-     */
-  program?: number;
-  articulationMap?: TrackMappingMetadataArticulationMap;
-  controlMap?: TrackMappingMetadataControlMap;
-}
-
-export type TrackPerformanceEvidenceVersion = typeof TrackPerformanceEvidenceVersion[keyof typeof TrackPerformanceEvidenceVersion];
-export interface TrackModel {
-  id: string;
-  instrument: string;
-  instrumentDefinition: InstrumentDefinition;
-  role: string;
-  notes: MusicalNote[];
-  cc: ControlEvent[];
-  articulations: ArticulationEvent[];
-  automation: TrackAutomationPoint[];
-  source: string;
-  version: number;
-  provenance: ArtifactProvenance;
-  directive?: TrackDirective;
-  appliedDirectives?: AppliedTrackDirective[];
-  mapping?: TrackMappingMetadata;
-  performanceEvidence?: TrackPerformanceEvidence;
-}
 export type HarmonyDecisionEvidenceSource = typeof HarmonyDecisionEvidenceSource[keyof typeof HarmonyDecisionEvidenceSource];
 
 
@@ -3250,48 +3412,3 @@ export type LogoutBrowserSessionParams = {
 returnTo?: string;
 };
 
-export type TrackPerformanceEvidencePlayability = {
-  valid: boolean;
-  checkedNotes: number;
-  violations: string[];
-};
-
-export type TrackPerformanceEvidenceInstrumentFamily = typeof TrackPerformanceEvidenceInstrumentFamily[keyof typeof TrackPerformanceEvidenceInstrumentFamily];
-
-export interface TrackPerformanceEvidence {
-  version: TrackPerformanceEvidenceVersion;
-  seed: number;
-  instrumentFamily: TrackPerformanceEvidenceInstrumentFamily;
-  articulationProfile: string;
-  timingProfile: string;
-  dynamicsProfile: string;
-  /** @pattern ^[a-f0-9]{64}$ */
-  canonicalTimelineSha256: string;
-  phraseIds: string[];
-  sectionRanges: TrackPerformanceEvidenceSectionRangesItem[];
-  playability: TrackPerformanceEvidencePlayability;
-  /** @pattern ^[a-f0-9]{64}$ */
-  performedMaterialSha256: string;
-}
-
-export const TrackPerformanceEvidenceVersion = {
-  '10': '1.0',
-} as const;
-
-export const TrackPerformanceEvidenceInstrumentFamily = {
-  keys: 'keys',
-  strings: 'strings',
-  brass: 'brass',
-  drums: 'drums',
-  guitar: 'guitar',
-  voice: 'voice',
-  synth: 'synth',
-} as const;
-
-export type TrackPerformanceEvidenceSectionRangesItem = {
-  section: string;
-  startBar: number;
-  endBar: number;
-  start: number;
-  end: number;
-};
