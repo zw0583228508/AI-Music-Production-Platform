@@ -126,6 +126,15 @@ function parseOptionalPositiveInteger(environmentVariable) {
       `${environmentVariable} has invalid process ID target: ${configuredValue}; accepted format is a positive base-10 integer`,
     );
   }
+  const pidWrapPoint = Number(
+    readFileSync("/proc/sys/kernel/pid_max", "utf8").trim(),
+  );
+  const maximumSupportedPid = pidWrapPoint - 1;
+  if (parsedValue > maximumSupportedPid) {
+    throw new Error(
+      `${environmentVariable} has unsupported process ID target: ${configuredValue}; accepted host range is 1-${maximumSupportedPid}`,
+    );
+  }
   return parsedValue;
 }
 
