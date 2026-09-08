@@ -219,6 +219,56 @@ test(
 );
 
 test(
+  "later esbuild failures remove partially generated focused API bundle sets",
+  { timeout: 120_000 },
+  async () => {
+    const before = await listBundleDirectories();
+    const result = await runFocusedTest("test:validation", {
+      ...process.env,
+      FOCUSED_API_TEST_INJECT_FAILURE: "later-esbuild",
+    });
+
+    assert.notEqual(
+      result.code,
+      0,
+      "focused API test unexpectedly succeeded after its injected later esbuild failure",
+    );
+    assert.match(
+      result.stderr,
+      /focused API first bundle ready before later esbuild failure/,
+      [
+        "focused API test did not confirm that an earlier bundle was written",
+        result.signal ? `signal: ${result.signal}` : "",
+        result.stdout,
+        result.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    assert.match(
+      result.stderr,
+      /\[ERROR\] Could not resolve ".*intentional-missing-later-entry\.ts"/,
+      [
+        "focused API test did not fail in the intended later esbuild stage",
+        result.signal ? `signal: ${result.signal}` : "",
+        result.stdout,
+        result.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+
+    const after = await listBundleDirectories();
+    const leaked = [...after].filter((directory) => !before.has(directory));
+    assert.deepEqual(
+      leaked,
+      [],
+      `later esbuild failure left partially generated bundle directories behind: ${leaked.join(", ")}`,
+    );
+  },
+);
+
+test(
   "different focused API esbuild failures clean up independently when run together",
   { timeout: 120_000 },
   async () => {
