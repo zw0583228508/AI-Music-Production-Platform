@@ -3,10 +3,12 @@ import type {
   CandidateMusicCriticDimension,
   CandidateMusicCriticDimensionResult,
   CandidateMusicCriticReport,
+  CriticRepairFinding,
   HarmonyDecisionEvidence,
   SongModelData,
   TrackModel,
 } from "@workspace/db";
+import { createCanonicalTimeline } from "./canonicalTimeline";
 
 const dimensions: CandidateMusicCriticDimension[] = [
   "vocalFit",
@@ -44,6 +46,7 @@ const available = (
   score: round(clamp(score)),
   evidence: [evidence(source, summary, observations)],
   explanation,
+  findings: [],
 });
 
 const unavailable = (
@@ -54,6 +57,7 @@ const unavailable = (
   score: null,
   evidence: [evidence(source, explanation, {})],
   explanation,
+  findings: [],
 });
 
 const failed = (
@@ -64,6 +68,7 @@ const failed = (
   score: null,
   evidence: [evidence(source, explanation, {})],
   explanation,
+  findings: [],
 });
 
 function evidence(
@@ -288,6 +293,174 @@ function scoreStyle(plan: ArrangementPlan, tracks: TrackModel[]): CandidateMusic
   );
 }
 
+function localizeCriticFindings(input: {
+  songModel: SongModelData;
+  plan: ArrangementPlan;
+  tracks: TrackModel[];
+  harmonyDecisions: HarmonyDecisionEvidence[];
+  results: Record<CandidateMusicCriticDimension, CandidateMusicCriticDimensionResult>;
+}) {
+  const { songModel, plan, tracks, harmonyDecisions, results } = input;
+  if (!plan.sections.length || !tracks.length) return;
+  const timeline = createCanonicalTimeline(songModel.tempoMap, songModel.meterMap);
+  const sectionAtTime = (time: number) => {
+    const bar = timeline.coordinateAtSeconds(Math.max(0, time)).bar;
+    return plan.sections.find((section) => bar >= section.startBar && bar <= section.endBar);
+  };
+  const trackIdsForSection = (section: ArrangementPlan["sections"][number]) => {
+    const known = new Set(tracks.map((track) => track.id));
+    return [...new Set(section.activeTracks ?? Object.keys(section.tracks))]
+      .filter((trackId) => known.has(trackId))
+      .sort();
+  };
+  const add = (
+    dimension: CandidateMusicCriticDimension,
+    section: ArrangementPlan["sections"][number] | undefined,
+    trackIds: string[],
+    startBar: number,
+    endBar: number,
+    musicalReason: string,
+  ) => {
+    const result = results[dimension];
+    const knownTracks = new Set(tracks.map((track) => track.id));
+    const affectedTrackIds = [...new Set(trackIds)].filter((id) => knownTracks.has(id)).sort();
+    if (result.status !== "available" || result.score === null || result.score >= 1 ||
+      !section || !affectedTrackIds.length) return;
+    const boundedStart = Math.max(section.startBar, startBar);
+    const boundedEnd = Math.min(section.endBar, endBar);
+    if (boundedEnd < boundedStart) return;
+    const finding: CriticRepairFinding = {
+      id: [
+        "music-critic-v1",
+        dimension,
+        section.section,
+        `${boundedStart}-${boundedEnd}`,
+        affectedTrackIds.join(","),
+      ].join(":"),
+      affectedSections: [section.section],
+      startBar: boundedStart,
+      endBar: boundedEnd,
+      affectedTrackIds,
+      musicalReason,
+    };
+    result.findings.push(finding);
+  };
+
+  const vocalIssue = tracks.flatMap((track) => track.notes.map((note) => ({ track, note })))
+    .find(({ note }) => note.pitch >= 60 && songModel.vocalEvidence?.observedVoicedWindows.some(
+      (window) => note.start < window.end && note.start + note.duration > window.start,
+    ));
+  if (vocalIssue) {
+    const section = sectionAtTime(vocalIssue.note.start);
+    const bar = timeline.coordinateAtSeconds(vocalIssue.note.start).bar;
+    add("vocalFit", section, [vocalIssue.track.id], bar, bar,
+      `${vocalIssue.track.instrument} enters the upper register during verified vocal activity.`);
+  }
+
+  const weakestHarmony = harmonyDecisions
+    .filter((decision) => Number.isFinite(decision.melodyFit) && Number.isFinite(decision.bassFit))
+    .sort((left, right) =>
+      ((left.melodyFit ?? 0) + (left.bassFit ?? 0)) -
+      ((right.melodyFit ?? 0) + (right.bassFit ?? 0)))[0];
+  if (weakestHarmony) {
+    const section = sectionAtTime(weakestHarmony.start);
+    const startBar = timeline.coordinateAtSeconds(weakestHarmony.start).bar;
+    const endBar = timeline.coordinateAtSeconds(Math.max(weakestHarmony.start, weakestHarmony.end - 0.001)).bar;
+    if (section) add("harmony", section, trackIdsForSection(section), startBar, endBar,
+      `${weakestHarmony.symbol} has the weakest combined melody and bass fit in ${section.section}.`);
+  }
+
+  const developmentSection = [...plan.sections]
+    .sort((left, right) => left.energy + left.density - right.energy - right.density)[0];
+  add("development", developmentSection, developmentSection && trackIdsForSection(developmentSection),
+    developmentSection?.startBar ?? 1, developmentSection?.endBar ?? 1,
+    developmentSection
+      ? `${developmentSection.section} has the arrangement's weakest energy and density development.`
+      : "");
+
+  const weakestBoundary = plan.sections.slice(1).map((section, index) => {
+    const previous = plan.sections[index];
+    return {
+      section,
+      difference: Math.abs(section.energy - previous.energy) + Math.abs(section.density - previous.density),
+    };
+  }).sort((left, right) => left.difference - right.difference)[0];
+  if (weakestBoundary) add(
+    "contrastAndTransitions",
+    weakestBoundary.section,
+    trackIdsForSection(weakestBoundary.section),
+    weakestBoundary.section.startBar,
+    weakestBoundary.section.startBar,
+    `The entry into ${weakestBoundary.section.section} has the least energy and density contrast.`,
+  );
+
+  let collision: { leftTrackId: string; rightTrackId: string; time: number } | undefined;
+  const notes = tracks.flatMap((track) => track.notes.map((note) => ({ trackId: track.id, note })));
+  for (let left = 0; left < notes.length && !collision; left += 1) {
+    for (let right = left + 1; right < notes.length; right += 1) {
+      if (notes[left].trackId !== notes[right].trackId &&
+        notes[left].note.start < notes[right].note.start + notes[right].note.duration &&
+        notes[right].note.start < notes[left].note.start + notes[left].note.duration &&
+        Math.abs(notes[left].note.pitch - notes[right].note.pitch) <= 2) {
+        collision = {
+          leftTrackId: notes[left].trackId,
+          rightTrackId: notes[right].trackId,
+          time: Math.max(notes[left].note.start, notes[right].note.start),
+        };
+        break;
+      }
+    }
+  }
+  if (collision) {
+    const section = sectionAtTime(collision.time);
+    const bar = timeline.coordinateAtSeconds(collision.time).bar;
+    add("registerCollisions", section, [collision.leftTrackId, collision.rightTrackId], bar, bar,
+      "These two parts overlap within two semitones, creating a close-register collision.");
+  }
+
+  const violation = tracks.flatMap((track) => track.notes.map((note) => ({ track, note })))
+    .find(({ track, note }) => {
+      const definition = track.instrumentDefinition;
+      return definition?.playableRange && definition.constraints && (
+        note.pitch < definition.playableRange.min ||
+        note.pitch > definition.playableRange.max ||
+        note.duration < definition.constraints.minNoteDuration
+      );
+    });
+  if (violation) {
+    const section = sectionAtTime(violation.note.start);
+    const bar = timeline.coordinateAtSeconds(violation.note.start).bar;
+    add("playability", section, [violation.track.id], bar, bar,
+      `${violation.track.instrument} contains a note outside its playable range or minimum duration.`);
+  }
+
+  const repetitiveTrack = tracks.filter((track) => track.notes.length >= 4).map((track) => {
+    const patterns = [...track.notes].sort((a, b) => a.start - b.start)
+      .map((note, index, sorted) =>
+        `${index ? note.pitch - sorted[index - 1].pitch : 0}:${round(note.duration)}`);
+    return { track, ratio: new Set(patterns).size / patterns.length };
+  }).sort((left, right) => left.ratio - right.ratio)[0];
+  if (repetitiveTrack) {
+    const firstNote = [...repetitiveTrack.track.notes].sort((a, b) => a.start - b.start)[0];
+    const section = sectionAtTime(firstNote.start);
+    if (section) add("repetition", section, [repetitiveTrack.track.id],
+      section.startBar, section.endBar,
+      `${repetitiveTrack.track.instrument} has the least varied interval and duration pattern.`);
+  }
+
+  const directiveIssue = plan.sections.flatMap((section) =>
+    Object.keys(section.trackDirectives ?? {}).map((trackId) => ({ section, trackId })))
+    .find(({ section, trackId }) => !tracks.find((track) => track.id === trackId)
+      ?.appliedDirectives?.some((directive) => directive.section === section.section));
+  const styleSection = directiveIssue?.section ?? plan.sections[0];
+  add("styleAndControlAdherence", styleSection,
+    directiveIssue ? [directiveIssue.trackId] : trackIdsForSection(styleSection),
+    styleSection.startBar, styleSection.endBar,
+    directiveIssue
+      ? `${directiveIssue.trackId} did not apply its orchestration directive in ${styleSection.section}.`
+      : `${styleSection.section} contributes to the mismatch between rendered and requested density.`);
+}
+
 export function evaluateCandidateMusicalFit(input: {
   songModel: SongModelData;
   plan: ArrangementPlan;
@@ -304,6 +477,7 @@ export function evaluateCandidateMusicalFit(input: {
     repetition: scoreRepetition(input.tracks),
     styleAndControlAdherence: scoreStyle(input.plan, input.tracks),
   };
+  localizeCriticFindings({ ...input, results });
   const scored = dimensions.filter((name) => results[name].status === "available");
   const totalWeight = scored.reduce((sum, name) => sum + weights[name], 0);
   const score = totalWeight

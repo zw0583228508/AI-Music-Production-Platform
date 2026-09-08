@@ -5,6 +5,7 @@ import {
   applyBoundedRepair,
   normalizeRepairFinding,
   repairTimeBounds,
+  validateServerAuthoredRepairFinding,
 } from "./candidateRepair";
 
 const plan = {
@@ -136,6 +137,41 @@ test("critic findings must identify concrete known musical scope", () => {
     affectedTrackIds: ["missing"],
     musicalReason: "",
   }, plan, [track("piano")]), /critic finding/);
+});
+
+test("repair scope must exactly match the server-authored finding identity", () => {
+  const finding = {
+    id: "critic-server-owned",
+    affectedSections: ["chorus"],
+    startBar: 5,
+    endBar: 6,
+    affectedTrackIds: ["piano"],
+    musicalReason: "The chorus piano voicing clashes with the melody.",
+  };
+  assert.deepEqual(
+    validateServerAuthoredRepairFinding(
+      finding.id,
+      finding,
+      [finding],
+      plan,
+      [track("piano")],
+    ),
+    finding,
+  );
+  assert.throws(() => validateServerAuthoredRepairFinding(
+    finding.id,
+    { ...finding, endBar: 7 },
+    [finding],
+    plan,
+    [track("piano")],
+  ), /server-authored/);
+  assert.throws(() => validateServerAuthoredRepairFinding(
+    "unknown",
+    finding,
+    [finding],
+    plan,
+    [track("piano")],
+  ), /not available/);
 });
 
 test("notes crossing either repair boundary remain byte-for-byte original", () => {

@@ -38,6 +38,14 @@ export function publicCandidateEvaluation(evaluation: CandidateEvaluation) {
                     observations: { ...evidence.observations },
                   })),
                   explanation: dimension.explanation,
+                  findings: (dimension.findings ?? []).map((finding) => ({
+                    id: finding.id,
+                    affectedSections: [...finding.affectedSections],
+                    startBar: finding.startBar,
+                    endBar: finding.endBar,
+                    affectedTrackIds: [...finding.affectedTrackIds],
+                    musicalReason: finding.musicalReason,
+                  })),
                 }]]
               : [];
           }),

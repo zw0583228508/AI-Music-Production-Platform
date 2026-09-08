@@ -2543,7 +2543,7 @@ components:
               - { type: boolean }
     CandidateMusicCriticDimensionResult:
       type: object
-      required: [status, score, evidence, explanation]
+      required: [status, score, evidence, explanation, findings]
       properties:
         status: { type: string, enum: [available, unavailable, failed] }
         score: { type: [number, "null"], minimum: 0, maximum: 1 }
@@ -2552,6 +2552,27 @@ components:
           items:
             $ref: "#/components/schemas/CandidateMusicCriticEvidence"
         explanation: { type: string }
+        findings:
+          type: array
+          description: Server-authored scopes eligible for a bounded repair.
+          items:
+            $ref: "#/components/schemas/CandidateMusicCriticFinding"
+    CandidateMusicCriticFinding:
+      type: object
+      required: [id, affectedSections, startBar, endBar, affectedTrackIds, musicalReason]
+      properties:
+        id: { type: string, minLength: 1 }
+        affectedSections:
+          type: array
+          minItems: 1
+          items: { type: string, minLength: 1 }
+        startBar: { type: number, minimum: 1 }
+        endBar: { type: number, minimum: 1 }
+        affectedTrackIds:
+          type: array
+          minItems: 1
+          items: { type: string, minLength: 1 }
+        musicalReason: { type: string, minLength: 1, maxLength: 2000 }
     CandidateMusicCriticReport:
       type: object
       required: [version, score, coverage, dimensions]
@@ -2584,27 +2605,14 @@ components:
             styleAndControlAdherence: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
     CandidateRepairInput:
       type: object
-      required: [finding]
+      required: [findingId, finding]
       properties:
         idempotencyKey:
           type: string
           maxLength: 200
+        findingId: { type: string, minLength: 1 }
         finding:
-          type: object
-          required: [id, affectedSections, startBar, endBar, affectedTrackIds, musicalReason]
-          properties:
-            id: { type: string, minLength: 1 }
-            affectedSections:
-              type: array
-              minItems: 1
-              items: { type: string, minLength: 1 }
-            startBar: { type: number, minimum: 1 }
-            endBar: { type: number, minimum: 1 }
-            affectedTrackIds:
-              type: array
-              minItems: 1
-              items: { type: string, minLength: 1 }
-            musicalReason: { type: string, minLength: 1, maxLength: 2000 }
+          $ref: "#/components/schemas/CandidateMusicCriticFinding"
     CandidateRepairEvidence:
       type: object
       required: [sourceCandidateId, findingId, seed, attempt, maxAttempts, scope, musicalReason, outsideScopePreserved, changedScopes, sourceQualityScore, repairedQualityScore, improved]

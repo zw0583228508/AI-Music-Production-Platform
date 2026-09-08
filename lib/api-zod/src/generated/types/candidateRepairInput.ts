@@ -5,10 +5,12 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
-import type { CandidateRepairInputFinding } from './candidateRepairInputFinding';
+import type { CandidateMusicCriticFinding } from './candidateMusicCriticFinding';
 
 export interface CandidateRepairInput {
   /** @maxLength 200 */
   idempotencyKey?: string;
-  finding: CandidateRepairInputFinding;
+  /** @minLength 1 */
+  findingId: string;
+  finding: CandidateMusicCriticFinding;
 }

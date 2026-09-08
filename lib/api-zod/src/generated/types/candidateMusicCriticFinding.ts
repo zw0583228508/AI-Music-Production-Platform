@@ -6,7 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type CandidateRepairInputFinding = {
+export interface CandidateMusicCriticFinding {
   /** @minLength 1 */
   id: string;
   /**
@@ -28,4 +28,4 @@ export type CandidateRepairInputFinding = {
      * @maxLength 2000
      */
   musicalReason: string;
-};
+}

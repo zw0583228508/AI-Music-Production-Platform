@@ -7,6 +7,7 @@
  */
 import type { CandidateMusicCriticDimensionResultStatus } from './candidateMusicCriticDimensionResultStatus';
 import type { CandidateMusicCriticEvidence } from './candidateMusicCriticEvidence';
+import type { CandidateMusicCriticFinding } from './candidateMusicCriticFinding';
 
 export interface CandidateMusicCriticDimensionResult {
   status: CandidateMusicCriticDimensionResultStatus;
@@ -18,4 +19,6 @@ export interface CandidateMusicCriticDimensionResult {
   score: number | null;
   evidence: CandidateMusicCriticEvidence[];
   explanation: string;
+  /** Server-authored scopes eligible for a bounded repair. */
+  findings: CandidateMusicCriticFinding[];
 }

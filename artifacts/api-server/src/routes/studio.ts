@@ -2662,6 +2662,7 @@ router.post(
     try {
       const job = await queueCandidateRepair(
         params.data.candidateId,
+        body.data.findingId,
         body.data.finding,
         req.user.id,
         body.data.idempotencyKey,

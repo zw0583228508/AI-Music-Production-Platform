@@ -1,33 +1,13 @@
 import type {
-  CandidateRepairInputFinding,
+  CandidateMusicCriticFinding,
   GenerationCandidate,
 } from "@workspace/api-client-react";
 
 export type RepairFindingPreview = {
   candidate: GenerationCandidate;
   dimensionName: string;
-  finding: CandidateRepairInputFinding;
+  finding: CandidateMusicCriticFinding;
 };
-
-export function repairFindingForDimension(
-  candidate: GenerationCandidate,
-  dimensionName: string,
-  explanation: string,
-): CandidateRepairInputFinding | null {
-  const sections = candidate.plan.sections.filter(
-    (section) => section.startBar !== undefined && section.endBar !== undefined,
-  );
-  const trackIds = (candidate.trackModels ?? []).map((track) => track.id).filter(Boolean);
-  if (!sections.length || !trackIds.length) return null;
-  return {
-    id: `music-critic-v1:${dimensionName}`,
-    affectedSections: sections.map((section) => section.name),
-    startBar: Math.min(...sections.map((section) => section.startBar!)),
-    endBar: Math.max(...sections.map((section) => section.endBar!)),
-    affectedTrackIds: trackIds,
-    musicalReason: explanation,
-  };
-}
 
 export function isRepairEligible(
   candidate: GenerationCandidate,
@@ -36,7 +16,7 @@ export function isRepairEligible(
     score: number | null;
   },
   existingRepair: unknown,
-  finding: CandidateRepairInputFinding | null,
+  finding: CandidateMusicCriticFinding | null,
 ): boolean {
   return Boolean(
     candidate.status === "validated" &&

@@ -1600,6 +1600,30 @@ export interface CandidateMusicCriticEvidence {
   observations: CandidateMusicCriticEvidenceObservations;
 }
 
+export interface CandidateMusicCriticFinding {
+  /** @minLength 1 */
+  id: string;
+  /**
+     * @minItems 1
+     * @items.minLength 1
+     */
+  affectedSections: string[];
+  /** @minimum 1 */
+  startBar: number;
+  /** @minimum 1 */
+  endBar: number;
+  /**
+     * @minItems 1
+     * @items.minLength 1
+     */
+  affectedTrackIds: string[];
+  /**
+     * @minLength 1
+     * @maxLength 2000
+     */
+  musicalReason: string;
+}
+
 export interface CandidateMusicCriticDimensionResult {
   status: CandidateMusicCriticDimensionResultStatus;
   /**
@@ -1610,6 +1634,8 @@ export interface CandidateMusicCriticDimensionResult {
   score: number | null;
   evidence: CandidateMusicCriticEvidence[];
   explanation: string;
+  /** Server-authored scopes eligible for a bounded repair. */
+  findings: CandidateMusicCriticFinding[];
 }
 
 /**
@@ -2376,34 +2402,12 @@ export interface GenerationJob {
   completedAt?: string | null;
 }
 
-export type CandidateRepairInputFinding = {
-  /** @minLength 1 */
-  id: string;
-  /**
-     * @minItems 1
-     * @items.minLength 1
-     */
-  affectedSections: string[];
-  /** @minimum 1 */
-  startBar: number;
-  /** @minimum 1 */
-  endBar: number;
-  /**
-     * @minItems 1
-     * @items.minLength 1
-     */
-  affectedTrackIds: string[];
-  /**
-     * @minLength 1
-     * @maxLength 2000
-     */
-  musicalReason: string;
-};
-
 export interface CandidateRepairInput {
   /** @maxLength 200 */
   idempotencyKey?: string;
-  finding: CandidateRepairInputFinding;
+  /** @minLength 1 */
+  findingId: string;
+  finding: CandidateMusicCriticFinding;
 }
 
 export type GenerationCandidateProvider = typeof GenerationCandidateProvider[keyof typeof GenerationCandidateProvider];
