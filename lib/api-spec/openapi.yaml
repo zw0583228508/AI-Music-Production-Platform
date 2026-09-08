@@ -2776,7 +2776,7 @@ components:
       properties:
         source:
           type: string
-          enum: [vocal_activity, harmony_decisions, section_plan, track_notes, instrument_constraints, style_and_directives]
+          enum: [vocal_activity, harmony_decisions, section_plan, track_notes, instrument_constraints, style_and_directives, composition_intelligence, rhythm_evidence]
         summary: { type: string }
         observations:
           type: object
@@ -2785,6 +2785,30 @@ components:
               - { type: string }
               - { type: number }
               - { type: boolean }
+    CandidateMusicCriticDimensionResultV1:
+      type: object
+      required: [status, score, evidence, explanation, findings]
+      properties:
+        status: { type: string, enum: [available, unavailable, failed] }
+        score: { type: [number, "null"], minimum: 0, maximum: 1 }
+        evidence:
+          type: array
+          items: { $ref: "#/components/schemas/CandidateMusicCriticEvidence" }
+        explanation: { type: string }
+        findings:
+          type: array
+          items: { $ref: "#/components/schemas/CandidateMusicCriticFindingV1" }
+    CandidateMusicCriticFindingV1:
+      type: object
+      additionalProperties: false
+      required: [id, affectedSections, startBar, endBar, affectedTrackIds, musicalReason]
+      properties:
+        id: { type: string, minLength: 1 }
+        affectedSections: { type: array, minItems: 1, items: { type: string, minLength: 1 } }
+        startBar: { type: number, minimum: 1 }
+        endBar: { type: number, minimum: 1 }
+        affectedTrackIds: { type: array, minItems: 1, items: { type: string, minLength: 1 } }
+        musicalReason: { type: string, minLength: 1, maxLength: 2000 }
     CandidateMusicCriticDimensionResult:
       type: object
       required: [status, score, evidence, explanation, findings]
@@ -2803,7 +2827,8 @@ components:
             $ref: "#/components/schemas/CandidateMusicCriticFinding"
     CandidateMusicCriticFinding:
       type: object
-      required: [id, affectedSections, startBar, endBar, affectedTrackIds, musicalReason]
+      additionalProperties: false
+      required: [id, affectedSections, startBar, endBar, affectedTrackIds, affectedRoles, canonicalScope, evidenceReferences, permissibleRepairOperations, musicalReason]
       properties:
         id: { type: string, minLength: 1 }
         affectedSections:
@@ -2816,8 +2841,41 @@ components:
           type: array
           minItems: 1
           items: { type: string, minLength: 1 }
+        affectedRoles:
+          type: array
+          items: { type: string, minLength: 1 }
+        canonicalScope:
+          type: object
+          required: [startBar, endBar]
+          properties:
+            startBar: { type: number, minimum: 1 }
+            endBar: { type: number, minimum: 1 }
+        evidenceReferences:
+          type: array
+          maxItems: 8
+          items:
+            type: object
+            required: [source, summary]
+            properties:
+              source: { type: string }
+              summary: { type: string, maxLength: 2000 }
+        permissibleRepairOperations:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum: [adjust_notes, adjust_rhythm, adjust_register, adjust_dynamics, adjust_voicing, adjust_directive]
         musicalReason: { type: string, minLength: 1, maxLength: 2000 }
     CandidateMusicCriticReport:
+      oneOf:
+        - $ref: "#/components/schemas/CandidateMusicCriticReportV1"
+        - $ref: "#/components/schemas/CandidateMusicCriticReportV2"
+      discriminator:
+        propertyName: version
+        mapping:
+          music-critic-v1: "#/components/schemas/CandidateMusicCriticReportV1"
+          music-critic-v2: "#/components/schemas/CandidateMusicCriticReportV2"
+    CandidateMusicCriticReportV1:
       type: object
       required: [version, score, coverage, dimensions]
       properties:
@@ -2830,7 +2888,8 @@ components:
           properties:
             availableDimensions:
               type: number
-              enum: [0, 1, 2, 3, 4, 5, 6, 7, 8]
+              minimum: 0
+              maximum: 8
             totalDimensions: { type: number, const: 8 }
             sparse:
               type: boolean
@@ -2838,6 +2897,31 @@ components:
         dimensions:
           type: object
           required: [vocalFit, harmony, development, contrastAndTransitions, registerCollisions, playability, repetition, styleAndControlAdherence]
+          properties:
+            vocalFit: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResultV1" }
+            harmony: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResultV1" }
+            development: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResultV1" }
+            contrastAndTransitions: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResultV1" }
+            registerCollisions: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResultV1" }
+            playability: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResultV1" }
+            repetition: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResultV1" }
+            styleAndControlAdherence: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResultV1" }
+    CandidateMusicCriticReportV2:
+      type: object
+      required: [version, score, coverage, dimensions]
+      properties:
+        version: { type: string, const: music-critic-v2 }
+        score: { type: number, minimum: 0, maximum: 1 }
+        coverage:
+          type: object
+          required: [availableDimensions, totalDimensions, sparse]
+          properties:
+            availableDimensions: { type: number, minimum: 0, maximum: 17 }
+            totalDimensions: { type: number, const: 17 }
+            sparse: { type: boolean }
+        dimensions:
+          type: object
+          required: [vocalFit, harmony, development, contrastAndTransitions, registerCollisions, playability, repetition, styleAndControlAdherence, motifContinuityAndDevelopment, phraseIntent, vocalInteraction, roleDuplication, orchestralBalance, grooveCoordination, voiceLeading, countermelodyShape, dramaticTrajectory]
           properties:
             vocalFit: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
             harmony: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
@@ -2847,6 +2931,15 @@ components:
             playability: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
             repetition: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
             styleAndControlAdherence: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
+            motifContinuityAndDevelopment: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
+            phraseIntent: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
+            vocalInteraction: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
+            roleDuplication: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
+            orchestralBalance: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
+            grooveCoordination: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
+            voiceLeading: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
+            countermelodyShape: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
+            dramaticTrajectory: { $ref: "#/components/schemas/CandidateMusicCriticDimensionResult" }
     CandidateAudioCriticEvidence:
       type: object
       description: Privacy-bounded evidence derived only from the rendered PCM and its artifact lineage; it contains no samples, waveform, or private source URL.
@@ -2916,7 +3009,9 @@ components:
           maxLength: 200
         findingId: { type: string, minLength: 1 }
         finding:
-          $ref: "#/components/schemas/CandidateMusicCriticFinding"
+          oneOf:
+            - $ref: "#/components/schemas/CandidateMusicCriticFindingV1"
+            - $ref: "#/components/schemas/CandidateMusicCriticFinding"
     CandidateRepairEvidence:
       type: object
       required: [sourceCandidateId, findingId, seed, attempt, maxAttempts, scope, musicalReason, outsideScopePreserved, changedScopes, sourceQualityScore, repairedQualityScore, improved]

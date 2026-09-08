@@ -3,6 +3,7 @@ import type {
   CandidateMusicCriticDimension,
   CandidateMusicCriticDimensionResult,
   CandidateMusicCriticReport,
+  CandidateMusicCriticReportV2,
   CriticRepairFinding,
   HarmonyDecisionEvidence,
   SongModelData,
@@ -19,6 +20,15 @@ const dimensions: CandidateMusicCriticDimension[] = [
   "playability",
   "repetition",
   "styleAndControlAdherence",
+  "motifContinuityAndDevelopment",
+  "phraseIntent",
+  "vocalInteraction",
+  "roleDuplication",
+  "orchestralBalance",
+  "grooveCoordination",
+  "voiceLeading",
+  "countermelodyShape",
+  "dramaticTrajectory",
 ];
 
 const weights: Record<CandidateMusicCriticDimension, number> = {
@@ -30,6 +40,15 @@ const weights: Record<CandidateMusicCriticDimension, number> = {
   playability: 0.12,
   repetition: 0.1,
   styleAndControlAdherence: 0.12,
+  motifContinuityAndDevelopment: 0.1,
+  phraseIntent: 0.08,
+  vocalInteraction: 0.08,
+  roleDuplication: 0.08,
+  orchestralBalance: 0.08,
+  grooveCoordination: 0.08,
+  voiceLeading: 0.1,
+  countermelodyShape: 0.08,
+  dramaticTrajectory: 0.1,
 };
 
 const clamp = (value: number): number => Math.max(0, Math.min(1, value));
@@ -134,7 +153,9 @@ function evidence(
     | "section_plan"
     | "track_notes"
     | "instrument_constraints"
-    | "style_and_directives",
+    | "style_and_directives"
+    | "composition_intelligence"
+    | "rhythm_evidence",
   summary: string,
   observations: Record<string, string | number | boolean>,
 ) {
@@ -360,6 +381,467 @@ function scoreStyle(plan: ArrangementPlan, tracks: TrackModel[]): CandidateMusic
   );
 }
 
+/** v2 dimensions deliberately require the specific recorded capability they use. */
+type IntelligenceIssue = {
+  phraseId: string;
+  sectionId: string;
+  startBar: number;
+  endBar: number;
+  trackIds: string[];
+  reason: string;
+  actionable?: boolean;
+};
+
+function motifContinuityAssessment(plan: ArrangementPlan, tracks: TrackModel[]) {
+  const intelligence = plan.compositionIntelligence;
+  if (!intelligence?.phrases.length || !intelligence.motifs?.length) return null;
+  const motifs = new Map(intelligence.motifs.map((motif) => [motif.id, motif]));
+  const notes = tracks.flatMap((track) => track.notes.map((note) => ({ trackId: track.id, note })));
+  const assessable = intelligence.phrases.filter((phrase) => {
+    const motif = motifs.get(phrase.motifRef);
+    return motif && notes.some(({ note }) =>
+      note.motif?.id === motif.id && Boolean(note.motif.fingerprint));
+  });
+  if (!assessable.length) return null;
+  const issues: IntelligenceIssue[] = [];
+  for (const phrase of assessable) {
+    const motif = motifs.get(phrase.motifRef)!;
+    const rendered = notes.filter(({ note }) =>
+      note.motif?.id === motif.id && note.motif.phraseId === phrase.id);
+    const source = phrase.sourceMotifRef ? motifs.get(phrase.sourceMotifRef) : undefined;
+    const selfRepetition = phrase.sourceMotifRef === phrase.motifRef &&
+      phrase.transformation === "repetition" && motif.parentMotifId === null;
+    const lineageValid = !phrase.sourceMotifRef || selfRepetition ||
+      Boolean(source && motif.parentMotifId === source.id &&
+        phrase.transformation === motif.transformation);
+    const fingerprintValid = rendered.length > 0 &&
+      rendered.every(({ note }) => note.motif?.fingerprint === motif.fingerprint);
+    const sourceRendered = source
+      ? notes.find(({ note }) => note.motif?.id === source.id)
+      : undefined;
+    const transformationValid = !source || !sourceRendered ||
+      (phrase.transformation === "repetition"
+        ? motif.fingerprint === source.fingerprint
+        : motif.fingerprint !== source.fingerprint);
+    if (!lineageValid || !fingerprintValid || !transformationValid) {
+      issues.push({
+        phraseId: phrase.id, sectionId: phrase.sectionId,
+        startBar: phrase.startBar, endBar: phrase.endBar,
+        trackIds: phrase.ownerTrackId ? [phrase.ownerTrackId] : rendered.map((item) => item.trackId),
+        reason: `Phrase ${phrase.id} has inconsistent rendered motif lineage, fingerprint, or transformation evidence.`,
+        // Parent/source identities and canonical motif records are immutable
+        // evidence. A bounded notes/rhythm repair can only correct rendered
+        // material whose tag/fingerprint disagrees with that evidence.
+        actionable: lineageValid && transformationValid && !fingerprintValid,
+      });
+    }
+  }
+  return { total: assessable.length, issues };
+}
+
+function phraseIntentAssessment(plan: ArrangementPlan, tracks: TrackModel[]) {
+  const intelligence = plan.compositionIntelligence;
+  if (!intelligence?.phrases.length || !plan.hierarchy?.phrases.length) return null;
+  const hierarchy = new Map(plan.hierarchy.phrases.map((phrase) => [phrase.id, phrase]));
+  const issues: IntelligenceIssue[] = [];
+  for (const phrase of intelligence.phrases) {
+    const scope = hierarchy.get(phrase.id);
+    const rendered = tracks.flatMap((track) => track.notes
+      .filter((note) => note.motif?.phraseId === phrase.id)
+      .map((note) => ({ trackId: track.id, note })));
+    const scoped = Boolean(scope && scope.startBar === phrase.startBar && scope.endBar === phrase.endBar);
+    const semantic = (phrase.intent === "protect_vocal" && phrase.intention === "silence" && rendered.length === 0) ||
+      (phrase.intent === "develop" && phrase.transformation !== "repetition" && rendered.length > 0) ||
+      (phrase.intent === "answer" && phrase.intention === "response" &&
+        Boolean(phrase.responseToPhraseId) && rendered.length > 0) ||
+      (["state", "build", "release"].includes(phrase.intent) &&
+        phrase.intention !== "silence" && rendered.length > 0);
+    if (!scoped || !semantic) issues.push({
+      phraseId: phrase.id, sectionId: phrase.sectionId,
+      startBar: phrase.startBar, endBar: phrase.endBar,
+      trackIds: phrase.ownerTrackId ? [phrase.ownerTrackId] : rendered.map((item) => item.trackId),
+      reason: `Phrase ${phrase.id} does not realize its declared intent within canonical phrase scope.`,
+    });
+  }
+  return { total: intelligence.phrases.length, issues };
+}
+
+function scoreMotifContinuity(plan: ArrangementPlan, tracks: TrackModel[]): CandidateMusicCriticDimensionResult {
+  const assessment = motifContinuityAssessment(plan, tracks);
+  if (!assessment) {
+    return unavailable("Motif and phrase lineage evidence is unavailable.", "composition_intelligence");
+  }
+  return available(1 - assessment.issues.length / assessment.total,
+    "Validates recorded parent/source lineage, declared transformation, and rendered motif references.",
+    "composition_intelligence", "Cross-checked phrase lineage with motif records and rendered motif tags.",
+    { assessedPhrases: assessment.total, invalidRenderedLineages: assessment.issues.length });
+}
+
+function scorePhraseIntent(plan: ArrangementPlan, tracks: TrackModel[]): CandidateMusicCriticDimensionResult {
+  const assessment = phraseIntentAssessment(plan, tracks);
+  if (!assessment) {
+    return unavailable("Canonical phrase intent evidence is unavailable.", "composition_intelligence");
+  }
+  return available(1 - assessment.issues.length / assessment.total,
+    "Validates declared phrase intent, hierarchy scope, and rendered phrase references.",
+    "composition_intelligence", "Matched phrase semantics and scope to rendered phrase tags.",
+    { phrases: assessment.total, unrealizedPhrases: assessment.issues.length });
+}
+
+function vocalInteractionAssessment(songModel: SongModelData, plan: ArrangementPlan, tracks: TrackModel[]) {
+  const vocal = songModel.vocalEvidence;
+  const allPhrases = plan.compositionIntelligence?.phrases ?? [];
+  const phrases = allPhrases.filter((phrase) =>
+    phrase.intent === "protect_vocal" ||
+    ((phrase.intent === "answer" || phrase.intention === "response") &&
+      Boolean(phrase.responseToPhraseId &&
+        allPhrases.some((candidate) => candidate.id === phrase.responseToPhraseId))));
+  if (vocal?.status !== "detected" || !vocal.observedVoicedWindows.length || !phrases.length) return null;
+  const timeline = createCanonicalTimeline(songModel.tempoMap, songModel.meterMap);
+  const interactions = phrases.flatMap((phrase) => {
+    const start = timeline.coordinateAtBar(phrase.startBar).seconds;
+    const end = timeline.coordinateAtBar(phrase.endBar + 1).seconds;
+    const windows = vocal.observedVoicedWindows.map((window) => ({
+      start: Math.max(start, window.start),
+      end: Math.min(end, window.end),
+    })).filter((window) => window.end > window.start);
+    return tracks.flatMap((track) => track.notes
+      .filter((note) => note.start < end && note.start + note.duration > start)
+      .flatMap((note) => windows.filter((window) =>
+        note.start < window.end && note.start + note.duration > window.start)
+        .map((window) => ({ phrase, track, note, window }))));
+  }).sort((left, right) =>
+    left.note.start - right.note.start ||
+    left.track.id.localeCompare(right.track.id) ||
+    left.phrase.id.localeCompare(right.phrase.id) ||
+    left.note.id.localeCompare(right.note.id));
+  return { phrases, interactions };
+}
+
+function scoreVocalInteraction(songModel: SongModelData, plan: ArrangementPlan, tracks: TrackModel[]) {
+  const assessment = vocalInteractionAssessment(songModel, plan, tracks);
+  if (!assessment) {
+    return unavailable("Verified vocal interaction evidence is unavailable.", "vocal_activity");
+  }
+  const intrusive = assessment.interactions.filter(({ note }) => note.pitch >= 72).length;
+  return available(1 - intrusive / Math.max(1, assessment.interactions.length),
+    "Measures exact symbolic overlap during verified vocal windows under declared protect/respond phrases.",
+    "vocal_activity", "Compared symbolic overlap with verified windows and phrase interaction declarations.",
+    {
+      voicedWindows: songModel.vocalEvidence!.observedVoicedWindows.length,
+      interactionPhrases: assessment.phrases.length,
+      overlappingNotes: assessment.interactions.length,
+      intrusiveNotes: intrusive,
+    });
+}
+
+function scoreRoleDuplication(plan: ArrangementPlan, tracks: TrackModel[]) {
+  const hasFunctions = plan.sections.some((section) =>
+    Object.values(section.trackDirectives ?? {}).some((directive) =>
+      Boolean(directive.musicalFunction)));
+  if (!hasFunctions || !tracks.length) {
+    return unavailable("Recorded role directives are unavailable.", "style_and_directives");
+  }
+  let duplicate = 0;
+  let pairs = 0;
+  for (const section of plan.sections) {
+    const active = (section.activeTracks ?? Object.keys(section.tracks)).filter((id) => tracks.some((track) => track.id === id));
+    for (let i = 0; i < active.length; i += 1) for (let j = i + 1; j < active.length; j += 1) {
+      const left = section.trackDirectives?.[active[i]]?.musicalFunction;
+      const right = section.trackDirectives?.[active[j]]?.musicalFunction;
+      if (!left || !right) continue;
+      pairs += 1;
+      const leftDirective = section.trackDirectives?.[active[i]];
+      const rightDirective = section.trackDirectives?.[active[j]];
+      const allowed = leftDirective?.musicalFunction === "doubling" && leftDirective.doublingTrackId === active[j] ||
+        rightDirective?.musicalFunction === "doubling" && rightDirective.doublingTrackId === active[i];
+      if (left && left === right && !allowed) duplicate += 1;
+    }
+  }
+  return available(1 - duplicate / Math.max(1, pairs), "Penalizes duplicate explicit non-doubling roles.",
+    "style_and_directives", "Compared declared musical functions within each section.",
+    { comparedPairs: pairs, duplicateRoles: duplicate });
+}
+
+function scoreOrchestralBalance(plan: ArrangementPlan, tracks: TrackModel[]) {
+  if (!plan.sections.length || !tracks.some((track) => track.notes.length)) return unavailable("Section and symbolic orchestration evidence is unavailable.", "track_notes");
+  // Section directives are the evidence of which roles may carry density. Do
+  // not infer mix balance from a whole-track count.
+  const sections = plan.sections.filter((section) => (section.activeTracks ?? Object.keys(section.tracks)).length);
+  const directiveSections = sections.filter((section) => Object.keys(section.trackDirectives ?? {}).length);
+  if (!directiveSections.length) return unavailable("Per-section orchestration directives are unavailable.", "style_and_directives");
+  const fits = directiveSections.map((section) => {
+    const active = section.activeTracks ?? Object.keys(section.tracks);
+    const counts = active.map((id) => tracks.find((track) => track.id === id)?.notes.filter((note) =>
+      // Canonical bar localization is performed by findings; this coarse check
+      // only admits notes rendered while a section directive is active.
+      (tracks.find((track) => track.id === id)?.appliedDirectives ?? []).some((directive) =>
+        directive.section === section.section && note.start >= directive.start && note.start < directive.end)).length ?? 0);
+    const bars = section.endBar - section.startBar + 1;
+    const target = clamp(section.density);
+    const densityFit = counts.reduce((sum, count) =>
+      sum + (1 - Math.abs(clamp(count / Math.max(1, bars * 4)) - target)), 0) /
+      Math.max(1, counts.length);
+    const functionCoverage = counts.filter((count) => count > 0).length / Math.max(1, counts.length);
+    return densityFit * .7 + functionCoverage * .3;
+  });
+  const fit = fits.reduce((sum, value) => sum + value, 0) / fits.length;
+  return available(fit, "Measures local function coverage and rendered density against each section target.",
+    "style_and_directives", "Compared per-section active role density under recorded directives.",
+    { directedSections: directiveSections.length, averageSectionDensityFit: round(fit) });
+}
+
+function reconcileRhythmEvidence(songModel: SongModelData) {
+  const normalized = (songModel.rhythmEvidence ?? []).flatMap((item) => {
+    const beats = item.beats.filter((beat) => Number.isFinite(beat) && beat >= 0)
+      .sort((left, right) => left - right)
+      .filter((beat, index, all) => index === 0 || beat - all[index - 1] > .001);
+    return beats.length ? [{
+      provider: item.provider.trim().toUpperCase(),
+      version: item.version,
+      beats,
+      tempoBpm: item.tempoBpm,
+    }] : [];
+  }).sort((left, right) =>
+    left.provider.localeCompare(right.provider) ||
+    left.version.localeCompare(right.version) ||
+    left.beats.join(",").localeCompare(right.beats.join(",")));
+  if (!normalized.length) return null;
+  if (normalized.length === 1) return normalized[0];
+
+  // Beat This is the production beat/downbeat authority. Madmom remains the
+  // deterministic secondary source when both are present.
+  const providerPriority = new Map([
+    ["BEAT_THIS", 0],
+    ["BEAT-THIS", 0],
+    ["MADMOM", 1],
+  ]);
+  const authoritative = normalized.filter((item) =>
+    providerPriority.has(item.provider)).sort((left, right) =>
+    providerPriority.get(left.provider)! - providerPriority.get(right.provider)! ||
+    left.provider.localeCompare(right.provider) ||
+    left.version.localeCompare(right.version));
+  const consensus = (values: typeof normalized) => {
+    const reference = values[0];
+    const equivalent = values.every((item) => {
+    if (item.beats.length !== reference.beats.length) return false;
+    const tempoTolerance = Math.max(2, Math.abs(reference.tempoBpm) * .03);
+    if (!Number.isFinite(item.tempoBpm) ||
+      !Number.isFinite(reference.tempoBpm) ||
+      Math.abs(item.tempoBpm - reference.tempoBpm) > tempoTolerance) return false;
+    return item.beats.every((beat, index) =>
+      Math.abs(beat - reference.beats[index]) <= .08);
+    });
+    if (!equivalent) return null;
+    return {
+      provider: "CONSENSUS",
+      version: "1",
+      beats: reference.beats.map((_, index) =>
+        round(values.reduce((sum, item) => sum + item.beats[index], 0) /
+          values.length)),
+      tempoBpm: values.reduce((sum, item) => sum + item.tempoBpm, 0) /
+        values.length,
+    };
+  };
+  if (authoritative.length) {
+    const priority = providerPriority.get(authoritative[0].provider)!;
+    const peers = authoritative.filter((item) =>
+      providerPriority.get(item.provider) === priority);
+    return peers.length === 1 ? peers[0] : consensus(peers);
+  }
+  return consensus(normalized);
+}
+
+function grooveAssessment(songModel: SongModelData, plan: ArrangementPlan, tracks: TrackModel[]) {
+  if (!songModel.rhythmEvidence?.length || !tracks.some((track) => track.notes.length)) return null;
+  const rhythm = reconcileRhythmEvidence(songModel);
+  if (!rhythm) return null;
+  const beats = rhythm.beats;
+  const roleIds = new Set([
+    ...(plan.compositionIntelligence?.groove?.roles.map((role) => role.trackId) ?? []),
+    ...(plan.compositionIntelligence?.instrumentRoles.filter((role) =>
+      role.function === "foundation" || role.function === "pulse").map((role) => role.trackId) ?? []),
+  ]);
+  if (roleIds.size < 2) return null;
+  const interval = beats.length > 1
+    ? beats.slice(1).reduce((sum, beat, index) => sum + beat - beats[index], 0) / (beats.length - 1)
+    : 60 / rhythm.tempoBpm;
+  const subdivision = plan.compositionIntelligence?.groove?.subdivision === "16th" ? 4 : 2;
+  const grid = beats.flatMap((beat) =>
+    Array.from({ length: subdivision }, (_, index) => beat + interval * index / subdivision));
+  const roleTracks = tracks.filter((track) => roleIds.has(track.id));
+  const notes = roleTracks.flatMap((track) => track.notes.map((note) => ({ trackId: track.id, note })));
+  if (!notes.length) return null;
+  const assessed = notes.map(({ trackId, note }) => {
+    const aligned = grid.some((point) => Math.abs(note.start - point) <= .08);
+    const coordinated = notes.some((other) =>
+      other.trackId !== trackId && Math.abs(other.note.start - note.start) <= interval / subdivision + .08);
+    return { trackId, note, aligned, coordinated };
+  });
+  return { beats, interval, subdivision, roleIds, assessed,
+    issues: assessed.filter((item) => !item.aligned || !item.coordinated) };
+}
+
+function scoreGroove(songModel: SongModelData, plan: ArrangementPlan, tracks: TrackModel[]) {
+  const assessment = grooveAssessment(songModel, plan, tracks);
+  if (!assessment) {
+    return unavailable("Verified rhythm, rhythmic-role, and rendered attack evidence is unavailable.", "rhythm_evidence");
+  }
+  const aligned = assessment.assessed.filter((item) => item.aligned).length;
+  const coordinated = assessment.assessed.filter((item) => item.coordinated).length;
+  return available((aligned / assessment.assessed.length) * .7 + (coordinated / assessment.assessed.length) * .3,
+    "Measures subdivision-aware attacks and phase interaction among recorded rhythmic roles.",
+    "rhythm_evidence", "Compared bass/drum/pulse attacks with verified subdivisions and one another.",
+    { beats: assessment.beats.length, rhythmicRoles: assessment.roleIds.size, attacks: assessment.assessed.length, alignedAttacks: aligned, coordinatedAttacks: coordinated });
+}
+
+function voiceLeadingAssessment(
+  decisions: HarmonyDecisionEvidence[],
+  plan: ArrangementPlan,
+  tracks: TrackModel[],
+) {
+  const harmonyTrackIds = new Set(tracks.flatMap((track) => {
+    const intelligenceRole = plan.compositionIntelligence?.instrumentRoles.find((role) =>
+      role.trackId === track.id)?.function;
+    const directiveRoles = plan.sections.flatMap((section) =>
+      section.trackDirectives?.[track.id]?.musicalFunction ?? []);
+    return intelligenceRole === "harmony" || intelligenceRole === "foundation" ||
+      ["harmony", "harmonic_support", "foundation", "bass"].includes(track.role) ||
+      directiveRoles.some((role) =>
+        ["harmonic_support", "foundation"].includes(role))
+      ? [track.id]
+      : [];
+  }));
+  type HarmonicEvent = {
+    time: number;
+    pitches: number[];
+    trackIds: string[];
+  };
+  const onsetTolerance = .01;
+  const ordered = [...decisions].sort((left, right) =>
+    left.start - right.start || left.end - right.end);
+  let preceding: { event: HarmonicEvent; decision: HarmonyDecisionEvidence } | null = null;
+  return ordered.map((decision) => {
+    const timedNotes = tracks.filter((track) => harmonyTrackIds.has(track.id))
+      .flatMap((track) => track.notes
+        .filter((note) => note.start >= decision.start && note.start < decision.end)
+        .map((note) => ({ trackId: track.id, note })))
+      .sort((left, right) =>
+        left.note.start - right.note.start ||
+        left.note.pitch - right.note.pitch ||
+        left.trackId.localeCompare(right.trackId) ||
+        left.note.id.localeCompare(right.note.id));
+    const events: HarmonicEvent[] = [];
+    for (const { trackId, note } of timedNotes) {
+      const current = events.at(-1);
+      if (!current || Math.abs(note.start - current.time) > onsetTolerance) {
+        events.push({ time: note.start, pitches: [note.pitch], trackIds: [trackId] });
+      } else {
+        current.pitches.push(note.pitch);
+        if (!current.trackIds.includes(trackId)) current.trackIds.push(trackId);
+      }
+    }
+    for (const event of events) {
+      event.pitches.sort((left, right) => left - right);
+      event.trackIds.sort();
+    }
+    const penalties: Array<{ penalty: number; time: number; trackIds: string[] }> = [];
+    for (const event of events) {
+      const adjacent = preceding && (
+        preceding.decision === decision ||
+        decision.start <= preceding.decision.end + onsetTolerance
+      );
+      if (adjacent) {
+        const previous = preceding!.event;
+        const voices = Math.min(previous.pitches.length, event.pitches.length);
+        const horizontalMotion = voices
+          ? Array.from({ length: voices }, (_, index) =>
+              Math.abs(event.pitches[index] - previous.pitches[index]))
+              .reduce((sum, value) => sum + value, 0) / voices
+          : 24;
+        const voiceCountLoss = Math.abs(event.pitches.length - previous.pitches.length) /
+          Math.max(1, event.pitches.length, previous.pitches.length);
+        penalties.push({
+          penalty: clamp(horizontalMotion / 24 + voiceCountLoss * .25),
+          time: event.time,
+          trackIds: [...new Set([...previous.trackIds, ...event.trackIds])].sort(),
+        });
+      }
+      preceding = { event, decision };
+    }
+    const worst = penalties.sort((left, right) =>
+      right.penalty - left.penalty || left.time - right.time)[0];
+    return {
+      decision,
+      trackIds: worst?.trackIds ?? events.flatMap((event) => event.trackIds)
+        .filter((id, index, all) => all.indexOf(id) === index).sort(),
+      derivedPenalty: worst?.penalty ?? null,
+      transitionTime: worst?.time ?? null,
+    };
+  });
+}
+
+function scoreVoiceLeading(
+  decisions: HarmonyDecisionEvidence[],
+  plan: ArrangementPlan,
+  tracks: TrackModel[],
+) {
+  const values = decisions.map((decision) => decision.voiceLeading).filter((value): value is number => Number.isFinite(value));
+  if (!values.length) return unavailable("Recorded harmony voice-leading evidence is unavailable.", "harmony_decisions");
+  const assessments = voiceLeadingAssessment(decisions, plan, tracks);
+  const normalized = decisions.filter((decision) => Number.isFinite(decision.voiceLeading)).map((decision) => {
+    const derived = assessments.find((item) => item.decision === decision)?.derivedPenalty;
+    if (derived !== null && derived !== undefined) return clamp(1 - derived);
+    const selectedPenalty = Math.abs(decision.voiceLeading!);
+    const candidates = decision.candidateRationale?.map((candidate) =>
+      Math.abs(candidate.voiceLeading)).filter(Number.isFinite) ?? [];
+    const worstPenalty = Math.max(selectedPenalty, ...candidates, .001);
+    const absolute = clamp(1 - selectedPenalty * 2);
+    const comparative = clamp(1 - selectedPenalty / worstPenalty);
+    return candidates.length ? absolute * .7 + comparative * .3 : absolute;
+  });
+  return available(normalized.reduce((sum, value) => sum + value, 0) / normalized.length,
+    "Measures deterministic note motion inside recorded harmony decision windows.", "harmony_decisions",
+    "Derived local register motion from final harmony-track notes, using recorded decisions as window evidence.",
+    {
+      decisions: values.length,
+      derivedWindows: assessments.filter((item) => item.derivedPenalty !== null).length,
+    });
+}
+
+function scoreCountermelody(plan: ArrangementPlan, tracks: TrackModel[]) {
+  const roles = plan.compositionIntelligence?.instrumentRoles;
+  const counter = roles?.filter((role) => role.function === "counterline") ?? [];
+  if (!counter.length) return unavailable("Recorded countermelody role evidence is unavailable.", "composition_intelligence");
+  const shaped = counter.filter((role) => {
+    const notes = [...(tracks.find((track) => track.id === role.trackId)?.notes ?? [])].sort((a, b) => a.start - b.start);
+    if (notes.length < 3) return false;
+    const intervals = notes.slice(1).map((note, i) => note.pitch - notes[i].pitch);
+    const contourChanges = intervals.slice(1).some((value, i) => Math.sign(value) !== Math.sign(intervals[i]));
+    const range = Math.max(...notes.map((note) => note.pitch)) - Math.min(...notes.map((note) => note.pitch));
+    return range >= 3 && contourChanges && new Set(intervals).size > 1;
+  }).length;
+  return available(shaped / counter.length, "Checks interval/rhythm contour and range for declared countermelody roles.",
+    "composition_intelligence", "Measured scoped counterline interval contour rather than note count.", { declaredRoles: counter.length, shapedRoles: shaped });
+}
+
+function scoreDramaticTrajectory(plan: ArrangementPlan) {
+  const tensions = plan.compositionIntelligence?.tensionRelease;
+  if (!tensions?.length || !plan.hierarchy?.song.climaxSectionId) return unavailable("Recorded dramatic trajectory evidence is unavailable.", "composition_intelligence");
+  const values = tensions.map((item) => item.tension).filter(Number.isFinite);
+  if (!values.length) return unavailable("Recorded dramatic trajectory contains no finite tension values.", "composition_intelligence");
+  const climax = tensions.find((item) => item.sectionId === plan.hierarchy!.song.climaxSectionId);
+  if (!climax) return unavailable("Declared climax has no recorded tension event.", "composition_intelligence");
+  const climaxIndex = tensions.indexOf(climax);
+  const beforeClimax = tensions.slice(0, climaxIndex);
+  const rises = beforeClimax.every((item, index, all) =>
+    (index === 0 || item.tension >= all[index - 1].tension) && item.tension <= climax.tension);
+  const releases = tensions.slice(climaxIndex + 1).every((item) => item.release >= climax.release || item.tension <= climax.tension);
+  return available(rises && releases ? 1 : 0,
+    "Measures range in recorded tension/release trajectory.", "composition_intelligence",
+    "Aligned recorded tension/release events with the declared hierarchy climax.", { tensionEvents: values.length, riseToClimax: rises, releaseAfterClimax: releases });
+}
+
 function localizeCriticFindings(input: {
   songModel: SongModelData;
   plan: ArrangementPlan;
@@ -387,6 +869,7 @@ function localizeCriticFindings(input: {
     startBar: number,
     endBar: number,
     musicalReason: string,
+    affectedRoles?: string[],
   ) => {
     const result = results[dimension];
     const knownTracks = new Set(tracks.map((track) => track.id));
@@ -396,12 +879,15 @@ function localizeCriticFindings(input: {
     const boundedStart = Math.max(section.startBar, startBar);
     const boundedEnd = Math.min(section.endBar, endBar);
     if (boundedEnd < boundedStart) return;
-    const overlapsExisting = result.findings.some((existing) =>
-      boundedStart <= existing.endBar && existing.startBar <= boundedEnd);
-    if (overlapsExisting) return;
+    // Different evidence may legitimately implicate overlapping bars. Only
+    // suppress an identical canonical repair scope.
+    const duplicateExisting = result.findings.some((existing) =>
+      existing.startBar === boundedStart && existing.endBar === boundedEnd &&
+      existing.affectedTrackIds.join(",") === affectedTrackIds.join(","));
+    if (duplicateExisting) return;
     const finding: CriticRepairFinding = {
       id: [
-        "music-critic-v1",
+          "music-critic-v2",
         dimension,
         section.section,
         `${boundedStart}-${boundedEnd}`,
@@ -411,6 +897,29 @@ function localizeCriticFindings(input: {
       startBar: boundedStart,
       endBar: boundedEnd,
       affectedTrackIds,
+        affectedRoles: [...new Set(affectedRoles?.filter(Boolean) ?? affectedTrackIds.map((id) =>
+          tracks.find((track) => track.id === id)!.role))].sort(),
+        canonicalScope: { startBar: boundedStart, endBar: boundedEnd },
+        evidenceReferences: result.evidence.slice(0, 1).map((item) => ({
+          source: item.source,
+          summary: item.summary,
+        })),
+        permissibleRepairOperations: ({
+          motifContinuityAndDevelopment: ["adjust_notes", "adjust_rhythm"],
+          phraseIntent: ["adjust_notes", "adjust_rhythm", "adjust_dynamics", "adjust_directive"],
+          vocalInteraction: ["adjust_register", "adjust_dynamics", "adjust_notes"],
+          roleDuplication: ["adjust_directive", "adjust_notes"],
+          orchestralBalance: ["adjust_directive", "adjust_dynamics", "adjust_notes"],
+          grooveCoordination: ["adjust_rhythm", "adjust_notes"],
+          voiceLeading: ["adjust_voicing"],
+          countermelodyShape: ["adjust_notes", "adjust_rhythm"],
+          dramaticTrajectory: ["adjust_notes", "adjust_dynamics", "adjust_directive"],
+          harmony: ["adjust_voicing", "adjust_notes"],
+          vocalFit: ["adjust_register", "adjust_dynamics", "adjust_notes"],
+        } as Partial<Record<CandidateMusicCriticDimension, Array<
+          "adjust_notes" | "adjust_rhythm" | "adjust_register" | "adjust_dynamics" | "adjust_voicing" | "adjust_directive"
+        >>>)[dimension]
+          ?? ["adjust_notes", "adjust_directive"],
       musicalReason,
     };
     result.findings.push(finding);
@@ -558,6 +1067,158 @@ function localizeCriticFindings(input: {
         `${section.section} contributes to the mismatch between rendered and requested density.`);
     }
   }
+
+  const intelligence = plan.compositionIntelligence;
+  const hierarchySections = new Map(plan.hierarchy?.sections.map((section) => [section.id, section]) ?? []);
+  for (const issue of motifContinuityAssessment(plan, tracks)?.issues.filter((item) => item.actionable) ?? []) {
+    const hierarchySection = hierarchySections.get(issue.sectionId);
+    const section = hierarchySection && plan.sections.find((item) => item.section === hierarchySection.sourceSection);
+    if (!section) continue;
+    add("motifContinuityAndDevelopment", section,
+      issue.trackIds.length ? issue.trackIds : trackIdsForSection(section),
+      issue.startBar, issue.endBar, issue.reason);
+  }
+  for (const issue of phraseIntentAssessment(plan, tracks)?.issues ?? []) {
+    const hierarchySection = hierarchySections.get(issue.sectionId);
+    const section = hierarchySection && plan.sections.find((item) => item.section === hierarchySection.sourceSection);
+    if (!section) continue;
+    add("phraseIntent", section, issue.trackIds.length ? issue.trackIds : trackIdsForSection(section),
+      issue.startBar, issue.endBar, issue.reason);
+  }
+  for (const section of plan.sections) {
+    const active = trackIdsForSection(section);
+    for (let index = 0; index < active.length; index += 1) {
+      for (const other of active.slice(index + 1)) {
+        const left = section.trackDirectives?.[active[index]]?.musicalFunction;
+        const right = section.trackDirectives?.[other]?.musicalFunction;
+        const leftDirective = section.trackDirectives?.[active[index]];
+        const rightDirective = section.trackDirectives?.[other];
+        const permittedDoubling = leftDirective?.musicalFunction === "doubling" &&
+          leftDirective.doublingTrackId === other ||
+          rightDirective?.musicalFunction === "doubling" &&
+          rightDirective.doublingTrackId === active[index];
+        if (left && left === right && !permittedDoubling) add("roleDuplication", section, [active[index], other],
+          section.startBar, section.endBar, `${active[index]} and ${other} duplicate the declared ${left} role.`, [left]);
+      }
+    }
+    if (!Object.keys(section.trackDirectives ?? {}).length) continue;
+    const counts = active.map((id) => {
+      const track = tracks.find((candidate) => candidate.id === id);
+      const windows = track?.appliedDirectives?.filter((directive) =>
+        directive.section === section.section) ?? [];
+      return {
+        id,
+        count: track?.notes.filter((note) => windows.some((window) =>
+          note.start >= window.start && note.start < window.end)).length ?? 0,
+      };
+    });
+    const bars = section.endBar - section.startBar + 1;
+    const fits = counts.map((item) => ({
+      ...item,
+      fit: item.count
+        ? 1 - Math.abs(clamp(item.count / Math.max(1, bars * 4)) - clamp(section.density))
+        : 0,
+    }));
+    const weakest = Math.min(...fits.map((item) => item.fit), 1);
+    if (weakest < 1) add("orchestralBalance", section,
+      fits.filter((item) => item.fit === weakest).map((item) => item.id),
+      section.startBar, section.endBar,
+      `${section.section} has a role whose local density or function coverage misses the section target.`);
+  }
+  for (const issue of grooveAssessment(songModel, plan, tracks)?.issues ?? []) {
+    const section = sectionAtTime(issue.note.start);
+    const bar = timeline.coordinateAtSeconds(issue.note.start).bar;
+    add("grooveCoordination", section, [issue.trackId], bar, bar,
+      `${issue.trackId} has an off-subdivision or uncoordinated rhythmic-role attack.`);
+  }
+  for (const role of intelligence?.instrumentRoles.filter((item) => item.function === "counterline") ?? []) {
+    const track = tracks.find((item) => item.id === role.trackId);
+    if (!track) continue;
+    const sorted = [...track.notes].sort((left, right) => left.start - right.start);
+    const intervals = sorted.slice(1).map((note, index) => note.pitch - sorted[index].pitch);
+    const contourChanges = intervals.slice(1).some((value, index) =>
+      Math.sign(value) !== Math.sign(intervals[index]));
+    const range = sorted.length
+      ? Math.max(...sorted.map((note) => note.pitch)) - Math.min(...sorted.map((note) => note.pitch))
+      : 0;
+    if (sorted.length >= 3 && range >= 3 && contourChanges && new Set(intervals).size > 1) continue;
+    const note = sorted[0];
+    const phrase = intelligence?.phrases.find((candidate) =>
+      candidate.ownerTrackId === track.id && (candidate.intent === "answer" ||
+        candidate.intention === "response" || candidate.intention === "foreground"));
+    const hierarchySection = phrase && hierarchySections.get(phrase.sectionId);
+    const section = hierarchySection
+      ? plan.sections.find((candidate) => candidate.section === hierarchySection.sourceSection)
+      : note && sectionAtTime(note.start);
+    if (section) add("countermelodyShape", section, [track.id],
+      phrase?.startBar ?? timeline.coordinateAtSeconds(note!.start).bar,
+      phrase?.endBar ?? timeline.coordinateAtSeconds(note!.start).bar,
+      `${track.instrument} does not realize the declared counterline contour in this phrase.`);
+  }
+  const tensions = intelligence?.tensionRelease ?? [];
+  const climaxIndex = tensions.findIndex((item) => item.sectionId === plan.hierarchy?.song.climaxSectionId);
+  const dramaticIssues = tensions.filter((tension, index) => {
+    if (climaxIndex < 0) return false;
+    if (index < climaxIndex) {
+      const previous = tensions[index - 1];
+      const climax = tensions[climaxIndex];
+      return tension.tension > climax.tension || Boolean(previous && tension.tension < previous.tension);
+    }
+    if (index === climaxIndex) {
+      return tensions.some((item, other) => other !== index && item.tension > tension.tension);
+    }
+    const previous = tensions[index - 1];
+    return tension.tension > previous.tension && tension.release <= previous.release;
+  });
+  for (const tension of dramaticIssues) {
+    const source = hierarchySections.get(tension.sectionId)?.sourceSection;
+    const section = plan.sections.find((item) => item.section === source);
+    if (section) add("dramaticTrajectory", section, trackIdsForSection(section), section.startBar, section.endBar,
+      `${section.section} violates the declared rise, climax, or post-climax release.`);
+  }
+  const vocalInteractionIssues = vocalInteractionAssessment(songModel, plan, tracks)
+    ?.interactions.filter(({ note }) => note.pitch >= 72) ?? [];
+  for (const issue of vocalInteractionIssues) {
+    const intersectionStart = Math.max(issue.note.start, issue.window.start);
+    const intersectionEnd = Math.min(issue.note.start + issue.note.duration, issue.window.end);
+    const section = sectionAtTime(intersectionStart);
+    if (!section) continue;
+    const sectionStart = timeline.coordinateAtBar(section.startBar).seconds;
+    const sectionEnd = timeline.coordinateAtBar(section.endBar + 1).seconds;
+    if (issue.note.start < sectionStart || issue.note.start + issue.note.duration > sectionEnd) {
+      // Boundary-crossing events are immutable under bounded repair. They
+      // remain part of score/evidence, but must not become impossible repair
+      // contracts.
+      continue;
+    }
+    const startBar = timeline.coordinateAtSeconds(intersectionStart).bar;
+    const endBar = timeline.coordinateAtSeconds(
+      Math.max(intersectionStart, intersectionEnd - .001),
+    ).bar;
+    add("vocalInteraction", section, [issue.track.id], startBar, endBar,
+      `${issue.track.instrument} masks verified vocal activity in the upper register.`);
+  }
+  for (const assessment of voiceLeadingAssessment(harmonyDecisions, plan, tracks)
+    .filter(({ decision, derivedPenalty }) =>
+      Number.isFinite(decision.voiceLeading) &&
+      (derivedPenalty ?? Math.abs(decision.voiceLeading!)) > .175)
+    .sort((left, right) =>
+      (right.derivedPenalty ?? Math.abs(right.decision.voiceLeading!)) -
+        (left.derivedPenalty ?? Math.abs(left.decision.voiceLeading!)) ||
+      left.decision.start - right.decision.start)) {
+    const decision = assessment.decision;
+    const transitionTime = assessment.transitionTime ?? decision.start;
+    const section = sectionAtTime(transitionTime);
+    const bar = timeline.coordinateAtSeconds(transitionTime).bar;
+    const voicingTracks = assessment.trackIds.length ? assessment.trackIds : section ? trackIdsForSection(section).filter((id) => {
+      const track = tracks.find((candidate) => candidate.id === id)!;
+      const role = section.trackDirectives?.[id]?.musicalFunction ?? track.role;
+      return track.harmonyEvidence?.mode === "advanced_voicing" ||
+        ["harmony", "harmonic_support", "foundation", "bass"].includes(role);
+    }) : [];
+    if (section) add("voiceLeading", section, voicingTracks, bar, bar,
+      `${decision.symbol} has weak recorded voice-leading evidence.`);
+  }
 }
 
 export function evaluateCandidateMusicalFit(input: {
@@ -565,7 +1226,7 @@ export function evaluateCandidateMusicalFit(input: {
   plan: ArrangementPlan;
   tracks: TrackModel[];
   harmonyDecisions: HarmonyDecisionEvidence[];
-}): CandidateMusicCriticReport {
+}): CandidateMusicCriticReportV2 {
   const results: Record<CandidateMusicCriticDimension, CandidateMusicCriticDimensionResult> = {
     vocalFit: scoreVocalFit(input.songModel, input.tracks),
     harmony: scoreHarmony(input.harmonyDecisions, input.tracks),
@@ -575,6 +1236,15 @@ export function evaluateCandidateMusicalFit(input: {
     playability: scorePlayability(input.tracks),
     repetition: scoreRepetition(input.tracks),
     styleAndControlAdherence: scoreStyle(input.plan, input.tracks),
+    motifContinuityAndDevelopment: scoreMotifContinuity(input.plan, input.tracks),
+    phraseIntent: scorePhraseIntent(input.plan, input.tracks),
+    vocalInteraction: scoreVocalInteraction(input.songModel, input.plan, input.tracks),
+    roleDuplication: scoreRoleDuplication(input.plan, input.tracks),
+    orchestralBalance: scoreOrchestralBalance(input.plan, input.tracks),
+    grooveCoordination: scoreGroove(input.songModel, input.plan, input.tracks),
+    voiceLeading: scoreVoiceLeading(input.harmonyDecisions, input.plan, input.tracks),
+    countermelodyShape: scoreCountermelody(input.plan, input.tracks),
+    dramaticTrajectory: scoreDramaticTrajectory(input.plan),
   };
   localizeCriticFindings({ ...input, results });
   const scored = dimensions.filter((name) => results[name].status === "available");
@@ -583,11 +1253,11 @@ export function evaluateCandidateMusicalFit(input: {
     ? scored.reduce((sum, name) => sum + (results[name].score ?? 0) * weights[name], 0) / totalWeight
     : 0;
   return {
-    version: "music-critic-v1",
+    version: "music-critic-v2",
     score: round(score),
     coverage: {
       availableDimensions: scored.length,
-      totalDimensions: 8,
+      totalDimensions: dimensions.length,
       sparse: scored.length < dimensions.length / 2,
     },
     dimensions: results,

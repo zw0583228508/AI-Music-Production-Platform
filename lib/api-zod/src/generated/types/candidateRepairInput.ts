@@ -6,11 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { CandidateMusicCriticFinding } from './candidateMusicCriticFinding';
+import type { CandidateMusicCriticFindingV1 } from './candidateMusicCriticFindingV1';
 
 export interface CandidateRepairInput {
   /** @maxLength 200 */
   idempotencyKey?: string;
   /** @minLength 1 */
   findingId: string;
-  finding: CandidateMusicCriticFinding;
+  finding: CandidateMusicCriticFindingV1 | CandidateMusicCriticFinding;
 }

@@ -1062,8 +1062,23 @@ export type CriticRepairFinding = {
   startBar: number;
   endBar: number;
   affectedTrackIds: string[];
+  /** Roles are copied from the rendered tracks, never inferred from names. */
+  affectedRoles?: string[];
+  /** Inclusive canonical bar scope used by repair validation. */
+  canonicalScope?: { startBar: number; endBar: number };
+  /** Bounded, non-secret references to the evidence used for this finding. */
+  evidenceReferences?: Array<{ source: string; summary: string }>;
+  /** The repair worker may perform only one of these local operations. */
+  permissibleRepairOperations?: CriticRepairOperation[];
   musicalReason: string;
 };
+export type CriticRepairOperation =
+  | "adjust_notes"
+  | "adjust_rhythm"
+  | "adjust_register"
+  | "adjust_dynamics"
+  | "adjust_voicing"
+  | "adjust_directive";
 export type ProviderFusionDecision = {
   provider: string;
   status: "selected" | "accepted" | "flagged" | "rejected";
@@ -1845,7 +1860,16 @@ export type CandidateMusicCriticDimension =
   | "registerCollisions"
   | "playability"
   | "repetition"
-  | "styleAndControlAdherence";
+  | "styleAndControlAdherence"
+  | "motifContinuityAndDevelopment"
+  | "phraseIntent"
+  | "vocalInteraction"
+  | "roleDuplication"
+  | "orchestralBalance"
+  | "grooveCoordination"
+  | "voiceLeading"
+  | "countermelodyShape"
+  | "dramaticTrajectory";
 
 export type CandidateMusicCriticEvidence = {
   source:
@@ -1854,7 +1878,9 @@ export type CandidateMusicCriticEvidence = {
     | "section_plan"
     | "track_notes"
     | "instrument_constraints"
-    | "style_and_directives";
+    | "style_and_directives"
+    | "composition_intelligence"
+    | "rhythm_evidence";
   summary: string;
   observations: Record<string, string | number | boolean>;
 };
@@ -1867,18 +1893,29 @@ export type CandidateMusicCriticDimensionResult = {
   findings: CriticRepairFinding[];
 };
 
-export type CandidateMusicCriticReport = {
-  version: "music-critic-v1";
+export type CandidateMusicCriticReport = CandidateMusicCriticReportV1 | CandidateMusicCriticReportV2;
+type CandidateMusicCriticReportCoverage = {
+  availableDimensions: number;
+  totalDimensions: number;
+  sparse: boolean;
+};
+export type CandidateMusicCriticReportV2 = {
+  version: "music-critic-v2";
   score: number;
-  coverage: {
-    availableDimensions: number;
-    totalDimensions: 8;
-    sparse: boolean;
-  };
+  coverage: CandidateMusicCriticReportCoverage;
   dimensions: Record<
     CandidateMusicCriticDimension,
     CandidateMusicCriticDimensionResult
   >;
+};
+export type CandidateMusicCriticReportV1 = {
+  version: "music-critic-v1";
+  score: number;
+  coverage: CandidateMusicCriticReportCoverage;
+  dimensions: Record<Exclude<CandidateMusicCriticDimension,
+    "motifContinuityAndDevelopment" | "phraseIntent" | "vocalInteraction" | "roleDuplication" |
+    "orchestralBalance" | "grooveCoordination" | "voiceLeading" | "countermelodyShape" | "dramaticTrajectory">,
+    CandidateMusicCriticDimensionResult>;
 };
 
 export type CandidateAudioCriticDimension =

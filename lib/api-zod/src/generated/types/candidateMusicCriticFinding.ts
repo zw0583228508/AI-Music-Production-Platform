@@ -5,6 +5,9 @@
  * API for the AI Music Production Studio
  * OpenAPI spec version: 0.1.0
  */
+import type { CandidateMusicCriticFindingCanonicalScope } from './candidateMusicCriticFindingCanonicalScope';
+import type { CandidateMusicCriticFindingEvidenceReferencesItem } from './candidateMusicCriticFindingEvidenceReferencesItem';
+import type { CandidateMusicCriticFindingPermissibleRepairOperationsItem } from './candidateMusicCriticFindingPermissibleRepairOperationsItem';
 
 export interface CandidateMusicCriticFinding {
   /** @minLength 1 */
@@ -23,6 +26,13 @@ export interface CandidateMusicCriticFinding {
      * @items.minLength 1
      */
   affectedTrackIds: string[];
+  /** @items.minLength 1 */
+  affectedRoles: string[];
+  canonicalScope: CandidateMusicCriticFindingCanonicalScope;
+  /** @maxItems 8 */
+  evidenceReferences: CandidateMusicCriticFindingEvidenceReferencesItem[];
+  /** @minItems 1 */
+  permissibleRepairOperations: CandidateMusicCriticFindingPermissibleRepairOperationsItem[];
   /**
      * @minLength 1
      * @maxLength 2000
