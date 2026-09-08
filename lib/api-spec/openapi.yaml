@@ -2554,7 +2554,7 @@ components:
         explanation: { type: string }
         findings:
           type: array
-          description: Server-authored scopes eligible for a bounded repair.
+          description: Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.
           items:
             $ref: "#/components/schemas/CandidateMusicCriticFinding"
     CandidateMusicCriticFinding:

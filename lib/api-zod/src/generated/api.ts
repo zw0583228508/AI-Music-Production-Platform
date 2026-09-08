@@ -863,7 +863,7 @@ export const GetProjectResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "harmony": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -881,7 +881,7 @@ export const GetProjectResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "development": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -899,7 +899,7 @@ export const GetProjectResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "contrastAndTransitions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -917,7 +917,7 @@ export const GetProjectResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "registerCollisions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -935,7 +935,7 @@ export const GetProjectResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "playability": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -953,7 +953,7 @@ export const GetProjectResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "repetition": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -971,7 +971,7 @@ export const GetProjectResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "styleAndControlAdherence": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -989,7 +989,7 @@ export const GetProjectResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(getProjectResponseArrangementsItemGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 })
 })
 }),zod.null()]),
@@ -3924,7 +3924,7 @@ export const ListArrangementsResponseItem = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "harmony": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -3942,7 +3942,7 @@ export const ListArrangementsResponseItem = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "development": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -3960,7 +3960,7 @@ export const ListArrangementsResponseItem = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "contrastAndTransitions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -3978,7 +3978,7 @@ export const ListArrangementsResponseItem = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "registerCollisions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -3996,7 +3996,7 @@ export const ListArrangementsResponseItem = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "playability": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4014,7 +4014,7 @@ export const ListArrangementsResponseItem = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "repetition": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4032,7 +4032,7 @@ export const ListArrangementsResponseItem = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "styleAndControlAdherence": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4050,7 +4050,7 @@ export const ListArrangementsResponseItem = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(listArrangementsResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 })
 })
 }),zod.null()]),
@@ -4403,7 +4403,7 @@ export const CreateArrangementResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "harmony": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4421,7 +4421,7 @@ export const CreateArrangementResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "development": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4439,7 +4439,7 @@ export const CreateArrangementResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "contrastAndTransitions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4457,7 +4457,7 @@ export const CreateArrangementResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "registerCollisions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4475,7 +4475,7 @@ export const CreateArrangementResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "playability": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4493,7 +4493,7 @@ export const CreateArrangementResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "repetition": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4511,7 +4511,7 @@ export const CreateArrangementResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "styleAndControlAdherence": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4529,7 +4529,7 @@ export const CreateArrangementResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(createArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 })
 })
 }),zod.null()]),
@@ -4978,7 +4978,7 @@ export const UpdateArrangementResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "harmony": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -4996,7 +4996,7 @@ export const UpdateArrangementResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "development": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -5014,7 +5014,7 @@ export const UpdateArrangementResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "contrastAndTransitions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -5032,7 +5032,7 @@ export const UpdateArrangementResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "registerCollisions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -5050,7 +5050,7 @@ export const UpdateArrangementResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "playability": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -5068,7 +5068,7 @@ export const UpdateArrangementResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "repetition": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -5086,7 +5086,7 @@ export const UpdateArrangementResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "styleAndControlAdherence": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -5104,7 +5104,7 @@ export const UpdateArrangementResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(updateArrangementResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 })
 })
 }),zod.null()]),
@@ -5578,7 +5578,7 @@ export const RestoreArrangementRevisionResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "harmony": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -5596,7 +5596,7 @@ export const RestoreArrangementRevisionResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "development": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -5614,7 +5614,7 @@ export const RestoreArrangementRevisionResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "contrastAndTransitions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -5632,7 +5632,7 @@ export const RestoreArrangementRevisionResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "registerCollisions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -5650,7 +5650,7 @@ export const RestoreArrangementRevisionResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "playability": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -5668,7 +5668,7 @@ export const RestoreArrangementRevisionResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "repetition": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -5686,7 +5686,7 @@ export const RestoreArrangementRevisionResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "styleAndControlAdherence": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -5704,7 +5704,7 @@ export const RestoreArrangementRevisionResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(restoreArrangementRevisionResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 })
 })
 }),zod.null()]),
@@ -6597,7 +6597,7 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "harmony": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -6615,7 +6615,7 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "development": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -6633,7 +6633,7 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "contrastAndTransitions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -6651,7 +6651,7 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "registerCollisions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -6669,7 +6669,7 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "playability": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -6687,7 +6687,7 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "repetition": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -6705,7 +6705,7 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "styleAndControlAdherence": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -6723,7 +6723,7 @@ export const ListGenerationCandidatesResponseItem = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(listGenerationCandidatesResponseEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 })
 })
 }),zod.null()]),
@@ -7063,7 +7063,7 @@ export const SelectGenerationCandidateResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsVocalFitFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "harmony": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -7081,7 +7081,7 @@ export const SelectGenerationCandidateResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsHarmonyFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "development": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -7099,7 +7099,7 @@ export const SelectGenerationCandidateResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsDevelopmentFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "contrastAndTransitions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -7117,7 +7117,7 @@ export const SelectGenerationCandidateResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsContrastAndTransitionsFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "registerCollisions": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -7135,7 +7135,7 @@ export const SelectGenerationCandidateResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRegisterCollisionsFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "playability": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -7153,7 +7153,7 @@ export const SelectGenerationCandidateResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsPlayabilityFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "repetition": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -7171,7 +7171,7 @@ export const SelectGenerationCandidateResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsRepetitionFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 }),
   "styleAndControlAdherence": zod.object({
   "status": zod.enum(['available', 'unavailable', 'failed']),
@@ -7189,7 +7189,7 @@ export const SelectGenerationCandidateResponse = zod.object({
   "endBar": zod.number().min(1),
   "affectedTrackIds": zod.array(zod.string().min(1)).min(1),
   "musicalReason": zod.string().min(1).max(selectGenerationCandidateResponseGenerationProvenanceOneEvaluationMusicCriticOneDimensionsStyleAndControlAdherenceFindingsItemMusicalReasonMax)
-})).describe('Server-authored scopes eligible for a bounded repair.')
+})).describe('Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair.')
 })
 })
 }),zod.null()]),

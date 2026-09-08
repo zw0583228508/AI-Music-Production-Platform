@@ -1634,7 +1634,7 @@ export interface CandidateMusicCriticDimensionResult {
   score: number | null;
   evidence: CandidateMusicCriticEvidence[];
   explanation: string;
-  /** Server-authored scopes eligible for a bounded repair. */
+  /** Deterministically ordered, non-overlapping server-authored scopes eligible for individual bounded repair. */
   findings: CandidateMusicCriticFinding[];
 }
 
