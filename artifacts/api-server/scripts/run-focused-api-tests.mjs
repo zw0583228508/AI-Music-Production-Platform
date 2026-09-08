@@ -135,7 +135,9 @@ function parseOptionalPositiveInteger(environmentVariable) {
       process.env.FOCUSED_API_TEST_INJECT_PID_MAX_READ_FAILURE;
     if (injectedReadFailure) {
       const error = new Error("injected denied host PID limit read");
-      error.code = injectedReadFailure;
+      if (injectedReadFailure !== "UNKNOWN") {
+        error.code = injectedReadFailure;
+      }
       throw error;
     }
     pidLimitValue = readFileSync(pidLimitInput, "utf8").trim();
@@ -175,7 +177,7 @@ for (const environmentVariable of [
 }
 validateFocusedFaultSetting(
   "FOCUSED_API_TEST_INJECT_PID_MAX_READ_FAILURE",
-  supportedPermissionFailureCodes,
+  new Set([...supportedPermissionFailureCodes, "UNKNOWN"]),
 );
 
 function parsePermissionFailureCodes(
