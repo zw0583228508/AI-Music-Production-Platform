@@ -27,7 +27,6 @@ import {
   getListGenerationCandidatesQueryKey,
   ExportResult,
   GenerationCandidate,
-  CandidateRepairInputFinding,
   HarmonyDecisionEvidence,
   ArrangementMode,
   Arrangement,
@@ -81,6 +80,15 @@ import {
 import { useAudioTransport } from "@/components/studio/use-audio-transport";
 import { EditorConflictError } from "@/components/studio/editor-save-coordinator";
 import type { CopilotEditorResult, EditorSelection } from "@/components/studio/editor-types";
+import {
+  isRepairEligible,
+  repairFindingForDimension,
+  repairLineageLabel,
+  repairOutcomeTitle,
+  retainedRepairSourceForJob,
+  resolveRepairSourceCandidate,
+  type RepairFindingPreview,
+} from "./project-workspace-repair";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ExportRenderEvidence, type RenderEvidence } from "@/components/studio/export-render-evidence";
@@ -113,33 +121,6 @@ function readHarmonyDecisions(value: unknown): HarmonyDecisionEvidence[] {
       String((decision as { source?: unknown }).source),
     ));
 }
-
-type RepairFindingPreview = {
-  candidate: GenerationCandidate;
-  dimensionName: string;
-  finding: CandidateRepairInputFinding;
-};
-
-function repairFindingForDimension(
-  candidate: GenerationCandidate,
-  dimensionName: string,
-  explanation: string,
-): CandidateRepairInputFinding | null {
-  const sections = candidate.plan.sections.filter(
-    (section) => section.startBar !== undefined && section.endBar !== undefined,
-  );
-  const trackIds = (candidate.trackModels ?? []).map((track) => track.id).filter(Boolean);
-  if (!sections.length || !trackIds.length) return null;
-  return {
-    id: `music-critic-v1:${dimensionName}`,
-    affectedSections: sections.map((section) => section.name),
-    startBar: Math.min(...sections.map((section) => section.startBar!)),
-    endBar: Math.max(...sections.map((section) => section.endBar!)),
-    affectedTrackIds: trackIds,
-    musicalReason: explanation,
-  };
-}
-
 export default function ProjectWorkspace() {
   const [, params] = useRoute("/projects/:projectId");
   const projectId = params?.projectId || "";
@@ -409,13 +390,11 @@ export default function ProjectWorkspace() {
       },
     },
   );
-  const persistedRepairSourceCandidate = repairSourceCandidate ??
-    repairSourceCandidatesQuery.data?.find((candidate) =>
-      generationCandidates.some((repaired) =>
-        repaired.evaluation.repair?.sourceCandidateId === candidate.id
-      )
-    ) ??
-    null;
+  const persistedRepairSourceCandidate = resolveRepairSourceCandidate(
+    repairSourceCandidate,
+    repairSourceCandidatesQuery.data,
+    generationCandidates,
+  );
   const visibleGenerationCandidates =
     persistedRepairSourceCandidate &&
     !generationCandidates.some((candidate) => candidate.id === persistedRepairSourceCandidate.id)
@@ -652,6 +631,68 @@ export default function ProjectWorkspace() {
           });
         },
       },
+    );
+  };
+
+  const retainedRepairSource = retainedRepairSourceForJob(
+    generationJob?.status,
+    generationCandidates.length,
+    persistedRepairSourceCandidate,
+  );
+
+  const renderRetainedRepairSourceCard = () => {
+    if (!retainedRepairSource) return null;
+    const candidate = retainedRepairSource;
+    const evaluated = Boolean(
+      candidate.evaluation.qualityReport && candidate.evaluation.musicCritic,
+    );
+    const hasAudio = candidate.evaluation.artifacts.some(
+      (artifact) => artifact.type === "AUDIO_TRACK",
+    );
+    const active = candidatePreview?.id === candidate.id;
+    const playing = active && transport.status === "playing";
+    return (
+      <Card data-testid="retained-repair-source" className="border-primary/30">
+        <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="font-semibold">{candidate.label}</div>
+              <Badge variant="outline">Original · repair source</Badge>
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">{candidate.summary}</p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              This original candidate remains available and unchanged.
+            </p>
+          </div>
+          <div className="flex shrink-0 gap-2">
+            <Button
+              size="sm"
+              variant={active ? "secondary" : "outline"}
+              disabled={!hasAudio || (active && transport.status === "loading")}
+              onClick={() => handleCandidatePlayback(candidate)}
+            >
+              {playing ? (
+                <Pause className="mr-2 h-4 w-4" />
+              ) : (
+                <Play className="mr-2 h-4 w-4" />
+              )}
+              {playing ? "Pause" : "Preview"}
+            </Button>
+            <Button
+              size="sm"
+              disabled={
+                candidate.status !== "validated" ||
+                !evaluated ||
+                selectGenerationCandidate.isPending ||
+                candidate.evaluation.diversity?.rejected
+              }
+              onClick={() => handleSelectCandidate(candidate)}
+            >
+              {candidate.status === "selected" ? "Selected" : "Select"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     );
   };
 
@@ -1461,6 +1502,7 @@ export default function ProjectWorkspace() {
                <div className="max-w-3xl mx-auto">
                  <h2 className="text-xl font-bold mb-6">Generated Candidates</h2>
                   {generationJob && generationRunning ? (
+                    <div className="space-y-4">
                     <Card>
                       <CardContent className="space-y-4 p-6">
                         <div className="flex items-start justify-between gap-4">
@@ -1481,15 +1523,20 @@ export default function ProjectWorkspace() {
                         </div>
                       </CardContent>
                     </Card>
+                    {renderRetainedRepairSourceCard()}
+                    </div>
                   ) : generationJob?.status === "failed" &&
                     generationCandidates.length === 0 ? (
-                    <Alert variant="destructive">
-                      <Activity className="h-4 w-4" />
-                      <AlertTitle>Provider generation failed</AlertTitle>
-                      <AlertDescription>
-                        {generationJob.error ?? "The worker returned an unknown error."}
-                      </AlertDescription>
-                    </Alert>
+                    <div className="space-y-4">
+                      <Alert variant="destructive">
+                        <Activity className="h-4 w-4" />
+                        <AlertTitle>Provider generation failed</AlertTitle>
+                        <AlertDescription>
+                          {generationJob.error ?? "The worker returned an unknown error."}
+                        </AlertDescription>
+                      </Alert>
+                      {renderRetainedRepairSourceCard()}
+                    </div>
                   ) : (generationJob?.status === "succeeded" ||
                     generationJob?.status === "failed") &&
                     generationCandidates.length > 0 ? (
@@ -1538,9 +1585,10 @@ export default function ProjectWorkspace() {
                                       )}
                                       {repair && (
                                         <Badge variant={repair.improved ? "default" : "secondary"}>
-                                          Repair of {persistedRepairSourceCandidate?.id === repair.sourceCandidateId
-                                            ? persistedRepairSourceCandidate.label
-                                            : repair.sourceCandidateId.slice(0, 8)}
+                                          {repairLineageLabel(
+                                            repair.sourceCandidateId,
+                                            persistedRepairSourceCandidate,
+                                          )}
                                         </Badge>
                                       )}
                                     </div>
@@ -1630,13 +1678,12 @@ export default function ProjectWorkspace() {
                                           name,
                                           dimension.explanation,
                                         );
-                                        const eligible =
-                                          candidate.status === "validated" &&
-                                          !repair &&
-                                          dimension.status === "available" &&
-                                          dimension.score !== null &&
-                                          dimension.score < 1 &&
-                                          finding;
+                                        const eligible = isRepairEligible(
+                                          candidate,
+                                          dimension,
+                                          repair,
+                                          finding,
+                                        );
                                         return (
                                         <div key={name} className="rounded-md border bg-card p-2">
                                           <div className="flex items-center justify-between gap-2">
@@ -1661,7 +1708,7 @@ export default function ProjectWorkspace() {
                                               onClick={() => setRepairPreview({
                                                 candidate,
                                                 dimensionName: name,
-                                                finding,
+                                                finding: finding!,
                                               })}
                                             >
                                               <Wrench className="mr-1.5 h-3 w-3" />
@@ -1679,11 +1726,7 @@ export default function ProjectWorkspace() {
                                     >
                                       <Wrench className="h-4 w-4" />
                                       <AlertTitle>
-                                        {!repair.outsideScopePreserved
-                                          ? "Repair violated its scope"
-                                          : repair.improved
-                                            ? "Critic repair improved this candidate"
-                                            : "Repair did not improve the candidate"}
+                                        {repairOutcomeTitle(repair)}
                                       </AlertTitle>
                                       <AlertDescription>
                                         {repair.musicalReason} Source score {Math.round(repair.sourceQualityScore * 100)}

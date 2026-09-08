@@ -1,0 +1,113 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import type { GenerationCandidate } from "@workspace/api-client-react";
+import {
+  isRepairEligible,
+  repairFindingForDimension,
+  repairLineageLabel,
+  repairOutcomeTitle,
+  retainedRepairSourceForJob,
+  resolveRepairSourceCandidate,
+} from "./project-workspace-repair";
+
+function candidate(overrides: Partial<GenerationCandidate> = {}): GenerationCandidate {
+  return {
+    id: "source-candidate-1234",
+    jobId: "source-job",
+    label: "Original Groove",
+    status: "validated",
+    plan: {
+      sections: [
+        { name: "Verse", startBar: 1, endBar: 8 },
+        { name: "Chorus", startBar: 9, endBar: 16 },
+      ],
+      tracks: [],
+    },
+    trackModels: [
+      { id: "drums", instrument: "Drums" },
+      { id: "bass", instrument: "Bass" },
+    ],
+    evaluation: {},
+    ...overrides,
+  } as GenerationCandidate;
+}
+
+test("only eligible critic dimensions offer a bounded repair", () => {
+  const source = candidate();
+  const finding = repairFindingForDimension(source, "groove", "The chorus rushes the backbeat.");
+  assert.ok(finding);
+  assert.equal(isRepairEligible(source, { status: "available", score: 0.72 }, null, finding), true);
+  assert.equal(isRepairEligible(source, { status: "failed", score: null }, null, finding), false);
+  assert.equal(isRepairEligible(source, { status: "available", score: 1 }, null, finding), false);
+  assert.equal(isRepairEligible(candidate({ status: "selected" }), { status: "available", score: 0.72 }, null, finding), false);
+  assert.equal(isRepairEligible(source, { status: "available", score: 0.72 }, { improved: false }, finding), false);
+  assert.equal(isRepairEligible(source, { status: "available", score: 0.72 }, null, null), false);
+});
+
+test("repair confirmation preserves exact sections, bars, tracks, and musical reason", () => {
+  const finding = repairFindingForDimension(
+    candidate(),
+    "groove",
+    "The chorus rushes the backbeat.",
+  );
+  assert.deepEqual(finding, {
+    id: "music-critic-v1:groove",
+    affectedSections: ["Verse", "Chorus"],
+    startBar: 1,
+    endBar: 16,
+    affectedTrackIds: ["drums", "bass"],
+    musicalReason: "The chorus rushes the backbeat.",
+  });
+});
+
+test("progress and unsuccessful outcomes retain the original candidate", () => {
+  const source = candidate();
+  assert.equal(retainedRepairSourceForJob("queued", 0, source), source);
+  assert.equal(retainedRepairSourceForJob("running", 0, source), source);
+  assert.equal(retainedRepairSourceForJob("failed", 0, source), source);
+  assert.equal(retainedRepairSourceForJob("succeeded", 1, source), null);
+  assert.equal(
+    repairOutcomeTitle({ outsideScopePreserved: true, improved: false }),
+    "Repair did not improve the candidate",
+  );
+  assert.equal(
+    repairOutcomeTitle({ outsideScopePreserved: false, improved: true }),
+    "Repair violated its scope",
+  );
+});
+
+test("successful repair identifies its parent immediately and after reload", () => {
+  const source = candidate();
+  const repaired = candidate({
+    id: "repaired-candidate",
+    jobId: "repair-job",
+    label: "Repaired Groove",
+    evaluation: {
+      repair: {
+        sourceCandidateId: source.id,
+        improved: true,
+        outsideScopePreserved: true,
+      },
+    },
+  } as Partial<GenerationCandidate>);
+
+  assert.equal(repairLineageLabel(source.id, source), "Repair of Original Groove");
+  const reloadedSource = resolveRepairSourceCandidate(null, [source], [repaired]);
+  assert.equal(reloadedSource?.id, source.id);
+  assert.equal(repairLineageLabel(source.id, reloadedSource), "Repair of Original Groove");
+});
+
+test("queued and failed rendering paths retain a reload-derived source", () => {
+  const source = candidate();
+  const repaired = candidate({
+    id: "repaired-candidate",
+    evaluation: {
+      repair: { sourceCandidateId: source.id },
+    },
+  } as Partial<GenerationCandidate>);
+  const reloadedSource = resolveRepairSourceCandidate(null, [source], [repaired]);
+
+  assert.equal(retainedRepairSourceForJob("queued", 0, reloadedSource)?.label, "Original Groove");
+  assert.equal(retainedRepairSourceForJob("running", 0, reloadedSource)?.label, "Original Groove");
+  assert.equal(retainedRepairSourceForJob("failed", 0, reloadedSource)?.label, "Original Groove");
+});
