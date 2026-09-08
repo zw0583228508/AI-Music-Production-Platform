@@ -1632,6 +1632,55 @@ for (const malformedMessage of [
 }
 
 test(
+  "a throwing cleanup code getter cannot interrupt cancellation diagnostics",
+  { timeout: 15_000 },
+  async () => {
+    const before = await listBundleDirectories();
+    const interrupted = await interruptFocusedTestDuringAssertions(
+      "test:validation",
+      {
+        ...process.env,
+        FOCUSED_API_TEST_INJECT_FAILURE: "ignore-sigterm-during-esbuild",
+        FOCUSED_API_TEST_INJECT_PROCESS_STAT_READ_FAILURE: "EPERM",
+        FOCUSED_API_TEST_INJECT_MALFORMED_CLEANUP_MESSAGE:
+          "throwing-code-getter",
+      },
+      false,
+      "focused-api-throwing-code-getter",
+    );
+
+    assert.equal(interrupted.interrupted, true);
+    assert.equal(
+      interrupted.code,
+      143,
+      [
+        "hostile cleanup code prevented bounded cancellation",
+        interrupted.stdout,
+        interrupted.stderr,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    assert.match(
+      interrupted.stderr,
+      /focused API cleanup could not read \/proc\/\d+\/stat: UNKNOWN injected unreadable process record/u,
+    );
+    assert.doesNotMatch(
+      interrupted.stderr,
+      /injected throwing cleanup code getter/u,
+    );
+    await waitForProcessExit(interrupted.activeChildPid);
+    assert.equal(processExists(interrupted.activeChildPid), false);
+
+    const after = await listBundleDirectories();
+    assert.deepEqual(
+      [...after].filter((directory) => !before.has(directory)),
+      [],
+    );
+  },
+);
+
+test(
   "mixed unreadable process records retain bounded per-code diagnostics and cannot strand cancellation cleanup",
   { timeout: 15_000 },
   async () => {

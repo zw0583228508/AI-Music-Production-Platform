@@ -108,9 +108,12 @@ const injectedCleanupErrorCodes = new Map([
 ]);
 
 function normalizeCleanupErrorCode(error) {
-  return supportedCleanupDiagnosticCodes.has(error?.code)
-    ? error.code
-    : "UNKNOWN";
+  try {
+    const code = error?.code;
+    return supportedCleanupDiagnosticCodes.has(code) ? code : "UNKNOWN";
+  } catch {
+    return "UNKNOWN";
+  }
 }
 
 function formatCleanupErrorMessage(error) {
@@ -134,6 +137,16 @@ function injectedCleanupError(defaultMessage) {
     process.env.FOCUSED_API_TEST_INJECT_CLEANUP_ERROR_MESSAGE ?? defaultMessage,
   );
   if (
+    process.env.FOCUSED_API_TEST_INJECT_MALFORMED_CLEANUP_MESSAGE ===
+    "throwing-code-getter"
+  ) {
+    Object.defineProperty(error, "code", {
+      get() {
+        throw new Error("injected throwing cleanup code getter");
+      },
+      set() {},
+    });
+  } else if (
     process.env.FOCUSED_API_TEST_INJECT_MALFORMED_CLEANUP_MESSAGE ===
     "throwing-getter"
   ) {
@@ -272,7 +285,11 @@ validateFocusedFaultSetting(
 );
 validateFocusedFaultSetting(
   "FOCUSED_API_TEST_INJECT_MALFORMED_CLEANUP_MESSAGE",
-  new Set(["throwing-getter", "throwing-string-conversion"]),
+  new Set([
+    "throwing-code-getter",
+    "throwing-getter",
+    "throwing-string-conversion",
+  ]),
 );
 
 function parsePermissionFailureCodes(
